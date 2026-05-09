@@ -1,5 +1,8 @@
 import openpyxl
 from .models import Config, FieldDef, TemplateColumn, TemplateRow, CellInstruction, TableInstruction
+from .security import check_regex_safety, SecurityError
+
+_MAX_PATTERN_CELL_LEN = 1_000  # max characters in any pattern file cell value
 
 
 class PatternParser:
@@ -8,10 +11,10 @@ class PatternParser:
         Parse a pattern Excel file.
         Returns (global_config, defs, start_sequence).
         """
-        wb = openpyxl.load_workbook(filepath)
+        wb = openpyxl.load_workbook(filepath)  # data_only=False: we want to see formulas
         ws = wb.active
 
-        rows = [[cell.value for cell in row] for row in ws.iter_rows()]
+        rows = self._read_and_validate(ws)
 
         global_config = Config()
         defs = {}
@@ -108,6 +111,50 @@ class PatternParser:
 
         return global_config, defs, start_sequence
 
+    def _read_and_validate(self, ws) -> list:
+        """
+        Read all rows from the pattern worksheet, enforcing that every cell is
+        either empty or a plain string.  Formulas, numbers, dates, and booleans
+        are all rejected — the pattern file is a configuration document, not a
+        spreadsheet.
+        """
+        rows = []
+        for row in ws.iter_rows():
+            row_values = []
+            for cell in row:
+                val = cell.value
+                if val is None:
+                    row_values.append(None)
+                    continue
+
+                # Formulas are never allowed in pattern files
+                if cell.data_type == 'f' or (isinstance(val, str) and val.startswith('=')):
+                    raise SecurityError(
+                        f'Formulas are not allowed in pattern files. '
+                        f'Cell {cell.coordinate} contains: {val!r}  '
+                        f'Replace it with a plain text value.'
+                    )
+
+                # Only plain strings are accepted
+                if not isinstance(val, str):
+                    raise SecurityError(
+                        f'Pattern file cells must contain plain text only. '
+                        f'Cell {cell.coordinate} contains a {type(val).__name__} value: {val!r}  '
+                        f'All values in a pattern file must be strings.'
+                    )
+
+                # Guard against excessively long values
+                if len(val) > _MAX_PATTERN_CELL_LEN:
+                    raise SecurityError(
+                        f'Pattern file cell {cell.coordinate} value is too long '
+                        f'({len(val)} chars, limit is {_MAX_PATTERN_CELL_LEN}). '
+                        f'Pattern values should be short identifiers or regex patterns.'
+                    )
+
+                row_values.append(val)
+            rows.append(row_values)
+        return rows
+
     def _pad(self, row, length=10) -> list:
         """Ensure a row list has at least `length` elements."""
         row = list(row)
@@ -125,7 +172,8 @@ class PatternParser:
             config.empty_aliases.append(str(val))
 
     def _parse_def(self, row) -> FieldDef:
-        name = str(row[1]) if row[1] else ''
+        name  = str(row[1]) if row[1] else ''
         type_ = str(row[2]) if row[2] else 'string'
         regex = str(row[3]) if row[3] else '.*'
+        check_regex_safety(regex, field_name=name)
         return FieldDef(name=name, type=type_, regex=regex)

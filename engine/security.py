@@ -1,19 +1,31 @@
 """
-Security validation for input files.
+Security validation for input files and user-supplied regex patterns.
 
-Every file is checked before openpyxl touches it:
+File checks (run before openpyxl touches any file):
   1. Extension whitelist     — only .xlsx accepted
   2. Magic bytes             — must be a real ZIP (PK signature)
-  3. File size limit         — configurable, default 50 MB on disk
-  4. ZIP bomb detection      — uncompressed content capped at 5× the on-disk size
-                               and an absolute ceiling of 500 MB
+  3. File size limit         — configurable, default 5 MB on disk
+  4. ZIP bomb detection      — uncompressed content capped at 50 MB absolute
+                               and a hard 50× expansion-ratio ceiling
   5. Macro-enabled rejected  — .xlsm / .xlsb are explicitly refused
 
-Limits can be raised via CLI flags for legitimate large files.
+Regex check (run at pattern-file parse time for every def: entry):
+  6. ReDoS detection         — reject nested unbounded quantifiers such as
+                               (a+)+, (.*)*,  ([a-z]+)+ that cause catastrophic
+                               backtracking on crafted input
 """
 
 import os
+import re
 import zipfile
+
+try:
+    # Python 3.11+ moved sre_parse internals to re._parser / re._constants
+    import re._parser as _sre_parse
+    import re._constants as _sre_constants
+except ImportError:                         # Python < 3.11 fallback
+    import sre_parse as _sre_parse          # type: ignore[no-redef]
+    import sre_constants as _sre_constants  # type: ignore[no-redef]
 
 # --- constants ----------------------------------------------------------------
 
@@ -21,15 +33,84 @@ _XLSX_EXTENSIONS = {'.xlsx'}                 # only pure xlsx; .xlsm/.xlsb refus
 _ZIP_MAGIC       = b'PK\x03\x04'            # first 4 bytes of every ZIP file
 _READ_HEADER     = 4                         # bytes to read for magic check
 
-DEFAULT_MAX_FILE_MB        = 50              # compressed size on disk
-DEFAULT_MAX_UNCOMPRESSED_MB = 500            # total uncompressed content
-DEFAULT_MAX_EXPANSION_RATIO = 5             # uncompressed / compressed ceiling
+DEFAULT_MAX_FILE_MB         = 5              # compressed size on disk
+DEFAULT_MAX_UNCOMPRESSED_MB = 50             # total uncompressed content
+DEFAULT_MAX_EXPANSION_RATIO = 5              # uncompressed / compressed ceiling
+
+# --- regex safety constants ---------------------------------------------------
+
+_REPEAT_OPS = frozenset({_sre_constants.MAX_REPEAT, _sre_constants.MIN_REPEAT})
+_MAXREPEAT  = _sre_constants.MAXREPEAT  # sentinel value meaning "unbounded"
+_SUBPATTERN = _sre_constants.SUBPATTERN
+_BRANCH     = _sre_constants.BRANCH
+_ASSERT     = _sre_constants.ASSERT
+_ASSERT_NOT = _sre_constants.ASSERT_NOT
 
 
 # --- public exception ---------------------------------------------------------
 
 class SecurityError(Exception):
-    """Raised when an input file fails a security check."""
+    """Raised when an input file or regex fails a security check."""
+
+
+# --- regex safety (ReDoS detection) ------------------------------------------
+
+def check_regex_safety(pattern: str, field_name: str = '') -> None:
+    """
+    Validate a user-supplied regex for ReDoS-dangerous constructs.
+    Raises SecurityError if the pattern is syntactically invalid or contains
+    nested unbounded quantifiers that risk catastrophic backtracking.
+
+    Called at pattern-file parse time for every def: entry, before the regex
+    is ever applied to cell data.
+
+    The check detects the canonical ReDoS form: a quantifier-wrapped group
+    whose body itself contains an unbounded quantifier, e.g.:
+        (a+)+   (.*)+ (w+)*   (x{2,})+    [where w means \\w]
+    Fixed-count outer quantifiers such as (a+){3} are not flagged because they
+    cannot produce exponential backtracking.
+    """
+    try:
+        parsed = _sre_parse.parse(pattern)
+    except re.error as exc:
+        ctx = f' (field {field_name!r})' if field_name else ''
+        raise SecurityError(
+            f'Invalid regex{ctx}: {exc}  [pattern: {pattern!r}]'
+        )
+    if _has_nested_quantifier(parsed, in_unbounded=False):
+        ctx = f' for field {field_name!r}' if field_name else ''
+        raise SecurityError(
+            f'Unsafe regex{ctx}: nested unbounded quantifiers risk catastrophic '
+            f'backtracking (ReDoS) — {pattern!r}  '
+            f'Hint: use a character class instead of a group, '
+            f'e.g. [a-z]+ not ([a-z])+.'
+        )
+
+
+def _has_nested_quantifier(nodes, in_unbounded: bool) -> bool:
+    """Walk the sre_parse AST; return True if nested unbounded quantifiers exist."""
+    for op, av in nodes:
+        if op in _REPEAT_OPS:
+            min_count, max_count, body = av
+            unbounded = (max_count == _MAXREPEAT)
+            if unbounded and in_unbounded:
+                return True
+            if _has_nested_quantifier(body, in_unbounded or unbounded):
+                return True
+        elif op == _SUBPATTERN:
+            # av = (group_id, add_flags, del_flags, body)  — Python 3.7+
+            if _has_nested_quantifier(av[3], in_unbounded):
+                return True
+        elif op == _BRANCH:
+            _, branches = av
+            for branch in branches:
+                if _has_nested_quantifier(branch, in_unbounded):
+                    return True
+        elif op in (_ASSERT, _ASSERT_NOT):
+            _, body = av
+            if _has_nested_quantifier(body, in_unbounded):
+                return True
+    return False
 
 
 # --- public validation entry point --------------------------------------------
@@ -112,7 +193,7 @@ def _check_zip_safety(path: str, max_uncompressed_mb: float) -> None:
     if uncompressed_mb > max_uncompressed_mb:
         raise SecurityError(
             f'ZIP content expands to {uncompressed_mb:.1f} MB, '
-            f'exceeding the {max_uncompressed_mb:.0f} MB limit. '
+            f'exceeding the {max_uncompressed_mb:.0f} MB uncompressed limit. '
             f'This may be a ZIP bomb or an unusually large workbook.'
         )
 

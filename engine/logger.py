@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 from enum import IntEnum
 from typing import Optional, NoReturn
 import os
+import sys
 
 
 # ---------------------------------------------------------------------------
@@ -148,6 +149,9 @@ class Logger:
 
     def has_errors(self) -> bool:
         return any(r.severity == Severity.ERROR for r in self._records)
+
+    def has_warnings(self) -> bool:
+        return any(r.severity == Severity.WARNING for r in self._records)
 
     # --- Engine lifecycle ---------------------------------------------------
 
@@ -417,7 +421,7 @@ class Logger:
 
     def _write(self, min_level: VerbosityLevel, text: str):
         if self.level >= min_level:
-            print(text)
+            print(text, file=sys.stderr)
         if self._file:
             self._file.write(text + '\n')
             self._file.flush()

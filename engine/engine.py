@@ -1,9 +1,9 @@
 import openpyxl
 from .models import Config, CellInstruction, TableInstruction, TemplateRow
-from .utils import is_empty, validate_type
+from .utils import is_empty, validate_type, _MAX_REGEX_INPUT_LEN
 from .pattern_parser import PatternParser
 from .logger import Logger, LogRecord, EngineError, cell_ref
-from .security import validate_file, SecurityError
+from .security import validate_file, SecurityError, DEFAULT_MAX_UNCOMPRESSED_MB
 
 
 class SheetScanner:
@@ -73,10 +73,14 @@ class SheetScanner:
 class Engine:
     def process(self, pattern_file: str, data_file: str,
                 logger: Logger = None,
-                max_file_mb: float = 50,
-                max_uncompressed_mb: float = 500) -> dict:
+                max_file_mb: float = 5,
+                max_uncompressed_mb: float = DEFAULT_MAX_UNCOMPRESSED_MB,
+                max_cell_len: int = _MAX_REGEX_INPUT_LEN,
+                sheet: str | int | None = None) -> dict:
         if logger is None:
             logger = Logger()
+
+        self._max_cell_len = max_cell_len
 
         # Security: validate both files before openpyxl touches them
         for path in (pattern_file, data_file):
@@ -87,7 +91,10 @@ class Engine:
             except SecurityError as exc:
                 logger.fatal(str(exc), found=path)
 
-        global_config, defs, start_sequence = PatternParser().parse(pattern_file)
+        try:
+            global_config, defs, start_sequence = PatternParser().parse(pattern_file)
+        except SecurityError as exc:
+            logger.fatal(str(exc), found=pattern_file)
 
         try:
             wb = openpyxl.load_workbook(data_file, data_only=True)
@@ -97,7 +104,26 @@ class Engine:
                 found=data_file,
                 expected='a valid, uncorrupted .xlsx workbook',
             )
-        ws = wb.active
+
+        if sheet is None:
+            ws = wb.active
+        elif isinstance(sheet, int):
+            if sheet < 0 or sheet >= len(wb.worksheets):
+                logger.fatal(
+                    f'Sheet index {sheet} is out of range '
+                    f'(workbook has {len(wb.worksheets)} sheet(s))',
+                    found=str(sheet),
+                    expected=f'an index between 0 and {len(wb.worksheets) - 1}',
+                )
+            ws = wb.worksheets[sheet]
+        else:
+            if sheet not in wb.sheetnames:
+                logger.fatal(
+                    f'Sheet {sheet!r} not found in workbook',
+                    found=sheet,
+                    expected=f'one of: {", ".join(wb.sheetnames)}',
+                )
+            ws = wb[sheet]
         logger.sheet_name = ws.title
 
         logger.engine_start(pattern_file, data_file)
@@ -153,7 +179,7 @@ class Engine:
 
         logger.cell_processed(row, col, instr.field, value)
 
-        ok, _ = validate_type(value, fd.type, fd.regex, config.currency_sign)
+        ok, _ = validate_type(value, fd.type, fd.regex, config.currency_sign, self._max_cell_len)
         if not ok:
             rec = logger.warn_validation(row, col, instr.field, fd.type, fd.regex, value)
             logger.commit_warnings([rec])
@@ -369,8 +395,10 @@ class Engine:
                         logger.warn_undefined_field(sheet_row, col, tmpl_col.field)
                     )
                 else:
-                    ok, _ = validate_type(val, fd.type, fd.regex, config.currency_sign)
+                    ok, _ = validate_type(val, fd.type, fd.regex, config.currency_sign, self._max_cell_len)
                     if not ok:
+                        if strict:
+                            return {}, False  # HEADER/FOOTER: wrong value = no match
                         local_warnings.append(
                             logger.warn_validation(sheet_row, col, tmpl_col.field,
                                                    fd.type, fd.regex, val)
@@ -414,7 +442,7 @@ class Engine:
                 continue
             if is_empty(val, config.empty_aliases):
                 return False
-            ok, _ = validate_type(val, fd.type, fd.regex, config.currency_sign)
+            ok, _ = validate_type(val, fd.type, fd.regex, config.currency_sign, self._max_cell_len)
             if not ok:
                 return False
 
