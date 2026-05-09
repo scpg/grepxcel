@@ -1,7 +1,46 @@
+# ── Virtual environment ───────────────────────────────────────────────────────
 .venv/
+venv/
+env/
+
+# ── Python bytecode & caches ──────────────────────────────────────────────────
 __pycache__/
 *.pyc
 *.pyo
-logs/
-output/
+*.pyd
 .pytest_cache/
+
+# ── Build / packaging ─────────────────────────────────────────────────────────
+dist/
+build/
+*.egg-info/
+*.egg
+pip-wheel-metadata/
+
+# ── Runtime output (directories kept in repo via .gitkeep) ───────────────────
+logs/*
+!logs/.gitkeep
+output/*
+!output/.gitkeep
+
+# ── Environment / secrets ─────────────────────────────────────────────────────
+.env*
+!.env.example
+!.env.template
+.envrc*
+!.envrc.example
+!.envrc.template
+*.log
+
+# ── IDE / editor ──────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ── Claude Code local settings ────────────────────────────────────────────────
+.claude/
+
+# ── OS ────────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
