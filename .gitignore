@@ -38,6 +38,9 @@ output/*
 *.swp
 *.swo
 
+# ── Local-only sample files (never synced) ───────────────────────────────────
+samples.local/
+
 # ── Claude Code local settings ────────────────────────────────────────────────
 .claude/
 
