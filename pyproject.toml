@@ -9,6 +9,7 @@ description = "Pattern-based data extraction for Excel"
 requires-python = ">=3.10"
 dependencies = [
     "openpyxl>=3.1",
+    "defusedxml>=0.7",
 ]
 
 [project.scripts]

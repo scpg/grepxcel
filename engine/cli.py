@@ -77,6 +77,12 @@ examples:
         metavar='FILE',
         help='Append structured log to FILE',
     )
+    p.add_argument(
+        '--max-size',
+        type=float, default=50, metavar='MB',
+        help='Maximum file size in MB to accept (default: 50). '
+             'Raise this for legitimate large files.',
+    )
 
     return p
 
@@ -98,7 +104,10 @@ def _process_file(pattern: str, data_file: str, args, stem: str = None) -> bool:
     logger = Logger(level=level, log_file=args.log)
 
     try:
-        result = Engine().process(pattern, data_file, logger=logger)
+        result = Engine().process(
+            pattern, data_file, logger=logger,
+            max_file_mb=args.max_size,
+        )
     except Exception as exc:
         print(f'\n  ✗  Unexpected error processing {data_file}: {exc}', file=sys.stderr)
         return False

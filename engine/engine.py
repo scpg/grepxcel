@@ -3,6 +3,7 @@ from .models import Config, CellInstruction, TableInstruction, TemplateRow
 from .utils import is_empty, validate_type
 from .pattern_parser import PatternParser
 from .logger import Logger, LogRecord, EngineError, cell_ref
+from .security import validate_file, SecurityError
 
 
 class SheetScanner:
@@ -71,13 +72,31 @@ class SheetScanner:
 
 class Engine:
     def process(self, pattern_file: str, data_file: str,
-                logger: Logger = None) -> dict:
+                logger: Logger = None,
+                max_file_mb: float = 50,
+                max_uncompressed_mb: float = 500) -> dict:
         if logger is None:
             logger = Logger()
 
+        # Security: validate both files before openpyxl touches them
+        for path in (pattern_file, data_file):
+            try:
+                validate_file(path,
+                              max_file_mb=max_file_mb,
+                              max_uncompressed_mb=max_uncompressed_mb)
+            except SecurityError as exc:
+                logger.fatal(str(exc), found=path)
+
         global_config, defs, start_sequence = PatternParser().parse(pattern_file)
 
-        wb = openpyxl.load_workbook(data_file, data_only=True)
+        try:
+            wb = openpyxl.load_workbook(data_file, data_only=True)
+        except Exception as exc:
+            logger.fatal(
+                f'Failed to open the data file: {exc}',
+                found=data_file,
+                expected='a valid, uncorrupted .xlsx workbook',
+            )
         ws = wb.active
         logger.sheet_name = ws.title
 
