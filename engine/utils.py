@@ -72,3 +72,32 @@ def validate_type(value, field_type: str, regex: str, currency_sign: str = '€'
         return ok, ('' if ok else f'{repr(value)} is not a {field_type}')
 
     return False, f'unknown type {repr(field_type)}'
+
+
+def infer_cell_type(values: list) -> str:
+    """Return the most common grepxcel type for a list of openpyxl cell values."""
+    counts: dict[str, int] = {
+        'datetime': 0, 'date': 0, 'currency': 0, 'integer': 0, 'string': 0,
+    }
+    for v in values:
+        if v is None:
+            continue
+        if isinstance(v, datetime.datetime):
+            counts['datetime'] += 1
+        elif isinstance(v, datetime.date):
+            counts['date'] += 1
+        elif isinstance(v, bool):
+            counts['string'] += 1
+        elif isinstance(v, float):
+            if v.is_integer():
+                counts['integer'] += 1
+            else:
+                counts['currency'] += 1
+        elif isinstance(v, int):
+            counts['integer'] += 1
+        else:
+            counts['string'] += 1
+    total = sum(counts.values())
+    if total == 0:
+        return 'string'
+    return max(counts, key=lambda k: counts[k])

@@ -10,6 +10,8 @@ requires-python = ">=3.10"
 dependencies = [
     "openpyxl>=3.1",
     "defusedxml>=0.7",
+    "llama-cpp-python>=0.2.90",
+    "huggingface_hub>=0.23",
 ]
 
 [project.scripts]
