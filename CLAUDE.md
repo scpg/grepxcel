@@ -59,3 +59,28 @@ This rule has no exceptions.
 
 - **stdout** — extracted JSON (pipe-friendly)
 - **stderr** — warnings, errors, summary, verbose/debug output
+
+## Branch workflow
+
+Always work on `dev`. Never commit or push directly to `main`.
+
+```bash
+# 1. Make changes on dev, commit, push
+git add <files>
+git commit -m "..."
+git push origin dev
+
+# 2. Open a PR from dev → main
+gh pr create --base main --head dev --title "Short title" --body "What and why."
+
+# 3. Check CI status
+gh run list --limit 5
+
+# 4. Once CI is green, merge the PR
+gh pr merge <PR-number> --squash
+
+# 5. Sync local main (optional)
+git fetch origin main
+```
+
+`gh pr *` and `gh run *` are allowlisted in `.claude/settings.local.json`.
