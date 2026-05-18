@@ -166,13 +166,14 @@ Requires `requirements-suggest.txt` to be installed (local LLM — no data sent 
 
 ```
 engine/          ← importable Python package (engine, parser, models, security, cli, suggester)
+scripts/         ← reusable utility scripts for contributors
 tests/
   fixtures/      ← pattern + data xlsx pairs (one folder per scenario)
   unit/          ← pytest unit tests
   integration/   ← pytest integration tests
 docs/            ← additional documentation
-tmp-scripts/     ← throwaway scripts (gitignored)
-samples.local/   ← local-only files, never synced  (gitignored)
+tmp.local/       ← throwaway scripts, never synced  (gitignored)
+samples.local/   ← local-only Excel files, never synced  (gitignored)
 logs/            ← log file output                 (gitignored)
 output/          ← JSON extraction results         (gitignored)
 ```

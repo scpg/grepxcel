@@ -4,7 +4,7 @@
 
 **Never** run `python3 -c "..."` or any other inline script technique.
 All test, exploration, and one-off scripts **must** be written as files inside `tmp.local/`.
-Before creating a new script, check if a suitable one already exists in `tmp.local/` and reuse it.
+Before creating a new script, check `scripts/` (tracked utilities) and `tmp.local/` (local throwaway) — reuse what already exists.
 
 This rule has no exceptions.
 
@@ -12,10 +12,17 @@ This rule has no exceptions.
 
 - `engine/`       — core package (engine, parser, logger, models, security, utils)
 - `tests/`        — pytest suite; fixtures are generated xlsx files in `tests/fixtures/`
-- `tmp.local/`  — throwaway scripts (gitignored); put all ad-hoc code here
+- `scripts/`      — reusable utility scripts for contributors (tracked, documented)
+- `tmp.local/`    — throwaway scripts (gitignored); put all ad-hoc code here
 - `samples.local/`— real Excel samples (gitignored, never committed)
 - `logs/`         — runtime log output (gitignored)
 - `output/`       — JSON extraction output (gitignored)
+
+## Before writing a new script
+
+Check `scripts/` first — a suitable utility may already exist there.
+If the script is reusable and useful to contributors, put it in `scripts/`.
+If it is exploratory or one-off, put it in `tmp.local/`.
 
 ## Running tests
 
