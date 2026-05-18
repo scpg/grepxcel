@@ -3,8 +3,8 @@
 ## MANDATORY: No inline scripts
 
 **Never** run `python3 -c "..."` or any other inline script technique.
-All test, exploration, and one-off scripts **must** be written as files inside `tmp-scripts/`.
-Before creating a new script, check if a suitable one already exists in `tmp-scripts/` and reuse it.
+All test, exploration, and one-off scripts **must** be written as files inside `tmp.local/`.
+Before creating a new script, check if a suitable one already exists in `tmp.local/` and reuse it.
 
 This rule has no exceptions.
 
@@ -12,7 +12,7 @@ This rule has no exceptions.
 
 - `engine/`       — core package (engine, parser, logger, models, security, utils)
 - `tests/`        — pytest suite; fixtures are generated xlsx files in `tests/fixtures/`
-- `tmp-scripts/`  — throwaway scripts (gitignored); put all ad-hoc code here
+- `tmp.local/`  — throwaway scripts (gitignored); put all ad-hoc code here
 - `samples.local/`— real Excel samples (gitignored, never committed)
 - `logs/`         — runtime log output (gitignored)
 - `output/`       — JSON extraction output (gitignored)

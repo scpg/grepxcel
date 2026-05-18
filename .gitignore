@@ -39,7 +39,7 @@ output/*
 *.swo
 
 # ── Throwaway scripts (ad-hoc, never synced) ─────────────────────────────────
-tmp-scripts/
+tmp.local/
 
 # ── Local-only sample files (never synced) ───────────────────────────────────
 samples.local/
