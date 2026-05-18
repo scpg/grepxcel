@@ -72,7 +72,8 @@ def _build_parser() -> argparse.ArgumentParser:
         epilog="""
 commands:
   extract   Extract data from Excel files using a pattern file
-  suggest   Use a local LLM (Ollama) to suggest a pattern file for an Excel file
+  suggest   Use a local LLM to suggest a pattern file for an Excel file
+  docs      Write a pattern-format reference xlsx (pattern-reference.xlsx)
 
 Run 'grepxcel <command> --help' for per-command options.
         """,
@@ -82,6 +83,7 @@ Run 'grepxcel <command> --help' for per-command options.
 
     _add_extract_subparser(sub)
     _add_suggest_subparser(sub)
+    _add_docs_subparser(sub)
     return p
 
 
@@ -142,8 +144,32 @@ examples:
         type=int, default=1000, metavar='CHARS',
         help='Maximum cell character length passed to regex matching (default: 1000)',
     )
+    p.add_argument(
+        '--format',
+        choices=['nested', 'legacy'], default='nested',
+        help='Output format: nested (default) or legacy ({"cells":{}, "tables":[]})',
+    )
     _add_security_args(p)
     _add_sheet_arg(p)
+
+
+def _add_docs_subparser(sub) -> None:
+    p = sub.add_parser(
+        'docs',
+        help='Write a self-documenting pattern-format reference xlsx',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+examples:
+  grepxcel docs
+  grepxcel docs -o reference/pattern-reference.xlsx
+        """,
+    )
+    p.add_argument(
+        '-o', '--output',
+        metavar='FILE',
+        default='pattern-reference.xlsx',
+        help='Output path for the reference file (default: pattern-reference.xlsx)',
+    )
 
 
 def _add_suggest_subparser(sub) -> None:
@@ -208,6 +234,7 @@ def _process_file(pattern: str, data_file: str, args, stem: str = None) -> bool:
 
     logger = Logger(level=level, log_file=args.log)
     sheet = _resolve_sheet(args)
+    output_format = getattr(args, 'format', 'nested')
 
     try:
         result = Engine().process(
@@ -216,6 +243,7 @@ def _process_file(pattern: str, data_file: str, args, stem: str = None) -> bool:
             max_uncompressed_mb=args.max_uncompressed,
             max_cell_len=args.max_cell_len,
             sheet=sheet,
+            output_format=output_format,
         )
     except Exception as exc:
         print(f'\n  ✗  Unexpected error processing {data_file}: {exc}', file=sys.stderr)
@@ -223,19 +251,14 @@ def _process_file(pattern: str, data_file: str, args, stem: str = None) -> bool:
     finally:
         logger.close()
 
-    payload = {
-        'cells':  result.get('cells', {}),
-        'tables': result.get('tables', []),
-    }
-
     if args.output:
         os.makedirs(args.output, exist_ok=True)
         out_path = os.path.join(args.output, f'{stem}.json')
         with open(out_path, 'w', encoding='utf-8') as f:
-            json.dump(payload, f, indent=2, default=_json_default)
+            json.dump(result, f, indent=2, default=_json_default)
         print(f'\n  JSON written to: {out_path}', file=sys.stderr)
     else:
-        json.dump(payload, sys.stdout, indent=2, default=_json_default)
+        json.dump(result, sys.stdout, indent=2, default=_json_default)
         sys.stdout.write('\n')
 
     return not (logger.has_errors() or logger.has_warnings())
@@ -253,6 +276,15 @@ def _output_stem(data_file: str, all_files: list[str]) -> str:
         parent = os.path.basename(os.path.dirname(os.path.abspath(data_file)))
         return f'{parent}_{basename}'
     return basename
+
+
+# ── docs handler ─────────────────────────────────────────────────────────────
+
+def _run_docs(args) -> int:
+    from .docs_generator import DocsGenerator
+    DocsGenerator().write(args.output)
+    print(f'Pattern reference written to: {args.output}', file=sys.stderr)
+    return 0
 
 
 # ── suggest handler ───────────────────────────────────────────────────────────
@@ -278,6 +310,9 @@ def main(argv=None):
 
     if args.command == 'suggest':
         sys.exit(_run_suggest(args))
+
+    if args.command == 'docs':
+        sys.exit(_run_docs(args))
 
     # extract
     all_ok = True

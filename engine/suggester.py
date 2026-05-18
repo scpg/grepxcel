@@ -8,6 +8,8 @@ handled by ModelManager.
 """
 
 import os
+import platform
+import subprocess
 import sys
 
 import openpyxl
@@ -28,29 +30,37 @@ In your output, separate columns with ' | ' (space-pipe-space).
 
 ─── SECTIONS (in order) ───────────────────────────────────────────────────────
 
-1. Config rows (optional, before def: rows):
+1. Config rows (optional):
    config: | read.direction | LR          (or TD for top-down column scanning)
    config: | currency.sign  | €
 
-2. Field definitions (required, at least one):
-   def: | FieldName | type | regex
+2. Label definitions — anchor cells, NEVER written to output JSON:
+   lbl: | FieldName | type | regex
+
+   Use lbl: for literal text that marks where a value lives (e.g. "Invoice No:",
+   column headers like "Product", "Qty").  These are matched for position only.
+
+3. Variable definitions — extracted to the output JSON:
+   var: | field.name | type | regex
+
+   Use var: for every value you want to capture.
+   Dot notation creates nested JSON: po.number → {"po": {"number": ...}}
+   All var: field names in one table DATA row must share the same group prefix.
 
    Types:  string  integer  currency  date  datetime
-   Regex:  Python re.fullmatch pattern. Use .* to match anything.
+   Regex:  Python re.fullmatch pattern.  Use .* to match anything.
 
    Examples:
-     def: | InvoiceNo  | string   | INV-\\d{4,8}
-     def: | Amount     | currency | \\d+(\\.\\d{1,2})?
-     def: | Qty        | integer  | \\d+
-     def: | Label      | string   | .*
-     def: | OrderDate  | date     |
-   For date/datetime types, leave the regex column empty.
+     var: | po.number  | string   | PO-\\d{4,8}
+     var: | inv.total  | currency | \\d+(\\.\\d{1,2})?
+     var: | line.qty   | integer  | \\d+
+     var: | inv.date   | date     |
 
-3. Extraction sequence between START: and END: (bare keywords, no pipes):
+4. Extraction sequence between START: and END:
 
    For scattered key-value cells:
-     cell:1 | FieldName      (extract the next non-empty cell)
-     cell:1 | IGNORE         (skip the next non-empty cell)
+     cell:1 | FieldName      (extract the next non-empty cell into FieldName)
+     cell:1 | IGNORE         (skip the next non-empty cell — use for lbl: anchors)
 
    For repeating tables:
      table:*                 (bare keyword, no pipe, starts a table block)
@@ -59,8 +69,15 @@ In your output, separate columns with ' | ' (space-pipe-space).
        | FOOTER:1 | ColA | ColB | ColC
      (Table template rows have a blank column A — start the line with ' | ')
 
-   Row type suffixes:  :1  (exactly one)   :*  (one or more)   :N  (exactly N)
+   Row type suffixes:  :1 (exactly one)  :* (one or more)  :N (exactly N)
    Column keywords:  FieldName  IGNORE  EMPTY
+
+─── KEY DESIGN RULES ──────────────────────────────────────────────────────────
+
+- Use lbl: for label cells ("Invoice No:", "Total:", column headers).
+- Use var: for the values that follow those labels.
+- In HEADER rows, use lbl: field names.  In DATA rows, use var: field names.
+- Give var: fields a dot-notation name: group.field (e.g. po.number, line.qty).
 
 ─── OUTPUT RULES ──────────────────────────────────────────────────────────────
 
@@ -72,18 +89,24 @@ In your output, separate columns with ' | ' (space-pipe-space).
 ─── EXAMPLE OUTPUT ────────────────────────────────────────────────────────────
 
 config: | read.direction | LR
-def: | InvoiceNo | string | INV-\\d+
-def: | Total | currency | \\d+(\\.\\d{2})?
-def: | Product | string | .*
-def: | Qty | integer | \\d+
-def: | OrderDate | date |
+lbl: | inv_label | string | Invoice No:
+lbl: | total_label | string | Total
+lbl: | col_product | string | Product
+lbl: | col_qty | string | Qty
+var: | inv.number | string | INV-\\d+
+var: | inv.total | currency | \\d+(\\.\\d{2})?
+var: | inv.date | date |
+var: | line.product | string | .*
+var: | line.qty | integer | \\d+
 START:
-cell:1 | InvoiceNo
-cell:1 | Total
-cell:1 | OrderDate
+cell:1 | inv_label
+cell:1 | inv.number
+cell:1 | total_label
+cell:1 | inv.total
+cell:1 | inv.date
 table:*
- | HEADER:1 | Product | Qty
- | DATA:* | Product | Qty
+ | HEADER:1 | col_product | col_qty
+ | DATA:* | line.product | line.qty
 END:
 """
 
@@ -199,6 +222,75 @@ class ExcelAnalyzer:
         return lines
 
 
+# ── Hardware detection ────────────────────────────────────────────────────────
+
+_CUDA_INSTALL  = "CMAKE_ARGS=\"-DGGML_CUDA=on\"  pip install llama-cpp-python --force-reinstall"
+_METAL_INSTALL = "CMAKE_ARGS=\"-DGGML_METAL=on\" pip install llama-cpp-python --force-reinstall"
+_VULKAN_INSTALL= "CMAKE_ARGS=\"-DGGML_VULKAN=on\" pip install llama-cpp-python --force-reinstall"
+
+
+def _detect_gpu() -> tuple[int, str | None, str | None]:
+    """
+    Probe the local machine for GPU/NPU acceleration and return
+    (n_gpu_layers, backend_label, install_hint).
+
+    Priority:
+      1. GREPXCEL_GPU_LAYERS env var — user override, no messages printed.
+      2. NVIDIA GPU via nvidia-smi (CUDA).
+      3. Apple Silicon via platform check (Metal).
+      4. Any Vulkan-capable GPU via vulkaninfo (Windows/Linux fallback).
+      5. CPU-only fallback (n_gpu_layers=0).
+
+    NPU note: Intel NPU, Qualcomm Hexagon, and Apple ANE are not yet supported
+    by llama.cpp in mainstream builds.  Apple Silicon users get equivalent
+    acceleration through Metal (step 3 above).
+    """
+    override = os.environ.get("GREPXCEL_GPU_LAYERS")
+    if override is not None:
+        try:
+            return int(override), None, None
+        except ValueError:
+            pass
+
+    # NVIDIA CUDA (works on Linux, Windows, and WSL2 with NVIDIA WSL2 driver)
+    try:
+        proc = subprocess.run(
+            ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if proc.returncode == 0:
+            gpu_name = proc.stdout.strip().splitlines()[0]
+            return -1, f"NVIDIA GPU ({gpu_name}) — CUDA", _CUDA_INSTALL
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        pass
+
+    # Apple Silicon Metal (macOS only — ANE is bypassed; Metal is the fast path)
+    if platform.system() == "Darwin":
+        import struct
+        if struct.calcsize("P") == 8 and platform.machine() == "arm64":
+            return -1, "Apple Silicon — Metal", _METAL_INSTALL
+        # Intel Mac: Metal exists but GPU offload yields little benefit
+        return 0, None, None
+
+    # Vulkan (any GPU on Windows/Linux — AMD, Intel, NVIDIA without CUDA driver)
+    try:
+        proc = subprocess.run(
+            ["vulkaninfo", "--summary"],
+            capture_output=True, text=True, timeout=5,
+        )
+        if proc.returncode == 0 and "GPU" in proc.stdout:
+            # Extract first GPU name if present
+            for line in proc.stdout.splitlines():
+                if "deviceName" in line:
+                    gpu_name = line.split("=", 1)[-1].strip()
+                    return -1, f"Vulkan GPU ({gpu_name})", _VULKAN_INSTALL
+            return -1, "Vulkan GPU", _VULKAN_INSTALL
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        pass
+
+    return 0, None, None
+
+
 # ── Local LLM client ──────────────────────────────────────────────────────────
 
 class LlamaCppClient:
@@ -226,14 +318,32 @@ class LlamaCppClient:
             )
             sys.exit(1)
 
-        self._llm = Llama(
-            model_path  = self.model_path,
-            n_ctx       = 4096,
-            n_threads   = os.cpu_count() or 4,
-            n_gpu_layers= 0,       # CPU-only; set GREPXCEL_GPU_LAYERS to override
-            verbose     = False,
-            chat_format = MODEL_CHAT_FORMAT,
+        n_gpu_layers, backend, install_hint = _detect_gpu()
+
+        if backend:
+            print(f"  Hardware: {backend}", file=sys.stderr)
+            layers_label = "all layers" if n_gpu_layers == -1 else f"{n_gpu_layers} layers"
+            print(f"  GPU offload: {layers_label}", file=sys.stderr)
+            print(
+                f"  Note: GPU acceleration requires a GPU-compiled build of llama-cpp-python.\n"
+                f"  If inference seems slow, reinstall with:\n"
+                f"    {install_hint}",
+                file=sys.stderr,
+            )
+        else:
+            print("  Hardware: CPU (no GPU detected — set GREPXCEL_GPU_LAYERS to override)",
+                  file=sys.stderr)
+
+        kwargs: dict = dict(
+            model_path   = self.model_path,
+            n_ctx        = 4096,
+            n_threads    = os.cpu_count() or 4,
+            n_gpu_layers = n_gpu_layers,
+            verbose      = False,
         )
+        if MODEL_CHAT_FORMAT is not None:
+            kwargs['chat_format'] = MODEL_CHAT_FORMAT
+        self._llm = Llama(**kwargs)
 
     def chat(self, system: str, user: str) -> str:
         self._load()

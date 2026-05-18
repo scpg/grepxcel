@@ -38,9 +38,14 @@ class PatternParser:
             if not in_start:
                 if col_a == 'config:':
                     self._apply_global_config(row, global_config)
-                elif col_a == 'def:':
-                    fd = self._parse_def(row)
+                elif col_a in ('def:', 'var:'):
+                    fd = self._parse_field(row, role='var')
                     defs[fd.name] = fd
+                elif col_a == 'lbl:':
+                    fd = self._parse_field(row, role='lbl')
+                    defs[fd.name] = fd
+                elif col_a in ('doc:', 'info:'):
+                    pass  # inline documentation — ignored by engine
                 i += 1
                 continue
 
@@ -171,9 +176,13 @@ class PatternParser:
         elif key == 'empty.aliases' and val:
             config.empty_aliases.append(str(val))
 
-    def _parse_def(self, row) -> FieldDef:
+    def _parse_field(self, row, role: str = 'var') -> FieldDef:
         name  = str(row[1]) if row[1] else ''
         type_ = str(row[2]) if row[2] else 'string'
         regex = str(row[3]) if row[3] else '.*'
         check_regex_safety(regex, field_name=name)
-        return FieldDef(name=name, type=type_, regex=regex)
+        return FieldDef(name=name, type=type_, regex=regex, role=role)
+
+    # backward-compat alias
+    def _parse_def(self, row) -> FieldDef:
+        return self._parse_field(row, role='var')

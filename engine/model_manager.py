@@ -21,7 +21,7 @@ from pathlib import Path
 
 MODEL_REPO_ID    = "bartowski/Phi-3.5-mini-instruct-GGUF"
 MODEL_FILENAME   = "Phi-3.5-mini-instruct-Q4_K_M.gguf"
-MODEL_CHAT_FORMAT = "phi-3"
+MODEL_CHAT_FORMAT = None  # auto-detect from GGUF metadata (Phi-3.5 embeds its template)
 
 _SIZE_HINT        = "~2.4 GB"
 _CHECK_INTERVAL   = 86_400          # seconds — 24 h

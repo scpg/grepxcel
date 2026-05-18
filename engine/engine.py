@@ -6,6 +6,147 @@ from .logger import Logger, LogRecord, EngineError, cell_ref
 from .security import validate_file, SecurityError, DEFAULT_MAX_UNCOMPRESSED_MB
 
 
+# ── Output helpers ─────────────────────────────────────────────────────────────
+
+def _set_nested(d: dict, dotted_key: str, value) -> None:
+    """d['a']['b']['c'] = value  for  dotted_key='a.b.c'."""
+    parts = dotted_key.split('.')
+    for part in parts[:-1]:
+        d = d.setdefault(part, {})
+    d[parts[-1]] = value
+
+
+def _field_local(field_name: str) -> str:
+    """Everything after the first dot, or the full name if there is no dot."""
+    _, _, rest = field_name.partition('.')
+    return rest if rest else field_name
+
+
+def _field_group(field_name: str) -> str:
+    """Everything before the first dot, or the full name if there is no dot."""
+    return field_name.split('.', 1)[0]
+
+
+def _table_group(raw_tables_entry: dict, defs: dict) -> str:
+    """
+    Derive the top-level output key for a table match from its DATA var: fields.
+    Falls back to 'table_<index>' when no var: field has a dot.
+    """
+    counts: dict[str, int] = {}
+    for raw_row in raw_tables_entry.get('data', []):
+        for field in raw_row:
+            fd = defs.get(field)
+            if fd and fd.role == 'var' and '.' in field:
+                g = _field_group(field)
+                counts[g] = counts.get(g, 0) + 1
+    if counts:
+        return max(counts, key=lambda k: counts[k])
+    return f"table_{raw_tables_entry.get('table_index', 0)}"
+
+
+def _build_row_obj(raw_row: dict, defs: dict) -> dict:
+    """Convert a flat field→value dict into a nested object, skipping lbl: fields."""
+    obj: dict = {}
+    for field, value in raw_row.items():
+        fd = defs.get(field)
+        if fd and fd.role == 'lbl':
+            continue
+        _set_nested(obj, _field_local(field), value)
+    return obj
+
+
+def _build_nested_output(raw: dict, defs: dict) -> dict:
+    """
+    Convert the internal raw result (cells/tables) into the public nested JSON:
+      - lbl: fields are stripped
+      - var: cell fields: dot-notation → nested dicts
+      - var: table fields: per-instance {data, header, footer} objects in an array
+    """
+    out: dict = {}
+
+    # ── scalar cells ──────────────────────────────────────────────────────────
+    for field, value in raw.get('cells', {}).items():
+        fd = defs.get(field)
+        if fd and fd.role == 'lbl':
+            continue
+        _set_nested(out, field, value)
+
+    # ── table groups ──────────────────────────────────────────────────────────
+    for match in raw.get('tables', []):
+        group = _table_group(match, defs)
+        instance: dict = {}
+
+        if match.get('headers'):
+            header_obj: dict = {}
+            for raw_row in match['headers']:
+                header_obj.update(_build_row_obj(raw_row, defs))
+            if header_obj:
+                instance['header'] = header_obj
+
+        if match.get('data'):
+            data_rows = [_build_row_obj(r, defs) for r in match['data']]
+            data_rows = [r for r in data_rows if r]  # drop fully-empty rows
+            if data_rows:
+                instance['data'] = data_rows
+
+        if match.get('footers'):
+            footer_obj: dict = {}
+            for raw_row in match['footers']:
+                footer_obj.update(_build_row_obj(raw_row, defs))
+            if footer_obj:
+                instance['footer'] = footer_obj
+
+        out.setdefault(group, []).append(instance)
+
+    return out
+
+
+# ── Sheet preparation helpers ──────────────────────────────────────────────────
+
+def _expand_merged_cells(ws) -> None:
+    """
+    Fill every cell in each merged range with the top-left value so the
+    scanner sees the value in every visually merged cell.
+
+    openpyxl makes non-top-left merged cells into read-only MergedCell proxy
+    objects — writing to them raises AttributeError. The fix is to snapshot
+    each range's bounds and top-left value, unmerge everything (which removes
+    the proxies and makes all cells writable again), then fill each cell.
+    The original file on disk is never modified — this operates on the
+    in-memory workbook object only.
+    """
+    snapshots = []
+    for merged_range in list(ws.merged_cells.ranges):
+        snapshots.append((
+            merged_range.min_row, merged_range.min_col,
+            merged_range.max_row, merged_range.max_col,
+            ws.cell(merged_range.min_row, merged_range.min_col).value,
+        ))
+
+    for min_row, min_col, max_row, max_col, _ in snapshots:
+        ws.unmerge_cells(
+            start_row=min_row, start_column=min_col,
+            end_row=max_row, end_column=max_col,
+        )
+
+    for min_row, min_col, max_row, max_col, top_val in snapshots:
+        for row_num in range(min_row, max_row + 1):
+            for col_num in range(min_col, max_col + 1):
+                ws.cell(row=row_num, column=col_num).value = top_val
+
+
+def _warn_uncached_formulas(ws, logger: Logger) -> None:
+    """
+    Warn once if any cell still has data_type 'f' (formula) after loading
+    with data_only=True, which means the cached value was never written.
+    """
+    for row in ws.iter_rows():
+        for cell in row:
+            if getattr(cell, 'data_type', None) == 'f':
+                logger.warn_uncached_formulas()
+                return
+
+
 class SheetScanner:
     """
     Scans an openpyxl worksheet in a given direction.
@@ -76,7 +217,8 @@ class Engine:
                 max_file_mb: float = 5,
                 max_uncompressed_mb: float = DEFAULT_MAX_UNCOMPRESSED_MB,
                 max_cell_len: int = _MAX_REGEX_INPUT_LEN,
-                sheet: str | int | None = None) -> dict:
+                sheet: str | int | None = None,
+                output_format: str = 'nested') -> dict:
         if logger is None:
             logger = Logger()
 
@@ -126,25 +268,31 @@ class Engine:
             ws = wb[sheet]
         logger.sheet_name = ws.title
 
+        _expand_merged_cells(ws)
+        _warn_uncached_formulas(ws, logger)
+
         logger.engine_start(pattern_file, data_file)
         logger.sheet_info(ws.title, ws.max_row, ws.max_column, global_config.read_direction)
 
         scanner = SheetScanner(ws, global_config)
-        result = {'cells': {}, 'tables': []}
+        _raw = {'cells': {}, 'tables': []}  # internal flat format (stats + legacy output)
         table_index = 0
 
         try:
             for instruction in start_sequence:
                 if isinstance(instruction, CellInstruction):
-                    self._process_cell(instruction, scanner, defs, global_config, result, logger)
+                    self._process_cell(instruction, scanner, defs, global_config, _raw, logger)
                 elif isinstance(instruction, TableInstruction):
-                    self._process_table(instruction, scanner, defs, result, table_index, logger)
+                    self._process_table(instruction, scanner, defs, _raw, table_index, logger)
                     table_index += 1
         except EngineError:
             pass  # already logged; return partial result
 
-        logger.summary(result)
-        return result
+        logger.summary(_raw)
+
+        if output_format == 'legacy':
+            return _raw
+        return _build_nested_output(_raw, defs)
 
     # -------------------------------------------------------------------------
     # cell:1 processing

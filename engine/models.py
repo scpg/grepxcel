@@ -11,8 +11,9 @@ class Config:
 @dataclass
 class FieldDef:
     name: str
-    type: str   # string | integer | currency | date | datetime | timestamp
+    type: str        # string | integer | currency | date | datetime | timestamp
     regex: str
+    role: str = 'var'  # 'var' (extract → output) or 'lbl' (anchor only, never output)
 
 
 @dataclass

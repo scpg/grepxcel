@@ -20,20 +20,26 @@ This rule has no exceptions.
 ## Running tests
 
 ```bash
-source .venv/bin/activate
-pytest tests/
+.venv/bin/pytest tests/
 ```
 
 ## Running the CLI
 
 ```bash
-source .venv/bin/activate
-grepxcel -p pattern.xlsx data.xlsx
-grepxcel -p pattern.xlsx data.xlsx -v --output output/
-grepxcel -p pattern.xlsx data.xlsx -vv            # debug: anchor probes
-grepxcel -p pattern.xlsx data.xlsx -d             # same as -vv
-grepxcel -p pattern.xlsx data.xlsx --sheet Sheet2
+.venv/bin/grepxcel -p pattern.xlsx data.xlsx
+.venv/bin/grepxcel -p pattern.xlsx data.xlsx -v --output output/
+.venv/bin/grepxcel -p pattern.xlsx data.xlsx -vv            # debug: anchor probes
+.venv/bin/grepxcel -p pattern.xlsx data.xlsx -d             # same as -vv
+.venv/bin/grepxcel -p pattern.xlsx data.xlsx --sheet Sheet2
 ```
+
+> **Note on venv activation:** `source .venv/bin/activate` is not needed.
+> Both `grepxcel` and `pytest` are installed with a shebang pointing directly to
+> `.venv/bin/python3`, so calling them by their full path is fully self-contained.
+> Claude Code allowlists `Bash(.venv/bin/pytest *)` and `Bash(.venv/bin/grepxcel *)`
+> in `.claude/settings.local.json` — `source` cannot be allowlisted because it is a
+> shell builtin that modifies shell state and Claude Code intentionally blocks
+> compound commands (`&&`, `||`, `;`) from matching permission patterns.
 
 ### CLI parameters
 

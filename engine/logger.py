@@ -384,6 +384,15 @@ class Logger:
         rec._formatted = '\n'.join(lines)
         return rec
 
+    def warn_uncached_formulas(self) -> None:
+        """Emit a one-time warning when the data file contains uncached formula cells."""
+        msg = (
+            'Sheet contains formula cells whose cached values are missing. '
+            'Open the file in Excel or LibreOffice, save it, and re-run grepxcel '
+            'to ensure formula results are available.'
+        )
+        self._write(VerbosityLevel.NORMAL, f'\n  ⚠  {msg}')
+
     def fatal(self, message: str, location: str = '',
               expected: str = '', found: str = '') -> NoReturn:
         """Log a fatal error and raise EngineError to stop processing."""

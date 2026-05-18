@@ -36,30 +36,37 @@ class TestSimpleInvoice:
     def test_no_warnings(self):
         assert self.lg.issues() == []
 
-    def test_cell_count(self):
-        assert len(self.result['cells']) == 8  # 8 named fields (no IGNOREs in output)
+    def test_top_level_keys(self):
+        assert set(self.result.keys()) == {'inv', 'client', 'amount'}
 
-    def test_no_tables(self):
-        assert self.result['tables'] == []
+    def test_no_tables_key(self):
+        assert 'tables' not in self.result
 
     def test_invoice_number(self):
-        assert self.result['cells']['inv.number'] == 'AB123456'
+        assert self.result['inv']['number'] == 'AB123456'
 
     def test_invoice_date_is_date(self):
-        d = self.result['cells']['inv.date']
+        d = self.result['inv']['date']
+        assert isinstance(d, (datetime.date, datetime.datetime))
+
+    def test_invoice_due_date_is_date(self):
+        d = self.result['inv']['due_date']
         assert isinstance(d, (datetime.date, datetime.datetime))
 
     def test_client_name(self):
-        assert self.result['cells']['client.name'] == 'Alice Wonderland'
+        assert self.result['client']['name'] == 'Alice Wonderland'
 
     def test_client_email(self):
-        assert self.result['cells']['client.email'] == 'alice@wonderland.example'
+        assert self.result['client']['email'] == 'alice@wonderland.example'
 
     def test_net_amount(self):
-        assert self.result['cells']['amount.net'] == 120.0
+        assert self.result['amount']['net'] == 120.0
+
+    def test_vat_amount(self):
+        assert self.result['amount']['vat'] == 24.0
 
     def test_total_amount(self):
-        assert self.result['cells']['amount.gross'] == 144.0
+        assert self.result['amount']['gross'] == 144.0
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -76,51 +83,43 @@ class TestProductCatalog:
     def test_no_warnings(self):
         assert self.lg.issues() == []
 
-    def test_no_standalone_cells(self):
-        assert self.result['cells'] == {}
+    def test_only_item_key(self):
+        assert set(self.result.keys()) == {'item'}
 
     def test_three_instances_found(self):
-        assert len(self.result['tables']) == 3
-
-    def test_all_same_table_group(self):
-        indices = {t['table_index'] for t in self.result['tables']}
-        assert indices == {0}
-
-    def test_instance_indices(self):
-        inst = [t['instance_index'] for t in self.result['tables']]
-        assert inst == [0, 1, 2]
+        assert len(self.result['item']) == 3
 
     def test_electronics_row_count(self):
-        t0 = self.result['tables'][0]
-        assert len(t0['data']) == 3
+        assert len(self.result['item'][0]['data']) == 3
 
     def test_stationery_row_count(self):
-        t1 = self.result['tables'][1]
-        assert len(t1['data']) == 2
+        assert len(self.result['item'][1]['data']) == 2
 
     def test_furniture_row_count(self):
-        t2 = self.result['tables'][2]
-        assert len(t2['data']) == 3
+        assert len(self.result['item'][2]['data']) == 3
 
-    def test_electronics_header(self):
-        header = self.result['tables'][0]['headers'][0]
-        assert header['header.product'] == 'Product'
-        assert header['header.sku'] == 'SKU'
+    def test_no_header_in_output(self):
+        # col_product etc. are lbl: fields — never in output
+        for instance in self.result['item']:
+            assert 'header' not in instance
+
+    def test_data_row_keys(self):
+        first_row = self.result['item'][0]['data'][0]
+        assert set(first_row.keys()) == {'name', 'sku', 'qty', 'price'}
 
     def test_first_item_sku(self):
-        first_row = self.result['tables'][0]['data'][0]
-        assert first_row['item.sku'] == 'ELC001'
+        assert self.result['item'][0]['data'][0]['sku'] == 'ELC001'
 
     def test_all_skus_valid(self):
         import re
-        for table in self.result['tables']:
-            for row in table['data']:
-                assert re.fullmatch(r'[A-Z]{3}[0-9]{3}', row['item.sku'])
+        for instance in self.result['item']:
+            for row in instance['data']:
+                assert re.fullmatch(r'[A-Z]{3}[0-9]{3}', row['sku'])
 
     def test_quantities_are_integers(self):
-        for table in self.result['tables']:
-            for row in table['data']:
-                assert isinstance(row['item.qty'], int)
+        for instance in self.result['item']:
+            for row in instance['data']:
+                assert isinstance(row['qty'], int)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -145,43 +144,55 @@ class TestPurchaseOrder:
         w = self.lg.issues()[0]
         assert 'does not match' in w.message
 
-    def test_cell_count(self):
-        # lbl.po, po.number, lbl.date, po.date, lbl.vendor, vendor.name, lbl.ref, vendor.ref
-        assert len(self.result['cells']) == 8
+    def test_cell_groups_present(self):
+        assert set(self.result.keys()) >= {'po', 'vendor', 'row'}
+
+    def test_po_group_keys(self):
+        assert set(self.result['po'].keys()) == {'number', 'date'}
+
+    def test_vendor_group_keys(self):
+        assert set(self.result['vendor'].keys()) == {'name', 'ref'}
+
+    def test_no_label_fields_in_output(self):
+        # po_label, date_label, vendor_label, ref_label are lbl: — must not appear
+        for key in ('po_label', 'date_label', 'vendor_label', 'ref_label'):
+            assert key not in self.result
 
     def test_po_number(self):
-        assert self.result['cells']['po.number'] == 'PO-2026'
+        assert self.result['po']['number'] == 'PO-2026'
 
     def test_vendor_name(self):
-        assert self.result['cells']['vendor.name'] == 'Acme Supplies'
+        assert self.result['vendor']['name'] == 'Acme Supplies'
+
+    def test_vendor_ref(self):
+        assert self.result['vendor']['ref'] == 'ACME001'
 
     def test_po_date_is_date(self):
-        d = self.result['cells']['po.date']
+        d = self.result['po']['date']
         assert isinstance(d, (datetime.date, datetime.datetime))
 
     def test_one_table_instance(self):
-        assert len(self.result['tables']) == 1
+        assert len(self.result['row']) == 1
 
     def test_table_has_three_data_rows(self):
-        assert len(self.result['tables'][0]['data']) == 3
+        assert len(self.result['row'][0]['data']) == 3
 
-    def test_table_has_header(self):
-        h = self.result['tables'][0]['headers'][0]
-        assert h['col.item'] == 'Item'
-        assert h['col.total'] == 'Total'
+    def test_no_header_in_output(self):
+        # col_item etc. are lbl: fields — never in output
+        assert 'header' not in self.result['row'][0]
 
     def test_table_has_footer(self):
-        f = self.result['tables'][0]['footers'][0]
-        assert f['footer.label'] == 'Grand Total'
-        assert f['footer.value'] == 3030.0
+        f = self.result['row'][0]['footer']
+        assert f['label'] == 'Grand Total'
+        assert f['value'] == 3030.0
 
     def test_first_line_item(self):
-        row = self.result['tables'][0]['data'][0]
-        assert row['row.item'] == 'Laptop'
-        assert row['row.qty'] == 2
-        assert row['row.total'] == 2400.0
+        row = self.result['row'][0]['data'][0]
+        assert row['item'] == 'Laptop'
+        assert row['qty'] == 2
+        assert row['total'] == 2400.0
 
     def test_short_name_item_still_extracted(self):
         # "X" fails the regex but DATA rows are lenient — value is still extracted
-        row = self.result['tables'][0]['data'][1]
-        assert row['row.item'] == 'X'
+        row = self.result['row'][0]['data'][1]
+        assert row['item'] == 'X'
