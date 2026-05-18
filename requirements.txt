@@ -1,5 +1,2 @@
 openpyxl>=3.1
 defusedxml>=0.7       # openpyxl uses this automatically when present (XXE protection)
-llama-cpp-python>=0.2.90   # in-process GGUF inference for 'grepxcel suggest'
-huggingface_hub>=0.23      # model download and update checks
-pytest>=8.0

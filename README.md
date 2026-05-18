@@ -1,12 +1,14 @@
 # grepxcel
 
-> Pattern-based data extraction for Excel — define what to look for, run, get structured data.
+> Pattern-based data extraction for Excel — define what to look for, run, get structured JSON.
+
+![CI](https://github.com/scpg/grepxcel/actions/workflows/ci.yml/badge.svg)
 
 ---
 
 ## What it does
 
-You describe the layout of your Excel sheet in a **pattern file** (itself an Excel file). The engine reads any matching data file and extracts cells and tables into clean, structured output — no coding required to define new patterns.
+You describe the layout of your Excel sheet in a **pattern file** (itself an Excel file). The engine reads any matching data file and extracts cells and tables into clean, hierarchical JSON — no coding required to define new patterns.
 
 Think of it as *grep for Excel*.
 
@@ -15,29 +17,62 @@ Think of it as *grep for Excel*.
 ## How it works
 
 ```
-pattern.xlsx  +  data.xlsx  →  { cells: {…}, tables: [{…}] }
+pattern.xlsx  +  data.xlsx  →  { "po": { "number": "PO-2026" }, "line": [ {…} ] }
 ```
 
-The pattern file has three sections:
+The pattern file has four row types:
 
-| Section | Purpose |
+| Row type | Purpose |
 |---|---|
-| `config:` | Read direction, currency symbol, empty-cell aliases |
-| `def:` | Field registry — name, type (`string`, `integer`, `currency`, `date`), and a validation regex |
-| `START:` … `END:` | Extraction sequence — `cell:1` for single cells, `table:*` for repeating mini-tables |
+| `config:` | Global settings: read direction, currency symbol, empty-cell aliases |
+| `lbl:` | Anchor label — matched for position, **never written to output JSON** |
+| `var:` | Data field — extracted and written to output JSON |
+| `doc:` | Comment / documentation row — ignored by the engine |
 
-The engine scans the data file in the configured direction, matches every instruction in order, and returns all extracted values.
+Between `START:` and `END:` you list the extraction sequence:
+
+- `cell:1 fieldName` — read the next non-empty cell into a field
+- `table:*` — match all instances of a repeating mini-table block
+
+Dot notation in `var:` field names creates nested output: `po.number` → `{"po": {"number": …}}`.
 
 ---
 
 ## Quick start
 
+### Install
+
 ```bash
 git clone https://github.com/scpg/grepxcel.git
 cd grepxcel
-python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
+python -m venv .venv
+.venv/bin/pip install -e .                            # core (extract command)
+.venv/bin/pip install -r requirements-suggest.txt     # optional: suggest command
 ```
+
+### CLI usage
+
+```bash
+# Extract data from an Excel file using a pattern
+.venv/bin/grepxcel extract -p pattern.xlsx data.xlsx
+
+# Write output to a directory instead of stdout
+.venv/bin/grepxcel extract -p pattern.xlsx data.xlsx -o output/
+
+# Verbose mode (step-by-step match log)
+.venv/bin/grepxcel extract -p pattern.xlsx data.xlsx -v
+
+# Legacy flat output format ({"cells":{}, "tables":[]})
+.venv/bin/grepxcel extract -p pattern.xlsx data.xlsx --format legacy
+
+# Generate a colour-coded pattern reference file
+.venv/bin/grepxcel docs -o pattern-reference.xlsx
+
+# Use a local LLM to suggest a pattern for an unseen Excel file
+.venv/bin/grepxcel suggest data.xlsx -o suggested-pattern.xlsx
+```
+
+### Python API
 
 ```python
 from engine import Engine, Logger, VerbosityLevel
@@ -45,9 +80,74 @@ from engine import Engine, Logger, VerbosityLevel
 logger = Logger(level=VerbosityLevel.NORMAL)
 result = Engine().process("pattern.xlsx", "data.xlsx", logger=logger)
 
-print(result["cells"])
-print(result["tables"])
+# Fields are grouped by dot-notation prefix
+print(result["po"]["number"])        # "PO-2026"
+print(result["vendor"]["name"])      # "Acme Supplies"
+
+# Tables are arrays of instance objects
+for row in result["line"][0]["data"]:
+    print(row["item"], row["qty"])
 ```
+
+---
+
+## Output format
+
+Fields defined with dot notation (`po.number`, `po.date`) are grouped into nested objects.
+Tables always produce an array of instance objects, each containing `data`, and optionally
+`header` and `footer` sections.
+
+```json
+{
+  "po":     { "number": "PO-2026", "date": "2026-05-01" },
+  "vendor": { "name": "Acme Supplies" },
+  "line": [
+    {
+      "data": [
+        { "item": "Laptop", "qty": 2, "price": 1200.00, "total": 2400.00 },
+        { "item": "Dock",   "qty": 6, "price":   75.00, "total":  450.00 }
+      ],
+      "footer": { "label": "Grand Total", "value": 3030.00 }
+    }
+  ]
+}
+```
+
+Label fields (`lbl:`) are used only for positional anchoring and are never included in output.
+
+---
+
+## CLI reference
+
+### `grepxcel extract`
+
+| Flag | Default | Purpose |
+|---|---|---|
+| `-p FILE` | required | Pattern xlsx file |
+| `--format` | `nested` | Output format: `nested` (default) or `legacy` |
+| `-o DIR` | — | Write JSON to directory (stdout if omitted) |
+| `-l FILE` | — | Append structured log to file |
+| `-v` / `-vv` | off | Verbosity: step-by-step / anchor probes |
+| `-d` / `--debug` | off | Same as `-vv` |
+| `--max-size MB` | 5 | Compressed file size limit |
+| `--max-uncompressed MB` | 50 | Uncompressed ZIP content limit (ZIP bomb guard) |
+| `--max-cell-len N` | 1000 | Max cell chars fed to regex (ReDoS guard) |
+| `--sheet NAME_OR_INDEX` | active | Sheet name or 0-based index to process |
+
+### `grepxcel docs`
+
+| Flag | Default | Purpose |
+|---|---|---|
+| `-o FILE` | `pattern-reference.xlsx` | Output path for the reference file |
+
+### `grepxcel suggest`
+
+Requires `requirements-suggest.txt` to be installed (local LLM — no data sent externally).
+
+| Flag | Default | Purpose |
+|---|---|---|
+| `-o FILE` | — | Write suggested pattern to this path |
+| `--model FILE` | auto-download | Path to a GGUF model file |
 
 ---
 
@@ -65,12 +165,13 @@ print(result["tables"])
 ## Project layout
 
 ```
-engine/          ← importable Python package
+engine/          ← importable Python package (engine, parser, models, security, cli, suggester)
 tests/
   fixtures/      ← pattern + data xlsx pairs (one folder per scenario)
   unit/          ← pytest unit tests
   integration/   ← pytest integration tests
-samples/         ← reference pattern files
+docs/            ← additional documentation
+tmp-scripts/     ← throwaway scripts (gitignored)
 samples.local/   ← local-only files, never synced  (gitignored)
 logs/            ← log file output                 (gitignored)
 output/          ← JSON extraction results         (gitignored)
@@ -81,14 +182,30 @@ output/          ← JSON extraction results         (gitignored)
 ## Running the tests
 
 ```bash
-pytest
+.venv/bin/pytest tests/ -q
 ```
 
-91 tests across 3 fixture scenarios — all green.
+195 tests across 3 fixture scenarios — all green.
 
 ---
 
 ## Requirements
 
 - Python 3.10+
-- openpyxl
+- `openpyxl >= 3.1`
+- `defusedxml >= 0.7`
+- `llama-cpp-python >= 0.2.90` and `huggingface_hub >= 0.23` — only for `grepxcel suggest`
+
+---
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). All PRs target the `dev` branch.
+
+## Security
+
+See [SECURITY.md](SECURITY.md) for how to report vulnerabilities privately.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
