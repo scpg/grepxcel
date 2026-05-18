@@ -171,7 +171,7 @@ tests/
   unit/          ← pytest unit tests
   integration/   ← pytest integration tests
 docs/            ← additional documentation
-tmp-scripts/     ← throwaway scripts (gitignored)
+tmp.local/     ← throwaway scripts (gitignored)
 samples.local/   ← local-only files, never synced  (gitignored)
 logs/            ← log file output                 (gitignored)
 output/          ← JSON extraction results         (gitignored)
