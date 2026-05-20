@@ -319,7 +319,7 @@ class TestExpenseReport:
 
 class TestMergedCells:
     def setup_method(self):
-        self.result, self.lg = run('06_merged_cells')
+        self.result, self.lg = run('06_merged_cells', sheet='2026')
 
     def test_no_errors(self):
         assert not self.lg.has_errors()
@@ -364,6 +364,48 @@ class TestMergedCells:
 
     def test_no_header_in_output(self):
         assert 'header' not in self.result['item'][0]
+
+
+class TestMergedCells2025:
+    """Second sheet ('2025'): 3 side-by-side tables, each with Hardware/Software/Others
+    category columns (vertically merged). Prices double with each table.
+    table:* in the pattern finds all three instances."""
+
+    def setup_method(self):
+        self.result, self.lg = run('06_merged_cells', sheet='2025')
+
+    def test_no_errors(self):
+        assert not self.lg.has_errors()
+
+    def test_no_warnings(self):
+        assert self.lg.issues() == []
+
+    def test_horizontal_merge_title(self):
+        assert self.result['report']['title'] == 'SALES CATALOGUE 2025'
+
+    def test_three_instances_found(self):
+        assert len(self.result['item']) == 3
+
+    def test_each_instance_ten_data_rows(self):
+        for inst in self.result['item']:
+            assert len(inst['data']) == 10
+
+    def test_categories_all_instances(self):
+        expected = (
+            ['Hardware'] * 3 + ['Software'] * 3 + ['Others'] * 4
+        )
+        for inst in self.result['item']:
+            assert [r['category'] for r in inst['data']] == expected
+
+    def test_footer_totals_double_each_table(self):
+        totals = [inst['footer']['total'] for inst in self.result['item']]
+        assert abs(totals[0] - 3369.98) < 0.01
+        assert abs(totals[1] - 6739.96) < 0.01
+        assert abs(totals[2] - 13479.92) < 0.01
+
+    def test_all_footers_grand_total_label(self):
+        for inst in self.result['item']:
+            assert inst['footer']['label'] == 'Grand Total'
 
 
 # ─────────────────────────────────────────────────────────────────────────────
