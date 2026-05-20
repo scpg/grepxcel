@@ -11,13 +11,15 @@ from engine import Engine, Logger, VerbosityLevel
 FIXTURES = os.path.join(os.path.dirname(__file__), '..', 'fixtures')
 
 
-def run(fixture_name: str):
+def run(fixture_name: str, sheet=None):
     folder = os.path.join(FIXTURES, fixture_name)
     lg = Logger(level=VerbosityLevel.QUIET)
+    kwargs = {} if sheet is None else {'sheet': sheet}
     result = Engine().process(
         pattern_file=os.path.join(folder, 'pattern.xlsx'),
         data_file=os.path.join(folder, 'data.xlsx'),
         logger=lg,
+        **kwargs,
     )
     return result, lg
 
@@ -196,3 +198,517 @@ class TestPurchaseOrder:
         # "X" fails the regex but DATA rows are lenient — value is still extracted
         row = self.result['row'][0]['data'][1]
         assert row['item'] == 'X'
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 04: Bank Statement
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestBankStatement:
+    def setup_method(self):
+        self.result, self.lg = run('04_bank_statement')
+
+    def test_no_errors(self):
+        assert not self.lg.has_errors()
+
+    def test_no_warnings(self):
+        assert self.lg.issues() == []
+
+    def test_top_level_keys(self):
+        assert set(self.result.keys()) == {'account', 'txn'}
+
+    def test_account_holder(self):
+        assert self.result['account']['holder'] == 'Jane Smith'
+
+    def test_account_number(self):
+        assert self.result['account']['number'] == 'GB29NWBK60161331926819'
+
+    def test_account_period(self):
+        assert self.result['account']['period'] == 'January 2026'
+
+    def test_one_table_instance(self):
+        assert len(self.result['txn']) == 1
+
+    def test_five_data_rows(self):
+        assert len(self.result['txn'][0]['data']) == 5
+
+    def test_first_row_description(self):
+        assert self.result['txn'][0]['data'][0]['description'] == 'Opening Balance'
+
+    def test_footer_label(self):
+        assert self.result['txn'][0]['footer']['label'] == 'Totals'
+
+    def test_footer_debits(self):
+        assert self.result['txn'][0]['footer']['debits'] == 455.5
+
+    def test_footer_credits(self):
+        assert self.result['txn'][0]['footer']['credits'] == 5700.0
+
+    def test_no_header_in_output(self):
+        assert 'header' not in self.result['txn'][0]
+
+    def test_data_row_keys(self):
+        keys = set(self.result['txn'][0]['data'][0].keys())
+        assert keys == {'date', 'description', 'debit', 'credit', 'balance'}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 05: Expense Report
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestExpenseReport:
+    def setup_method(self):
+        self.result, self.lg = run('05_expense_report')
+
+    def test_no_errors(self):
+        assert not self.lg.has_errors()
+
+    def test_no_warnings(self):
+        assert self.lg.issues() == []
+
+    def test_top_level_keys(self):
+        assert set(self.result.keys()) == {'emp', 'exp'}
+
+    def test_employee_name(self):
+        assert self.result['emp']['name'] == 'John Smith'
+
+    def test_employee_department(self):
+        assert self.result['emp']['department'] == 'Engineering'
+
+    def test_employee_period(self):
+        assert self.result['emp']['period'] == 'Q1 2026'
+
+    def test_employee_manager(self):
+        assert self.result['emp']['manager'] == 'Jane Doe'
+
+    def test_three_table_instances(self):
+        assert len(self.result['exp']) == 3
+
+    def test_travel_row_count(self):
+        assert len(self.result['exp'][0]['data']) == 3
+
+    def test_meals_row_count(self):
+        assert len(self.result['exp'][1]['data']) == 3
+
+    def test_accommodation_row_count(self):
+        assert len(self.result['exp'][2]['data']) == 2
+
+    def test_travel_subtotal(self):
+        assert self.result['exp'][0]['footer']['amount'] == 450.0
+
+    def test_meals_subtotal(self):
+        assert self.result['exp'][1]['footer']['amount'] == 168.5
+
+    def test_accommodation_subtotal(self):
+        assert self.result['exp'][2]['footer']['amount'] == 390.0
+
+    def test_all_footers_have_label(self):
+        for inst in self.result['exp']:
+            assert inst['footer']['label'] == 'Subtotal'
+
+    def test_receipt_numbers_valid(self):
+        import re
+        for inst in self.result['exp']:
+            for row in inst['data']:
+                assert re.fullmatch(r'REC[0-9]+', row['receipt'])
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 06: Merged Cells (horizontal title + vertical category column)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestMergedCells:
+    def setup_method(self):
+        self.result, self.lg = run('06_merged_cells')
+
+    def test_no_errors(self):
+        assert not self.lg.has_errors()
+
+    def test_no_warnings(self):
+        assert self.lg.issues() == []
+
+    def test_top_level_keys(self):
+        assert set(self.result.keys()) == {'report', 'item'}
+
+    def test_horizontal_merge_title(self):
+        assert self.result['report']['title'] == 'SALES CATALOGUE 2026'
+
+    def test_one_table_instance(self):
+        assert len(self.result['item']) == 1
+
+    def test_six_data_rows(self):
+        assert len(self.result['item'][0]['data']) == 6
+
+    def test_vertical_merge_hardware_category(self):
+        rows = self.result['item'][0]['data']
+        # A3:A5 merged — rows 0,1,2 must all carry 'Hardware'
+        for row in rows[:3]:
+            assert row['category'] == 'Hardware', \
+                f"Expected 'Hardware', got {row['category']!r}"
+
+    def test_vertical_merge_software_category(self):
+        rows = self.result['item'][0]['data']
+        # A6:A8 merged — rows 3,4,5 must all carry 'Software'
+        for row in rows[3:]:
+            assert row['category'] == 'Software', \
+                f"Expected 'Software', got {row['category']!r}"
+
+    def test_no_none_categories(self):
+        for row in self.result['item'][0]['data']:
+            assert row['category'] is not None
+
+    def test_footer_grand_total(self):
+        footer = self.result['item'][0]['footer']
+        assert footer['label'] == 'Grand Total'
+        assert abs(footer['total'] - 2369.98) < 0.01
+
+    def test_no_header_in_output(self):
+        assert 'header' not in self.result['item'][0]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 07: Timesheet
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestTimesheet:
+    def setup_method(self):
+        self.result, self.lg = run('07_timesheet')
+
+    def test_no_errors(self):
+        assert not self.lg.has_errors()
+
+    def test_no_warnings(self):
+        assert self.lg.issues() == []
+
+    def test_top_level_keys(self):
+        assert set(self.result.keys()) == {'emp', 'day'}
+
+    def test_employee_name(self):
+        assert self.result['emp']['name'] == 'Bob Martin'
+
+    def test_employee_project(self):
+        assert self.result['emp']['project'] == 'grepxcel v2'
+
+    def test_week_start_is_date(self):
+        d = self.result['emp']['week_start']
+        assert isinstance(d, (datetime.date, datetime.datetime))
+
+    def test_one_table_instance(self):
+        assert len(self.result['day']) == 1
+
+    def test_seven_data_rows(self):
+        assert len(self.result['day'][0]['data']) == 7
+
+    def test_day_names(self):
+        names = [row['name'] for row in self.result['day'][0]['data']]
+        assert names == ['Monday', 'Tuesday', 'Wednesday', 'Thursday',
+                         'Friday', 'Saturday', 'Sunday']
+
+    def test_zero_hours_weekend(self):
+        rows = self.result['day'][0]['data']
+        assert rows[5]['hours'] == 0.0  # Saturday
+        assert rows[6]['hours'] == 0.0  # Sunday
+
+    def test_footer_total_hours(self):
+        f = self.result['day'][0]['footer']
+        assert f['label'] == 'Total Hours'
+        assert f['hours'] == 37.0
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 08: Price List
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestPriceList:
+    def setup_method(self):
+        self.result, self.lg = run('08_price_list')
+
+    def test_no_errors(self):
+        assert not self.lg.has_errors()
+
+    def test_no_warnings(self):
+        assert self.lg.issues() == []
+
+    def test_top_level_keys(self):
+        assert set(self.result.keys()) == {'supplier', 'validity', 'prod'}
+
+    def test_supplier_name(self):
+        assert self.result['supplier']['name'] == 'TechDistrib GmbH'
+
+    def test_supplier_ref(self):
+        assert self.result['supplier']['ref'] == 'TD-2026-Q2'
+
+    def test_validity_dates_are_dates(self):
+        assert isinstance(self.result['validity']['from'],
+                          (datetime.date, datetime.datetime))
+        assert isinstance(self.result['validity']['to'],
+                          (datetime.date, datetime.datetime))
+
+    def test_three_table_instances(self):
+        assert len(self.result['prod']) == 3
+
+    def test_electronics_count(self):
+        assert len(self.result['prod'][0]['data']) == 3
+
+    def test_cables_count(self):
+        assert len(self.result['prod'][1]['data']) == 4
+
+    def test_storage_count(self):
+        assert len(self.result['prod'][2]['data']) == 2
+
+    def test_no_footer(self):
+        for inst in self.result['prod']:
+            assert 'footer' not in inst
+
+    def test_product_codes_valid(self):
+        import re
+        for inst in self.result['prod']:
+            for row in inst['data']:
+                assert re.fullmatch(r'[A-Z]{2}[0-9]{4}', row['code'])
+
+    def test_data_row_keys(self):
+        keys = set(self.result['prod'][0]['data'][0].keys())
+        assert keys == {'code', 'name', 'unit', 'price'}
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 09: Sales by Region
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestSalesByRegion:
+    def setup_method(self):
+        self.result, self.lg = run('09_sales_by_region')
+
+    def test_no_errors(self):
+        assert not self.lg.has_errors()
+
+    def test_no_warnings(self):
+        assert self.lg.issues() == []
+
+    def test_top_level_keys(self):
+        assert set(self.result.keys()) == {'report', 'sale'}
+
+    def test_report_period(self):
+        assert self.result['report']['period'] == 'Q1 2026'
+
+    def test_report_currency(self):
+        assert self.result['report']['currency'] == 'EUR'
+
+    def test_three_table_instances(self):
+        assert len(self.result['sale']) == 3
+
+    def test_europe_row_count(self):
+        assert len(self.result['sale'][0]['data']) == 3
+
+    def test_americas_row_count(self):
+        assert len(self.result['sale'][1]['data']) == 2
+
+    def test_asia_row_count(self):
+        assert len(self.result['sale'][2]['data']) == 3
+
+    def test_footer_labels(self):
+        labels = [inst['footer']['label'] for inst in self.result['sale']]
+        assert labels == ['Europe Total', 'Americas Total', 'Asia Total']
+
+    def test_europe_revenue(self):
+        assert self.result['sale'][0]['footer']['revenue'] == 756000.0
+
+    def test_americas_revenue(self):
+        assert self.result['sale'][1]['footer']['revenue'] == 878000.0
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 10: Delivery Note
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestDeliveryNote:
+    def setup_method(self):
+        self.result, self.lg = run('10_delivery_note')
+
+    def test_no_errors(self):
+        assert not self.lg.has_errors()
+
+    def test_no_warnings(self):
+        assert self.lg.issues() == []
+
+    def test_top_level_keys(self):
+        assert set(self.result.keys()) == {'supplier', 'order', 'delivery', 'line'}
+
+    def test_supplier_name(self):
+        assert self.result['supplier']['name'] == 'Acme Supplies Ltd'
+
+    def test_order_number(self):
+        assert self.result['order']['number'] == 'ORD-20260501'
+
+    def test_delivery_date_is_date(self):
+        assert isinstance(self.result['delivery']['date'],
+                          (datetime.date, datetime.datetime))
+
+    def test_delivery_address(self):
+        assert 'Warehouse' in self.result['delivery']['address']
+
+    def test_one_table_instance(self):
+        assert len(self.result['line']) == 1
+
+    def test_five_data_rows(self):
+        assert len(self.result['line'][0]['data']) == 5
+
+    def test_no_footer(self):
+        assert 'footer' not in self.result['line'][0]
+
+    def test_first_item(self):
+        row = self.result['line'][0]['data'][0]
+        assert row['item'] == 'USB-C Cables'
+        assert row['ordered'] == 100
+        assert row['delivered'] == 100
+
+    def test_partial_delivery_row(self):
+        # Wireless Mice: 50 ordered, 48 delivered
+        row = self.result['line'][0]['data'][1]
+        assert row['ordered'] == 50
+        assert row['delivered'] == 48
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 11: Loan Schedule
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestLoanSchedule:
+    def setup_method(self):
+        self.result, self.lg = run('11_loan_schedule')
+
+    def test_no_errors(self):
+        assert not self.lg.has_errors()
+
+    def test_no_warnings(self):
+        assert self.lg.issues() == []
+
+    def test_top_level_keys(self):
+        assert set(self.result.keys()) == {'loan', 'amort'}
+
+    def test_loan_amount(self):
+        assert self.result['loan']['amount'] == 10000.0
+
+    def test_loan_rate(self):
+        assert self.result['loan']['rate'] == '0.5%'
+
+    def test_loan_term(self):
+        assert self.result['loan']['term'] == 6
+
+    def test_loan_start_is_date(self):
+        assert isinstance(self.result['loan']['start'],
+                          (datetime.date, datetime.datetime))
+
+    def test_one_table_instance(self):
+        assert len(self.result['amort']) == 1
+
+    def test_six_data_rows(self):
+        assert len(self.result['amort'][0]['data']) == 6
+
+    def test_payment_numbers_sequential(self):
+        nums = [row['payment_no'] for row in self.result['amort'][0]['data']]
+        assert nums == [1, 2, 3, 4, 5, 6]
+
+    def test_footer_totals_payment(self):
+        f = self.result['amort'][0]['footer']
+        assert f['label'] == 'Totals'
+        assert abs(f['payment'] - 10175.2) < 0.01
+
+    def test_footer_totals_principal(self):
+        assert self.result['amort'][0]['footer']['principal'] == 10000.0
+
+    def test_final_balance_zero(self):
+        last_row = self.result['amort'][0]['data'][-1]
+        assert last_row['balance'] == 0.0
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 12: Multi-Sheet (extracts from 'Details' sheet, ignores 'Summary' and 'Notes')
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestMultiSheet:
+    def setup_method(self):
+        self.result, self.lg = run('12_multi_sheet', sheet='Details')
+
+    def test_no_errors(self):
+        assert not self.lg.has_errors()
+
+    def test_no_warnings(self):
+        assert self.lg.issues() == []
+
+    def test_top_level_keys(self):
+        assert set(self.result.keys()) == {'dept', 'emp'}
+
+    def test_department_name(self):
+        assert self.result['dept']['name'] == 'Engineering'
+
+    def test_department_code(self):
+        assert self.result['dept']['code'] == 'ENG-001'
+
+    def test_one_table_instance(self):
+        assert len(self.result['emp']) == 1
+
+    def test_three_staff_rows(self):
+        assert len(self.result['emp'][0]['data']) == 3
+
+    def test_staff_names(self):
+        names = [row['name'] for row in self.result['emp'][0]['data']]
+        assert names == ['Alice Brown', 'Bob Chen', 'Carol Davis']
+
+    def test_no_footer(self):
+        assert 'footer' not in self.result['emp'][0]
+
+    def test_decoy_sheet_not_extracted(self):
+        # The 'Summary' sheet has 'Department:' → 'DO NOT EXTRACT'
+        # If we accidentally read the wrong sheet we'd get that value
+        assert self.result['dept']['name'] != 'DO NOT EXTRACT'
+
+    def test_salary_values(self):
+        salaries = [row['salary'] for row in self.result['emp'][0]['data']]
+        assert salaries == [85000.0, 72000.0, 55000.0]
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 13: HR Attendance
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestHRAttendance:
+    def setup_method(self):
+        self.result, self.lg = run('13_hr_attendance')
+
+    def test_no_errors(self):
+        assert not self.lg.has_errors()
+
+    def test_no_warnings(self):
+        assert self.lg.issues() == []
+
+    def test_top_level_keys(self):
+        assert set(self.result.keys()) == {'emp', 'att'}
+
+    def test_employee_name(self):
+        assert self.result['emp']['name'] == 'Sarah Connor'
+
+    def test_employee_id(self):
+        assert self.result['emp']['id'] == 'EMP-0042'
+
+    def test_employee_year(self):
+        assert self.result['emp']['year'] == 2026
+
+    def test_one_table_instance(self):
+        assert len(self.result['att']) == 1
+
+    def test_three_month_rows(self):
+        assert len(self.result['att'][0]['data']) == 3
+
+    def test_month_names(self):
+        names = [row['month'] for row in self.result['att'][0]['data']]
+        assert names == ['January', 'February', 'March']
+
+    def test_february_zero_absences(self):
+        assert self.result['att'][0]['data'][1]['absent'] == 0
+
+    def test_footer_q1_total(self):
+        f = self.result['att'][0]['footer']
+        assert f['label'] == 'Q1 Total'
+        assert f['working'] == 65
+        assert f['absent'] == 3
