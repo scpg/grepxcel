@@ -125,6 +125,66 @@ class TestProductCatalog:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# 02b: Source Provenance (_source on table instances)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestSourceProvenance:
+    """
+    Verify that every table instance carries _source with sheet name and
+    A1-notation ref. Uses fixture 02 (three plain mini-tables, no header var:).
+    """
+    def setup_method(self):
+        self.result, _ = run('02_product_catalog')
+        self.instances = self.result['item']
+
+    def test_all_instances_have_source(self):
+        for inst in self.instances:
+            assert '_source' in inst
+
+    def test_source_keys(self):
+        for inst in self.instances:
+            assert set(inst['_source'].keys()) == {'sheet', 'ref'}
+
+    def test_source_sheet_name(self):
+        for inst in self.instances:
+            assert inst['_source']['sheet'] == 'Sheet1'
+
+    def test_source_ref_a1_notation(self):
+        import re
+        pattern = re.compile(r'^[A-Z]+\d+:[A-Z]+\d+$')
+        for inst in self.instances:
+            assert pattern.match(inst['_source']['ref'])
+
+    def test_source_refs_are_distinct(self):
+        refs = [inst['_source']['ref'] for inst in self.instances]
+        assert len(set(refs)) == len(self.instances)
+
+    def test_first_instance_ref(self):
+        # HEADER row 1 → data rows 2–4 → blank separator row 5
+        assert self.instances[0]['_source']['ref'] == 'A1:D5'
+
+    def test_second_instance_ref(self):
+        assert self.instances[1]['_source']['ref'] == 'A6:D9'
+
+    def test_third_instance_ref(self):
+        # Last table: trailing empty row 14 marks end-of-data
+        assert self.instances[2]['_source']['ref'] == 'A10:D14'
+
+    def test_refs_are_non_overlapping(self):
+        # Extract start rows from each ref and verify monotonic ordering
+        def start_row(ref):
+            return int(ref.split(':')[0].lstrip('ABCDEFGHIJKLMNOPQRSTUVWXYZ'))
+        rows = [start_row(inst['_source']['ref']) for inst in self.instances]
+        assert rows == sorted(rows)
+
+    def test_source_absent_from_scalar_cells(self):
+        # _source is only added to table instances, not to scalar cell output
+        for key, val in self.result.items():
+            if key != 'item':
+                assert not isinstance(val, dict) or '_source' not in val
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # 03: Purchase Order
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -754,3 +814,112 @@ class TestHRAttendance:
         assert f['label'] == 'Q1 Total'
         assert f['working'] == 65
         assert f['absent'] == 3
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 14: Named Tables (var: field in HEADER row)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestNamedTables:
+    """
+    Verify that a var: field placed in the HEADER row is captured in
+    instance['header'], while lbl: fields in the same row are suppressed.
+
+    Fixture layout (3 mini-tables):
+      HEADER col A = category name  (var: header.category)
+      HEADER col B = 'SKU'          (lbl: col_sku  — the specificity anchor)
+      HEADER col C = 'Qty'          (lbl: col_qty)
+      HEADER col D = 'Price'        (lbl: col_price)
+      DATA   col A = product name   (var: item.name)
+      DATA   col B = SKU value      (var: item.sku)
+      DATA   col C = quantity       (var: item.qty)
+      DATA   col D = price          (var: item.price)
+    """
+    def setup_method(self):
+        self.result, self.lg = run('14_named_tables')
+        self.instances = self.result['item']
+
+    def test_no_errors(self):
+        assert not self.lg.has_errors()
+
+    def test_no_warnings(self):
+        assert self.lg.issues() == []
+
+    def test_three_instances_found(self):
+        assert len(self.instances) == 3
+
+    def test_all_instances_have_header(self):
+        for inst in self.instances:
+            assert 'header' in inst
+
+    def test_header_has_only_category_key(self):
+        # Only the var: field appears; lbl: fields (col_sku etc.) are suppressed
+        for inst in self.instances:
+            assert set(inst['header'].keys()) == {'category'}
+
+    def test_category_names_in_order(self):
+        categories = [inst['header']['category'] for inst in self.instances]
+        assert categories == ['Electronics', 'Stationery', 'Furniture']
+
+    def test_lbl_field_values_absent_from_header(self):
+        # 'SKU', 'Qty', 'Price' are the lbl: cell values — must not leak into output
+        forbidden = {'SKU', 'Qty', 'Price'}
+        for inst in self.instances:
+            assert not forbidden & set(inst['header'].values())
+
+    def test_data_row_keys(self):
+        first_row = self.instances[0]['data'][0]
+        assert set(first_row.keys()) == {'name', 'sku', 'qty', 'price'}
+
+    def test_electronics_data_count(self):
+        assert len(self.instances[0]['data']) == 3
+
+    def test_stationery_data_count(self):
+        assert len(self.instances[1]['data']) == 2
+
+    def test_furniture_data_count(self):
+        assert len(self.instances[2]['data']) == 3
+
+    def test_electronics_first_item(self):
+        row = self.instances[0]['data'][0]
+        assert row['name'] == 'Laptop'
+        assert row['sku'] == 'ELC001'
+        assert row['qty'] == 5
+        assert row['price'] == 999.0
+
+    def test_all_skus_valid(self):
+        import re
+        for inst in self.instances:
+            for row in inst['data']:
+                assert re.fullmatch(r'[A-Z]{3}[0-9]{3}', row['sku'])
+
+    def test_quantities_are_integers(self):
+        for inst in self.instances:
+            for row in inst['data']:
+                assert isinstance(row['qty'], int)
+
+    def test_source_present_on_all_instances(self):
+        for inst in self.instances:
+            assert '_source' in inst
+
+    def test_source_sheet(self):
+        for inst in self.instances:
+            assert inst['_source']['sheet'] == 'Sheet1'
+
+    def test_source_refs_distinct(self):
+        refs = [inst['_source']['ref'] for inst in self.instances]
+        assert len(set(refs)) == 3
+
+    def test_first_instance_ref(self):
+        assert self.instances[0]['_source']['ref'] == 'A1:D5'
+
+    def test_second_instance_ref(self):
+        assert self.instances[1]['_source']['ref'] == 'A6:D9'
+
+    def test_third_instance_ref(self):
+        assert self.instances[2]['_source']['ref'] == 'A10:D14'
+
+    def test_source_has_no_name_key(self):
+        # The category name lives in instance['header'], not in _source
+        for inst in self.instances:
+            assert 'name' not in inst['_source']

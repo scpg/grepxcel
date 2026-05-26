@@ -17,6 +17,7 @@ Each fixture is a pair: pattern.xlsx (what to look for) + data.xlsx (the actual 
   11_loan_schedule       — loan parameters + 6-row amortisation table with totals
   12_multi_sheet         — data.xlsx has 3 sheets; pattern extracts from 'Details' sheet
   13_hr_attendance       — employee header + quarterly attendance table with totals
+  14_named_tables        — var: field in HEADER row captures the mini-table category name
 """
 
 import os
@@ -868,6 +869,74 @@ def fixture_13():
 
 # ─────────────────────────────────────────────────────────────────────────────
 
+# ─────────────────────────────────────────────────────────────────────────────
+# 14: Named Tables — var: field in HEADER captures the category name
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Demonstrates that var: fields work in HEADER rows: the first column of each
+# HEADER row is the category name (extracted into instance['header']['category'])
+# while the remaining columns are lbl: anchors (SKU / Qty / Price).
+#
+# The engine anchors on the lbl: columns — "SKU" in col B is the specificity
+# anchor that distinguishes HEADER rows from DATA rows.
+#
+# Data layout (3 mini-tables, same column positions):
+#   Row  1: Electronics | SKU    | Qty  | Price   ← HEADER 1
+#   Rows 2-4: data rows (Laptop/Mouse/Keyboard)
+#   Row  5: (blank separator)
+#   Row  6: Stationery  | SKU    | Qty  | Price   ← HEADER 2
+#   Rows 7-8: data rows (Pen/Notebook)
+#   Row  9: (blank separator)
+#   Row 10: Furniture   | SKU    | Qty  | Price   ← HEADER 3
+#   Rows 11-13: data rows (Chair/Desk/Lamp)
+
+def fixture_14():
+    p = Workbook(); ps = p.active; ps.title = 'Pattern'
+    for row in [
+        ['config:', 'read.direction', 'LR'],
+        # var: field — extracted from col A of each HEADER row
+        ['var:', 'header.category', 'string',   r'.+'],
+        # lbl: anchors — used only for HEADER matching, never in output
+        ['lbl:', 'col_sku',         'string',   'SKU'],
+        ['lbl:', 'col_qty',         'string',   'Qty'],
+        ['lbl:', 'col_price',       'string',   'Price'],
+        # data fields
+        ['var:', 'item.name',       'string',   r'.+'],
+        ['var:', 'item.sku',        'string',   r'[A-Z]{3}[0-9]{3}'],
+        ['var:', 'item.qty',        'integer',  r'[1-9][0-9]*'],
+        ['var:', 'item.price',      'currency', r'.*'],
+        ['START:'],
+        ['table:*'],
+        [None, 'HEADER:1', 'header.category', 'col_sku',  'col_qty',  'col_price'],
+        [None, 'DATA:*',   'item.name',        'item.sku', 'item.qty', 'item.price'],
+        ['END:'],
+    ]:
+        ps.append(row)
+
+    d = Workbook(); ds = d.active; ds.title = 'Sheet1'
+    rows = [
+        # Table 1 — Electronics (category name in col A of HEADER)
+        ('Electronics', 'SKU',    'Qty',  'Price'),
+        ('Laptop',      'ELC001', 5,      999.0),
+        ('Mouse',       'ELC002', 50,     25.0),
+        ('Keyboard',    'ELC003', 30,     45.0),
+        (None, None, None, None),
+        # Table 2 — Stationery
+        ('Stationery',  'SKU',    'Qty',  'Price'),
+        ('Pen',         'STN001', 500,    2.0),
+        ('Notebook',    'STN002', 200,    8.0),
+        (None, None, None, None),
+        # Table 3 — Furniture
+        ('Furniture',   'SKU',    'Qty',  'Price'),
+        ('Chair',       'FRN001', 10,     250.0),
+        ('Desk',        'FRN002', 5,      450.0),
+        ('Lamp',        'FRN003', 20,     35.0),
+    ]
+    for row in rows:
+        ds.append(list(row))
+    return p, d
+
+
 def main():
     print('Generating test fixtures...')
     save('01_simple_invoice',  *fixture_01())
@@ -883,6 +952,7 @@ def main():
     save('11_loan_schedule',   *fixture_11())
     save('12_multi_sheet',     *fixture_12())
     save('13_hr_attendance',   *fixture_13())
+    save('14_named_tables',    *fixture_14())
     print('Done.')
 
 

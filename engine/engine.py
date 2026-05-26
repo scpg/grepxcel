@@ -1,4 +1,5 @@
 import openpyxl
+from openpyxl.utils import get_column_letter
 from .models import Config, CellInstruction, TableInstruction, TemplateRow
 from .utils import is_empty, validate_type, _MAX_REGEX_INPUT_LEN
 from .pattern_parser import PatternParser
@@ -7,6 +8,11 @@ from .security import validate_file, SecurityError, DEFAULT_MAX_UNCOMPRESSED_MB
 
 
 # ── Output helpers ─────────────────────────────────────────────────────────────
+
+def _range_ref(r1: int, c1: int, r2: int, c2: int) -> str:
+    """Row/col bounds → Excel A1-notation range string, e.g. 'B3:E10'."""
+    return f'{get_column_letter(c1)}{r1}:{get_column_letter(c2)}{r2}'
+
 
 def _set_nested(d: dict, dotted_key: str, value) -> None:
     """d['a']['b']['c'] = value  for  dotted_key='a.b.c'."""
@@ -75,6 +81,9 @@ def _build_nested_output(raw: dict, defs: dict) -> dict:
     for match in raw.get('tables', []):
         group = _table_group(match, defs)
         instance: dict = {}
+
+        if '_source' in match:
+            instance['_source'] = match['_source']
 
         if match.get('headers'):
             header_obj: dict = {}
@@ -359,6 +368,10 @@ class Engine:
             end_row = match.pop('_end_row', anchor_row)
             end_col = match.pop('_end_col', anchor_col)
 
+            match['_source'] = {
+                'sheet': logger.sheet_name,
+                'ref': _range_ref(anchor_row, anchor_col, end_row, end_col),
+            }
             match['table_index'] = table_index
             match['instance_index'] = instance_index
             result['tables'].append(match)
