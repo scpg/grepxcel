@@ -24,6 +24,30 @@ Check `scripts/` first — a suitable utility may already exist there.
 If the script is reusable and useful to contributors, put it in `scripts/`.
 If it is exploratory or one-off, put it in `tmp.local/`.
 
+## Bootstrap boilerplate (mandatory for every new script)
+
+Every Python script in `scripts/` or `tmp.local/` **must** start with the following venv
+bootstrap block so users can run it as plain `python3 <script>` without activating the venv:
+
+**For `scripts/` scripts:**
+```python
+import os
+import sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _bootstrap import ensure_venv; ensure_venv()
+```
+
+**For `tmp.local/` scripts:**
+```python
+import os
+import sys
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'scripts'))
+from _bootstrap import ensure_venv; ensure_venv()
+```
+
+`ensure_venv()` re-execs the script with `.venv/bin/python3` transparently.
+If the venv does not exist it prints a clear error with setup instructions and exits.
+
 ## Running tests
 
 ```bash
