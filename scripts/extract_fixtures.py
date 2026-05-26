@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 Run the engine against every test fixture and write the extracted JSON to
 output/fixtures/<fixture_name>[.<sheet>].json.

@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 End-to-end verification of the 'grepxcel suggest' feature.
 

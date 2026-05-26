@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 Generate test fixture xlsx files in tests/fixtures/.
 
