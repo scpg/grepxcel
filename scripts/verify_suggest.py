@@ -1,22 +1,25 @@
 """
 End-to-end verification of the 'grepxcel suggest' feature.
 
-Run from the project root (venv activated):
-    python scripts/verify_suggest.py
+Run from the project root:
+    python3 scripts/verify_suggest.py
 
 No model download required — all LLM calls are stubbed.
 The script exits with code 0 if every test passes, 1 otherwise.
 """
 
-import datetime
-import json
 import os
 import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _bootstrap import ensure_venv; ensure_venv()
+
+import datetime
+import json
 import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-# Make sure the engine package is importable when running from project root
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import openpyxl
