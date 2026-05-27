@@ -1,8 +1,32 @@
+import re
+
 import openpyxl
+from openpyxl.utils import get_column_letter
+from openpyxl.utils.cell import coordinate_to_tuple
+
 from .models import Config, FieldDef, TemplateColumn, TemplateRow, CellInstruction, TableInstruction
 from .security import check_regex_safety, SecurityError
 
 _MAX_PATTERN_CELL_LEN = 1_000  # max characters in any pattern file cell value
+
+_A1_RE = re.compile(r'^[A-Z]{1,3}[1-9][0-9]*$', re.IGNORECASE)
+
+
+class PatternError(Exception):
+    """Raised when a pattern file contains a structural or ordering error."""
+
+
+def _coord_after(prev: tuple, new: tuple, direction: str) -> bool:
+    """Return True if `new` comes strictly after `prev` in `direction` reading order."""
+    pr, pc = prev
+    nr, nc = new
+    if direction == 'LR':
+        return (nr, nc) > (pr, pc)
+    return (nc, nr) > (pc, pr)  # TD: column primary
+
+
+def _coord_str(pos: tuple) -> str:
+    return f'{get_column_letter(pos[1])}{pos[0]}'
 
 
 class PatternParser:
@@ -22,6 +46,7 @@ class PatternParser:
 
         i = 0
         in_start = False
+        last_abs_pos: tuple | None = None  # (row, col) of last cell:XY seen
 
         while i < len(rows):
             row = self._pad(rows[i])
@@ -51,9 +76,26 @@ class PatternParser:
 
             # Inside START: section
             if col_a and col_a.startswith('cell:'):
-                mult = col_a.split(':', 1)[1]
-                field = row[1] or 'IGNORE'
-                start_sequence.append(CellInstruction(multiplicity=mult, field=str(field)))
+                raw = col_a.split(':', 1)[1]
+                field = str(row[1] or 'IGNORE')
+                if raw in ('1', 'next'):
+                    start_sequence.append(CellInstruction(multiplicity=raw, field=field))
+                elif _A1_RE.match(raw):
+                    ref = raw.upper()
+                    new_pos = coordinate_to_tuple(ref)
+                    if last_abs_pos is not None and not _coord_after(last_abs_pos, new_pos, global_config.read_direction):
+                        raise PatternError(
+                            f"cell:{ref} at pattern row {i + 1} is before or equal to the "
+                            f"previous absolute reference {_coord_str(last_abs_pos)} in "
+                            f"{global_config.read_direction} reading order — unreachable"
+                        )
+                    last_abs_pos = new_pos
+                    start_sequence.append(CellInstruction(multiplicity='abs', field=field, target=ref))
+                else:
+                    raise PatternError(
+                        f"Unknown cell instruction 'cell:{raw}' at pattern row {i + 1}. "
+                        f"Use 'cell:next', 'cell:1', or a cell coordinate like 'cell:B5'."
+                    )
                 i += 1
 
             elif col_a and col_a.startswith('table:'):

@@ -1,8 +1,9 @@
 import openpyxl
 from openpyxl.utils import get_column_letter
+from openpyxl.utils.cell import coordinate_to_tuple
 from .models import Config, CellInstruction, TableInstruction, TemplateRow
 from .utils import is_empty, validate_type, _MAX_REGEX_INPUT_LEN
-from .pattern_parser import PatternParser
+from .pattern_parser import PatternParser, PatternError
 from .logger import Logger, LogRecord, EngineError, cell_ref
 from .security import validate_file, SecurityError, DEFAULT_MAX_UNCOMPRESSED_MB
 
@@ -168,6 +169,7 @@ class SheetScanner:
         self.config = config
         self.consumed: set = set()
         self.scan_order = self._build_scan_order()
+        self.scan_order_index: dict[tuple, int] = {pos: i for i, pos in enumerate(self.scan_order)}
         self.cursor = 0
 
     def _build_scan_order(self) -> list:
@@ -244,7 +246,7 @@ class Engine:
 
         try:
             global_config, defs, start_sequence = PatternParser().parse(pattern_file)
-        except SecurityError as exc:
+        except (SecurityError, PatternError) as exc:
             logger.fatal(str(exc), found=pattern_file)
 
         try:
@@ -307,19 +309,60 @@ class Engine:
     # cell:1 processing
     # -------------------------------------------------------------------------
 
-    def _process_cell(self, instr: CellInstruction, scanner: SheetScanner,
-                      defs: dict, config: Config, result: dict, logger: Logger):
-        row, col = scanner.advance_to_next()
-        if row is None:
+    def _resolve_abs_ref(self, instr: CellInstruction, scanner: SheetScanner,
+                         defs: dict, config: Config, logger: Logger) -> tuple:
+        """
+        Resolve an absolute cell reference (e.g. 'B5') for cell:B5 instructions.
+        Validates the cursor hasn't already passed the target.
+        Returns (row, col) on success; calls logger.fatal (raises EngineError) on failure.
+        Empty-cell handling is role-aware: lbl: → fatal, var: → allow None.
+        """
+        row, col = coordinate_to_tuple(instr.target)
+
+        idx = scanner.scan_order_index.get((row, col))
+        if idx is not None and idx < scanner.cursor:
             logger.fatal(
-                f'Expected cell:{instr.multiplicity} ({instr.field!r}) but sheet is exhausted',
-                expected=f'a cell containing field {instr.field!r}',
-                found='no more non-empty cells on the sheet',
+                f"cell:{instr.target} is unreachable — the scanner has already advanced past it",
+                location=cell_ref(row, col, logger.sheet_name),
+                expected='a cell that has not yet been scanned',
+                found=f'cursor is at scan-order position {scanner.cursor}; '
+                      f'{instr.target} is at position {idx}',
             )
 
         value = scanner.cell_value(row, col)
-        scanner.consume(row, col)
-        scanner.advance_one()
+        if is_empty(value, config.empty_aliases) and instr.field != 'IGNORE':
+            fd = defs.get(instr.field)
+            fd_role = fd.role if fd else 'var'
+            if fd_role == 'lbl':
+                logger.fatal(
+                    f"Expected label '{instr.field}' at {instr.target} but cell is empty",
+                    location=cell_ref(row, col, logger.sheet_name),
+                    expected=(f"string matching {fd.regex!r}" if fd else 'a label string'),
+                    found='empty cell',
+                )
+
+        return row, col
+
+    def _process_cell(self, instr: CellInstruction, scanner: SheetScanner,
+                      defs: dict, config: Config, result: dict, logger: Logger):
+        if instr.multiplicity == 'abs':
+            row, col = self._resolve_abs_ref(instr, scanner, defs, config, logger)
+            value = scanner.cell_value(row, col)
+            scanner.consume(row, col)
+            idx = scanner.scan_order_index.get((row, col))
+            if idx is not None:
+                scanner.cursor = idx + 1
+        else:
+            row, col = scanner.advance_to_next()
+            if row is None:
+                logger.fatal(
+                    f'Expected cell:{instr.multiplicity} ({instr.field!r}) but sheet is exhausted',
+                    expected=f'a cell containing field {instr.field!r}',
+                    found='no more non-empty cells on the sheet',
+                )
+            value = scanner.cell_value(row, col)
+            scanner.consume(row, col)
+            scanner.advance_one()
 
         if instr.field == 'IGNORE':
             logger.cell_ignored(row, col, value)
@@ -336,10 +379,11 @@ class Engine:
 
         logger.cell_processed(row, col, instr.field, value)
 
-        ok, _ = validate_type(value, fd.type, fd.regex, config.currency_sign, self._max_cell_len)
-        if not ok:
-            rec = logger.warn_validation(row, col, instr.field, fd.type, fd.regex, value)
-            logger.commit_warnings([rec])
+        if value is not None:
+            ok, _ = validate_type(value, fd.type, fd.regex, config.currency_sign, self._max_cell_len)
+            if not ok:
+                rec = logger.warn_validation(row, col, instr.field, fd.type, fd.regex, value)
+                logger.commit_warnings([rec])
 
         result['cells'][instr.field] = value
 

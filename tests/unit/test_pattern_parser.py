@@ -8,7 +8,7 @@ from pathlib import Path
 import openpyxl
 import pytest
 
-from engine.pattern_parser import PatternParser
+from engine.pattern_parser import PatternParser, PatternError
 from engine.security import SecurityError
 
 
@@ -223,3 +223,150 @@ class TestPatternParserSecurity:
         wb.save(path)
         with pytest.raises(SecurityError, match='too long'):
             PatternParser().parse(path)
+
+
+# ── Cell addressing (cell:next / cell:A1) ────────────────────────────────────
+
+class TestCellAddressing:
+    def test_cell_1_parses_as_sequential(self, tmp_path):
+        path = _write_pattern([
+            ['var:', 'x', 'string', '.*'],
+            ['START:'],
+            ['cell:1', 'x'],
+            ['END:'],
+        ], tmp_path)
+        _, _, seq = PatternParser().parse(path)
+        assert seq[0].multiplicity == '1'
+        assert seq[0].target is None
+
+    def test_cell_next_parses_as_sequential(self, tmp_path):
+        path = _write_pattern([
+            ['var:', 'x', 'string', '.*'],
+            ['START:'],
+            ['cell:next', 'x'],
+            ['END:'],
+        ], tmp_path)
+        _, _, seq = PatternParser().parse(path)
+        assert seq[0].multiplicity == 'next'
+        assert seq[0].target is None
+
+    def test_cell_A1_parses_as_absolute(self, tmp_path):
+        path = _write_pattern([
+            ['var:', 'x', 'string', '.*'],
+            ['START:'],
+            ['cell:B5', 'x'],
+            ['END:'],
+        ], tmp_path)
+        _, _, seq = PatternParser().parse(path)
+        assert seq[0].multiplicity == 'abs'
+        assert seq[0].target == 'B5'
+        assert seq[0].field == 'x'
+
+    def test_absolute_ref_normalized_to_uppercase(self, tmp_path):
+        path = _write_pattern([
+            ['var:', 'x', 'string', '.*'],
+            ['START:'],
+            ['cell:b5', 'x'],
+            ['END:'],
+        ], tmp_path)
+        _, _, seq = PatternParser().parse(path)
+        assert seq[0].target == 'B5'
+
+    def test_cell_ignore_with_absolute_ref(self, tmp_path):
+        path = _write_pattern([
+            ['START:'],
+            ['cell:A1', 'IGNORE'],
+            ['END:'],
+        ], tmp_path)
+        _, _, seq = PatternParser().parse(path)
+        assert seq[0].multiplicity == 'abs'
+        assert seq[0].field == 'IGNORE'
+        assert seq[0].target == 'A1'
+
+    def test_out_of_order_absolute_refs_rejected(self, tmp_path):
+        path = _write_pattern([
+            ['var:', 'x', 'string', '.*'],
+            ['var:', 'y', 'string', '.*'],
+            ['START:'],
+            ['cell:B2', 'x'],
+            ['cell:A1', 'y'],   # A1 comes before B2 in LR order
+            ['END:'],
+        ], tmp_path)
+        with pytest.raises(PatternError, match='unreachable'):
+            PatternParser().parse(path)
+
+    def test_same_position_absolute_refs_rejected(self, tmp_path):
+        path = _write_pattern([
+            ['var:', 'x', 'string', '.*'],
+            ['var:', 'y', 'string', '.*'],
+            ['START:'],
+            ['cell:A1', 'x'],
+            ['cell:A1', 'y'],   # same cell twice
+            ['END:'],
+        ], tmp_path)
+        with pytest.raises(PatternError, match='unreachable'):
+            PatternParser().parse(path)
+
+    def test_cell_next_after_absolute_is_ok(self, tmp_path):
+        path = _write_pattern([
+            ['var:', 'x', 'string', '.*'],
+            ['var:', 'y', 'string', '.*'],
+            ['START:'],
+            ['cell:A1', 'x'],
+            ['cell:next', 'y'],  # cell:next after absolute is always fine
+            ['END:'],
+        ], tmp_path)
+        _, _, seq = PatternParser().parse(path)
+        assert len(seq) == 2
+        assert seq[0].multiplicity == 'abs'
+        assert seq[1].multiplicity == 'next'
+
+    def test_cell_next_before_absolute_is_ok(self, tmp_path):
+        path = _write_pattern([
+            ['var:', 'x', 'string', '.*'],
+            ['var:', 'y', 'string', '.*'],
+            ['START:'],
+            ['cell:next', 'x'],  # sequential before absolute is fine
+            ['cell:B5', 'y'],
+            ['END:'],
+        ], tmp_path)
+        _, _, seq = PatternParser().parse(path)
+        assert len(seq) == 2
+        assert seq[1].multiplicity == 'abs'
+
+    def test_invalid_cell_multiplicity_rejected(self, tmp_path):
+        path = _write_pattern([
+            ['START:'],
+            ['cell:foo', 'IGNORE'],
+            ['END:'],
+        ], tmp_path)
+        with pytest.raises(PatternError, match="Unknown cell instruction"):
+            PatternParser().parse(path)
+
+    def test_td_direction_ordering_validated(self, tmp_path):
+        # In TD mode, column is primary — B1 comes before A2
+        path = _write_pattern([
+            ['config:', 'read.direction', 'TD'],
+            ['var:', 'x', 'string', '.*'],
+            ['var:', 'y', 'string', '.*'],
+            ['START:'],
+            ['cell:B1', 'x'],   # col B > col A → comes first in TD
+            ['cell:A2', 'y'],   # col A < col B → A2 comes before B1 in TD
+            ['END:'],
+        ], tmp_path)
+        with pytest.raises(PatternError, match='unreachable'):
+            PatternParser().parse(path)
+
+    def test_multiple_absolute_refs_in_order(self, tmp_path):
+        path = _write_pattern([
+            ['var:', 'a', 'string', '.*'],
+            ['var:', 'b', 'string', '.*'],
+            ['var:', 'c', 'string', '.*'],
+            ['START:'],
+            ['cell:A1', 'a'],
+            ['cell:C1', 'b'],   # same row, later col
+            ['cell:B2', 'c'],   # next row
+            ['END:'],
+        ], tmp_path)
+        _, _, seq = PatternParser().parse(path)
+        assert [s.target for s in seq] == ['A1', 'C1', 'B2']
