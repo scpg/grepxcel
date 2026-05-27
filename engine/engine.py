@@ -1,12 +1,19 @@
 import openpyxl
+from openpyxl.utils import get_column_letter
+from openpyxl.utils.cell import coordinate_to_tuple
 from .models import Config, CellInstruction, TableInstruction, TemplateRow
 from .utils import is_empty, validate_type, _MAX_REGEX_INPUT_LEN
-from .pattern_parser import PatternParser
+from .pattern_parser import PatternParser, PatternError
 from .logger import Logger, LogRecord, EngineError, cell_ref
 from .security import validate_file, SecurityError, DEFAULT_MAX_UNCOMPRESSED_MB
 
 
 # ── Output helpers ─────────────────────────────────────────────────────────────
+
+def _range_ref(r1: int, c1: int, r2: int, c2: int) -> str:
+    """Row/col bounds → Excel A1-notation range string, e.g. 'B3:E10'."""
+    return f'{get_column_letter(c1)}{r1}:{get_column_letter(c2)}{r2}'
+
 
 def _set_nested(d: dict, dotted_key: str, value) -> None:
     """d['a']['b']['c'] = value  for  dotted_key='a.b.c'."""
@@ -75,6 +82,9 @@ def _build_nested_output(raw: dict, defs: dict) -> dict:
     for match in raw.get('tables', []):
         group = _table_group(match, defs)
         instance: dict = {}
+
+        if '_source' in match:
+            instance['_source'] = match['_source']
 
         if match.get('headers'):
             header_obj: dict = {}
@@ -159,6 +169,7 @@ class SheetScanner:
         self.config = config
         self.consumed: set = set()
         self.scan_order = self._build_scan_order()
+        self.scan_order_index: dict[tuple, int] = {pos: i for i, pos in enumerate(self.scan_order)}
         self.cursor = 0
 
     def _build_scan_order(self) -> list:
@@ -224,69 +235,75 @@ class Engine:
 
         self._max_cell_len = max_cell_len
 
-        # Security: validate both files before openpyxl touches them
-        for path in (pattern_file, data_file):
-            try:
-                validate_file(path,
-                              max_file_mb=max_file_mb,
-                              max_uncompressed_mb=max_uncompressed_mb)
-            except SecurityError as exc:
-                logger.fatal(str(exc), found=path)
-
-        try:
-            global_config, defs, start_sequence = PatternParser().parse(pattern_file)
-        except SecurityError as exc:
-            logger.fatal(str(exc), found=pattern_file)
-
-        try:
-            wb = openpyxl.load_workbook(data_file, data_only=True)
-        except Exception as exc:
-            logger.fatal(
-                f'Failed to open the data file: {exc}',
-                found=data_file,
-                expected='a valid, uncorrupted .xlsx workbook',
-            )
-
-        if sheet is None:
-            ws = wb.active
-        elif isinstance(sheet, int):
-            if sheet < 0 or sheet >= len(wb.worksheets):
-                logger.fatal(
-                    f'Sheet index {sheet} is out of range '
-                    f'(workbook has {len(wb.worksheets)} sheet(s))',
-                    found=str(sheet),
-                    expected=f'an index between 0 and {len(wb.worksheets) - 1}',
-                )
-            ws = wb.worksheets[sheet]
-        else:
-            if sheet not in wb.sheetnames:
-                logger.fatal(
-                    f'Sheet {sheet!r} not found in workbook',
-                    found=sheet,
-                    expected=f'one of: {", ".join(wb.sheetnames)}',
-                )
-            ws = wb[sheet]
-        logger.sheet_name = ws.title
-
-        _expand_merged_cells(ws)
-        _warn_uncached_formulas(ws, logger)
-
-        logger.engine_start(pattern_file, data_file)
-        logger.sheet_info(ws.title, ws.max_row, ws.max_column, global_config.read_direction)
-
-        scanner = SheetScanner(ws, global_config)
+        defs = {}
         _raw = {'cells': {}, 'tables': []}  # internal flat format (stats + legacy output)
-        table_index = 0
 
         try:
-            for instruction in start_sequence:
-                if isinstance(instruction, CellInstruction):
-                    self._process_cell(instruction, scanner, defs, global_config, _raw, logger)
-                elif isinstance(instruction, TableInstruction):
-                    self._process_table(instruction, scanner, defs, _raw, table_index, logger)
-                    table_index += 1
+            # Security: validate both files before openpyxl touches them
+            for path in (pattern_file, data_file):
+                try:
+                    validate_file(path,
+                                  max_file_mb=max_file_mb,
+                                  max_uncompressed_mb=max_uncompressed_mb)
+                except SecurityError as exc:
+                    logger.fatal(str(exc), found=path)
+
+            try:
+                global_config, defs, start_sequence = PatternParser().parse(pattern_file)
+            except (SecurityError, PatternError) as exc:
+                logger.fatal(str(exc), found=pattern_file)
+
+            try:
+                wb = openpyxl.load_workbook(data_file, data_only=True)
+            except Exception as exc:
+                logger.fatal(
+                    f'Failed to open the data file: {exc}',
+                    found=data_file,
+                    expected='a valid, uncorrupted .xlsx workbook',
+                )
+
+            if sheet is None:
+                ws = wb.active
+            elif isinstance(sheet, int):
+                if sheet < 0 or sheet >= len(wb.worksheets):
+                    logger.fatal(
+                        f'Sheet index {sheet} is out of range '
+                        f'(workbook has {len(wb.worksheets)} sheet(s))',
+                        found=str(sheet),
+                        expected=f'an index between 0 and {len(wb.worksheets) - 1}',
+                    )
+                ws = wb.worksheets[sheet]
+            else:
+                if sheet not in wb.sheetnames:
+                    logger.fatal(
+                        f'Sheet {sheet!r} not found in workbook',
+                        found=sheet,
+                        expected=f'one of: {", ".join(wb.sheetnames)}',
+                    )
+                ws = wb[sheet]
+            logger.sheet_name = ws.title
+
+            _expand_merged_cells(ws)
+            _warn_uncached_formulas(ws, logger)
+
+            logger.engine_start(pattern_file, data_file)
+            logger.sheet_info(ws.title, ws.max_row, ws.max_column, global_config.read_direction)
+
+            scanner = SheetScanner(ws, global_config)
+            table_index = 0
+
+            try:
+                for instruction in start_sequence:
+                    if isinstance(instruction, CellInstruction):
+                        self._process_cell(instruction, scanner, defs, global_config, _raw, logger)
+                    elif isinstance(instruction, TableInstruction):
+                        self._process_table(instruction, scanner, defs, _raw, table_index, logger)
+                        table_index += 1
+            except EngineError:
+                pass  # already logged; return partial result
+
         except EngineError:
-            pass  # already logged; return partial result
+            pass  # setup-phase fatal; already logged, return partial result
 
         logger.summary(_raw)
 
@@ -298,19 +315,60 @@ class Engine:
     # cell:1 processing
     # -------------------------------------------------------------------------
 
-    def _process_cell(self, instr: CellInstruction, scanner: SheetScanner,
-                      defs: dict, config: Config, result: dict, logger: Logger):
-        row, col = scanner.advance_to_next()
-        if row is None:
+    def _resolve_abs_ref(self, instr: CellInstruction, scanner: SheetScanner,
+                         defs: dict, config: Config, logger: Logger) -> tuple:
+        """
+        Resolve an absolute cell reference (e.g. 'B5') for cell:B5 instructions.
+        Validates the cursor hasn't already passed the target.
+        Returns (row, col) on success; calls logger.fatal (raises EngineError) on failure.
+        Empty-cell handling is role-aware: lbl: → fatal, var: → allow None.
+        """
+        row, col = coordinate_to_tuple(instr.target)
+
+        idx = scanner.scan_order_index.get((row, col))
+        if idx is not None and idx < scanner.cursor:
             logger.fatal(
-                f'Expected cell:{instr.multiplicity} ({instr.field!r}) but sheet is exhausted',
-                expected=f'a cell containing field {instr.field!r}',
-                found='no more non-empty cells on the sheet',
+                f"cell:{instr.target} is unreachable — the scanner has already advanced past it",
+                location=cell_ref(row, col, logger.sheet_name),
+                expected='a cell that has not yet been scanned',
+                found=f'cursor is at scan-order position {scanner.cursor}; '
+                      f'{instr.target} is at position {idx}',
             )
 
         value = scanner.cell_value(row, col)
-        scanner.consume(row, col)
-        scanner.advance_one()
+        if is_empty(value, config.empty_aliases) and instr.field != 'IGNORE':
+            fd = defs.get(instr.field)
+            fd_role = fd.role if fd else 'var'
+            if fd_role == 'lbl':
+                logger.fatal(
+                    f"Expected label '{instr.field}' at {instr.target} but cell is empty",
+                    location=cell_ref(row, col, logger.sheet_name),
+                    expected=(f"string matching {fd.regex!r}" if fd else 'a label string'),
+                    found='empty cell',
+                )
+
+        return row, col
+
+    def _process_cell(self, instr: CellInstruction, scanner: SheetScanner,
+                      defs: dict, config: Config, result: dict, logger: Logger):
+        if instr.multiplicity == 'abs':
+            row, col = self._resolve_abs_ref(instr, scanner, defs, config, logger)
+            value = scanner.cell_value(row, col)
+            scanner.consume(row, col)
+            idx = scanner.scan_order_index.get((row, col))
+            if idx is not None:
+                scanner.cursor = idx + 1
+        else:
+            row, col = scanner.advance_to_next()
+            if row is None:
+                logger.fatal(
+                    f'Expected cell:{instr.multiplicity} ({instr.field!r}) but sheet is exhausted',
+                    expected=f'a cell containing field {instr.field!r}',
+                    found='no more non-empty cells on the sheet',
+                )
+            value = scanner.cell_value(row, col)
+            scanner.consume(row, col)
+            scanner.advance_one()
 
         if instr.field == 'IGNORE':
             logger.cell_ignored(row, col, value)
@@ -327,10 +385,11 @@ class Engine:
 
         logger.cell_processed(row, col, instr.field, value)
 
-        ok, _ = validate_type(value, fd.type, fd.regex, config.currency_sign, self._max_cell_len)
-        if not ok:
-            rec = logger.warn_validation(row, col, instr.field, fd.type, fd.regex, value)
-            logger.commit_warnings([rec])
+        if value is not None:
+            ok, _ = validate_type(value, fd.type, fd.regex, config.currency_sign, self._max_cell_len)
+            if not ok:
+                rec = logger.warn_validation(row, col, instr.field, fd.type, fd.regex, value)
+                logger.commit_warnings([rec])
 
         result['cells'][instr.field] = value
 
@@ -359,6 +418,10 @@ class Engine:
             end_row = match.pop('_end_row', anchor_row)
             end_col = match.pop('_end_col', anchor_col)
 
+            match['_source'] = {
+                'sheet': logger.sheet_name,
+                'ref': _range_ref(anchor_row, anchor_col, end_row, end_col),
+            }
             match['table_index'] = table_index
             match['instance_index'] = instance_index
             result['tables'].append(match)

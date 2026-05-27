@@ -30,8 +30,9 @@ class TemplateRow:
 
 @dataclass
 class CellInstruction:
-    multiplicity: str  # always '1' for now
-    field: str         # field name or 'IGNORE'
+    multiplicity: str        # '1', 'next', or 'abs'
+    field: str               # field name or 'IGNORE'
+    target: str | None = None  # A1-notation ref for multiplicity='abs', e.g. 'B5'
 
 
 @dataclass

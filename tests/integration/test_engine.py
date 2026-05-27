@@ -125,6 +125,66 @@ class TestProductCatalog:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# 02b: Source Provenance (_source on table instances)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestSourceProvenance:
+    """
+    Verify that every table instance carries _source with sheet name and
+    A1-notation ref. Uses fixture 02 (three plain mini-tables, no header var:).
+    """
+    def setup_method(self):
+        self.result, _ = run('02_product_catalog')
+        self.instances = self.result['item']
+
+    def test_all_instances_have_source(self):
+        for inst in self.instances:
+            assert '_source' in inst
+
+    def test_source_keys(self):
+        for inst in self.instances:
+            assert set(inst['_source'].keys()) == {'sheet', 'ref'}
+
+    def test_source_sheet_name(self):
+        for inst in self.instances:
+            assert inst['_source']['sheet'] == 'Sheet1'
+
+    def test_source_ref_a1_notation(self):
+        import re
+        pattern = re.compile(r'^[A-Z]+\d+:[A-Z]+\d+$')
+        for inst in self.instances:
+            assert pattern.match(inst['_source']['ref'])
+
+    def test_source_refs_are_distinct(self):
+        refs = [inst['_source']['ref'] for inst in self.instances]
+        assert len(set(refs)) == len(self.instances)
+
+    def test_first_instance_ref(self):
+        # HEADER row 1 → data rows 2–4 → blank separator row 5
+        assert self.instances[0]['_source']['ref'] == 'A1:D5'
+
+    def test_second_instance_ref(self):
+        assert self.instances[1]['_source']['ref'] == 'A6:D9'
+
+    def test_third_instance_ref(self):
+        # Last table: trailing empty row 14 marks end-of-data
+        assert self.instances[2]['_source']['ref'] == 'A10:D14'
+
+    def test_refs_are_non_overlapping(self):
+        # Extract start rows from each ref and verify monotonic ordering
+        def start_row(ref):
+            return int(ref.split(':')[0].lstrip('ABCDEFGHIJKLMNOPQRSTUVWXYZ'))
+        rows = [start_row(inst['_source']['ref']) for inst in self.instances]
+        assert rows == sorted(rows)
+
+    def test_source_absent_from_scalar_cells(self):
+        # _source is only added to table instances, not to scalar cell output
+        for key, val in self.result.items():
+            if key != 'item':
+                assert not isinstance(val, dict) or '_source' not in val
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # 03: Purchase Order
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -319,7 +379,7 @@ class TestExpenseReport:
 
 class TestMergedCells:
     def setup_method(self):
-        self.result, self.lg = run('06_merged_cells')
+        self.result, self.lg = run('06_merged_cells', sheet='2026')
 
     def test_no_errors(self):
         assert not self.lg.has_errors()
@@ -364,6 +424,48 @@ class TestMergedCells:
 
     def test_no_header_in_output(self):
         assert 'header' not in self.result['item'][0]
+
+
+class TestMergedCells2025:
+    """Second sheet ('2025'): 3 side-by-side tables, each with Hardware/Software/Others
+    category columns (vertically merged). Prices double with each table.
+    table:* in the pattern finds all three instances."""
+
+    def setup_method(self):
+        self.result, self.lg = run('06_merged_cells', sheet='2025')
+
+    def test_no_errors(self):
+        assert not self.lg.has_errors()
+
+    def test_no_warnings(self):
+        assert self.lg.issues() == []
+
+    def test_horizontal_merge_title(self):
+        assert self.result['report']['title'] == 'SALES CATALOGUE 2025'
+
+    def test_three_instances_found(self):
+        assert len(self.result['item']) == 3
+
+    def test_each_instance_ten_data_rows(self):
+        for inst in self.result['item']:
+            assert len(inst['data']) == 10
+
+    def test_categories_all_instances(self):
+        expected = (
+            ['Hardware'] * 3 + ['Software'] * 3 + ['Others'] * 4
+        )
+        for inst in self.result['item']:
+            assert [r['category'] for r in inst['data']] == expected
+
+    def test_footer_totals_double_each_table(self):
+        totals = [inst['footer']['total'] for inst in self.result['item']]
+        assert abs(totals[0] - 3369.98) < 0.01
+        assert abs(totals[1] - 6739.96) < 0.01
+        assert abs(totals[2] - 13479.92) < 0.01
+
+    def test_all_footers_grand_total_label(self):
+        for inst in self.result['item']:
+            assert inst['footer']['label'] == 'Grand Total'
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -712,3 +814,256 @@ class TestHRAttendance:
         assert f['label'] == 'Q1 Total'
         assert f['working'] == 65
         assert f['absent'] == 3
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 14: Named Tables (var: field in HEADER row)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestNamedTables:
+    """
+    Verify that a var: field placed in the HEADER row is captured in
+    instance['header'], while lbl: fields in the same row are suppressed.
+
+    Fixture layout (3 mini-tables):
+      HEADER col A = category name  (var: header.category)
+      HEADER col B = 'SKU'          (lbl: col_sku  — the specificity anchor)
+      HEADER col C = 'Qty'          (lbl: col_qty)
+      HEADER col D = 'Price'        (lbl: col_price)
+      DATA   col A = product name   (var: item.name)
+      DATA   col B = SKU value      (var: item.sku)
+      DATA   col C = quantity       (var: item.qty)
+      DATA   col D = price          (var: item.price)
+    """
+    def setup_method(self):
+        self.result, self.lg = run('14_named_tables')
+        self.instances = self.result['item']
+
+    def test_no_errors(self):
+        assert not self.lg.has_errors()
+
+    def test_no_warnings(self):
+        assert self.lg.issues() == []
+
+    def test_three_instances_found(self):
+        assert len(self.instances) == 3
+
+    def test_all_instances_have_header(self):
+        for inst in self.instances:
+            assert 'header' in inst
+
+    def test_header_has_only_category_key(self):
+        # Only the var: field appears; lbl: fields (col_sku etc.) are suppressed
+        for inst in self.instances:
+            assert set(inst['header'].keys()) == {'category'}
+
+    def test_category_names_in_order(self):
+        categories = [inst['header']['category'] for inst in self.instances]
+        assert categories == ['Electronics', 'Stationery', 'Furniture']
+
+    def test_lbl_field_values_absent_from_header(self):
+        # 'SKU', 'Qty', 'Price' are the lbl: cell values — must not leak into output
+        forbidden = {'SKU', 'Qty', 'Price'}
+        for inst in self.instances:
+            assert not forbidden & set(inst['header'].values())
+
+    def test_data_row_keys(self):
+        first_row = self.instances[0]['data'][0]
+        assert set(first_row.keys()) == {'name', 'sku', 'qty', 'price'}
+
+    def test_electronics_data_count(self):
+        assert len(self.instances[0]['data']) == 3
+
+    def test_stationery_data_count(self):
+        assert len(self.instances[1]['data']) == 2
+
+    def test_furniture_data_count(self):
+        assert len(self.instances[2]['data']) == 3
+
+    def test_electronics_first_item(self):
+        row = self.instances[0]['data'][0]
+        assert row['name'] == 'Laptop'
+        assert row['sku'] == 'ELC001'
+        assert row['qty'] == 5
+        assert row['price'] == 999.0
+
+    def test_all_skus_valid(self):
+        import re
+        for inst in self.instances:
+            for row in inst['data']:
+                assert re.fullmatch(r'[A-Z]{3}[0-9]{3}', row['sku'])
+
+    def test_quantities_are_integers(self):
+        for inst in self.instances:
+            for row in inst['data']:
+                assert isinstance(row['qty'], int)
+
+    def test_source_present_on_all_instances(self):
+        for inst in self.instances:
+            assert '_source' in inst
+
+    def test_source_sheet(self):
+        for inst in self.instances:
+            assert inst['_source']['sheet'] == 'Sheet1'
+
+    def test_source_refs_distinct(self):
+        refs = [inst['_source']['ref'] for inst in self.instances]
+        assert len(set(refs)) == 3
+
+    def test_first_instance_ref(self):
+        assert self.instances[0]['_source']['ref'] == 'A1:D5'
+
+    def test_second_instance_ref(self):
+        assert self.instances[1]['_source']['ref'] == 'A6:D9'
+
+    def test_third_instance_ref(self):
+        assert self.instances[2]['_source']['ref'] == 'A10:D14'
+
+    def test_source_has_no_name_key(self):
+        # The category name lives in instance['header'], not in _source
+        for inst in self.instances:
+            assert 'name' not in inst['_source']
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 15: Annual Budget  (cell:A1 absolute references + two INCOME/EXPENSES tables)
+# ─────────────────────────────────────────────────────────────────────────────
+
+MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun',
+          'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
+
+
+class TestAnnualBudget:
+    """
+    Fixture layout (sheet 'Budget by month'):
+      B2  : 'ANNUAL BUDGET'     (IGNORE)
+      B4  : 'SUMMARY'           (IGNORE)
+      B5/C5: 'Total monthly income'  / 48440
+      B6/C6: 'Total monthly expenses' / 30256.72
+      B8/C8: 'BALANCE'          / 18183.28
+      B10/C10: 'PERCENTAGE OF INCOME SPENT' / 0.6246
+      B12 : 'INCOME'            (IGNORE)
+      B13:P18 — INCOME table: 4 data rows + footer
+      B20 : 'EXPENSES'          (skipped — no HEADER match)
+      B21:P39 — EXPENSES table: 17 data rows + footer
+    """
+    def setup_method(self):
+        self.result, self.lg = run('15_anual_budget')
+
+    # ── no errors or warnings ─────────────────────────────────────────────────
+
+    def test_no_errors(self):
+        assert not self.lg.has_errors()
+
+    def test_no_warnings(self):
+        assert self.lg.issues() == []
+
+    # ── top-level structure ───────────────────────────────────────────────────
+
+    def test_top_level_keys(self):
+        assert set(self.result.keys()) == {'summary', 'row'}
+
+    def test_two_table_instances(self):
+        assert len(self.result['row']) == 2
+
+    # ── summary scalars (extracted via cell:B5, cell:C5, etc.) ───────────────
+
+    def test_summary_income(self):
+        assert self.result['summary']['income'] == pytest.approx(48440, rel=1e-4)
+
+    def test_summary_expenses(self):
+        assert self.result['summary']['expenses'] == pytest.approx(30256.72, rel=1e-4)
+
+    def test_summary_balance(self):
+        assert self.result['summary']['balance'] == pytest.approx(18183.28, rel=1e-4)
+
+    def test_summary_pct_spent(self):
+        # 30256.72 / 48440 ≈ 0.6246
+        assert abs(self.result['summary']['pct_spent'] - 0.6246) < 0.001
+
+    def test_summary_has_exactly_four_keys(self):
+        assert set(self.result['summary'].keys()) == {
+            'income', 'expenses', 'balance', 'pct_spent'
+        }
+
+    # ── INCOME table (instance 0) ─────────────────────────────────────────────
+
+    def test_income_source_sheet(self):
+        assert self.result['row'][0]['_source']['sheet'] == 'Budget by month'
+
+    def test_income_source_ref(self):
+        assert self.result['row'][0]['_source']['ref'] == 'B13:P18'
+
+    def test_income_four_data_rows(self):
+        assert len(self.result['row'][0]['data']) == 4
+
+    def test_income_items(self):
+        items = [r['item'] for r in self.result['row'][0]['data']]
+        assert items == ['Income 1', 'Income 2', 'Income 3', 'Other']
+
+    def test_income_data_row_keys(self):
+        expected = {'item'} | set(MONTHS) | {'total', 'avg'}
+        assert set(self.result['row'][0]['data'][0].keys()) == expected
+
+    def test_income1_jan_value(self):
+        assert self.result['row'][0]['data'][0]['jan'] == 2500
+
+    def test_income1_total(self):
+        assert self.result['row'][0]['data'][0]['total'] == 30275
+
+    def test_income_footer_keys(self):
+        expected = {'label'} | set(MONTHS) | {'annual', 'avg'}
+        assert set(self.result['row'][0]['footer'].keys()) == expected
+
+    def test_income_footer_label(self):
+        assert self.result['row'][0]['footer']['label'] == 'Total'
+
+    def test_income_footer_annual(self):
+        assert self.result['row'][0]['footer']['annual'] == pytest.approx(48440, rel=1e-4)
+
+    def test_income_no_header_key(self):
+        # HEADER row uses only lbl: fields → no 'header' key in instance
+        assert 'header' not in self.result['row'][0]
+
+    # ── EXPENSES table (instance 1) ───────────────────────────────────────────
+
+    def test_expenses_source_ref(self):
+        assert self.result['row'][1]['_source']['ref'] == 'B21:P39'
+
+    def test_expenses_seventeen_data_rows(self):
+        assert len(self.result['row'][1]['data']) == 17
+
+    def test_expenses_first_items(self):
+        items = [r['item'] for r in self.result['row'][1]['data']][:3]
+        assert items == ['Children', 'Debt', 'Dining']
+
+    def test_expenses_footer_annual(self):
+        annual = self.result['row'][1]['footer']['annual']
+        assert abs(annual - 30256.72) < 0.01
+
+    def test_expenses_footer_label(self):
+        assert self.result['row'][1]['footer']['label'] == 'Total'
+
+    def test_expenses_all_items_have_twelve_months(self, ):
+        for row in self.result['row'][1]['data']:
+            for m in MONTHS:
+                assert m in row
+
+    # ── cross-instance consistency ────────────────────────────────────────────
+
+    def test_sources_are_distinct(self):
+        refs = [inst['_source']['ref'] for inst in self.result['row']]
+        assert len(set(refs)) == 2
+
+    def test_income_before_expenses_by_ref(self):
+        # B13 < B21 in row order
+        def start_row(ref):
+            return int(ref.split(':')[0].lstrip('ABCDEFGHIJKLMNOPQRSTUVWXYZ'))
+        rows = [start_row(inst['_source']['ref']) for inst in self.result['row']]
+        assert rows[0] < rows[1]
+
+    def test_no_lbl_fields_in_output(self):
+        # lbl: fields (lbl_income, lbl_expenses_s) must not appear anywhere
+        forbidden = {'lbl_income', 'lbl_expenses_s', 'col_item', 'col_total_hdr'}
+        assert not forbidden & set(self.result.keys())
+        assert not forbidden & set(self.result.get('summary', {}).keys())

@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 Generate test fixture xlsx files in tests/fixtures/.
 
@@ -16,13 +17,18 @@ Each fixture is a pair: pattern.xlsx (what to look for) + data.xlsx (the actual 
   11_loan_schedule       — loan parameters + 6-row amortisation table with totals
   12_multi_sheet         — data.xlsx has 3 sheets; pattern extracts from 'Details' sheet
   13_hr_attendance       — employee header + quarterly attendance table with totals
+  14_named_tables        — var: field in HEADER row captures the mini-table category name
 """
 
-import datetime
 import os
 import sys
 
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from _bootstrap import ensure_venv; ensure_venv()
+
+import datetime
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
 
 from openpyxl import Workbook
 
@@ -340,24 +346,19 @@ def fixture_05():
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 06: Merged Cells — horizontal title merge + vertical category merge in table
+# 06: Merged Cells — two sheets, horizontal title merge + vertical category merges
 # ─────────────────────────────────────────────────────────────────────────────
 #
-# Tests that _expand_merged_cells correctly propagates values:
-#   • A1:C1 horizontal merge  → B1 and C1 get the title value
-#   • A3:A5 vertical merge    → A4 and A5 get "Hardware"
-#   • A6:A8 vertical merge    → A7 and A8 get "Software"
+# Sheet '2026' (active): 1 table, cols A-C, Hardware+Software only.
+#   Merges: A1:C1 (title), A3:A5 (Hardware), A6:A8 (Software)
 #
-# Data layout:
-#   Row 1: [A1:C1 merged] "SALES CATALOGUE 2026"
-#   Row 2: Category | Product | Price          ← HEADER
-#   Row 3: Hardware  | Laptop 15"  | 1200.0    ← A3:A5 merged
-#   Row 4: Hardware  | Wireless Mouse | 29.99
-#   Row 5: Hardware  | Keyboard      | 89.99
-#   Row 6: Software  | Office Suite  | 300.0   ← A6:A8 merged
-#   Row 7: Software  | Design Suite  | 600.0
-#   Row 8: Software  | Dev Tools     | 150.0
-#   Row 9: (blank)  | Grand Total   | 2369.98  ← FOOTER
+# Sheet '2025': 3 side-by-side tables arranged diagonally (one column right each),
+#   each adding an 'Others' category and doubling all prices.
+#   Table 1: col A, rows  2–13  — ×1 prices, merges A3:A5 / A6:A8 / A9:A12
+#   Table 2: col C, rows 18–29  — ×2 prices, merges C19:C21 / C22:C24 / C25:C28
+#   Table 3: col D, rows 32–43  — ×4 prices, merges D33:D35 / D36:D38 / D39:D42
+#
+# Pattern uses table:* so the engine finds all three instances on '2025'.
 
 def fixture_06():
     p = Workbook(); ps = p.active; ps.title = 'Pattern'
@@ -374,10 +375,10 @@ def fixture_06():
         ['var:', 'footer.label',    'string',   'Grand Total'],
         ['var:', 'footer.total',    'currency', r'.*'],
         ['START:'],
-        ['cell:1', 'report.title'],   # reads A1 (top-left of horizontal merge)
-        ['cell:1', 'IGNORE'],          # reads B1 (same value, expanded from merge)
-        ['cell:1', 'IGNORE'],          # reads C1
-        ['table:1'],
+        ['cell:1', 'report.title'],
+        ['cell:1', 'IGNORE'],
+        ['cell:1', 'IGNORE'],
+        ['table:*'],
         [None, 'HEADER:1', 'col_category', 'col_product', 'col_price'],
         [None, 'DATA:*',   'item.category', 'item.name',  'item.price'],
         [None, 'FOOTER:1', 'IGNORE',        'footer.label', 'footer.total'],
@@ -385,24 +386,55 @@ def fixture_06():
     ]:
         ps.append(row)
 
-    d = Workbook(); ds = d.active; ds.title = 'Sheet1'
-    # Horizontal merge: title spans A1:C1
-    ds['A1'] = 'SALES CATALOGUE 2026'
-    ds.merge_cells('A1:C1')
-    # Table header row 2
-    ds['A2'] = 'Category'; ds['B2'] = 'Product'; ds['C2'] = 'Price'
-    # Hardware rows 3–5; A3:A5 vertically merged
-    ds['A3'] = 'Hardware'; ds['B3'] = 'Laptop 15"';     ds['C3'] = 1200.0
-    ds['B4'] = 'Wireless Mouse'; ds['C4'] = 29.99
-    ds['B5'] = 'Keyboard';       ds['C5'] = 89.99
-    ds.merge_cells('A3:A5')
-    # Software rows 6–8; A6:A8 vertically merged
-    ds['A6'] = 'Software'; ds['B6'] = 'Office Suite'; ds['C6'] = 300.0
-    ds['B7'] = 'Design Suite';   ds['C7'] = 600.0
-    ds['B8'] = 'Dev Tools';      ds['C8'] = 150.0
-    ds.merge_cells('A6:A8')
-    # Footer row 9
-    ds['B9'] = 'Grand Total'; ds['C9'] = 2369.98
+    d = Workbook()
+
+    # ── Sheet '2026' (active) — Hardware + Software only ─────────────────────
+    s26 = d.active; s26.title = '2026'
+    s26['A1'] = 'SALES CATALOGUE 2026'; s26.merge_cells('A1:C1')
+    s26['A2'] = 'Category'; s26['B2'] = 'Product'; s26['C2'] = 'Price'
+    s26['A3'] = 'Hardware'; s26['B3'] = 'Laptop 15"';    s26['C3'] = 1200.0
+    s26['B4'] = 'Wireless Mouse';                         s26['C4'] = 29.99
+    s26['B5'] = 'Keyboard';                               s26['C5'] = 89.99
+    s26.merge_cells('A3:A5')
+    s26['A6'] = 'Software'; s26['B6'] = 'Office Suite';  s26['C6'] = 300.0
+    s26['B7'] = 'Design Suite';                           s26['C7'] = 600.0
+    s26['B8'] = 'Dev Tools';                              s26['C8'] = 150.0
+    s26.merge_cells('A6:A8')
+    s26['B9'] = 'Grand Total'; s26['C9'] = 2369.98
+
+    # ── Sheet '2025' — 3 diagonal tables, prices ×1 / ×2 / ×4 ───────────────
+    s25 = d.create_sheet('2025')
+    s25['A1'] = 'SALES CATALOGUE 2025'; s25.merge_cells('A1:C1')
+
+    _cats = [
+        ('Hardware', [('Laptop 15"', 1200.0), ('Wireless Mouse', 29.99), ('Keyboard', 89.99)]),
+        ('Software', [('Office Suite', 300.0), ('Design Suite', 600.0), ('Dev Tools', 150.0)]),
+        ('Others',   [('other-1', 100.0), ('other-2', 200.0), ('other-3', 300.0), ('other-4', 400.0)]),
+    ]
+
+    def _write_table(ws, start_row, col, cats, factor, footer_total):
+        ws.cell(start_row, col,     'Category')
+        ws.cell(start_row, col + 1, 'Product')
+        ws.cell(start_row, col + 2, 'Price')
+        cur = start_row + 1
+        for cat_name, items in cats:
+            cat_start = cur
+            for i, (name, price) in enumerate(items):
+                if i == 0:
+                    ws.cell(cur, col, cat_name)
+                ws.cell(cur, col + 1, name)
+                ws.cell(cur, col + 2, round(price * factor, 2))
+                cur += 1
+            if len(items) > 1:
+                ws.merge_cells(start_row=cat_start, start_column=col,
+                               end_row=cur - 1,    end_column=col)
+        ws.cell(cur, col + 1, 'Grand Total')
+        ws.cell(cur, col + 2, footer_total)
+
+    _write_table(s25, start_row=2,  col=1, cats=_cats, factor=1, footer_total=3369.98)
+    _write_table(s25, start_row=18, col=3, cats=_cats, factor=2, footer_total=6739.96)
+    _write_table(s25, start_row=32, col=4, cats=_cats, factor=4, footer_total=13479.92)
+
     return p, d
 
 
@@ -837,6 +869,74 @@ def fixture_13():
 
 # ─────────────────────────────────────────────────────────────────────────────
 
+# ─────────────────────────────────────────────────────────────────────────────
+# 14: Named Tables — var: field in HEADER captures the category name
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# Demonstrates that var: fields work in HEADER rows: the first column of each
+# HEADER row is the category name (extracted into instance['header']['category'])
+# while the remaining columns are lbl: anchors (SKU / Qty / Price).
+#
+# The engine anchors on the lbl: columns — "SKU" in col B is the specificity
+# anchor that distinguishes HEADER rows from DATA rows.
+#
+# Data layout (3 mini-tables, same column positions):
+#   Row  1: Electronics | SKU    | Qty  | Price   ← HEADER 1
+#   Rows 2-4: data rows (Laptop/Mouse/Keyboard)
+#   Row  5: (blank separator)
+#   Row  6: Stationery  | SKU    | Qty  | Price   ← HEADER 2
+#   Rows 7-8: data rows (Pen/Notebook)
+#   Row  9: (blank separator)
+#   Row 10: Furniture   | SKU    | Qty  | Price   ← HEADER 3
+#   Rows 11-13: data rows (Chair/Desk/Lamp)
+
+def fixture_14():
+    p = Workbook(); ps = p.active; ps.title = 'Pattern'
+    for row in [
+        ['config:', 'read.direction', 'LR'],
+        # var: field — extracted from col A of each HEADER row
+        ['var:', 'header.category', 'string',   r'.+'],
+        # lbl: anchors — used only for HEADER matching, never in output
+        ['lbl:', 'col_sku',         'string',   'SKU'],
+        ['lbl:', 'col_qty',         'string',   'Qty'],
+        ['lbl:', 'col_price',       'string',   'Price'],
+        # data fields
+        ['var:', 'item.name',       'string',   r'.+'],
+        ['var:', 'item.sku',        'string',   r'[A-Z]{3}[0-9]{3}'],
+        ['var:', 'item.qty',        'integer',  r'[1-9][0-9]*'],
+        ['var:', 'item.price',      'currency', r'.*'],
+        ['START:'],
+        ['table:*'],
+        [None, 'HEADER:1', 'header.category', 'col_sku',  'col_qty',  'col_price'],
+        [None, 'DATA:*',   'item.name',        'item.sku', 'item.qty', 'item.price'],
+        ['END:'],
+    ]:
+        ps.append(row)
+
+    d = Workbook(); ds = d.active; ds.title = 'Sheet1'
+    rows = [
+        # Table 1 — Electronics (category name in col A of HEADER)
+        ('Electronics', 'SKU',    'Qty',  'Price'),
+        ('Laptop',      'ELC001', 5,      999.0),
+        ('Mouse',       'ELC002', 50,     25.0),
+        ('Keyboard',    'ELC003', 30,     45.0),
+        (None, None, None, None),
+        # Table 2 — Stationery
+        ('Stationery',  'SKU',    'Qty',  'Price'),
+        ('Pen',         'STN001', 500,    2.0),
+        ('Notebook',    'STN002', 200,    8.0),
+        (None, None, None, None),
+        # Table 3 — Furniture
+        ('Furniture',   'SKU',    'Qty',  'Price'),
+        ('Chair',       'FRN001', 10,     250.0),
+        ('Desk',        'FRN002', 5,      450.0),
+        ('Lamp',        'FRN003', 20,     35.0),
+    ]
+    for row in rows:
+        ds.append(list(row))
+    return p, d
+
+
 def main():
     print('Generating test fixtures...')
     save('01_simple_invoice',  *fixture_01())
@@ -852,6 +952,7 @@ def main():
     save('11_loan_schedule',   *fixture_11())
     save('12_multi_sheet',     *fixture_12())
     save('13_hr_attendance',   *fixture_13())
+    save('14_named_tables',    *fixture_14())
     print('Done.')
 
 
