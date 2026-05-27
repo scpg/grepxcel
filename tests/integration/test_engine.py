@@ -923,3 +923,147 @@ class TestNamedTables:
         # The category name lives in instance['header'], not in _source
         for inst in self.instances:
             assert 'name' not in inst['_source']
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 15: Annual Budget  (cell:A1 absolute references + two INCOME/EXPENSES tables)
+# ─────────────────────────────────────────────────────────────────────────────
+
+MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun',
+          'jul', 'aug', 'sep', 'oct', 'nov', 'dec']
+
+
+class TestAnnualBudget:
+    """
+    Fixture layout (sheet 'Budget by month'):
+      B2  : 'ANNUAL BUDGET'     (IGNORE)
+      B4  : 'SUMMARY'           (IGNORE)
+      B5/C5: 'Total monthly income'  / 48440
+      B6/C6: 'Total monthly expenses' / 30256.72
+      B8/C8: 'BALANCE'          / 18183.28
+      B10/C10: 'PERCENTAGE OF INCOME SPENT' / 0.6246
+      B12 : 'INCOME'            (IGNORE)
+      B13:P18 — INCOME table: 4 data rows + footer
+      B20 : 'EXPENSES'          (skipped — no HEADER match)
+      B21:P39 — EXPENSES table: 17 data rows + footer
+    """
+    def setup_method(self):
+        self.result, self.lg = run('15_anual_budget')
+
+    # ── no errors or warnings ─────────────────────────────────────────────────
+
+    def test_no_errors(self):
+        assert not self.lg.has_errors()
+
+    def test_no_warnings(self):
+        assert self.lg.issues() == []
+
+    # ── top-level structure ───────────────────────────────────────────────────
+
+    def test_top_level_keys(self):
+        assert set(self.result.keys()) == {'summary', 'row'}
+
+    def test_two_table_instances(self):
+        assert len(self.result['row']) == 2
+
+    # ── summary scalars (extracted via cell:B5, cell:C5, etc.) ───────────────
+
+    def test_summary_income(self):
+        assert self.result['summary']['income'] == pytest.approx(48440, rel=1e-4)
+
+    def test_summary_expenses(self):
+        assert self.result['summary']['expenses'] == pytest.approx(30256.72, rel=1e-4)
+
+    def test_summary_balance(self):
+        assert self.result['summary']['balance'] == pytest.approx(18183.28, rel=1e-4)
+
+    def test_summary_pct_spent(self):
+        # 30256.72 / 48440 ≈ 0.6246
+        assert abs(self.result['summary']['pct_spent'] - 0.6246) < 0.001
+
+    def test_summary_has_exactly_four_keys(self):
+        assert set(self.result['summary'].keys()) == {
+            'income', 'expenses', 'balance', 'pct_spent'
+        }
+
+    # ── INCOME table (instance 0) ─────────────────────────────────────────────
+
+    def test_income_source_sheet(self):
+        assert self.result['row'][0]['_source']['sheet'] == 'Budget by month'
+
+    def test_income_source_ref(self):
+        assert self.result['row'][0]['_source']['ref'] == 'B13:P18'
+
+    def test_income_four_data_rows(self):
+        assert len(self.result['row'][0]['data']) == 4
+
+    def test_income_items(self):
+        items = [r['item'] for r in self.result['row'][0]['data']]
+        assert items == ['Income 1', 'Income 2', 'Income 3', 'Other']
+
+    def test_income_data_row_keys(self):
+        expected = {'item'} | set(MONTHS) | {'total', 'avg'}
+        assert set(self.result['row'][0]['data'][0].keys()) == expected
+
+    def test_income1_jan_value(self):
+        assert self.result['row'][0]['data'][0]['jan'] == 2500
+
+    def test_income1_total(self):
+        assert self.result['row'][0]['data'][0]['total'] == 30275
+
+    def test_income_footer_keys(self):
+        expected = {'label'} | set(MONTHS) | {'annual', 'avg'}
+        assert set(self.result['row'][0]['footer'].keys()) == expected
+
+    def test_income_footer_label(self):
+        assert self.result['row'][0]['footer']['label'] == 'Total'
+
+    def test_income_footer_annual(self):
+        assert self.result['row'][0]['footer']['annual'] == pytest.approx(48440, rel=1e-4)
+
+    def test_income_no_header_key(self):
+        # HEADER row uses only lbl: fields → no 'header' key in instance
+        assert 'header' not in self.result['row'][0]
+
+    # ── EXPENSES table (instance 1) ───────────────────────────────────────────
+
+    def test_expenses_source_ref(self):
+        assert self.result['row'][1]['_source']['ref'] == 'B21:P39'
+
+    def test_expenses_seventeen_data_rows(self):
+        assert len(self.result['row'][1]['data']) == 17
+
+    def test_expenses_first_items(self):
+        items = [r['item'] for r in self.result['row'][1]['data']][:3]
+        assert items == ['Children', 'Debt', 'Dining']
+
+    def test_expenses_footer_annual(self):
+        annual = self.result['row'][1]['footer']['annual']
+        assert abs(annual - 30256.72) < 0.01
+
+    def test_expenses_footer_label(self):
+        assert self.result['row'][1]['footer']['label'] == 'Total'
+
+    def test_expenses_all_items_have_twelve_months(self, ):
+        for row in self.result['row'][1]['data']:
+            for m in MONTHS:
+                assert m in row
+
+    # ── cross-instance consistency ────────────────────────────────────────────
+
+    def test_sources_are_distinct(self):
+        refs = [inst['_source']['ref'] for inst in self.result['row']]
+        assert len(set(refs)) == 2
+
+    def test_income_before_expenses_by_ref(self):
+        # B13 < B21 in row order
+        def start_row(ref):
+            return int(ref.split(':')[0].lstrip('ABCDEFGHIJKLMNOPQRSTUVWXYZ'))
+        rows = [start_row(inst['_source']['ref']) for inst in self.result['row']]
+        assert rows[0] < rows[1]
+
+    def test_no_lbl_fields_in_output(self):
+        # lbl: fields (lbl_income, lbl_expenses_s) must not appear anywhere
+        forbidden = {'lbl_income', 'lbl_expenses_s', 'col_item', 'col_total_hdr'}
+        assert not forbidden & set(self.result.keys())
+        assert not forbidden & set(self.result.get('summary', {}).keys())

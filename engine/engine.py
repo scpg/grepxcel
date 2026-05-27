@@ -235,69 +235,75 @@ class Engine:
 
         self._max_cell_len = max_cell_len
 
-        # Security: validate both files before openpyxl touches them
-        for path in (pattern_file, data_file):
-            try:
-                validate_file(path,
-                              max_file_mb=max_file_mb,
-                              max_uncompressed_mb=max_uncompressed_mb)
-            except SecurityError as exc:
-                logger.fatal(str(exc), found=path)
-
-        try:
-            global_config, defs, start_sequence = PatternParser().parse(pattern_file)
-        except (SecurityError, PatternError) as exc:
-            logger.fatal(str(exc), found=pattern_file)
-
-        try:
-            wb = openpyxl.load_workbook(data_file, data_only=True)
-        except Exception as exc:
-            logger.fatal(
-                f'Failed to open the data file: {exc}',
-                found=data_file,
-                expected='a valid, uncorrupted .xlsx workbook',
-            )
-
-        if sheet is None:
-            ws = wb.active
-        elif isinstance(sheet, int):
-            if sheet < 0 or sheet >= len(wb.worksheets):
-                logger.fatal(
-                    f'Sheet index {sheet} is out of range '
-                    f'(workbook has {len(wb.worksheets)} sheet(s))',
-                    found=str(sheet),
-                    expected=f'an index between 0 and {len(wb.worksheets) - 1}',
-                )
-            ws = wb.worksheets[sheet]
-        else:
-            if sheet not in wb.sheetnames:
-                logger.fatal(
-                    f'Sheet {sheet!r} not found in workbook',
-                    found=sheet,
-                    expected=f'one of: {", ".join(wb.sheetnames)}',
-                )
-            ws = wb[sheet]
-        logger.sheet_name = ws.title
-
-        _expand_merged_cells(ws)
-        _warn_uncached_formulas(ws, logger)
-
-        logger.engine_start(pattern_file, data_file)
-        logger.sheet_info(ws.title, ws.max_row, ws.max_column, global_config.read_direction)
-
-        scanner = SheetScanner(ws, global_config)
+        defs = {}
         _raw = {'cells': {}, 'tables': []}  # internal flat format (stats + legacy output)
-        table_index = 0
 
         try:
-            for instruction in start_sequence:
-                if isinstance(instruction, CellInstruction):
-                    self._process_cell(instruction, scanner, defs, global_config, _raw, logger)
-                elif isinstance(instruction, TableInstruction):
-                    self._process_table(instruction, scanner, defs, _raw, table_index, logger)
-                    table_index += 1
+            # Security: validate both files before openpyxl touches them
+            for path in (pattern_file, data_file):
+                try:
+                    validate_file(path,
+                                  max_file_mb=max_file_mb,
+                                  max_uncompressed_mb=max_uncompressed_mb)
+                except SecurityError as exc:
+                    logger.fatal(str(exc), found=path)
+
+            try:
+                global_config, defs, start_sequence = PatternParser().parse(pattern_file)
+            except (SecurityError, PatternError) as exc:
+                logger.fatal(str(exc), found=pattern_file)
+
+            try:
+                wb = openpyxl.load_workbook(data_file, data_only=True)
+            except Exception as exc:
+                logger.fatal(
+                    f'Failed to open the data file: {exc}',
+                    found=data_file,
+                    expected='a valid, uncorrupted .xlsx workbook',
+                )
+
+            if sheet is None:
+                ws = wb.active
+            elif isinstance(sheet, int):
+                if sheet < 0 or sheet >= len(wb.worksheets):
+                    logger.fatal(
+                        f'Sheet index {sheet} is out of range '
+                        f'(workbook has {len(wb.worksheets)} sheet(s))',
+                        found=str(sheet),
+                        expected=f'an index between 0 and {len(wb.worksheets) - 1}',
+                    )
+                ws = wb.worksheets[sheet]
+            else:
+                if sheet not in wb.sheetnames:
+                    logger.fatal(
+                        f'Sheet {sheet!r} not found in workbook',
+                        found=sheet,
+                        expected=f'one of: {", ".join(wb.sheetnames)}',
+                    )
+                ws = wb[sheet]
+            logger.sheet_name = ws.title
+
+            _expand_merged_cells(ws)
+            _warn_uncached_formulas(ws, logger)
+
+            logger.engine_start(pattern_file, data_file)
+            logger.sheet_info(ws.title, ws.max_row, ws.max_column, global_config.read_direction)
+
+            scanner = SheetScanner(ws, global_config)
+            table_index = 0
+
+            try:
+                for instruction in start_sequence:
+                    if isinstance(instruction, CellInstruction):
+                        self._process_cell(instruction, scanner, defs, global_config, _raw, logger)
+                    elif isinstance(instruction, TableInstruction):
+                        self._process_table(instruction, scanner, defs, _raw, table_index, logger)
+                        table_index += 1
+            except EngineError:
+                pass  # already logged; return partial result
+
         except EngineError:
-            pass  # already logged; return partial result
+            pass  # setup-phase fatal; already logged, return partial result
 
         logger.summary(_raw)
 
