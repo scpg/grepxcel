@@ -270,3 +270,68 @@ class TestPatternSuggesterMocked:
         assert code == 1
         captured = capsys.readouterr()
         assert 'error' in captured.err.lower() or 'Error' in captured.err
+
+
+# ── A2: output validation ────────────────────────────────────────────────────
+
+def _run_drafter_with_llm_text(llm_text: str, tmp_path: Path) -> tuple[int, str, str]:
+    """Run PatternDrafter with a mocked LLM returning llm_text. Returns (code, out, err)."""
+    data_path = _make_xlsx([['Name'], ['Alice']], tmp_path, 'data.xlsx')
+    out_path = str(tmp_path / 'pattern.xlsx')
+
+    mock_manager = MagicMock()
+    mock_manager.return_value.ensure_ready.return_value = tmp_path / 'model.gguf'
+    mock_client = MagicMock()
+    mock_client.return_value.chat.return_value = llm_text
+
+    import io, contextlib
+    stdout_buf, stderr_buf = io.StringIO(), io.StringIO()
+    with patch('engine.drafter.ModelManager', mock_manager), \
+         patch('engine.drafter.LlamaCppClient', mock_client), \
+         contextlib.redirect_stdout(stdout_buf), \
+         contextlib.redirect_stderr(stderr_buf):
+        code = PatternDrafter(input_path=data_path, output_path=out_path).run()
+
+    return code, stdout_buf.getvalue(), stderr_buf.getvalue(), out_path
+
+
+class TestDraftValidation:
+    _VALID_LLM = "var: | Name | string | .*\nSTART:\ncell:next | Name\nEND:"
+    _GARBAGE_LLM = "this is not a pattern\nrandom text\nno start or end markers"
+    _BAD_CELL_LLM = "var: | x | string | .*\nSTART:\ncell:BADREF | x\nEND:"
+
+    def test_valid_output_creates_xlsx(self, tmp_path):
+        code, _, _, out_path = _run_drafter_with_llm_text(self._VALID_LLM, tmp_path)
+        assert code == 0
+        assert Path(out_path).exists()
+
+    def test_valid_output_no_failed_txt(self, tmp_path):
+        _run_drafter_with_llm_text(self._VALID_LLM, tmp_path)
+        failed = tmp_path / 'pattern_FAILED.txt'
+        assert not failed.exists()
+
+    def test_garbage_output_returns_1(self, tmp_path):
+        # A pattern with no START:/END: and no defined fields is structurally
+        # empty — PatternParser won't raise, but an invalid cell: reference will.
+        code, _, _, _ = _run_drafter_with_llm_text(self._BAD_CELL_LLM, tmp_path)
+        assert code == 1
+
+    def test_invalid_cell_ref_writes_failed_txt(self, tmp_path):
+        _run_drafter_with_llm_text(self._BAD_CELL_LLM, tmp_path)
+        failed = tmp_path / 'pattern_FAILED.txt'
+        assert failed.exists()
+        content = failed.read_text(encoding='utf-8')
+        assert '# Draft validation error' in content
+        assert self._BAD_CELL_LLM in content
+
+    def test_invalid_cell_ref_prints_error_to_stderr(self, tmp_path):
+        _, _, err, _ = _run_drafter_with_llm_text(self._BAD_CELL_LLM, tmp_path)
+        assert '[!] Draft validation failed' in err
+
+    def test_failed_xlsx_not_written_on_error(self, tmp_path):
+        _run_drafter_with_llm_text(self._BAD_CELL_LLM, tmp_path)
+        assert not Path(tmp_path / 'pattern.xlsx').exists()
+
+    def test_raw_llm_text_printed_to_stdout_even_on_failure(self, tmp_path):
+        _, out, _, _ = _run_drafter_with_llm_text(self._BAD_CELL_LLM, tmp_path)
+        assert self._BAD_CELL_LLM in out

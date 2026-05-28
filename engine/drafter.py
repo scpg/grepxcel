@@ -11,10 +11,13 @@ import os
 import platform
 import subprocess
 import sys
+import tempfile
+from pathlib import Path
 
 import openpyxl
 
 from .model_manager import MODEL_CHAT_FORMAT, ModelManager
+from .pattern_parser import PatternError, PatternParser
 from .security import SecurityError, validate_file
 from .utils import infer_cell_type, is_empty
 
@@ -423,6 +426,29 @@ class PatternWriter:
         wb.save(output_path)
 
 
+# ── Validation helpers ────────────────────────────────────────────────────────
+
+def _failed_path(output_path: str) -> str:
+    """Derive a _FAILED.txt path alongside the intended output file."""
+    p = Path(output_path)
+    return str(p.parent / f'{p.stem}_FAILED.txt')
+
+
+def _write_failed_draft(llm_text: str, error: str, output_path: str) -> None:
+    path = _failed_path(output_path)
+    with open(path, 'w', encoding='utf-8') as f:
+        f.write(f'# Draft validation error\n# {error}\n\n')
+        f.write(llm_text)
+
+
+def _validate_draft(xlsx_path: str) -> None:
+    """Parse the draft xlsx with the engine's own PatternParser.
+
+    Raises PatternError or SecurityError if the LLM output is structurally invalid.
+    """
+    PatternParser().parse(xlsx_path)
+
+
 # ── Orchestrator ──────────────────────────────────────────────────────────────
 
 class PatternDrafter:
@@ -473,8 +499,25 @@ class PatternDrafter:
         # 4. Text preview → stdout (pipe-friendly)
         print(llm_text)
 
-        # 5. Write xlsx
-        PatternWriter().write(llm_text, self.output_path)
+        # 5. Write to a temp xlsx, validate, then move to final path
+        output_dir = os.path.dirname(os.path.abspath(self.output_path))
+        os.makedirs(output_dir, exist_ok=True)
+        fd, tmp_path = tempfile.mkstemp(suffix='.xlsx', dir=output_dir)
+        os.close(fd)
+        try:
+            PatternWriter().write(llm_text, tmp_path)
+            _validate_draft(tmp_path)
+        except (PatternError, SecurityError) as exc:
+            os.unlink(tmp_path)
+            _write_failed_draft(llm_text, str(exc), self.output_path)
+            print(
+                f'\n[!] Draft validation failed: {exc}\n'
+                f'    Raw LLM output saved to: {_failed_path(self.output_path)}',
+                file=sys.stderr,
+            )
+            return 1
+
+        os.replace(tmp_path, self.output_path)
         print(f'\nDraft pattern written to: {self.output_path}', file=sys.stderr)
         print(
             f'Open it in Excel/LibreOffice, refine the regexes, then run:\n'
