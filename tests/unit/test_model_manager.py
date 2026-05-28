@@ -173,35 +173,38 @@ class TestRevisionPinning:
         assert len(MODEL_REVISION) == 40
         assert all(c in "0123456789abcdef" for c in MODEL_REVISION.lower())
 
-    def test_download_pins_revision_and_records_it(self, tmp_path):
-        m = _make_manager(tmp_path)
-        captured = {}
+    @staticmethod
+    def _fake_hf_module(captured: dict):
+        """A stand-in huggingface_hub module so these tests run without the
+        optional 'suggest' extra installed (it is absent from core CI)."""
+        import types
 
         def fake_download(**kwargs):
             captured.update(kwargs)
-            # simulate the downloaded file inside the temp dir
             p = Path(kwargs["local_dir"]) / MODEL_FILENAME
             p.write_bytes(b"")
             return str(p)
 
-        with patch("huggingface_hub.hf_hub_download", side_effect=fake_download):
-            m._download(announce=False)
+        mod = types.ModuleType("huggingface_hub")
+        mod.hf_hub_download = fake_download
+        return mod
+
+    def test_download_pins_revision_and_records_it(self, tmp_path, monkeypatch):
+        m = _make_manager(tmp_path)
+        captured: dict = {}
+        monkeypatch.setitem(sys.modules, "huggingface_hub", self._fake_hf_module(captured))
+
+        m._download(announce=False)
 
         assert captured["revision"] == MODEL_REVISION
         assert m._load_state()["commit_hash"] == MODEL_REVISION
 
-    def test_download_uses_explicit_commit_when_given(self, tmp_path):
+    def test_download_uses_explicit_commit_when_given(self, tmp_path, monkeypatch):
         m = _make_manager(tmp_path)
-        captured = {}
+        captured: dict = {}
+        monkeypatch.setitem(sys.modules, "huggingface_hub", self._fake_hf_module(captured))
 
-        def fake_download(**kwargs):
-            captured.update(kwargs)
-            p = Path(kwargs["local_dir"]) / MODEL_FILENAME
-            p.write_bytes(b"")
-            return str(p)
-
-        with patch("huggingface_hub.hf_hub_download", side_effect=fake_download):
-            m._download(announce=False, commit_hash="0" * 40)
+        m._download(announce=False, commit_hash="0" * 40)
 
         assert captured["revision"] == "0" * 40
         assert m._load_state()["commit_hash"] == "0" * 40

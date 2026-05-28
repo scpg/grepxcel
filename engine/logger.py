@@ -439,11 +439,15 @@ class Logger:
         if isinstance(value, str):
             if '\n' in value or '\r' in value:
                 if '.*' not in regex and r'[\s\S]' not in regex and r'\n' not in regex:
+                    if ' ' in regex:
+                        suggested = regex.replace(' ', r'[\s\S]*')
+                    else:
+                        suggested = regex + r' (add [\s\S]* where the newline occurs)'
                     return (
                         'The cell value contains a newline character (created by pressing '
                         'Alt+Enter in Excel). The pattern regex does not allow newlines. '
                         'Update the pattern definition to use a newline-aware pattern, '
-                        f'e.g.: {repr(regex.replace(" ", r"[\s\S]*") if " " in regex else regex + r" (add [\s\S]* where the newline occurs)")}'
+                        f'e.g.: {suggested!r}'
                     )
 
         if field_type == 'integer':
