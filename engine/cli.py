@@ -6,8 +6,8 @@ Usage:
     grepxcel extract -p pattern.xlsx data1.xlsx data2.xlsx data3.xlsx
     grepxcel extract -p pattern.xlsx data.xlsx -v --output results/
     grepxcel extract -p pattern.xlsx data.xlsx --log logs/run.log
-    grepxcel suggest data.xlsx -o suggested_pattern.xlsx
-    grepxcel suggest data.xlsx -v
+    grepxcel draft data.xlsx -o draft_pattern.xlsx
+    grepxcel draft data.xlsx -v
 """
 
 import argparse
@@ -72,7 +72,7 @@ def _build_parser() -> argparse.ArgumentParser:
         epilog="""
 commands:
   extract   Extract data from Excel files using a pattern file
-  suggest   Use a local LLM to suggest a pattern file for an Excel file
+  draft     Use a local LLM to draft a starter pattern file for an Excel file
   docs      Write a pattern-format reference xlsx (pattern-reference.xlsx)
 
 Run 'grepxcel <command> --help' for per-command options.
@@ -82,7 +82,7 @@ Run 'grepxcel <command> --help' for per-command options.
     sub.required = True
 
     _add_extract_subparser(sub)
-    _add_suggest_subparser(sub)
+    _add_draft_subparser(sub)
     _add_docs_subparser(sub)
     return p
 
@@ -182,10 +182,10 @@ examples:
     )
 
 
-def _add_suggest_subparser(sub) -> None:
-    p = sub.add_parser(
-        'suggest',
-        help='Use a local LLM to suggest a pattern file for an Excel file',
+def _add_draft_subparser(sub) -> None:
+    _draft_args(sub.add_parser(
+        'draft',
+        help='Use a local LLM to draft a starter pattern file for an Excel file',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 The model is downloaded automatically on first run (~2.4 GB) and cached locally.
@@ -195,11 +195,14 @@ during inference.
 Override the model cache directory with the GREPXCEL_MODEL_DIR environment variable.
 
 examples:
-  grepxcel suggest report.xlsx
-  grepxcel suggest report.xlsx -o my_pattern.xlsx
-  grepxcel suggest report.xlsx -v
+  grepxcel draft report.xlsx
+  grepxcel draft report.xlsx -o my_pattern.xlsx
+  grepxcel draft report.xlsx -v
         """,
-    )
+    ))
+
+
+def _draft_args(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         'file',
         metavar='FILE',
@@ -208,8 +211,8 @@ examples:
     p.add_argument(
         '-o', '--output',
         metavar='FILE',
-        default='suggested_pattern.xlsx',
-        help='Write suggested pattern to FILE (default: suggested_pattern.xlsx)',
+        default='draft_pattern.xlsx',
+        help='Write draft pattern to FILE (default: draft_pattern.xlsx)',
     )
     p.add_argument(
         '-v', '--verbose',
@@ -307,12 +310,12 @@ def _run_docs(args) -> int:
     return 0
 
 
-# ── suggest handler ───────────────────────────────────────────────────────────
+# ── draft handler ─────────────────────────────────────────────────────────────
 
-def _run_suggest(args) -> int:
-    from .suggester import PatternSuggester
+def _run_draft(args) -> int:
+    from .drafter import PatternDrafter
     sheet = _resolve_sheet(args)
-    suggester = PatternSuggester(
+    drafter = PatternDrafter(
         input_path=args.file,
         output_path=args.output,
         sheet=sheet,
@@ -320,16 +323,22 @@ def _run_suggest(args) -> int:
         max_uncompressed_mb=args.max_uncompressed,
         verbose=args.verbose,
     )
-    return suggester.run()
+    return drafter.run()
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 def main(argv=None):
+    # 'suggest' is a transparent backward-compat alias for 'draft'
+    if argv is None:
+        argv = sys.argv[1:]
+    if argv and argv[0] == 'suggest':
+        argv = ['draft'] + argv[1:]
+
     args = _build_parser().parse_args(argv)
 
-    if args.command == 'suggest':
-        sys.exit(_run_suggest(args))
+    if args.command == 'draft':
+        sys.exit(_run_draft(args))
 
     if args.command == 'docs':
         sys.exit(_run_docs(args))

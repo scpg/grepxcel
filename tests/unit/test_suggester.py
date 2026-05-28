@@ -1,4 +1,4 @@
-"""Unit tests for engine.suggester and the infer_cell_type utility."""
+"""Unit tests for engine.drafter (pattern drafting) and the infer_cell_type utility."""
 
 import datetime
 import sys
@@ -9,8 +9,11 @@ from unittest.mock import MagicMock, patch
 import openpyxl
 import pytest
 
-from engine.suggester import ExcelAnalyzer, LlamaCppClient, PatternWriter, PatternSuggester
+from engine.drafter import ExcelAnalyzer, LlamaCppClient, PatternDrafter, PatternWriter
 from engine.utils import infer_cell_type
+
+# Backward-compat alias used in a few tests below
+PatternSuggester = PatternDrafter
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -238,7 +241,7 @@ class TestLlamaCppClient:
 # ── PatternSuggester integration (mocked LLM) ────────────────────────────────
 
 class TestPatternSuggesterMocked:
-    _LLM_RESPONSE = "def: | Name | string | .*\nSTART:\ncell:1 | Name\nEND:"
+    _LLM_RESPONSE = "var: | Name | string | .*\nSTART:\ncell:next | Name\nEND:"
 
     def test_full_pipeline_creates_xlsx(self, tmp_path):
         data_path = _make_xlsx([['Name', 'Age'], ['Alice', 30]], tmp_path, 'data.xlsx')
@@ -250,9 +253,9 @@ class TestPatternSuggesterMocked:
         mock_client = MagicMock()
         mock_client.return_value.chat.return_value = self._LLM_RESPONSE
 
-        with patch('engine.suggester.ModelManager', mock_manager), \
-             patch('engine.suggester.LlamaCppClient', mock_client):
-            s = PatternSuggester(input_path=data_path, output_path=out_path)
+        with patch('engine.drafter.ModelManager', mock_manager), \
+             patch('engine.drafter.LlamaCppClient', mock_client):
+            s = PatternDrafter(input_path=data_path, output_path=out_path)
             code = s.run()
 
         assert code == 0
