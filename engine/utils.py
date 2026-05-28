@@ -58,9 +58,9 @@ def validate_type(value, field_type: str, regex: str, currency_sign: str = '€'
         ok = _safe_match(regex, str(value), max_len=max_cell_len)
         return ok, ('' if ok else f'{value} does not match /{regex}/')
 
-    elif field_type == 'currency':
+    elif field_type in ('currency', 'percentage'):
         if isinstance(value, bool):
-            return False, 'boolean is not currency'
+            return False, f'boolean is not {field_type}'
         if not isinstance(value, (int, float)):
             return False, f'{repr(value)} is not numeric'
         str_val = str(value)

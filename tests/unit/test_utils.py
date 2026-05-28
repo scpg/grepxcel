@@ -126,6 +126,27 @@ def test_date_string_rejected():
     assert 'date' in reason
 
 
+# ─── validate_type: percentage ───────────────────────────────────────────────
+
+def test_percentage_float():
+    ok, _ = validate_type(0.6246, 'percentage', r'.*')
+    assert ok
+
+def test_percentage_int():
+    ok, _ = validate_type(1, 'percentage', r'.*')
+    assert ok
+
+def test_percentage_bool_rejected():
+    ok, reason = validate_type(True, 'percentage', r'.*')
+    assert not ok
+    assert 'boolean' in reason
+
+def test_percentage_string_rejected():
+    ok, reason = validate_type('62%', 'percentage', r'.*')
+    assert not ok
+    assert 'numeric' in reason
+
+
 # ─── validate_type: unknown type ─────────────────────────────────────────────
 
 def test_unknown_type():

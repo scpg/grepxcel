@@ -149,8 +149,18 @@ examples:
         choices=['nested', 'legacy'], default='nested',
         help='Output format: nested (default) or legacy ({"cells":{}, "tables":[]})',
     )
+    sheet_group = p.add_mutually_exclusive_group()
+    sheet_group.add_argument(
+        '--all-sheets',
+        action='store_true',
+        help='Process every sheet in the workbook; output is a dict keyed by sheet name',
+    )
+    sheet_group.add_argument(
+        '--sheet',
+        metavar='NAME_OR_INDEX',
+        help='Sheet to use: name (e.g. Sheet2) or 0-based index (default: active sheet)',
+    )
     _add_security_args(p)
-    _add_sheet_arg(p)
 
 
 def _add_docs_subparser(sub) -> None:
@@ -233,18 +243,28 @@ def _process_file(pattern: str, data_file: str, args, stem: str = None) -> bool:
         print(f'{"─" * 62}', file=sys.stderr)
 
     logger = Logger(level=level, log_file=args.log)
-    sheet = _resolve_sheet(args)
     output_format = getattr(args, 'format', 'nested')
+    all_sheets = getattr(args, 'all_sheets', False)
 
     try:
-        result = Engine().process(
-            pattern, data_file, logger=logger,
-            max_file_mb=args.max_size,
-            max_uncompressed_mb=args.max_uncompressed,
-            max_cell_len=args.max_cell_len,
-            sheet=sheet,
-            output_format=output_format,
-        )
+        engine = Engine()
+        if all_sheets:
+            result = engine.process_all(
+                pattern, data_file, logger=logger,
+                max_file_mb=args.max_size,
+                max_uncompressed_mb=args.max_uncompressed,
+                max_cell_len=args.max_cell_len,
+                output_format=output_format,
+            )
+        else:
+            result = engine.process(
+                pattern, data_file, logger=logger,
+                max_file_mb=args.max_size,
+                max_uncompressed_mb=args.max_uncompressed,
+                max_cell_len=args.max_cell_len,
+                sheet=_resolve_sheet(args),
+                output_format=output_format,
+            )
     except Exception as exc:
         print(f'\n  ✗  Unexpected error processing {data_file}: {exc}', file=sys.stderr)
         return False

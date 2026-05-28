@@ -234,12 +234,10 @@ class Engine:
             logger = Logger()
 
         self._max_cell_len = max_cell_len
-
         defs = {}
-        _raw = {'cells': {}, 'tables': []}  # internal flat format (stats + legacy output)
+        _raw = {'cells': {}, 'tables': []}
 
         try:
-            # Security: validate both files before openpyxl touches them
             for path in (pattern_file, data_file):
                 try:
                     validate_file(path,
@@ -281,26 +279,9 @@ class Engine:
                         expected=f'one of: {", ".join(wb.sheetnames)}',
                     )
                 ws = wb[sheet]
-            logger.sheet_name = ws.title
-
-            _expand_merged_cells(ws)
-            _warn_uncached_formulas(ws, logger)
 
             logger.engine_start(pattern_file, data_file)
-            logger.sheet_info(ws.title, ws.max_row, ws.max_column, global_config.read_direction)
-
-            scanner = SheetScanner(ws, global_config)
-            table_index = 0
-
-            try:
-                for instruction in start_sequence:
-                    if isinstance(instruction, CellInstruction):
-                        self._process_cell(instruction, scanner, defs, global_config, _raw, logger)
-                    elif isinstance(instruction, TableInstruction):
-                        self._process_table(instruction, scanner, defs, _raw, table_index, logger)
-                        table_index += 1
-            except EngineError:
-                pass  # already logged; return partial result
+            _raw = self._process_sheet(ws, global_config, defs, start_sequence, logger)
 
         except EngineError:
             pass  # setup-phase fatal; already logged, return partial result
@@ -310,6 +291,89 @@ class Engine:
         if output_format == 'legacy':
             return _raw
         return _build_nested_output(_raw, defs)
+
+    def process_all(self, pattern_file: str, data_file: str,
+                    logger: Logger = None,
+                    max_file_mb: float = 5,
+                    max_uncompressed_mb: float = DEFAULT_MAX_UNCOMPRESSED_MB,
+                    max_cell_len: int = _MAX_REGEX_INPUT_LEN,
+                    output_format: str = 'nested') -> dict:
+        """
+        Process every sheet in data_file using the same pattern.
+        Returns a dict keyed by sheet name: {sheet_name: result, ...}.
+        """
+        if logger is None:
+            logger = Logger()
+
+        self._max_cell_len = max_cell_len
+        defs = {}
+        out: dict = {}
+
+        try:
+            for path in (pattern_file, data_file):
+                try:
+                    validate_file(path,
+                                  max_file_mb=max_file_mb,
+                                  max_uncompressed_mb=max_uncompressed_mb)
+                except SecurityError as exc:
+                    logger.fatal(str(exc), found=path)
+
+            try:
+                global_config, defs, start_sequence = PatternParser().parse(pattern_file)
+            except (SecurityError, PatternError) as exc:
+                logger.fatal(str(exc), found=pattern_file)
+
+            try:
+                wb = openpyxl.load_workbook(data_file, data_only=True)
+            except Exception as exc:
+                logger.fatal(
+                    f'Failed to open the data file: {exc}',
+                    found=data_file,
+                    expected='a valid, uncorrupted .xlsx workbook',
+                )
+
+            logger.engine_start(pattern_file, data_file)
+
+            for ws in wb.worksheets:
+                _raw = {'cells': {}, 'tables': []}
+                try:
+                    _raw = self._process_sheet(ws, global_config, defs, start_sequence, logger)
+                except EngineError:
+                    pass  # per-sheet fatal; log and continue
+                logger.summary(_raw)
+                if output_format == 'legacy':
+                    out[ws.title] = _raw
+                else:
+                    out[ws.title] = _build_nested_output(_raw, defs)
+
+        except EngineError:
+            pass  # setup-phase fatal
+
+        return out
+
+    def _process_sheet(self, ws, global_config, defs: dict,
+                       start_sequence: list, logger: Logger) -> dict:
+        """Run extraction on a single worksheet. Returns raw flat result dict."""
+        _raw = {'cells': {}, 'tables': []}
+        logger.sheet_name = ws.title
+        _expand_merged_cells(ws)
+        _warn_uncached_formulas(ws, logger)
+        logger.sheet_info(ws.title, ws.max_row, ws.max_column, global_config.read_direction)
+
+        scanner = SheetScanner(ws, global_config)
+        table_index = 0
+
+        try:
+            for instruction in start_sequence:
+                if isinstance(instruction, CellInstruction):
+                    self._process_cell(instruction, scanner, defs, global_config, _raw, logger)
+                elif isinstance(instruction, TableInstruction):
+                    self._process_table(instruction, scanner, defs, _raw, table_index, logger)
+                    table_index += 1
+        except EngineError:
+            pass  # already logged; return partial result
+
+        return _raw
 
     # -------------------------------------------------------------------------
     # cell:1 processing
