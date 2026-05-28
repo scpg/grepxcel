@@ -49,6 +49,17 @@ def run(fixture_name: str, sheet=None):
     return result, lg
 
 
+def run_all_sheets(fixture_name: str):
+    folder = os.path.join(FIXTURES, fixture_name)
+    lg = Logger(level=VerbosityLevel.QUIET)
+    result = Engine().process_all(
+        pattern_file=os.path.join(folder, 'pattern.xlsx'),
+        data_file=os.path.join(folder, 'data.xlsx'),
+        logger=lg,
+    )
+    return result, lg
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # 01: Simple Invoice
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1094,6 +1105,97 @@ class TestAnnualBudget:
         forbidden = {'lbl_income', 'lbl_expenses_s', 'col_item', 'col_total_hdr'}
         assert not forbidden & set(self.result.keys())
         assert not forbidden & set(self.result.get('summary', {}).keys())
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# --all-sheets: process_all() — fixture 06 (two sheets: '2026' and '2025')
+# ═════════════════════════════════════════════════════════════════════════════
+
+class TestAllSheets:
+    """
+    process_all() on fixture 06 (06_merged_cells) which has two sheets:
+      '2026' — one SALES CATALOGUE table, total 2369.98
+      '2025' — three diagonal tables with doubling totals (3369.98, 6739.96, 13479.92)
+
+    Expected output: {'2026': {...}, '2025': {...}}
+    """
+    def setup_method(self):
+        self.result, self.lg = run_all_sheets('06_merged_cells')
+
+    def test_no_errors(self):
+        assert not self.lg.has_errors()
+
+    def test_returns_dict_keyed_by_sheet_name(self):
+        assert set(self.result.keys()) == {'2026', '2025'}
+
+    def test_2026_has_one_table_instance(self):
+        r2026 = self.result['2026']
+        # fixture 06 pattern.xlsx uses 'item' as table group
+        table_key = [k for k in r2026 if k not in ('_source',) and isinstance(r2026[k], list)]
+        assert len(table_key) == 1
+        assert len(r2026[table_key[0]]) == 1
+
+    def test_2025_has_three_table_instances(self):
+        r2025 = self.result['2025']
+        table_key = [k for k in r2025 if isinstance(r2025[k], list)]
+        assert len(table_key) == 1
+        assert len(r2025[table_key[0]]) == 3
+
+    def test_2026_source_sheet(self):
+        r2026 = self.result['2026']
+        table_key = [k for k in r2026 if isinstance(r2026[k], list)][0]
+        assert r2026[table_key][0]['_source']['sheet'] == '2026'
+
+    def test_2025_source_sheet(self):
+        r2025 = self.result['2025']
+        table_key = [k for k in r2025 if isinstance(r2025[k], list)][0]
+        for inst in r2025[table_key]:
+            assert inst['_source']['sheet'] == '2025'
+
+    def test_2026_grand_total(self):
+        r2026 = self.result['2026']
+        table_key = [k for k in r2026 if isinstance(r2026[k], list)][0]
+        footer = r2026[table_key][0].get('footer', {})
+        total = footer.get('total') or footer.get('grand_total')
+        assert total == pytest.approx(2369.98, rel=1e-4)
+
+    def test_2025_totals_double(self):
+        r2025 = self.result['2025']
+        table_key = [k for k in r2025 if isinstance(r2025[k], list)][0]
+        instances = r2025[table_key]
+        totals = [inst['footer'].get('total') or inst['footer'].get('grand_total')
+                  for inst in instances]
+        assert totals[0] == pytest.approx(3369.98, rel=1e-4)
+        assert totals[1] == pytest.approx(2 * totals[0], rel=1e-4)
+        assert totals[2] == pytest.approx(4 * totals[0], rel=1e-4)
+
+    def test_result_matches_per_sheet_run(self):
+        # process_all() result for '2026' must match process(sheet='2026')
+        r_single, _ = run('06_merged_cells', sheet='2026')
+        assert self.result['2026'] == r_single
+
+    def test_result_matches_per_sheet_run_2025(self):
+        r_single, _ = run('06_merged_cells', sheet='2025')
+        assert self.result['2025'] == r_single
+
+
+# ─── process_all() on a single-sheet workbook ─────────────────────────────────
+
+class TestAllSheetsSingleSheet:
+    """process_all() on fixture 01 (one sheet) → dict with one key."""
+    def setup_method(self):
+        self.result, self.lg = run_all_sheets('01_simple_invoice')
+
+    def test_no_errors(self):
+        assert not self.lg.has_errors()
+
+    def test_returns_single_key(self):
+        assert len(self.result) == 1
+
+    def test_key_matches_active_sheet(self):
+        r_single, _ = run('01_simple_invoice')
+        sheet_name = list(self.result.keys())[0]
+        assert self.result[sheet_name] == r_single
 
 
 # ═════════════════════════════════════════════════════════════════════════════

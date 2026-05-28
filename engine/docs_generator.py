@@ -99,7 +99,7 @@ class DocsGenerator:
         row(['doc:', '', '', '', 'var: defines a data field. Extracted and written to output JSON.'], 'doc')
         row(['doc:', '', '', '', 'Dot notation creates nested JSON: po.number → {"po": {"number": ...}}'], 'doc')
         row(['doc:', '', '', '', 'All var: fields in one table DATA row must share the same group prefix.'], 'doc')
-        row(['doc:', '', '', '', 'Types: string  integer  currency  date  datetime'], 'doc')
+        row(['doc:', '', '', '', 'Types: string  integer  currency  percentage  date  datetime'], 'doc')
         row(['doc:', '', '', '', 'Regex: Python re.fullmatch pattern. Leave blank for date/datetime. .* matches anything.'], 'doc')
         row(['var:', 'po.number',    'string',   r'PO-[0-9]{4}',    'Matches e.g. "PO-2026". Output key: {"po": {"number": ...}}'], 'var')
         row(['var:', 'po.date',      'date',     '',                 'Any date cell. Leave regex empty for date/datetime.'], 'var')
@@ -114,19 +114,20 @@ class DocsGenerator:
 
         # ── START section ──────────────────────────────────────────────────────
         row(['doc:', '', '', '', 'Everything between START: and END: defines the extraction order.'], 'doc')
-        row(['doc:', '', '', '', 'cell:1  reads the next non-empty cell into a field (or skips it with IGNORE).'], 'doc')
-        row(['doc:', '', '', '', 'table:* finds all instances of a repeating table block.'], 'doc')
+        row(['doc:', '', '', '', 'cell:next  reads the next non-empty cell (alias: cell:1). Scans in read.direction order.'], 'doc')
+        row(['doc:', '', '', '', 'cell:B5    jumps directly to cell B5 (absolute A1-notation reference).'], 'doc')
+        row(['doc:', '', '', '', 'table:*    finds all instances of a repeating table block.'], 'doc')
         row(['START:'], 'marker')
 
-        # cell instructions
-        row(['cell:1', 'po_label',     '', '', 'Consume "PO Number:" as an anchor (lbl: field — not in output).'], 'cell')
-        row(['cell:1', 'po.number',    '', '', 'Extract the PO number.'], 'cell')
-        row(['cell:1', 'date_label',   '', '', 'Consume "Date:" anchor.'], 'cell')
-        row(['cell:1', 'po.date',      '', '', 'Extract the PO date.'], 'cell')
-        row(['cell:1', 'vendor_label', '', '', 'Consume "Vendor:" anchor.'], 'cell')
-        row(['cell:1', 'vendor.name',  '', '', 'Extract the vendor name.'], 'cell')
+        # cell instructions — showing both cell:next and cell:A1 styles
+        row(['cell:A1', 'po_label',     '', '', 'Jump to A1 and read "PO Number:" anchor (lbl: field — not in output).'], 'cell')
+        row(['cell:next', 'po.number',  '', '', 'Read next non-empty cell after A1 → the PO number.'], 'cell')
+        row(['cell:C1', 'date_label',   '', '', 'Jump to C1 and read "Date:" anchor.'], 'cell')
+        row(['cell:next', 'po.date',    '', '', 'Read next non-empty cell after C1 → the PO date.'], 'cell')
+        row(['cell:next', 'vendor_label', '', '', 'Read next non-empty cell → "Vendor:" anchor.'], 'cell')
+        row(['cell:next', 'vendor.name',  '', '', 'Extract the vendor name.'], 'cell')
         row(['doc:', '', '', '', 'Use IGNORE to skip a non-empty cell without defining a field for it.'], 'doc')
-        row(['cell:1', 'IGNORE',       '', '', 'Skip one non-empty cell without capturing it.'], 'cell')
+        row(['cell:next', 'IGNORE',     '', '', 'Skip one non-empty cell without capturing it.'], 'cell')
         blank()
 
         # table instruction + template rows
@@ -147,13 +148,14 @@ class DocsGenerator:
         # ── Quick reference table ──────────────────────────────────────────────
         row(['doc:', '', '', '', '── QUICK REFERENCE ──────────────────────────────────────────────'], 'doc')
         ref = [
-            ('doc:',     'doc: | free text',          'Inline comment. Ignored by engine.'),
-            ('config:',  'config: | key | value',     'Global setting. Keys: read.direction, currency.sign, empty.aliases'),
+            ('doc:',     'doc: | free text',           'Inline comment. Ignored by engine.'),
+            ('config:',  'config: | key | value',      'Global setting. Keys: read.direction, currency.sign, empty.aliases'),
             ('lbl:',     'lbl: | name | type | regex', 'Anchor label. Matched but never in output.'),
             ('var:',     'var: | name | type | regex', 'Extracted variable. Use dot notation for nesting.'),
-            ('cell:1',   'cell:1 | FieldName',         'Read next non-empty cell into FieldName.'),
-            ('cell:1',   'cell:1 | IGNORE',            'Skip next non-empty cell.'),
-            ('table:*',  'table:*  (or table:1)',       'Begin a repeating table block.'),
+            ('cell:next','cell:next | FieldName',      'Read next non-empty cell (alias: cell:1).'),
+            ('cell:next','cell:next | IGNORE',         'Skip next non-empty cell without capturing.'),
+            ('cell:next','cell:B5 | FieldName',        'Jump directly to B5 (absolute reference). Ordering must be forward.'),
+            ('table:*',  'table:*  (or table:1)',      'Begin a repeating table block.'),
             ('HEADER:N', ' | HEADER:1 | F1 | F2',     'Strict header row template (col A must be blank).'),
             ('DATA:*',   ' | DATA:* | F1 | F2',        'Data row template (lenient validation).'),
             ('FOOTER:N', ' | FOOTER:1 | F1 | F2',      'Strict footer row template.'),
