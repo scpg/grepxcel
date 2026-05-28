@@ -31,7 +31,8 @@ The pattern file has four row types:
 
 Between `START:` and `END:` you list the extraction sequence:
 
-- `cell:1 fieldName` — read the next non-empty cell into a field
+- `cell:next fieldName` — read the next non-empty cell into a field (alias: `cell:1`)
+- `cell:B5 fieldName` — jump directly to an absolute cell (A1-notation reference)
 - `table:*` — match all instances of a repeating mini-table block
 
 Dot notation in `var:` field names creates nested output: `po.number` → `{"po": {"number": …}}`.
@@ -50,6 +51,11 @@ python -m venv .venv
 .venv/bin/pip install -r requirements-suggest.txt     # optional: suggest command
 ```
 
+> **Windows (PowerShell):** use `.venv\Scripts\` instead of `.venv/bin/`, e.g.
+> `.venv\Scripts\pip install -e .` and `.venv\Scripts\grepxcel ...`.
+
+Requires Python **3.11+**.
+
 ### CLI usage
 
 ```bash
@@ -58,6 +64,10 @@ python -m venv .venv
 
 # Write output to a directory instead of stdout
 .venv/bin/grepxcel extract -p pattern.xlsx data.xlsx -o output/
+
+# Process a specific sheet, or every sheet at once
+.venv/bin/grepxcel extract -p pattern.xlsx data.xlsx --sheet 2025
+.venv/bin/grepxcel extract -p pattern.xlsx data.xlsx --all-sheets
 
 # Verbose mode (step-by-step match log)
 .venv/bin/grepxcel extract -p pattern.xlsx data.xlsx -v
@@ -133,6 +143,7 @@ Label fields (`lbl:`) are used only for positional anchoring and are never inclu
 | `--max-uncompressed MB` | 50 | Uncompressed ZIP content limit (ZIP bomb guard) |
 | `--max-cell-len N` | 1000 | Max cell chars fed to regex (ReDoS guard) |
 | `--sheet NAME_OR_INDEX` | active | Sheet name or 0-based index to process |
+| `--all-sheets` | off | Process every sheet; output is a dict keyed by sheet name (mutually exclusive with `--sheet`) |
 
 ### `grepxcel docs`
 
@@ -143,11 +154,15 @@ Label fields (`lbl:`) are used only for positional anchoring and are never inclu
 ### `grepxcel suggest`
 
 Requires `requirements-suggest.txt` to be installed (local LLM — no data sent externally).
+The model is pinned to a specific revision and downloaded once on first run; set
+`GREPXCEL_MODEL_AUTOUPDATE=1` to opt in to upstream updates, and `GREPXCEL_MODEL_DIR`
+to relocate the cache.
 
 | Flag | Default | Purpose |
 |---|---|---|
-| `-o FILE` | — | Write suggested pattern to this path |
-| `--model FILE` | auto-download | Path to a GGUF model file |
+| `-o FILE` | `suggested_pattern.xlsx` | Write suggested pattern to this path |
+| `-v` | off | Print the Excel analysis sent to the model + update status |
+| `--sheet NAME_OR_INDEX` | active | Sheet to analyse |
 
 ---
 
@@ -186,13 +201,13 @@ output/          ← JSON extraction results         (gitignored)
 .venv/bin/pytest tests/ -q
 ```
 
-195 tests across 3 fixture scenarios — all green.
+610+ unit and integration tests across 16 fixture scenarios — all green.
 
 ---
 
 ## Requirements
 
-- Python 3.10+
+- Python 3.11+
 - `openpyxl >= 3.1`
 - `defusedxml >= 0.7`
 - `llama-cpp-python >= 0.2.90` and `huggingface_hub >= 0.23` — only for `grepxcel suggest`

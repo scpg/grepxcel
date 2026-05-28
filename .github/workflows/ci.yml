@@ -9,14 +9,18 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
 
     steps:
       - uses: actions/checkout@v6
 
-      - name: Set up Python 3.12
+      - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v6
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python-version }}
           cache: "pip"
 
       - name: Install dependencies
@@ -24,3 +28,27 @@ jobs:
 
       - name: Run tests
         run: pytest tests/ -q
+
+  package:
+    # Smoke-test that the package installs and the console entry point works.
+    # The test job above imports `engine` via sys.path; this job validates the
+    # actual installed artifact and the `grepxcel` script defined in pyproject.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install package
+        run: pip install .
+
+      - name: Verify console entry point
+        run: |
+          grepxcel --help
+          grepxcel extract --help
+          grepxcel docs -o /tmp/pattern-reference.xlsx
+          test -f /tmp/pattern-reference.xlsx

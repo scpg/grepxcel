@@ -9,7 +9,9 @@ A pattern file is an `.xlsx` workbook that tells grepxcel what to look for and e
 - Every cell must contain **plain text**. Numbers, dates, booleans, and formulas are rejected.
 - Cell values must not exceed **1 000 characters**.
 - Formatting (fonts, colours, borders) is ignored and may be used freely.
-- Only the **active sheet** is read; all other sheets are ignored.
+- By default only the **active sheet** of the *data* file is read. Use `--sheet`
+  to target another sheet, or `--all-sheets` to process every sheet with the
+  same pattern (output is then keyed by sheet name).
 
 ---
 
@@ -18,13 +20,13 @@ A pattern file is an `.xlsx` workbook that tells grepxcel what to look for and e
 A pattern file has three areas, written top-to-bottom:
 
 ```
-┌─────────────────────────────────────────┐
-│  config: rows   (optional, 0 or more)   │
-│  def: rows      (required, 1 or more)   │
-│  START:                                 │
-│    cell / table instructions            │
-│  END:                                   │
-└─────────────────────────────────────────┘
+┌──────────────────────────────────────────────┐
+│  config: rows        (optional, 0 or more)   │
+│  lbl: / var: / doc:  (definitions, 1 or more)│
+│  START:                                      │
+│    cell / table instructions                 │
+│  END:                                        │
+└──────────────────────────────────────────────┘
 ```
 
 Each row uses **columns A, B, C, D, …** as fields. Column A is always the row-type keyword.
@@ -52,30 +54,44 @@ Optional. Placed before `START:`. Each `config:` row sets one global option.
 
 ---
 
-## def: rows
+## Field definition rows: `lbl:`, `var:`, `doc:`
 
-Required. Each `def:` row defines one field that can be referenced in the `START:` section.
+At least one definition row is required. Each defines one field that can be
+referenced in the `START:` section, or documents the pattern.
 
-| Column A | Column B      | Column C   | Column D              |
-|----------|---------------|------------|-----------------------|
-| `def:`   | `FieldName`   | type       | regex                 |
+| Column A | Column B      | Column C   | Column D              | Role |
+|----------|---------------|------------|-----------------------|------|
+| `lbl:`   | `FieldName`   | type       | regex                 | **Anchor** — matched for position only; **never written to output JSON** |
+| `var:`   | `field.name`  | type       | regex                 | **Variable** — extracted and written to output JSON |
+| `doc:`   | (free text)   |            |                       | **Comment** — ignored by the engine |
+| `def:`   | `FieldName`   | type       | regex                 | Backward-compatible alias for `var:` |
 
-- **FieldName** — any plain-text identifier, e.g. `InvoiceNo`, `Amount`, `Date`. Must be unique.
-- **type** — one of the values below.
-- **regex** — a Python `re.fullmatch` pattern applied to the string representation of the cell value. Use `.*` to accept anything. Nested unbounded quantifiers (e.g. `(a+)+`) are rejected as unsafe.
+- **`lbl:`** — use for literal text that marks *where* a value lives: labels like
+  `Invoice No:` or column headers like `Product`, `Qty`. Matched but stripped
+  from output.
+- **`var:`** — use for every value you want to capture. **Dot notation creates
+  nested JSON**: `po.number` → `{"po": {"number": …}}`. In a table, the group
+  prefix (`line` in `line.qty`) becomes the output array key.
+- **FieldName** — a unique plain-text identifier.
+- **regex** — a Python `re.fullmatch` pattern applied to the string
+  representation of the cell value. Use `.*` to accept anything. Nested
+  unbounded quantifiers (e.g. `(a+)+`) are rejected as unsafe (ReDoS guard).
 
 ### Supported types
 
-| Type        | Accepts                                      | Regex target           |
-|-------------|----------------------------------------------|------------------------|
-| `string`    | Any text                                     | The cell text as-is    |
-| `integer`   | Whole numbers (Excel integers or whole floats)| `str(int_value)`       |
-| `currency`  | Any number (int or float)                    | `str(numeric_value)`   |
-| `date`      | Excel date cells                             | n/a (type check only)  |
-| `datetime`  | Excel datetime cells                         | n/a (type check only)  |
-| `timestamp` | Same as `datetime`                           | n/a (type check only)  |
+| Type         | Accepts                                       | Regex target           |
+|--------------|-----------------------------------------------|------------------------|
+| `string`     | Any text                                      | The cell text as-is    |
+| `integer`    | Whole numbers (Excel integers or whole floats)| `str(int_value)`       |
+| `currency`   | Any number (int or float)                     | `str(numeric_value)`   |
+| `percentage` | Any number (int or float). Excel stores a percentage as a fraction, e.g. 62.5% → `0.625` | `str(numeric_value)` |
+| `date`       | Excel date cells                              | n/a (type check only)  |
+| `datetime`   | Excel datetime cells                          | n/a (type check only)  |
+| `timestamp`  | Same as `datetime`                            | n/a (type check only)  |
 
-For `date`/`datetime`/`timestamp`, the regex column is ignored — only the Python type is checked.
+`percentage` validates identically to `currency` (both require a numeric cell);
+it exists to document intent — a reader sees that the field holds a percentage.
+For `date`/`datetime`/`timestamp`, the regex column is ignored.
 
 ---
 
@@ -95,18 +111,34 @@ END:
 
 ## cell: instructions
 
-Extract a single cell from the data file.
+Extract a single cell from the data file. There are two addressing modes.
 
-| Column A  | Column B    |
-|-----------|-------------|
-| `cell:1`  | `FieldName` |
+| Column A   | Column B    | Mode |
+|------------|-------------|------|
+| `cell:next`| `FieldName` | **Sequential** — the next non-empty cell in scan order (`cell:1` is an alias) |
+| `cell:B5`  | `FieldName` | **Absolute** — jump directly to cell B5 (A1-notation) |
 
-- **Column A** — always `cell:1`. The `1` means one cell. (Only `1` is supported currently.)
-- **Column B** — the field name (must exist in a `def:` row) **or** the special keyword `IGNORE`.
+- **Column B** — a defined `var:`/`lbl:` field name, **or** the keyword `IGNORE`.
 
-`IGNORE` tells the engine to consume the next non-empty cell without extracting its value. Useful for skipping headers or labels that appear in the data file but that you don't need.
+**Sequential (`cell:next` / `cell:1`)** — the engine advances through the data
+sheet in `read.direction` order, skipping empty and already-consumed cells, and
+assigns each non-empty cell to the next instruction in sequence.
 
-The engine advances through the data sheet in `read.direction` order, skipping empty cells, and assigns each non-empty cell to the next `cell:1` instruction in sequence.
+**Absolute (`cell:B5`)** — the cursor jumps directly to the named coordinate and
+the cursor advances past it. This is self-documenting: you can read the pattern
+without mentally tracing the scan order. Rules:
+
+- Absolute references must appear in forward reading order relative to each
+  other; an out-of-order reference is rejected at parse time.
+- Referencing a cell the cursor has already passed is a fatal error.
+- On an empty target: `lbl:` → fatal (the anchor was expected); `var:` →
+  records `null` and continues; `IGNORE` → skipped silently.
+
+You can freely mix the two modes — e.g. jump with `cell:A1`, then read the rest
+with `cell:next`.
+
+`IGNORE` consumes a cell without extracting its value — useful for skipping
+labels you don't need.
 
 ---
 
@@ -179,31 +211,40 @@ config:    read.direction   LR
 config:    currency.sign    €
 config:    empty.aliases    N/A
 
-def:       InvoiceNo        string     INV-\d{4,8}
-def:       IssueDate        date
-def:       Vendor           string     .{2,100}
-def:       Amount           currency   \d+(\.\d{1,2})?
-def:       ProductCode      string     [A-Z]{2}\d{4}
-def:       Qty              integer    \d+
-def:       UnitPrice        currency   \d+(\.\d{1,2})?
-def:       Total            currency   \d+(\.\d{1,2})?
+lbl:       inv_label        string     Invoice No:
+lbl:       col_code         string     Code
+lbl:       col_qty          string     Qty
+lbl:       col_price        string     Unit Price
+var:       inv.number       string     INV-\d{4,8}
+var:       inv.date         date
+var:       inv.vendor       string     .{2,100}
+var:       line.code        string     [A-Z]{2}\d{4}
+var:       line.qty         integer    \d+
+var:       line.price       currency   \d+(\.\d{1,2})?
+var:       line.total       currency   \d+(\.\d{1,2})?
+var:       footer.total     currency   \d+(\.\d{1,2})?
 
 START:
-cell:1     InvoiceNo
-cell:1     IssueDate
-cell:1     Vendor
-cell:1     Amount
+cell:next  inv_label
+cell:next  inv.number
+cell:next  inv.date
+cell:next  inv.vendor
 
 table:*
-           HEADER:1         ProductCode  Qty  UnitPrice
-           DATA:*           ProductCode  Qty  UnitPrice  Total
-           FOOTER:1         IGNORE       IGNORE  IGNORE  Total
+           HEADER:1         col_code   col_qty  col_price
+           DATA:*           line.code  line.qty  line.price  line.total
+           FOOTER:1         IGNORE     IGNORE   IGNORE      footer.total
 END:
 ```
 
 In this example:
-- The engine first reads four individual cells in scan order (InvoiceNo, IssueDate, Vendor, Amount).
-- Then it searches the sheet for every mini-table that starts with a HEADER row of three fields and ends with a FOOTER row.
+- The engine reads the `Invoice No:` label (an `lbl:` anchor, dropped from output),
+  then the invoice number, date and vendor (`var:` fields, kept in output).
+- Then it searches the sheet for every mini-table whose HEADER matches the three
+  column labels, collects the `line.*` DATA rows into a `"line"` array, and
+  captures the footer total.
+- `lbl:` fields never appear in the output; `var:` fields do, nested by their
+  dot-notation prefix.
 
 ---
 
@@ -216,7 +257,10 @@ In this example:
 | Cell value longer than 1 000 characters    | Fatal error — processing stops |
 | Regex with nested quantifiers `(a+)+`      | Fatal error — processing stops |
 | Invalid regex syntax                       | Fatal error — processing stops |
-| `def:` field referenced in `START:` but missing | Fatal error             |
+| Field referenced in `START:` but not defined | Fatal error                  |
+| Absolute `cell:` references out of reading order | Fatal error (at parse time) |
+| `cell:` absolute target already passed by cursor | Fatal error              |
+| `lbl:` absolute target is empty            | Fatal error                    |
 | Data cell fails type/regex validation      | Warning logged, value kept     |
 | Data cell empty where a value was expected | Warning logged, `null` stored  |
 

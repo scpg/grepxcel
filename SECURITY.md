@@ -26,7 +26,7 @@ In scope:
 
 Out of scope:
 
-- Issues in `tmp-scripts/` (development-only, never installed)
+- Issues in `tmp.local/` (development-only, gitignored, never installed)
 - Vulnerabilities in the local LLM used by `grepxcel suggest` (third-party model)
 - Social engineering or phishing
 
@@ -34,8 +34,25 @@ Out of scope:
 
 grepxcel applies several defences against malicious Excel files:
 
-- `defusedxml` for XML parsing (XXE protection)
-- Compressed and uncompressed file size limits (ZIP bomb guard)
-- Per-cell character length limit (ReDoS guard)
-- Formula detection: pattern files must contain plain text only
-- `data_only=True` when loading data files (formulas never executed)
+- `defusedxml` for XML parsing (XXE protection). This is asserted fail-closed
+  before every file load — the tool refuses to parse input if defusedxml is not
+  active, rather than parsing it unsafely.
+- Compressed and uncompressed file size limits, plus an expansion-ratio ceiling
+  (ZIP bomb guard).
+- Per-cell character length limit and AST-based nested-quantifier rejection
+  (ReDoS guard) on every user-supplied regex.
+- Formula detection: pattern files must contain plain text only.
+- `data_only=True` when loading data files (formulas are never executed).
+- `.xlsm` / `.xlsb` / `.xls` are rejected; only macro-free `.xlsx` is accepted.
+
+### `grepxcel suggest` (optional extra) supply chain
+
+The optional `suggest` command downloads a GGUF model from Hugging Face:
+
+- The model is **pinned to an immutable commit revision**; `huggingface_hub`
+  verifies the file hash against the Hub for that revision.
+- **Auto-update is off by default.** To opt in to tracking upstream `main`, set
+  `GREPXCEL_MODEL_AUTOUPDATE=1` — be aware this fetches updated weights from a
+  third-party repository.
+- Inference runs entirely in-process; **no extracted data ever leaves the
+  machine**.
