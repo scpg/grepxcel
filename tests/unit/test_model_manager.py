@@ -8,7 +8,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from engine.model_manager import ModelManager, MODEL_FILENAME, _CHECK_INTERVAL
+from engine.model_manager import (
+    ModelManager,
+    MODEL_FILENAME,
+    MODEL_REVISION,
+    _CHECK_INTERVAL,
+    _autoupdate_enabled,
+)
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -157,3 +163,82 @@ class TestCacheDirOverride:
         monkeypatch.setenv("GREPXCEL_MODEL_DIR", custom)
         from engine.model_manager import default_cache_dir
         assert default_cache_dir() == Path(custom)
+
+
+# ── revision pinning ──────────────────────────────────────────────────────────
+
+class TestRevisionPinning:
+    def test_model_revision_is_immutable_sha(self):
+        # A pin must be a 40-char hex commit SHA, never a branch name.
+        assert len(MODEL_REVISION) == 40
+        assert all(c in "0123456789abcdef" for c in MODEL_REVISION.lower())
+
+    @staticmethod
+    def _fake_hf_module(captured: dict):
+        """A stand-in huggingface_hub module so these tests run without the
+        optional 'suggest' extra installed (it is absent from core CI)."""
+        import types
+
+        def fake_download(**kwargs):
+            captured.update(kwargs)
+            p = Path(kwargs["local_dir"]) / MODEL_FILENAME
+            p.write_bytes(b"")
+            return str(p)
+
+        mod = types.ModuleType("huggingface_hub")
+        mod.hf_hub_download = fake_download
+        return mod
+
+    def test_download_pins_revision_and_records_it(self, tmp_path, monkeypatch):
+        m = _make_manager(tmp_path)
+        captured: dict = {}
+        monkeypatch.setitem(sys.modules, "huggingface_hub", self._fake_hf_module(captured))
+
+        m._download(announce=False)
+
+        assert captured["revision"] == MODEL_REVISION
+        assert m._load_state()["commit_hash"] == MODEL_REVISION
+
+    def test_download_uses_explicit_commit_when_given(self, tmp_path, monkeypatch):
+        m = _make_manager(tmp_path)
+        captured: dict = {}
+        monkeypatch.setitem(sys.modules, "huggingface_hub", self._fake_hf_module(captured))
+
+        m._download(announce=False, commit_hash="0" * 40)
+
+        assert captured["revision"] == "0" * 40
+        assert m._load_state()["commit_hash"] == "0" * 40
+
+
+# ── auto-update is opt-in ──────────────────────────────────────────────────────
+
+class TestAutoUpdateOptIn:
+    def test_disabled_by_default(self, monkeypatch):
+        monkeypatch.delenv("GREPXCEL_MODEL_AUTOUPDATE", raising=False)
+        assert _autoupdate_enabled() is False
+
+    @pytest.mark.parametrize("val", ["1", "true", "TRUE", "yes", "on"])
+    def test_enabled_for_truthy_values(self, monkeypatch, val):
+        monkeypatch.setenv("GREPXCEL_MODEL_AUTOUPDATE", val)
+        assert _autoupdate_enabled() is True
+
+    @pytest.mark.parametrize("val", ["0", "false", "no", "off", ""])
+    def test_disabled_for_falsy_values(self, monkeypatch, val):
+        monkeypatch.setenv("GREPXCEL_MODEL_AUTOUPDATE", val)
+        assert _autoupdate_enabled() is False
+
+    def test_ensure_ready_skips_update_when_disabled(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("GREPXCEL_MODEL_AUTOUPDATE", raising=False)
+        m = _make_manager(tmp_path)
+        _fake_model(tmp_path)
+        with patch.object(m, "_maybe_update") as mock_update:
+            m.ensure_ready()
+        mock_update.assert_not_called()
+
+    def test_ensure_ready_runs_update_when_enabled(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("GREPXCEL_MODEL_AUTOUPDATE", "1")
+        m = _make_manager(tmp_path)
+        _fake_model(tmp_path)
+        with patch.object(m, "_maybe_update") as mock_update:
+            m.ensure_ready()
+        mock_update.assert_called_once()

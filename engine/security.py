@@ -19,13 +19,17 @@ import os
 import re
 import zipfile
 
-try:
-    # Python 3.11+ moved sre_parse internals to re._parser / re._constants
-    import re._parser as _sre_parse
-    import re._constants as _sre_constants
-except ImportError:                         # Python < 3.11 fallback
-    import sre_parse as _sre_parse          # type: ignore[no-redef]
-    import sre_constants as _sre_constants  # type: ignore[no-redef]
+# Python 3.11+ exposes the regex parser internals at re._parser / re._constants.
+# We require >=3.11 (see pyproject) so there is a single import path: no version
+# fallback to the deprecated top-level sre_parse/sre_constants modules.
+#
+# This is a deliberate security decision. The ReDoS detector below is built on
+# this AST. A second, untested import branch in a security-critical module is a
+# liability, and the legacy sre_* modules are deprecated and slated for removal.
+# If a future Python ever drops re._parser, this import fails at load time and
+# the whole package refuses to start — fail-closed, never silently unprotected.
+import re._parser as _sre_parse
+import re._constants as _sre_constants
 
 # --- constants ----------------------------------------------------------------
 
@@ -113,6 +117,36 @@ def _has_nested_quantifier(nodes, in_unbounded: bool) -> bool:
     return False
 
 
+# --- XXE protection guard -----------------------------------------------------
+
+def assert_xxe_protection() -> None:
+    """
+    Fail closed if openpyxl is not using defusedxml for XML parsing.
+
+    An .xlsx is a ZIP of XML documents. Without defusedxml, openpyxl's XML
+    parser is vulnerable to XXE (external entity / billion-laughs) attacks from
+    a crafted workbook. openpyxl enables defusedxml automatically *only* when the
+    package is importable AND the OPENPYXL_DEFUSEDXML env var is not "False".
+    That protection is therefore implicit — a missing dependency or a stray env
+    var would silently disable it. We assert it explicitly before every file
+    load so the tool refuses to parse untrusted input without XXE protection,
+    rather than parsing it unsafely.
+    """
+    try:
+        from openpyxl.xml import DEFUSEDXML
+    except Exception as exc:  # pragma: no cover - openpyxl always ships this
+        raise SecurityError(
+            f'Cannot verify XML (XXE) protection state in openpyxl: {exc}'
+        )
+    if not DEFUSEDXML:
+        raise SecurityError(
+            'XML parsing is NOT protected against XXE attacks. '
+            'openpyxl has defusedxml disabled. Install defusedxml '
+            '(pip install defusedxml) and ensure the OPENPYXL_DEFUSEDXML '
+            'environment variable is not set to "False".'
+        )
+
+
 # --- public validation entry point --------------------------------------------
 
 def validate_file(
@@ -124,6 +158,7 @@ def validate_file(
     Run all security checks on *path* before it is handed to openpyxl.
     Raises SecurityError with an actionable message on any failure.
     """
+    assert_xxe_protection()
     _check_exists(path)
     _check_extension(path)
     _check_magic(path)

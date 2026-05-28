@@ -1,17 +1,46 @@
 version: 2
 updates:
+
+  # ── Python dependencies ──────────────────────────────────────────────────────
   - package-ecosystem: "pip"
     directory: "/"
     schedule:
       interval: "weekly"
+      day: "tuesday"
+      time: "09:00"
+      timezone: "UTC"
     target-branch: "dev"
     labels:
       - "dependencies"
+    open-pull-requests-limit: 10
+    commit-message:
+      prefix: "chore(deps)"
+      prefix-development: "chore(dev-deps)"
+      include: "scope"
+    groups:
+      # Minor and patch bumps arrive as one PR per week instead of one per package.
+      # Security fixes are intentionally excluded from groups so they stay
+      # individual and can be merged urgently without waiting for the batch.
+      python-minor-patch:
+        update-types:
+          - "minor"
+          - "patch"
 
+  # ── GitHub Actions ──────────────────────────────────────────────────────────
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
       interval: "weekly"
+      day: "tuesday"
+      time: "09:00"
+      timezone: "UTC"
     target-branch: "dev"
     labels:
       - "dependencies"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore(ci)"
+    groups:
+      github-actions-all:
+        patterns:
+          - "*"
