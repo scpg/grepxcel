@@ -961,16 +961,16 @@ MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun',
 class TestAnnualBudget:
     """
     Fixture layout (sheet 'Budget by month'):
-      B2  : 'ANNUAL BUDGET'     (IGNORE)
-      B4  : 'SUMMARY'           (IGNORE)
+      B2  : 'ANNUAL BUDGET'     (cell:B2 IGNORE)
+      B4  : 'SUMMARY'           (cell:B4 IGNORE)
       B5/C5: 'Total monthly income'  / 48440
       B6/C6: 'Total monthly expenses' / 30256.72
-      B8/C8: 'BALANCE'          / 18183.28
-      B10/C10: 'PERCENTAGE OF INCOME SPENT' / 0.6246
-      B12 : 'INCOME'            (IGNORE)
-      B13:P18 — INCOME table: 4 data rows + footer
-      B20 : 'EXPENSES'          (skipped — no HEADER match)
-      B21:P39 — EXPENSES table: 17 data rows + footer
+      B8/C8: 'BALANCE'          / 18183.28  (IGNORE label)
+      B10/C10: 'PERCENTAGE OF INCOME SPENT' / 0.6246  (IGNORE label, percentage type)
+      B12:P18 — INCOME table: HEADER:1 section title + HEADER:1 col labels + 4 data rows + footer
+      B20:P39 — EXPENSES table: same structure, 17 data rows + footer
+      Table group key is 'transaction' (from transaction.* DATA fields).
+      Each instance has instance['header']['title'] = 'INCOME' or 'EXPENSES'.
     """
     def setup_method(self):
         self.result, self.lg = run('15_anual_budget')
@@ -986,10 +986,10 @@ class TestAnnualBudget:
     # ── top-level structure ───────────────────────────────────────────────────
 
     def test_top_level_keys(self):
-        assert set(self.result.keys()) == {'summary', 'row'}
+        assert set(self.result.keys()) == {'summary', 'transaction'}
 
     def test_two_table_instances(self):
-        assert len(self.result['row']) == 2
+        assert len(self.result['transaction']) == 2
 
     # ── summary scalars (extracted via cell:B5, cell:C5, etc.) ───────────────
 
@@ -1014,81 +1014,83 @@ class TestAnnualBudget:
     # ── INCOME table (instance 0) ─────────────────────────────────────────────
 
     def test_income_source_sheet(self):
-        assert self.result['row'][0]['_source']['sheet'] == 'Budget by month'
+        assert self.result['transaction'][0]['_source']['sheet'] == 'Budget by month'
 
     def test_income_source_ref(self):
-        assert self.result['row'][0]['_source']['ref'] == 'B13:P18'
+        # HEADER:1 section title row (B12) is included in the span
+        assert self.result['transaction'][0]['_source']['ref'] == 'B12:P18'
+
+    def test_income_header_title(self):
+        assert self.result['transaction'][0]['header']['title'] == 'INCOME'
 
     def test_income_four_data_rows(self):
-        assert len(self.result['row'][0]['data']) == 4
+        assert len(self.result['transaction'][0]['data']) == 4
 
     def test_income_items(self):
-        items = [r['item'] for r in self.result['row'][0]['data']]
+        items = [r['item'] for r in self.result['transaction'][0]['data']]
         assert items == ['Income 1', 'Income 2', 'Income 3', 'Other']
 
     def test_income_data_row_keys(self):
         expected = {'item'} | set(MONTHS) | {'total', 'avg'}
-        assert set(self.result['row'][0]['data'][0].keys()) == expected
+        assert set(self.result['transaction'][0]['data'][0].keys()) == expected
 
     def test_income1_jan_value(self):
-        assert self.result['row'][0]['data'][0]['jan'] == 2500
+        assert self.result['transaction'][0]['data'][0]['jan'] == 2500
 
     def test_income1_total(self):
-        assert self.result['row'][0]['data'][0]['total'] == 30275
+        assert self.result['transaction'][0]['data'][0]['total'] == 30275
 
     def test_income_footer_keys(self):
         expected = {'label'} | set(MONTHS) | {'annual', 'avg'}
-        assert set(self.result['row'][0]['footer'].keys()) == expected
+        assert set(self.result['transaction'][0]['footer'].keys()) == expected
 
     def test_income_footer_label(self):
-        assert self.result['row'][0]['footer']['label'] == 'Total'
+        assert self.result['transaction'][0]['footer']['label'] == 'Total'
 
     def test_income_footer_annual(self):
-        assert self.result['row'][0]['footer']['annual'] == pytest.approx(48440, rel=1e-4)
-
-    def test_income_no_header_key(self):
-        # HEADER row uses only lbl: fields → no 'header' key in instance
-        assert 'header' not in self.result['row'][0]
+        assert self.result['transaction'][0]['footer']['annual'] == pytest.approx(48440, rel=1e-4)
 
     # ── EXPENSES table (instance 1) ───────────────────────────────────────────
 
     def test_expenses_source_ref(self):
-        assert self.result['row'][1]['_source']['ref'] == 'B21:P39'
+        # HEADER:1 section title row (B20) is included in the span
+        assert self.result['transaction'][1]['_source']['ref'] == 'B20:P39'
+
+    def test_expenses_header_title(self):
+        assert self.result['transaction'][1]['header']['title'] == 'EXPENSES'
 
     def test_expenses_seventeen_data_rows(self):
-        assert len(self.result['row'][1]['data']) == 17
+        assert len(self.result['transaction'][1]['data']) == 17
 
     def test_expenses_first_items(self):
-        items = [r['item'] for r in self.result['row'][1]['data']][:3]
+        items = [r['item'] for r in self.result['transaction'][1]['data']][:3]
         assert items == ['Children', 'Debt', 'Dining']
 
     def test_expenses_footer_annual(self):
-        annual = self.result['row'][1]['footer']['annual']
+        annual = self.result['transaction'][1]['footer']['annual']
         assert abs(annual - 30256.72) < 0.01
 
     def test_expenses_footer_label(self):
-        assert self.result['row'][1]['footer']['label'] == 'Total'
+        assert self.result['transaction'][1]['footer']['label'] == 'Total'
 
-    def test_expenses_all_items_have_twelve_months(self, ):
-        for row in self.result['row'][1]['data']:
+    def test_expenses_all_items_have_twelve_months(self):
+        for row in self.result['transaction'][1]['data']:
             for m in MONTHS:
                 assert m in row
 
     # ── cross-instance consistency ────────────────────────────────────────────
 
     def test_sources_are_distinct(self):
-        refs = [inst['_source']['ref'] for inst in self.result['row']]
+        refs = [inst['_source']['ref'] for inst in self.result['transaction']]
         assert len(set(refs)) == 2
 
     def test_income_before_expenses_by_ref(self):
-        # B13 < B21 in row order
         def start_row(ref):
             return int(ref.split(':')[0].lstrip('ABCDEFGHIJKLMNOPQRSTUVWXYZ'))
-        rows = [start_row(inst['_source']['ref']) for inst in self.result['row']]
+        rows = [start_row(inst['_source']['ref']) for inst in self.result['transaction']]
         assert rows[0] < rows[1]
 
     def test_no_lbl_fields_in_output(self):
-        # lbl: fields (lbl_income, lbl_expenses_s) must not appear anywhere
         forbidden = {'lbl_income', 'lbl_expenses_s', 'col_item', 'col_total_hdr'}
         assert not forbidden & set(self.result.keys())
         assert not forbidden & set(self.result.get('summary', {}).keys())
