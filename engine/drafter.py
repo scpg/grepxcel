@@ -133,13 +133,42 @@ Generate the pattern file now:
 """
 
 
+# ── Number-format type hint ───────────────────────────────────────────────────
+
+def _type_from_number_format(fmt: str) -> str | None:
+    """Derive a grepxcel type from an Excel number format string.
+
+    Conservative — returns None for ambiguous formats so value-based inference
+    can serve as the fallback.
+    """
+    if not fmt or fmt in ('General', '@', '0', '#,##0'):
+        return None
+    if '%' in fmt:
+        return 'percentage'
+    fmt_lower = fmt.lower()
+    if 'y' in fmt_lower:                          # year token → date family
+        return 'datetime' if ('h' in fmt_lower and ':' in fmt) else 'date'
+    if any(c in fmt for c in ('$', '€', '£', '¥', '₹')) or '[$' in fmt:
+        return 'currency'
+    if '#,##0.00' in fmt or ('0.00' in fmt and '#' in fmt):
+        return 'currency'
+    return None
+
+
 # ── Excel analyser ────────────────────────────────────────────────────────────
 
 class ExcelAnalyzer:
-    """Reads an xlsx file and returns a plain-text structural description."""
+    """Reads an xlsx file and returns a plain-text structural description for the LLM.
 
-    _MAX_SAMPLE_ROWS = 5
-    _MAX_KV_PAIRS    = 30
+    Two-pass load strategy:
+      Pass 1 (data_only=False): formula detection + number-format strings.
+      Pass 2 (data_only=True):  cached cell values for type inference and samples.
+    """
+
+    _MAX_SAMPLE_ROWS = 100   # rows used for type inference
+    _MAX_SAMPLE_COLS = 20    # columns described per section
+    _DISPLAY_SAMPLES = 3     # value examples shown per column in the output text
+    _ROW_TOLERANCE   = 1.2   # if actual_rows <= MAX × tolerance, include all rows
 
     def __init__(
         self,
@@ -148,19 +177,24 @@ class ExcelAnalyzer:
         max_file_mb: float = 5.0,
         max_uncompressed_mb: float = 50.0,
     ):
-        self.path               = path
-        self.sheet              = sheet
-        self.max_file_mb        = max_file_mb
+        self.path                = path
+        self.sheet               = sheet
+        self.max_file_mb         = max_file_mb
         self.max_uncompressed_mb = max_uncompressed_mb
 
     def analyse(self) -> str:
         validate_file(self.path, self.max_file_mb, self.max_uncompressed_mb)
-        wb = openpyxl.load_workbook(self.path, data_only=True, read_only=True)
+        wb_raw = openpyxl.load_workbook(self.path, data_only=False)
+        wb_val = openpyxl.load_workbook(self.path, data_only=True)
         try:
-            ws = self._select_sheet(wb)
-            return self._analyse_sheet(ws)
+            preamble = self._workbook_preamble(wb_val)
+            ws_raw   = self._select_sheet(wb_raw)
+            ws_val   = self._select_sheet(wb_val)
+            body     = self._analyse_sheet(ws_raw, ws_val)
         finally:
-            wb.close()
+            wb_raw.close()
+            wb_val.close()
+        return (preamble + body) if preamble else body
 
     def _select_sheet(self, wb):
         if self.sheet is None:
@@ -169,70 +203,186 @@ class ExcelAnalyzer:
             return wb.worksheets[self.sheet]
         return wb[self.sheet]
 
-    def _analyse_sheet(self, ws) -> str:
-        rows      = list(ws.iter_rows(values_only=True))
-        col_count = max((len(r) for r in rows), default=0)
-        lines     = [
-            f"Sheet: '{ws.title}'",
-            f"Dimensions: {len(rows)} rows × {col_count} columns",
-        ]
-        if not rows:
-            return "Empty sheet — no data found."
+    def _workbook_preamble(self, wb) -> str:
+        """List all sheets with dimensions. Empty for single-sheet workbooks."""
+        sheets = wb.worksheets
+        if len(sheets) <= 1:
+            return ''
+        target_title = self._select_sheet(wb).title
+        lines = [f'Workbook: {len(sheets)} sheets']
+        for i, ws in enumerate(sheets, 1):
+            r = ws.max_row or 0
+            c = ws.max_column or 0
+            marker = ' ← target' if ws.title == target_title else ''
+            lines.append(f"  Sheet {i}: '{ws.title}' — {r} rows × {c} columns{marker}")
+        return '\n'.join(lines) + '\n\n'
 
-        first_row_values = [v for v in rows[0] if v is not None]
-        if len(first_row_values) >= 2:
-            lines += self._describe_table_layout(rows)
-        else:
-            lines += self._describe_kv_layout(rows)
+    def _analyse_sheet(self, ws_raw, ws_val) -> str:
+        max_row = ws_val.max_row or 0
+        max_col = ws_val.max_column or 0
+
+        header = [
+            f"Sheet: '{ws_val.title}'",
+            f'Dimensions: {max_row} rows × {max_col} columns',
+        ]
+
+        if max_row == 0:
+            return '\n'.join(header) + '\n\nEmpty sheet — no data found.'
+
+        # Apply tolerance: include all rows when count is only slightly above the cap.
+        load_rows = (
+            max_row if max_row <= int(self._MAX_SAMPLE_ROWS * self._ROW_TOLERANCE)
+            else self._MAX_SAMPLE_ROWS
+        )
+        load_cols = min(max_col, self._MAX_SAMPLE_COLS)
+
+        formula_cells, number_formats = self._cell_metadata(ws_raw, load_rows, load_cols)
+
+        rows = list(ws_val.iter_rows(
+            min_row=1, max_row=load_rows, max_col=load_cols,
+            values_only=True,
+        ))
+
+        if not rows or all(all(v is None for v in r) for r in rows):
+            return '\n'.join(header) + '\n\nEmpty sheet — no data found.'
+
+        notes = []
+        if max_row > load_rows:
+            notes.append(f'(analysis covers first {load_rows} of {max_row} rows)')
+        if max_col > self._MAX_SAMPLE_COLS:
+            notes.append(f'(first {self._MAX_SAMPLE_COLS} of {max_col} columns shown)')
+
+        sections = self._split_into_sections(rows)
+        if not sections:
+            return '\n'.join(header) + '\n\nEmpty sheet — no data found.'
+
+        lines   = header + notes
+        is_multi = len(sections) > 1
+
+        for sec_idx, (sec_start, sec_rows) in enumerate(sections, 1):
+            sec_end = sec_start + len(sec_rows)
+            label   = (
+                f'Section {sec_idx} (rows {sec_start + 1}–{sec_end})'
+                if is_multi else None
+            )
+            non_empty_first = [v for v in sec_rows[0] if not is_empty(v)]
+            # TABLE requires >= 2 rows (header + at least one data row)
+            # and >= 2 non-empty values in the first row.
+            if len(non_empty_first) >= 2 and len(sec_rows) >= 2:
+                lines += self._describe_table_section(
+                    sec_rows, sec_start, formula_cells, number_formats, label)
+            else:
+                lines += self._describe_kv_section(
+                    sec_rows, sec_start, formula_cells, number_formats, label)
 
         return '\n'.join(lines)
 
-    def _describe_table_layout(self, rows: list) -> list:
-        headers           = list(rows[0])
-        non_empty_headers = [(i, h) for i, h in enumerate(headers) if h is not None]
-        data_rows         = rows[1:1 + self._MAX_SAMPLE_ROWS]
+    def _cell_metadata(self, ws, max_row: int, max_col: int) -> tuple[set, dict]:
+        """Return (formula_cells, number_formats) using 1-based (row, col) keys."""
+        formula_cells  = set()
+        number_formats = {}
+        for cell_row in ws.iter_rows(min_row=1, max_row=max_row, max_col=max_col):
+            for cell in cell_row:
+                if isinstance(cell.value, str) and cell.value.startswith('='):
+                    formula_cells.add((cell.row, cell.column))
+                fmt = getattr(cell, 'number_format', None)
+                if fmt and fmt not in ('General', '@'):
+                    number_formats[(cell.row, cell.column)] = fmt
+        return formula_cells, number_formats
 
-        lines = [
-            '',
-            'Layout: TABLE (first row appears to be column headers)',
-            f'Columns ({len(non_empty_headers)}):',
-        ]
-        for col_idx, header in non_empty_headers:
-            sample_vals = [r[col_idx] for r in data_rows if col_idx < len(r)]
-            col_type    = infer_cell_type(sample_vals)
-            samples     = [repr(v) for v in sample_vals if v is not None][:3]
-            sample_str  = ', '.join(samples) if samples else '(no data)'
-            lines.append(f"  - '{header}' [{col_type}]  samples: {sample_str}")
+    def _split_into_sections(self, rows: list) -> list[tuple[int, list]]:
+        """Split rows at runs of fully-empty rows. Returns [(0based_start, rows), ...]."""
+        sections: list[tuple[int, list]] = []
+        current:  list                   = []
+        start = 0
+        for i, row in enumerate(rows):
+            if all(v is None or is_empty(v) for v in row):
+                if current:
+                    sections.append((start, current))
+                    current = []
+            else:
+                if not current:
+                    start = i
+                current.append(row)
+        if current:
+            sections.append((start, current))
+        return sections
 
-        data_row_count = len(rows) - 1
-        if data_row_count > 0:
-            lines.append(
-                f'\nData rows: {data_row_count} total (sampled up to {self._MAX_SAMPLE_ROWS})'
+    def _col_type(
+        self, col_idx: int, sec_start: int,
+        data_rows: list, number_formats: dict,
+    ) -> tuple[str, str | None]:
+        """Return (type_str, format_hint_or_None) for one column."""
+        vals = [r[col_idx] for r in data_rows if col_idx < len(r)]
+        # First non-None format for this column in any data row (1-based indexing)
+        fmt = next(
+            (number_formats[(sec_start + 2 + ri, col_idx + 1)]
+             for ri in range(len(data_rows))
+             if (sec_start + 2 + ri, col_idx + 1) in number_formats),
+            number_formats.get((sec_start + 1, col_idx + 1)),  # fall back to header row
+        )
+        return (_type_from_number_format(fmt) or infer_cell_type(vals)), fmt
+
+    def _describe_table_section(
+        self, rows, sec_start, formula_cells, number_formats, label,
+    ) -> list:
+        headers     = list(rows[0])
+        data_rows   = rows[1:]
+        non_empty_h = [(c, h) for c, h in enumerate(headers) if not is_empty(h)
+                       ][:self._MAX_SAMPLE_COLS]
+
+        prefix = (f'{label}: TABLE layout' if label
+                  else 'Layout: TABLE (first row appears to be column headers)')
+        lines  = ['', prefix, f'Columns ({len(non_empty_h)}):']
+
+        for col_idx, header in non_empty_h:
+            col_type, fmt = self._col_type(col_idx, sec_start, data_rows, number_formats)
+            is_formula    = any(
+                (sec_start + 2 + ri, col_idx + 1) in formula_cells
+                for ri in range(len(data_rows))
             )
+            vals    = [r[col_idx] for r in data_rows
+                       if col_idx < len(r) and not is_empty(r[col_idx])]
+            samples = [repr(v) for v in vals[:self._DISPLAY_SAMPLES]]
+            line    = f"  - '{header}' [{col_type}]  samples: {', '.join(samples) or '(none)'}"
+            if fmt:
+                line += f'  (format: {fmt})'
+            if is_formula:
+                line += '  [formula — consider var:]'
+            lines.append(line)
+
+        if data_rows:
+            lines.append(f'\nData rows: {len(data_rows)}')
         return lines
 
-    def _describe_kv_layout(self, rows: list) -> list:
-        lines = [
-            '',
-            'Layout: KEY-VALUE (scattered cells, not a standard table)',
-            'Cell pairs found:',
-        ]
-        count = 0
-        for row in rows:
-            if count >= self._MAX_KV_PAIRS:
-                break
-            for col_idx, val in enumerate(row):
-                if val is None or is_empty(val):
-                    continue
-                next_val = row[col_idx + 1] if col_idx + 1 < len(row) else None
-                col_type = infer_cell_type([next_val]) if next_val is not None else 'string'
+    def _describe_kv_section(
+        self, rows, sec_start, formula_cells, number_formats, label,
+    ) -> list:
+        prefix = (f'{label}: KEY-VALUE layout' if label
+                  else 'Layout: KEY-VALUE (scattered cells, not a standard table)')
+        lines  = ['', prefix, 'Cell pairs found:']
+        count  = 0
+
+        for ri, row in enumerate(rows):
+            global_row = sec_start + ri + 1          # 1-based sheet row
+            non_empty  = [(ci, v) for ci, v in enumerate(row) if not is_empty(v)]
+            if not non_empty:
+                continue
+            for ci, val in non_empty:
+                next_val = row[ci + 1] if ci + 1 < len(row) else None
+                fmt      = number_formats.get((global_row, ci + 2)) if next_val is not None else None
+                val_type = (_type_from_number_format(fmt)
+                            or (infer_cell_type([next_val]) if next_val is not None else 'string'))
+                is_fml   = (global_row, ci + 1) in formula_cells
+                fml_note = '  [formula]' if is_fml else ''
                 if next_val is not None:
-                    lines.append(f"  - '{val}': {repr(next_val)} [{col_type}]")
+                    lines.append(f"  - '{val}': {repr(next_val)} [{val_type}]{fml_note}")
                 else:
-                    lines.append(f"  - '{val}': (no adjacent value) [string]")
+                    lines.append(f"  - '{val}': (standalone){fml_note}")
                 count += 1
-                if count >= self._MAX_KV_PAIRS:
-                    break
+                if count >= 50:
+                    lines.append('  ... (additional pairs omitted)')
+                    return lines
         return lines
 
 
@@ -462,6 +612,7 @@ class PatternDrafter:
         max_file_mb: float = 5.0,
         max_uncompressed_mb: float = 50.0,
         verbose: bool = False,
+        dry_run: bool = False,
     ):
         self.input_path          = input_path
         self.output_path         = output_path
@@ -469,6 +620,7 @@ class PatternDrafter:
         self.max_file_mb         = max_file_mb
         self.max_uncompressed_mb = max_uncompressed_mb
         self.verbose             = verbose
+        self.dry_run             = dry_run
 
     def run(self) -> int:
         """Run the full pipeline. Returns exit code (0 = success, 1 = error)."""
@@ -483,10 +635,14 @@ class PatternDrafter:
             print(f'Security error: {exc}', file=sys.stderr)
             return 1
 
-        if self.verbose:
+        if self.verbose or self.dry_run:
             print('\n── Excel analysis ──────────────────────────────', file=sys.stderr)
             print(analysis, file=sys.stderr)
             print('────────────────────────────────────────────────\n', file=sys.stderr)
+
+        if self.dry_run:
+            print('[dry-run] Model inference skipped.', file=sys.stderr)
+            return 0
 
         # 2. Ensure the model is present and up to date
         model_path = ModelManager().ensure_ready(verbose=self.verbose)

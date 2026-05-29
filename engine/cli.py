@@ -219,6 +219,11 @@ def _draft_args(p: argparse.ArgumentParser) -> None:
         action='store_true',
         help='Print the Excel analysis sent to the LLM and model update status',
     )
+    p.add_argument(
+        '--dry-run',
+        action='store_true',
+        help='Print the Excel analysis that would be sent to the model, then exit without running inference',
+    )
     _add_security_args(p)
     _add_sheet_arg(p)
 
@@ -322,6 +327,7 @@ def _run_draft(args) -> int:
         max_file_mb=args.max_size,
         max_uncompressed_mb=args.max_uncompressed,
         verbose=args.verbose,
+        dry_run=args.dry_run,
     )
     return drafter.run()
 

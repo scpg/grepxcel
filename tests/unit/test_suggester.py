@@ -9,6 +9,8 @@ from unittest.mock import MagicMock, patch
 import openpyxl
 import pytest
 
+from engine.drafter import _type_from_number_format
+
 from engine.drafter import ExcelAnalyzer, LlamaCppClient, PatternDrafter, PatternWriter
 from engine.utils import infer_cell_type
 
@@ -335,3 +337,143 @@ class TestDraftValidation:
     def test_raw_llm_text_printed_to_stdout_even_on_failure(self, tmp_path):
         _, out, _, _ = _run_drafter_with_llm_text(self._BAD_CELL_LLM, tmp_path)
         assert self._BAD_CELL_LLM in out
+
+
+# ── _type_from_number_format ──────────────────────────────────────────────────
+
+class TestTypeFromNumberFormat:
+    def test_percentage(self):
+        assert _type_from_number_format('0.00%') == 'percentage'
+
+    def test_percentage_plain(self):
+        assert _type_from_number_format('0%') == 'percentage'
+
+    def test_date_iso(self):
+        assert _type_from_number_format('yyyy-mm-dd') == 'date'
+
+    def test_date_us(self):
+        assert _type_from_number_format('mm/dd/yyyy') == 'date'
+
+    def test_datetime(self):
+        assert _type_from_number_format('yyyy-mm-dd h:mm') == 'datetime'
+
+    def test_currency_dollar(self):
+        assert _type_from_number_format('"$"#,##0.00') == 'currency'
+
+    def test_currency_euro_locale(self):
+        assert _type_from_number_format('[$€-407]#,##0.00') == 'currency'
+
+    def test_currency_accounting(self):
+        assert _type_from_number_format('#,##0.00') == 'currency'
+
+    def test_general_returns_none(self):
+        assert _type_from_number_format('General') is None
+
+    def test_plain_integer_returns_none(self):
+        assert _type_from_number_format('0') is None
+
+    def test_empty_returns_none(self):
+        assert _type_from_number_format('') is None
+
+
+# ── B2: section detection ─────────────────────────────────────────────────────
+
+class TestExcelAnalyzerSections:
+    def test_multi_section_labels_present(self, tmp_path):
+        path = _make_xlsx([
+            ['Invoice No', 'INV-001'],
+            ['Date', '2024-01-01'],
+            [None],                             # empty row → section break
+            ['Product', 'Qty', 'Price'],
+            ['Widget', 10, 9.99],
+        ], tmp_path)
+        result = ExcelAnalyzer(path).analyse()
+        assert 'Section 1' in result
+        assert 'Section 2' in result
+
+    def test_multi_section_kv_then_table(self, tmp_path):
+        path = _make_xlsx([
+            ['Invoice No', 'INV-001'],
+            [None],
+            ['Product', 'Qty'],
+            ['Widget', 10],
+        ], tmp_path)
+        result = ExcelAnalyzer(path).analyse()
+        assert 'KEY-VALUE' in result
+        assert 'TABLE' in result
+
+    def test_single_section_no_section_label(self, tmp_path):
+        path = _make_xlsx([
+            ['Product', 'Qty'],
+            ['Widget', 10],
+        ], tmp_path)
+        result = ExcelAnalyzer(path).analyse()
+        assert 'Section 1' not in result
+
+    def test_multi_sheet_workbook_preamble(self, tmp_path):
+        path = str(tmp_path / 'multi.xlsx')
+        wb   = openpyxl.Workbook()
+        ws1  = wb.active
+        ws1.title = 'Invoice'
+        ws1.append(['Invoice No', 'INV-001'])
+        ws2  = wb.create_sheet('Items')
+        ws2.append(['Product', 'Qty'])
+        wb.save(path)
+
+        result = ExcelAnalyzer(path).analyse()
+        assert 'Workbook' in result
+        assert 'Invoice' in result
+        assert 'Items' in result
+
+    def test_single_sheet_no_preamble(self, tmp_path):
+        path = _make_xlsx([['A', 'B'], [1, 2]], tmp_path)
+        result = ExcelAnalyzer(path).analyse()
+        assert 'Workbook' not in result
+
+    def test_number_format_overrides_value_inference(self, tmp_path):
+        # A table column of 0.xx values with an explicit percentage format
+        # should be typed 'percentage' even though value-only inference gives 'currency'.
+        path = str(tmp_path / 'fmt.xlsx')
+        wb   = openpyxl.Workbook()
+        ws   = wb.active
+        ws.append(['Rate', 'Amount'])      # row 1: headers
+        for row_idx in range(2, 5):        # rows 2-4: data
+            ws.append([0.5, 1000.0])
+            ws.cell(row=row_idx, column=1).number_format = '0.00%'
+        wb.save(path)
+
+        result = ExcelAnalyzer(path).analyse()
+        assert 'percentage' in result
+
+
+# ── B3: --dry-run ─────────────────────────────────────────────────────────────
+
+class TestDryRun:
+    def test_dry_run_returns_0(self, tmp_path):
+        data_path = _make_xlsx([['Name'], ['Alice']], tmp_path, 'data.xlsx')
+        out_path  = str(tmp_path / 'pattern.xlsx')
+        code = PatternDrafter(
+            input_path=data_path, output_path=out_path, dry_run=True,
+        ).run()
+        assert code == 0
+
+    def test_dry_run_no_xlsx_created(self, tmp_path):
+        data_path = _make_xlsx([['Name'], ['Alice']], tmp_path, 'data.xlsx')
+        out_path  = str(tmp_path / 'pattern.xlsx')
+        PatternDrafter(input_path=data_path, output_path=out_path, dry_run=True).run()
+        assert not Path(out_path).exists()
+
+    def test_dry_run_prints_analysis_to_stderr(self, tmp_path, capsys):
+        data_path = _make_xlsx([['Name'], ['Alice']], tmp_path, 'data.xlsx')
+        out_path  = str(tmp_path / 'pattern.xlsx')
+        PatternDrafter(input_path=data_path, output_path=out_path, dry_run=True).run()
+        err = capsys.readouterr().err
+        assert 'Name' in err
+        assert 'dry-run' in err.lower()
+
+    def test_dry_run_no_model_loaded(self, tmp_path):
+        data_path = _make_xlsx([['Name'], ['Alice']], tmp_path, 'data.xlsx')
+        out_path  = str(tmp_path / 'pattern.xlsx')
+        with patch('engine.drafter.ModelManager') as mock_mm:
+            PatternDrafter(input_path=data_path, output_path=out_path, dry_run=True).run()
+        mock_mm.assert_not_called()
