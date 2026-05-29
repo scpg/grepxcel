@@ -78,8 +78,8 @@ Requires Python **3.11+**.
 # Generate a colour-coded pattern reference file
 .venv/bin/grepxcel docs -o pattern-reference.xlsx
 
-# Use a local LLM to suggest a pattern for an unseen Excel file
-.venv/bin/grepxcel suggest data.xlsx -o suggested-pattern.xlsx
+# Use a local LLM to draft a starter pattern for an unseen Excel file
+.venv/bin/grepxcel draft data.xlsx -o draft-pattern.xlsx
 ```
 
 ### Python API
@@ -151,16 +151,19 @@ Label fields (`lbl:`) are used only for positional anchoring and are never inclu
 |---|---|---|
 | `-o FILE` | `pattern-reference.xlsx` | Output path for the reference file |
 
-### `grepxcel suggest`
+### `grepxcel draft`
 
 Requires `requirements-suggest.txt` to be installed (local LLM — no data sent externally).
 The model is pinned to a specific revision and downloaded once on first run; set
 `GREPXCEL_MODEL_AUTOUPDATE=1` to opt in to upstream updates, and `GREPXCEL_MODEL_DIR`
 to relocate the cache.
 
+The output is a starting point — review and refine the generated regexes before use.
+`grepxcel suggest` is a backward-compatible alias for this command.
+
 | Flag | Default | Purpose |
 |---|---|---|
-| `-o FILE` | `suggested_pattern.xlsx` | Write suggested pattern to this path |
+| `-o FILE` | `draft_pattern.xlsx` | Write draft pattern to this path |
 | `-v` | off | Print the Excel analysis sent to the model + update status |
 | `--sheet NAME_OR_INDEX` | active | Sheet to analyse |
 
@@ -180,7 +183,7 @@ to relocate the cache.
 ## Project layout
 
 ```
-engine/          ← importable Python package (engine, parser, models, security, cli, suggester)
+engine/          ← importable Python package (engine, parser, models, security, cli, drafter)
 scripts/         ← reusable utility scripts for contributors
 tests/
   fixtures/      ← pattern + data xlsx pairs (one folder per scenario)
@@ -210,7 +213,7 @@ output/          ← JSON extraction results         (gitignored)
 - Python 3.11+
 - `openpyxl >= 3.1`
 - `defusedxml >= 0.7`
-- `llama-cpp-python >= 0.2.90` and `huggingface_hub >= 0.23` — only for `grepxcel suggest`
+- `llama-cpp-python >= 0.2.90` and `huggingface_hub >= 0.23` — only for `grepxcel draft`
 
 ---
 
