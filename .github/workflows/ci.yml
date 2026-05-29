@@ -52,3 +52,48 @@ jobs:
           grepxcel extract --help
           grepxcel docs -o /tmp/pattern-reference.xlsx
           test -f /tmp/pattern-reference.xlsx
+
+  docs-reference:
+    # Keeps docs/pattern-reference.xlsx current.
+    # • On PRs  : regenerates and uploads the file as a downloadable artifact.
+    # • On main : regenerates, then commits and pushes if the file changed.
+    #
+    # Note: the auto-commit uses GITHUB_TOKEN.  If your repository has branch
+    # protection rules that block direct pushes to main, add a bypass exception
+    # for the "github-actions[bot]" actor in the branch protection settings.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # Fetch full history so git push works correctly on the main branch.
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install package
+        run: pip install .
+
+      - name: Regenerate pattern-reference.xlsx
+        run: grepxcel docs -o docs/pattern-reference.xlsx
+
+      - name: Upload as artifact (pull requests)
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: pattern-reference
+          path: docs/pattern-reference.xlsx
+
+      - name: Commit updated reference (main branch only)
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add docs/pattern-reference.xlsx
+          git diff --cached --quiet && echo "No change — skipping commit." || \
+            git commit -m "chore: regenerate pattern-reference.xlsx" && git push
