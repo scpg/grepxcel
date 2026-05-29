@@ -11,7 +11,7 @@ import pytest
 
 from engine.drafter import _type_from_number_format
 
-from engine.drafter import ExcelAnalyzer, LlamaCppClient, PatternDrafter, PatternWriter
+from engine.drafter import ClaudeBackend, ExcelAnalyzer, LlamaCppClient, PatternDrafter, PatternWriter
 from engine.utils import infer_cell_type
 
 # Backward-compat alias used in a few tests below
@@ -246,19 +246,14 @@ class TestPatternSuggesterMocked:
     _LLM_RESPONSE = "var: | Name | string | .*\nSTART:\ncell:next | Name\nEND:"
 
     def test_full_pipeline_creates_xlsx(self, tmp_path):
-        data_path = _make_xlsx([['Name', 'Age'], ['Alice', 30]], tmp_path, 'data.xlsx')
-        out_path = str(tmp_path / 'pattern.xlsx')
+        data_path    = _make_xlsx([['Name', 'Age'], ['Alice', 30]], tmp_path, 'data.xlsx')
+        out_path     = str(tmp_path / 'pattern.xlsx')
+        mock_backend = MagicMock()
+        mock_backend.chat.return_value = self._LLM_RESPONSE
 
-        mock_manager = MagicMock()
-        mock_manager.return_value.ensure_ready.return_value = tmp_path / 'model.gguf'
-
-        mock_client = MagicMock()
-        mock_client.return_value.chat.return_value = self._LLM_RESPONSE
-
-        with patch('engine.drafter.ModelManager', mock_manager), \
-             patch('engine.drafter.LlamaCppClient', mock_client):
-            s = PatternDrafter(input_path=data_path, output_path=out_path)
-            code = s.run()
+        code = PatternDrafter(
+            input_path=data_path, output_path=out_path, backend=mock_backend,
+        ).run()
 
         assert code == 0
         assert Path(out_path).exists()
@@ -277,22 +272,18 @@ class TestPatternSuggesterMocked:
 # ── A2: output validation ────────────────────────────────────────────────────
 
 def _run_drafter_with_llm_text(llm_text: str, tmp_path: Path) -> tuple[int, str, str]:
-    """Run PatternDrafter with a mocked LLM returning llm_text. Returns (code, out, err)."""
-    data_path = _make_xlsx([['Name'], ['Alice']], tmp_path, 'data.xlsx')
-    out_path = str(tmp_path / 'pattern.xlsx')
+    """Run PatternDrafter with a backend stub returning llm_text. Returns (code, out, err, path)."""
+    import contextlib, io
+    data_path    = _make_xlsx([['Name'], ['Alice']], tmp_path, 'data.xlsx')
+    out_path     = str(tmp_path / 'pattern.xlsx')
+    mock_backend = MagicMock()
+    mock_backend.chat.return_value = llm_text
 
-    mock_manager = MagicMock()
-    mock_manager.return_value.ensure_ready.return_value = tmp_path / 'model.gguf'
-    mock_client = MagicMock()
-    mock_client.return_value.chat.return_value = llm_text
-
-    import io, contextlib
     stdout_buf, stderr_buf = io.StringIO(), io.StringIO()
-    with patch('engine.drafter.ModelManager', mock_manager), \
-         patch('engine.drafter.LlamaCppClient', mock_client), \
-         contextlib.redirect_stdout(stdout_buf), \
-         contextlib.redirect_stderr(stderr_buf):
-        code = PatternDrafter(input_path=data_path, output_path=out_path).run()
+    with contextlib.redirect_stdout(stdout_buf), contextlib.redirect_stderr(stderr_buf):
+        code = PatternDrafter(
+            input_path=data_path, output_path=out_path, backend=mock_backend,
+        ).run()
 
     return code, stdout_buf.getvalue(), stderr_buf.getvalue(), out_path
 
@@ -516,3 +507,153 @@ class TestDryRun:
         with patch('engine.drafter.ModelManager') as mock_mm:
             PatternDrafter(input_path=data_path, output_path=out_path, dry_run=True).run()
         mock_mm.assert_not_called()
+
+
+# ── C1: LLMBackend protocol ───────────────────────────────────────────────────
+
+from engine.drafter import LLMBackend  # noqa: E402
+
+
+class TestLLMBackendProtocol:
+    def test_llamacppclient_satisfies_protocol(self):
+        """LlamaCppClient must implement LLMBackend structurally."""
+        from engine.drafter import LlamaCppClient
+        assert isinstance(LlamaCppClient('dummy.gguf'), LLMBackend)
+
+    def test_plain_object_with_chat_satisfies_protocol(self):
+        class MyBackend:
+            def chat(self, system: str, user: str) -> str:
+                return 'ok'
+        assert isinstance(MyBackend(), LLMBackend)
+
+    def test_object_without_chat_does_not_satisfy_protocol(self):
+        class NotABackend:
+            pass
+        assert not isinstance(NotABackend(), LLMBackend)
+
+    def test_backend_injection_bypasses_model_manager(self, tmp_path):
+        """Providing backend= must skip ModelManager entirely."""
+        data_path    = _make_xlsx([['X'], [1]], tmp_path, 'data.xlsx')
+        out_path     = str(tmp_path / 'out.xlsx')
+        mock_backend = MagicMock()
+        mock_backend.chat.return_value = (
+            "var: | x | integer | .*\nSTART:\ncell:next | x\nEND:"
+        )
+        with patch('engine.drafter.ModelManager') as mock_mm:
+            PatternDrafter(
+                input_path=data_path, output_path=out_path, backend=mock_backend,
+            ).run()
+        mock_mm.assert_not_called()
+
+    def test_backend_chat_called_with_system_and_user_prompts(self, tmp_path):
+        data_path    = _make_xlsx([['X'], [1]], tmp_path, 'data.xlsx')
+        out_path     = str(tmp_path / 'out.xlsx')
+        mock_backend = MagicMock()
+        mock_backend.chat.return_value = (
+            "var: | x | integer | .*\nSTART:\ncell:next | x\nEND:"
+        )
+        PatternDrafter(
+            input_path=data_path, output_path=out_path, backend=mock_backend,
+        ).run()
+        mock_backend.chat.assert_called_once()
+        system_arg, user_arg = mock_backend.chat.call_args.args
+        assert 'grepxcel' in system_arg.lower()
+        assert 'pattern' in system_arg.lower()
+        assert 'analyse' in user_arg.lower() or 'analysis' in user_arg.lower()
+
+
+# ── C2: ClaudeBackend ─────────────────────────────────────────────────────────
+
+class TestClaudeBackend:
+    def test_satisfies_llm_backend_protocol(self):
+        from engine.drafter import LLMBackend
+        assert isinstance(ClaudeBackend(), LLMBackend)
+
+    def test_default_model(self):
+        assert ClaudeBackend()._model == 'claude-haiku-4-5-20251001'
+
+    def test_custom_model(self):
+        assert ClaudeBackend(model='claude-opus-4-8')._model == 'claude-opus-4-8'
+
+    def test_chat_calls_anthropic_with_correct_args(self):
+        mock_anthropic = MagicMock()
+        mock_msg = MagicMock()
+        mock_msg.content = [MagicMock(text='pattern output')]
+        mock_anthropic.Anthropic.return_value.messages.create.return_value = mock_msg
+
+        with patch.dict('sys.modules', {'anthropic': mock_anthropic}):
+            result = ClaudeBackend().chat('sys prompt', 'user prompt')
+
+        assert result == 'pattern output'
+        create_call = mock_anthropic.Anthropic.return_value.messages.create
+        create_call.assert_called_once()
+        kwargs = create_call.call_args.kwargs
+        assert kwargs['system'] == 'sys prompt'
+        assert kwargs['messages'] == [{'role': 'user', 'content': 'user prompt'}]
+        assert kwargs['model'] == 'claude-haiku-4-5-20251001'
+
+    def test_missing_anthropic_exits(self, capsys):
+        with patch.dict('sys.modules', {'anthropic': None}):
+            import importlib
+            import builtins
+            real_import = builtins.__import__
+            def mock_import(name, *args, **kwargs):
+                if name == 'anthropic':
+                    raise ImportError('No module named anthropic')
+                return real_import(name, *args, **kwargs)
+            with patch('builtins.__import__', side_effect=mock_import):
+                with pytest.raises(SystemExit) as exc_info:
+                    ClaudeBackend().chat('sys', 'user')
+        assert exc_info.value.code == 1
+
+
+# ── C3: --backend CLI flag ────────────────────────────────────────────────────
+
+class TestBackendCLIFlag:
+    def test_default_backend_is_local(self):
+        from engine.cli import _build_parser
+        args = _build_parser().parse_args(['draft', 'data.xlsx'])
+        assert args.backend == 'local'
+
+    def test_backend_claude_accepted(self):
+        from engine.cli import _build_parser
+        args = _build_parser().parse_args(['draft', '--backend', 'claude', 'data.xlsx'])
+        assert args.backend == 'claude'
+
+    def test_backend_invalid_rejected(self):
+        from engine.cli import _build_parser
+        with pytest.raises(SystemExit):
+            _build_parser().parse_args(['draft', '--backend', 'openai', 'data.xlsx'])
+
+    def test_claude_backend_emits_privacy_warning(self, tmp_path, capsys):
+        """--backend claude must print the privacy notice to stderr."""
+        data_path    = _make_xlsx([['X'], [1]], tmp_path, 'data.xlsx')
+        out_path     = str(tmp_path / 'out.xlsx')
+        mock_backend = MagicMock()
+        mock_backend.chat.return_value = (
+            "var: | x | integer | .*\nSTART:\ncell:next | x\nEND:"
+        )
+        # ClaudeBackend is imported lazily inside _run_draft — patch at the source
+        with patch('engine.drafter.ClaudeBackend', return_value=mock_backend):
+            from engine.cli import _build_parser, _run_draft
+            args = _build_parser().parse_args([
+                'draft', '--backend', 'claude', data_path, '-o', out_path,
+            ])
+            _run_draft(args)
+        captured = capsys.readouterr()
+        assert 'Anthropic' in captured.err
+
+    def test_local_backend_uses_no_claude_backend(self, tmp_path):
+        """--backend local must never instantiate ClaudeBackend."""
+        data_path = _make_xlsx([['X'], [1]], tmp_path, 'data.xlsx')
+        out_path  = str(tmp_path / 'out.xlsx')
+        with patch('engine.drafter.ClaudeBackend') as mock_cls, \
+             patch('engine.drafter.ModelManager') as mock_mm:
+            mock_mm.return_value.ensure_ready.side_effect = RuntimeError('no model')
+            from engine.cli import _build_parser, _run_draft
+            args = _build_parser().parse_args(['draft', 'data.xlsx', '-o', out_path])
+            try:
+                _run_draft(args)
+            except RuntimeError:
+                pass
+        mock_cls.assert_not_called()
