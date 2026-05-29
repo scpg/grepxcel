@@ -185,19 +185,24 @@ examples:
 def _add_draft_subparser(sub) -> None:
     _draft_args(sub.add_parser(
         'draft',
-        help='Use a local LLM to draft a starter pattern file for an Excel file',
+        help='Draft a starter pattern file for an Excel file',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-The model is downloaded automatically on first run (~2.4 GB) and cached locally.
-A lightweight update check runs once per day — no data ever leaves your machine
-during inference.
+backends:
+  local   (default) Run a local GGUF model via llama-cpp-python.
+          Model is downloaded automatically on first run (~2.4 GB).
+          No data leaves your machine during inference.
+  claude  Send the Excel structure description to the Claude API.
+          Requires ANTHROPIC_API_KEY. The raw file is NOT transmitted —
+          only column types, sample values, and labels are sent.
 
-Override the model cache directory with the GREPXCEL_MODEL_DIR environment variable.
+Override the local model cache directory with GREPXCEL_MODEL_DIR.
 
 examples:
   grepxcel draft report.xlsx
   grepxcel draft report.xlsx -o my_pattern.xlsx
-  grepxcel draft report.xlsx -v
+  grepxcel draft report.xlsx --backend claude
+  grepxcel draft report.xlsx --dry-run
         """,
     ))
 
@@ -223,6 +228,12 @@ def _draft_args(p: argparse.ArgumentParser) -> None:
         '--dry-run',
         action='store_true',
         help='Print the Excel analysis that would be sent to the model, then exit without running inference',
+    )
+    p.add_argument(
+        '--backend',
+        choices=['local', 'claude'],
+        default='local',
+        help='Inference backend: local (default, GGUF model) or claude (Claude API, requires ANTHROPIC_API_KEY)',
     )
     _add_security_args(p)
     _add_sheet_arg(p)
@@ -318,8 +329,15 @@ def _run_docs(args) -> int:
 # ── draft handler ─────────────────────────────────────────────────────────────
 
 def _run_draft(args) -> int:
-    from .drafter import PatternDrafter
-    sheet = _resolve_sheet(args)
+    from .drafter import ClaudeBackend, PatternDrafter
+    sheet   = _resolve_sheet(args)
+    backend = None
+    if getattr(args, 'backend', 'local') == 'claude':
+        print(
+            '[!] Excel structure description will be sent to Anthropic\'s API.',
+            file=sys.stderr,
+        )
+        backend = ClaudeBackend()
     drafter = PatternDrafter(
         input_path=args.file,
         output_path=args.output,
@@ -328,6 +346,7 @@ def _run_draft(args) -> int:
         max_uncompressed_mb=args.max_uncompressed,
         verbose=args.verbose,
         dry_run=args.dry_run,
+        backend=backend,
     )
     return drafter.run()
 

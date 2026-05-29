@@ -17,6 +17,9 @@ suggest = [
     "llama-cpp-python>=0.2.90",
     "huggingface_hub>=0.23",
 ]
+draft-cloud = [
+    "anthropic>=0.40",
+]
 dev = [
     "pytest>=8.0",
 ]

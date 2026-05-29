@@ -11,7 +11,7 @@ import pytest
 
 from engine.drafter import _type_from_number_format
 
-from engine.drafter import ExcelAnalyzer, LlamaCppClient, PatternDrafter, PatternWriter
+from engine.drafter import ClaudeBackend, ExcelAnalyzer, LlamaCppClient, PatternDrafter, PatternWriter
 from engine.utils import infer_cell_type
 
 # Backward-compat alias used in a few tests below
@@ -560,3 +560,100 @@ class TestLLMBackendProtocol:
         assert 'grepxcel' in system_arg.lower()
         assert 'pattern' in system_arg.lower()
         assert 'analyse' in user_arg.lower() or 'analysis' in user_arg.lower()
+
+
+# ── C2: ClaudeBackend ─────────────────────────────────────────────────────────
+
+class TestClaudeBackend:
+    def test_satisfies_llm_backend_protocol(self):
+        from engine.drafter import LLMBackend
+        assert isinstance(ClaudeBackend(), LLMBackend)
+
+    def test_default_model(self):
+        assert ClaudeBackend()._model == 'claude-haiku-4-5-20251001'
+
+    def test_custom_model(self):
+        assert ClaudeBackend(model='claude-opus-4-8')._model == 'claude-opus-4-8'
+
+    def test_chat_calls_anthropic_with_correct_args(self):
+        mock_anthropic = MagicMock()
+        mock_msg = MagicMock()
+        mock_msg.content = [MagicMock(text='pattern output')]
+        mock_anthropic.Anthropic.return_value.messages.create.return_value = mock_msg
+
+        with patch.dict('sys.modules', {'anthropic': mock_anthropic}):
+            result = ClaudeBackend().chat('sys prompt', 'user prompt')
+
+        assert result == 'pattern output'
+        create_call = mock_anthropic.Anthropic.return_value.messages.create
+        create_call.assert_called_once()
+        kwargs = create_call.call_args.kwargs
+        assert kwargs['system'] == 'sys prompt'
+        assert kwargs['messages'] == [{'role': 'user', 'content': 'user prompt'}]
+        assert kwargs['model'] == 'claude-haiku-4-5-20251001'
+
+    def test_missing_anthropic_exits(self, capsys):
+        with patch.dict('sys.modules', {'anthropic': None}):
+            import importlib
+            import builtins
+            real_import = builtins.__import__
+            def mock_import(name, *args, **kwargs):
+                if name == 'anthropic':
+                    raise ImportError('No module named anthropic')
+                return real_import(name, *args, **kwargs)
+            with patch('builtins.__import__', side_effect=mock_import):
+                with pytest.raises(SystemExit) as exc_info:
+                    ClaudeBackend().chat('sys', 'user')
+        assert exc_info.value.code == 1
+
+
+# ── C3: --backend CLI flag ────────────────────────────────────────────────────
+
+class TestBackendCLIFlag:
+    def test_default_backend_is_local(self):
+        from engine.cli import _build_parser
+        args = _build_parser().parse_args(['draft', 'data.xlsx'])
+        assert args.backend == 'local'
+
+    def test_backend_claude_accepted(self):
+        from engine.cli import _build_parser
+        args = _build_parser().parse_args(['draft', '--backend', 'claude', 'data.xlsx'])
+        assert args.backend == 'claude'
+
+    def test_backend_invalid_rejected(self):
+        from engine.cli import _build_parser
+        with pytest.raises(SystemExit):
+            _build_parser().parse_args(['draft', '--backend', 'openai', 'data.xlsx'])
+
+    def test_claude_backend_emits_privacy_warning(self, tmp_path, capsys):
+        """--backend claude must print the privacy notice to stderr."""
+        data_path    = _make_xlsx([['X'], [1]], tmp_path, 'data.xlsx')
+        out_path     = str(tmp_path / 'out.xlsx')
+        mock_backend = MagicMock()
+        mock_backend.chat.return_value = (
+            "var: | x | integer | .*\nSTART:\ncell:next | x\nEND:"
+        )
+        # ClaudeBackend is imported lazily inside _run_draft — patch at the source
+        with patch('engine.drafter.ClaudeBackend', return_value=mock_backend):
+            from engine.cli import _build_parser, _run_draft
+            args = _build_parser().parse_args([
+                'draft', '--backend', 'claude', data_path, '-o', out_path,
+            ])
+            _run_draft(args)
+        captured = capsys.readouterr()
+        assert 'Anthropic' in captured.err
+
+    def test_local_backend_uses_no_claude_backend(self, tmp_path):
+        """--backend local must never instantiate ClaudeBackend."""
+        data_path = _make_xlsx([['X'], [1]], tmp_path, 'data.xlsx')
+        out_path  = str(tmp_path / 'out.xlsx')
+        with patch('engine.drafter.ClaudeBackend') as mock_cls, \
+             patch('engine.drafter.ModelManager') as mock_mm:
+            mock_mm.return_value.ensure_ready.side_effect = RuntimeError('no model')
+            from engine.cli import _build_parser, _run_draft
+            args = _build_parser().parse_args(['draft', 'data.xlsx', '-o', out_path])
+            try:
+                _run_draft(args)
+            except RuntimeError:
+                pass
+        mock_cls.assert_not_called()

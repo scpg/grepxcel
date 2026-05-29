@@ -553,6 +553,39 @@ class LlamaCppClient:
         return response["choices"][0]["message"]["content"]
 
 
+# ── Claude API backend ────────────────────────────────────────────────────────
+
+class ClaudeBackend:
+    """Sends inference requests to the Claude API (anthropic SDK).
+
+    Requires ANTHROPIC_API_KEY to be set in the environment.
+    Only the Excel structure description (column types, sample values, labels)
+    is transmitted — the raw file bytes never leave the machine.
+    """
+
+    def __init__(self, model: str = 'claude-haiku-4-5-20251001'):
+        self._model = model
+
+    def chat(self, system: str, user: str) -> str:
+        try:
+            import anthropic
+        except ImportError:
+            print(
+                "Error: 'anthropic' package is not installed.\n"
+                "Fix:   pip install 'grepxcel[draft-cloud]'",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        client = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY from env
+        msg = client.messages.create(
+            model=self._model,
+            max_tokens=2048,
+            system=system,
+            messages=[{'role': 'user', 'content': user}],
+        )
+        return msg.content[0].text
+
+
 # ── Pattern writer ────────────────────────────────────────────────────────────
 
 _TABLE_ROW_PREFIXES = ('HEADER:', 'DATA:', 'FOOTER:', 'SPLITTER:')
