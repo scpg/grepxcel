@@ -246,19 +246,14 @@ class TestPatternSuggesterMocked:
     _LLM_RESPONSE = "var: | Name | string | .*\nSTART:\ncell:next | Name\nEND:"
 
     def test_full_pipeline_creates_xlsx(self, tmp_path):
-        data_path = _make_xlsx([['Name', 'Age'], ['Alice', 30]], tmp_path, 'data.xlsx')
-        out_path = str(tmp_path / 'pattern.xlsx')
+        data_path    = _make_xlsx([['Name', 'Age'], ['Alice', 30]], tmp_path, 'data.xlsx')
+        out_path     = str(tmp_path / 'pattern.xlsx')
+        mock_backend = MagicMock()
+        mock_backend.chat.return_value = self._LLM_RESPONSE
 
-        mock_manager = MagicMock()
-        mock_manager.return_value.ensure_ready.return_value = tmp_path / 'model.gguf'
-
-        mock_client = MagicMock()
-        mock_client.return_value.chat.return_value = self._LLM_RESPONSE
-
-        with patch('engine.drafter.ModelManager', mock_manager), \
-             patch('engine.drafter.LlamaCppClient', mock_client):
-            s = PatternDrafter(input_path=data_path, output_path=out_path)
-            code = s.run()
+        code = PatternDrafter(
+            input_path=data_path, output_path=out_path, backend=mock_backend,
+        ).run()
 
         assert code == 0
         assert Path(out_path).exists()
@@ -277,22 +272,18 @@ class TestPatternSuggesterMocked:
 # ── A2: output validation ────────────────────────────────────────────────────
 
 def _run_drafter_with_llm_text(llm_text: str, tmp_path: Path) -> tuple[int, str, str]:
-    """Run PatternDrafter with a mocked LLM returning llm_text. Returns (code, out, err)."""
-    data_path = _make_xlsx([['Name'], ['Alice']], tmp_path, 'data.xlsx')
-    out_path = str(tmp_path / 'pattern.xlsx')
+    """Run PatternDrafter with a backend stub returning llm_text. Returns (code, out, err, path)."""
+    import contextlib, io
+    data_path    = _make_xlsx([['Name'], ['Alice']], tmp_path, 'data.xlsx')
+    out_path     = str(tmp_path / 'pattern.xlsx')
+    mock_backend = MagicMock()
+    mock_backend.chat.return_value = llm_text
 
-    mock_manager = MagicMock()
-    mock_manager.return_value.ensure_ready.return_value = tmp_path / 'model.gguf'
-    mock_client = MagicMock()
-    mock_client.return_value.chat.return_value = llm_text
-
-    import io, contextlib
     stdout_buf, stderr_buf = io.StringIO(), io.StringIO()
-    with patch('engine.drafter.ModelManager', mock_manager), \
-         patch('engine.drafter.LlamaCppClient', mock_client), \
-         contextlib.redirect_stdout(stdout_buf), \
-         contextlib.redirect_stderr(stderr_buf):
-        code = PatternDrafter(input_path=data_path, output_path=out_path).run()
+    with contextlib.redirect_stdout(stdout_buf), contextlib.redirect_stderr(stderr_buf):
+        code = PatternDrafter(
+            input_path=data_path, output_path=out_path, backend=mock_backend,
+        ).run()
 
     return code, stdout_buf.getvalue(), stderr_buf.getvalue(), out_path
 
@@ -516,3 +507,56 @@ class TestDryRun:
         with patch('engine.drafter.ModelManager') as mock_mm:
             PatternDrafter(input_path=data_path, output_path=out_path, dry_run=True).run()
         mock_mm.assert_not_called()
+
+
+# ── C1: LLMBackend protocol ───────────────────────────────────────────────────
+
+from engine.drafter import LLMBackend  # noqa: E402
+
+
+class TestLLMBackendProtocol:
+    def test_llamacppclient_satisfies_protocol(self):
+        """LlamaCppClient must implement LLMBackend structurally."""
+        from engine.drafter import LlamaCppClient
+        assert isinstance(LlamaCppClient('dummy.gguf'), LLMBackend)
+
+    def test_plain_object_with_chat_satisfies_protocol(self):
+        class MyBackend:
+            def chat(self, system: str, user: str) -> str:
+                return 'ok'
+        assert isinstance(MyBackend(), LLMBackend)
+
+    def test_object_without_chat_does_not_satisfy_protocol(self):
+        class NotABackend:
+            pass
+        assert not isinstance(NotABackend(), LLMBackend)
+
+    def test_backend_injection_bypasses_model_manager(self, tmp_path):
+        """Providing backend= must skip ModelManager entirely."""
+        data_path    = _make_xlsx([['X'], [1]], tmp_path, 'data.xlsx')
+        out_path     = str(tmp_path / 'out.xlsx')
+        mock_backend = MagicMock()
+        mock_backend.chat.return_value = (
+            "var: | x | integer | .*\nSTART:\ncell:next | x\nEND:"
+        )
+        with patch('engine.drafter.ModelManager') as mock_mm:
+            PatternDrafter(
+                input_path=data_path, output_path=out_path, backend=mock_backend,
+            ).run()
+        mock_mm.assert_not_called()
+
+    def test_backend_chat_called_with_system_and_user_prompts(self, tmp_path):
+        data_path    = _make_xlsx([['X'], [1]], tmp_path, 'data.xlsx')
+        out_path     = str(tmp_path / 'out.xlsx')
+        mock_backend = MagicMock()
+        mock_backend.chat.return_value = (
+            "var: | x | integer | .*\nSTART:\ncell:next | x\nEND:"
+        )
+        PatternDrafter(
+            input_path=data_path, output_path=out_path, backend=mock_backend,
+        ).run()
+        mock_backend.chat.assert_called_once()
+        system_arg, user_arg = mock_backend.chat.call_args.args
+        assert 'grepxcel' in system_arg.lower()
+        assert 'pattern' in system_arg.lower()
+        assert 'analyse' in user_arg.lower() or 'analysis' in user_arg.lower()

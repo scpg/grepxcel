@@ -13,6 +13,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from typing import Protocol, runtime_checkable
 
 import openpyxl
 
@@ -470,6 +471,21 @@ def _detect_gpu() -> tuple[int, str | None, str | None]:
     return 0, None, None
 
 
+# ── Backend protocol ──────────────────────────────────────────────────────────
+
+@runtime_checkable
+class LLMBackend(Protocol):
+    """Minimal interface every inference backend must satisfy.
+
+    Implement this to add new backends (Claude API, OpenAI, …) without
+    touching PatternDrafter.  Pass an instance via PatternDrafter(backend=…).
+    """
+
+    def chat(self, system: str, user: str) -> str:
+        """Send system + user messages; return the model's text response."""
+        ...
+
+
 # ── Local LLM client ──────────────────────────────────────────────────────────
 
 class LlamaCppClient:
@@ -618,7 +634,13 @@ def _validate_draft(xlsx_path: str) -> None:
 # ── Orchestrator ──────────────────────────────────────────────────────────────
 
 class PatternDrafter:
-    """Analyse → ensure model → run LLM → write pattern xlsx."""
+    """Analyse → run LLM backend → validate → write pattern xlsx.
+
+    The inference backend is injectable via the `backend` parameter.
+    When omitted the local GGUF model (LlamaCppClient) is used, which
+    requires llama-cpp-python and downloads the model on first run.
+    Pass any object that satisfies LLMBackend to use a different backend.
+    """
 
     def __init__(
         self,
@@ -629,6 +651,7 @@ class PatternDrafter:
         max_uncompressed_mb: float = 50.0,
         verbose: bool = False,
         dry_run: bool = False,
+        backend: LLMBackend | None = None,
     ):
         self.input_path          = input_path
         self.output_path         = output_path
@@ -637,6 +660,7 @@ class PatternDrafter:
         self.max_uncompressed_mb = max_uncompressed_mb
         self.verbose             = verbose
         self.dry_run             = dry_run
+        self.backend             = backend
 
     def run(self) -> int:
         """Run the full pipeline. Returns exit code (0 = success, 1 = error)."""
@@ -660,13 +684,16 @@ class PatternDrafter:
             print('[dry-run] Model inference skipped.', file=sys.stderr)
             return 0
 
-        # 2. Ensure the model is present and up to date
-        model_path = ModelManager().ensure_ready(verbose=self.verbose)
-
-        # 3. Run inference (entirely in-process — no network)
-        print('Running local model inference...', file=sys.stderr)
+        # 2. Resolve backend and run inference
         user_prompt = _USER_PROMPT_TEMPLATE.format(analysis=analysis)
-        llm_text    = LlamaCppClient(str(model_path)).chat(_SYSTEM_PROMPT, user_prompt)
+        if self.backend is not None:
+            print('Running inference...', file=sys.stderr)
+            llm_text = self.backend.chat(_SYSTEM_PROMPT, user_prompt)
+        else:
+            # Default: local GGUF model via llama-cpp-python
+            model_path = ModelManager().ensure_ready(verbose=self.verbose)
+            print('Running local model inference...', file=sys.stderr)
+            llm_text   = LlamaCppClient(str(model_path)).chat(_SYSTEM_PROMPT, user_prompt)
 
         # 4. Text preview → stdout (pipe-friendly)
         print(llm_text)
