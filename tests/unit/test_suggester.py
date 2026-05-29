@@ -378,6 +378,45 @@ class TestTypeFromNumberFormat:
 
 # ── B2: section detection ─────────────────────────────────────────────────────
 
+class TestExcelAnalyzerTitledTable:
+    """Titled-table heuristic: single-cell heading row + ≥5-row section → TABLE."""
+
+    def test_titled_table_classified_as_table(self, tmp_path):
+        # title row + header row + 3 data rows = 5 rows → titled table
+        path = _make_xlsx([
+            ['INCOME'],
+            ['Item', 'Jan', 'Feb'],
+            ['Salary', 5000, 5000],
+            ['Rent',   1000, 1000],
+            ['Food',    800,  800],
+        ], tmp_path)
+        result = ExcelAnalyzer(path).analyse()
+        assert 'TABLE' in result
+
+    def test_titled_table_header_names_in_result(self, tmp_path):
+        path = _make_xlsx([
+            ['EXPENSES'],
+            ['Item', 'Budget', 'Actual'],
+            ['Rent',   1000, 950],
+            ['Food',    500, 480],
+            ['Travel',  200, 310],
+        ], tmp_path)
+        result = ExcelAnalyzer(path).analyse()
+        assert 'Item' in result
+        assert 'Budget' in result
+
+    def test_four_row_section_not_titled_table(self, tmp_path):
+        # title + header + 2 data = 4 rows < 5 → should NOT be TABLE
+        path = _make_xlsx([
+            ['Invoice Summary'],
+            ['Invoice No', 'INV-001'],
+            ['Date', '2024-01-01'],
+            ['Total', 1250.00],
+        ], tmp_path)
+        result = ExcelAnalyzer(path).analyse()
+        assert 'KEY-VALUE' in result
+
+
 class TestExcelAnalyzerSections:
     def test_multi_section_labels_present(self, tmp_path):
         path = _make_xlsx([

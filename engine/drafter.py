@@ -266,6 +266,22 @@ class ExcelAnalyzer:
                 if is_multi else None
             )
             non_empty_first = [v for v in sec_rows[0] if not is_empty(v)]
+
+            # Titled table: a single-cell heading row (e.g. "INCOME", "EXPENSES")
+            # followed by a real table.  Requires ≥ 5 rows in total so that ordinary
+            # KV blocks (title + 3 label-value pairs = 4 rows) are not misclassified.
+            if len(non_empty_first) == 1 and len(sec_rows) >= 5:
+                non_empty_second = [v for v in sec_rows[1] if not is_empty(v)]
+                if len(non_empty_second) >= 2:
+                    combined_label = (
+                        f'{label}, title: {non_empty_first[0]!r}'
+                        if label else None
+                    )
+                    lines += self._describe_table_section(
+                        sec_rows[1:], sec_start + 1, formula_cells, number_formats,
+                        combined_label)
+                    continue
+
             # TABLE requires >= 2 rows (header + at least one data row)
             # and >= 2 non-empty values in the first row.
             if len(non_empty_first) >= 2 and len(sec_rows) >= 2:
