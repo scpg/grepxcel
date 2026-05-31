@@ -83,8 +83,19 @@ In your output, separate columns with ' | ' (space-pipe-space).
        | FOOTER:1 | ColA | ColB | ColC
      (Table template rows have a blank column A — start the line with ' | ')
 
-   Row type suffixes:  :1 (exactly one)  :* (one or more)  :N (exactly N)
+   Row type suffixes:  :1 (exactly one)  :* (greedy)  :{n,m} (bounded: min n, max m total rows)
    Column keywords:  FieldName  IGNORE  EMPTY
+
+   For fixed-slot templates (pre-allocated empty rows before the footer), use DATA:{n,m}
+   with one or more SKIP_IF rows to silently skip empty rows:
+     table:1
+       | HEADER:1  | col_desc | col_qty
+       | SKIP_IF   | EMPTY    | IGNORE
+       | DATA:{0,15} | line.description | line.qty
+       | FOOTER:1  | lbl_total | inv.total
+   SKIP_IF uses EMPTY (cell must be null) and IGNORE (don't check). A row matching
+   any SKIP_IF condition is silently excluded from output but still counts toward {n,m}.
+   SKIP_IF is only valid with DATA:{n,m}.
 
 ─── KEY DESIGN RULES ──────────────────────────────────────────────────────────
 
@@ -588,7 +599,7 @@ class ClaudeBackend:
 
 # ── Pattern writer ────────────────────────────────────────────────────────────
 
-_TABLE_ROW_PREFIXES = ('HEADER:', 'DATA:', 'FOOTER:', 'SPLITTER:')
+_TABLE_ROW_PREFIXES = ('HEADER:', 'DATA:', 'FOOTER:', 'SPLITTER:', 'SKIP_IF')
 
 
 class PatternWriter:

@@ -148,6 +148,17 @@ class DocsGenerator:
         row(['doc:', '', '', '', 'HEADER/FOOTER are strict: wrong or missing value = no match.'], 'doc')
         row(['doc:', '', '', '', 'DATA rows are lenient: wrong value emits a warning but extraction continues.'], 'doc')
         row(['doc:', '', '', '', 'EMPTY column keyword: cell must be blank. IGNORE: consume without matching.'], 'doc')
+        row(['doc:', '', '', '', '── BOUNDED DATA + SKIP_IF (fixed-slot templates) ───────────────────────'], 'doc')
+        row(['doc:', '', '', '', 'Use DATA:{n,m} when the template pre-allocates a fixed number of rows.'], 'doc')
+        row(['doc:', '', '', '', 'n = min total physical rows expected, m = max total rows to scan.'], 'doc')
+        row(['doc:', '', '', '', 'SKIP_IF: rows matching the condition are silently excluded from output'], 'doc')
+        row(['doc:', '', '', '', 'but still count toward the {n,m} bounds.'], 'doc')
+        row(['doc:', '', '', '', 'SKIP_IF is only valid with DATA:{n,m}.'], 'doc')
+        row(['table:1'], 'table')
+        row([None, 'HEADER:1', 'col_item', 'col_qty'], 'tmpl')
+        row([None, 'SKIP_IF',  'EMPTY',    'IGNORE'], 'tmpl')
+        row([None, 'DATA:{0,15}', 'line.item', 'line.qty'], 'tmpl')
+        row([None, 'FOOTER:1', 'lbl_total', 'inv.total'], 'tmpl')
         blank()
 
         row(['END:'], 'marker')
@@ -165,9 +176,11 @@ class DocsGenerator:
             ('cell:next','cell:B5 | FieldName',        'Jump directly to B5 (absolute reference). Ordering must be forward.'),
             ('table:*',  'table:*  (or table:1)',      'Begin a repeating table block.'),
             ('HEADER:N', ' | HEADER:1 | F1 | F2',     'Strict header row template (col A must be blank).'),
-            ('DATA:*',   ' | DATA:* | F1 | F2',        'Data row template (lenient validation).'),
-            ('FOOTER:N', ' | FOOTER:1 | F1 | F2',      'Strict footer row template.'),
-            ('SPLITTER', ' | SPLITTER:1',              'All columns must be blank (separator row).'),
+            ('DATA:*',      ' | DATA:* | F1 | F2',           'Data row template (greedy, lenient validation).'),
+            ('DATA:{n,m}',  ' | DATA:{0,15} | F1 | F2',      'Bounded data: scan at most m physical rows, warn if < n.'),
+            ('SKIP_IF',     ' | SKIP_IF | EMPTY | IGNORE',    'Skip row if non-IGNORE columns match. Only with DATA:{n,m}.'),
+            ('FOOTER:N',    ' | FOOTER:1 | F1 | F2',          'Strict footer row template.'),
+            ('SPLITTER',    ' | SPLITTER:1',                   'All columns must be blank (separator row).'),
         ]
         for keyword, syntax, description in ref:
             fill_key = keyword.rstrip(':*1').lower()

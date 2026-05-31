@@ -276,6 +276,38 @@ class Logger:
         self._write(VerbosityLevel.DEBUG,
                     f'      [DATA]  row {row}: {col_count} column(s)')
 
+    def data_row_skipped(self, row: int):
+        rec = LogRecord(Severity.DEBUG, Category.ENGINE,
+                        f'Data row {row}: skipped (matches SKIP_IF)')
+        self._records.append(rec)
+        self._write(VerbosityLevel.DEBUG,
+                    f'      [SKIP]  row {row}: matches SKIP_IF — skipped')
+
+    def warn_data_min_not_reached(self, min_rows: int, found: int) -> LogRecord:
+        """Warn when a DATA:{n,m} section has fewer physical rows than declared minimum."""
+        hint = (
+            f'The pattern declares DATA:{{{min_rows},…}} but only {found} physical '
+            f'row(s) were found before the footer or the max limit. '
+            f'Check that the data file has at least {min_rows} row(s) in this section, '
+            f'or lower the minimum bound in the pattern.'
+        )
+        rec = LogRecord(
+            severity=Severity.WARNING,
+            category=Category.VALIDATION,
+            message=f'DATA minimum not reached: expected ≥{min_rows} rows, found {found}',
+            expected=f'≥{min_rows} physical data rows',
+            found=str(found),
+            hint=hint,
+        )
+        lines = [
+            f'\n  ⚠  [DATA min not reached]',
+            f'     Found:    {found} physical row(s)',
+            f'     Expected: ≥{min_rows} row(s)',
+            f'     → {hint}',
+        ]
+        rec._formatted = '\n'.join(lines)
+        return rec
+
     def footer_detected(self, row: int, col: int, value):
         location = cell_ref(row, col, self.sheet_name)
         rec = LogRecord(Severity.DEBUG, Category.ENGINE,

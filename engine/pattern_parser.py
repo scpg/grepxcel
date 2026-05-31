@@ -10,6 +10,7 @@ from .security import check_regex_safety, SecurityError
 _MAX_PATTERN_CELL_LEN = 1_000  # max characters in any pattern file cell value
 
 _A1_RE = re.compile(r'^[A-Z]{1,3}[1-9][0-9]*$', re.IGNORECASE)
+_BOUNDED_DATA_RE = re.compile(r'^\{(\d+),(\d+)\}$')
 
 
 class PatternError(Exception):
@@ -129,9 +130,18 @@ class PatternParser:
                         i += 1
                         continue
 
-                    # HEADER / SPLITTER / DATA / FOOTER row
-                    if sub_b and ':' in str(sub_b):
-                        row_type, row_mult = str(sub_b).rsplit(':', 1)
+                    # HEADER / SPLITTER / DATA / FOOTER / SKIP_IF row
+                    sub_b_str = str(sub_b) if sub_b else ''
+                    is_skip_if = sub_b_str.upper() == 'SKIP_IF'
+                    has_colon  = ':' in sub_b_str
+
+                    if is_skip_if or has_colon:
+                        if is_skip_if:
+                            row_type = 'SKIP_IF'
+                            row_mult = ''
+                        else:
+                            row_type, row_mult = sub_b_str.rsplit(':', 1)
+
                         cols_raw = list(sub[2:])
                         while cols_raw and cols_raw[-1] is None:
                             cols_raw.pop()
@@ -139,13 +149,53 @@ class PatternParser:
                             TemplateColumn(field=str(v) if v is not None else 'EMPTY')
                             for v in cols_raw
                         ]
+
+                        min_rows, max_rows = 0, None
+                        if row_type == 'DATA':
+                            m = _BOUNDED_DATA_RE.match(row_mult)
+                            if m:
+                                min_rows = int(m.group(1))
+                                max_rows = int(m.group(2))
+                                if min_rows > max_rows:
+                                    raise PatternError(
+                                        f'DATA:{{{min_rows},{max_rows}}}: '
+                                        f'min ({min_rows}) must be ≤ max ({max_rows})'
+                                    )
+
                         template_rows.append(TemplateRow(
                             row_type=row_type,
                             multiplicity=row_mult,
                             columns=columns,
+                            min_rows=min_rows,
+                            max_rows=max_rows,
                         ))
 
                     i += 1
+
+                # ── DATA type mutual-exclusivity validation ────────────────────
+                data_rows = [r for r in template_rows if r.row_type == 'DATA']
+                if data_rows:
+                    has_bounded = any(r.max_rows is not None for r in data_rows)
+                    has_star    = any(r.multiplicity == '*' for r in data_rows)
+                    has_one     = any(r.multiplicity == '1' for r in data_rows)
+                    type_count  = sum([has_bounded, has_star, has_one])
+                    if type_count > 1:
+                        raise PatternError(
+                            'Table block mixes DATA types. '
+                            'Use only one of: DATA:1 (repeatable), DATA:*, or DATA:{n,m}.'
+                        )
+                    if (has_bounded or has_star) and len(data_rows) > 1:
+                        kind = 'DATA:{n,m}' if has_bounded else 'DATA:*'
+                        raise PatternError(
+                            f'Only one {kind} row is allowed per table block.'
+                        )
+                    # SKIP_IF without a bounded DATA row is meaningless
+                    skip_if_rows = [r for r in template_rows if r.row_type == 'SKIP_IF']
+                    if skip_if_rows and not has_bounded:
+                        raise PatternError(
+                            'SKIP_IF requires DATA:{n,m}. '
+                            'SKIP_IF has no effect with DATA:* or DATA:1.'
+                        )
 
                 start_sequence.append(TableInstruction(
                     multiplicity=mult,
