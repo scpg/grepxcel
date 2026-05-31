@@ -43,7 +43,7 @@ In your output, separate columns with ' | ' (space-pipe-space).
    lbl: | FieldName | type | regex
 
    Use lbl: for literal text that marks where a value lives (e.g. "Invoice No:",
-   column headers like "Product", "Qty").  These are matched for position only.
+   column headers like "Product", "Qty").  These are matched for position only. They will allow you to confirm that the analysis and extraction of data is being done correctly and that the file being processed respects the structure that has been defined it should have.
 
 3. Variable definitions — extracted to the output JSON:
    var: | field.name | type | regex
@@ -63,7 +63,13 @@ In your output, separate columns with ' | ' (space-pipe-space).
      var: | line.margin  | percentage |
      var: | inv.date     | date       |
 
+   Important notes:
+     - integers can be negative too — include a leading -? in the regex if needed.
+     - same applies for currency amounts — they often can be negative (e.g. credit notes, negative adjustments).
+
+
 4. Extraction sequence between START: and END:
+   Important note: Headers are "in general" associated to lables, and data cells to variables.  The pattern must reflect this association by referencing the lbl: names in the HEADER: row and the var: names in the DATA: row. (there are exceptions to these rules, but following them will make the pattern easier to understand and maintain).
 
    For scattered key-value cells — two addressing modes:
 
