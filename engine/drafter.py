@@ -98,6 +98,37 @@ In your output, separate columns with ' | ' (space-pipe-space).
    any SKIP_IF condition is silently excluded from output but still counts toward {n,m}.
    SKIP_IF is only valid with DATA:{n,m}.
 
+─── HOW TO READ THE ANALYSIS ───────────────────────────────────────────────────
+
+KEY-VALUE sections list lines shaped like:
+    - LABEL 'Invoice No:'  →  VALUE 'AB123456' [string]
+
+Each LABEL → VALUE pair becomes THREE coordinated rows in your pattern:
+  1. lbl: | <label_name>     | string | <exact LABEL text>   ← defines the anchor
+  2. var: | <group>.<field>  | <type> | <regex>              ← defines the value
+  3. inside START:/END:, two sequence steps that alternate:
+        cell:next | <label_name>        (consume the label cell — never output)
+        cell:next | <group>.<field>     (consume the value cell — goes to output)
+
+WHY: the scanner walks cells left-to-right. The label cell comes first and must be
+consumed by its lbl: anchor (or IGNORE) so the cursor lands on the value next.
+The label is matched for POSITION ONLY and never appears in the output JSON;
+only var: fields appear in the output.
+
+TABLE sections list columns. Column headers become lbl: anchors referenced in the
+HEADER row; the data beneath each column becomes a var: field in the DATA row.
+
+─── FIELD NAMING ───────────────────────────────────────────────────────────────
+
+Group semantically related values under a shared dot-prefix. Pick the prefix from
+what the value MEANS, not from the label text next to it:
+  - invoice header fields → inv.number, inv.date, inv.due_date
+  - monetary amounts      → amount.net, amount.vat, amount.gross
+  - party / contact info  → client.name, client.email
+  - repeating line items  → line.description, line.qty, line.price
+Use consistent, conventional names. Group every monetary total under one prefix
+(e.g. amount.*), not scattered across unrelated groups.
+
 ─── KEY DESIGN RULES ──────────────────────────────────────────────────────────
 
 - Use lbl: for label cells ("Invoice No:", "Total:", column headers).
@@ -389,25 +420,39 @@ class ExcelAnalyzer:
     ) -> list:
         prefix = (f'{label}: KEY-VALUE layout' if label
                   else 'Layout: KEY-VALUE (scattered cells, not a standard table)')
-        lines  = ['', prefix, 'Cell pairs found:']
+        lines  = [
+            '', prefix,
+            'Label → Value pairs '
+            '(LABEL marks position → define with lbl: and skip with cell:next | IGNORE; '
+            'VALUE is captured → define with var: and read with cell:next):',
+        ]
         count  = 0
 
+        # KV cells alternate LABEL, VALUE across each row. Consume the non-empty
+        # cells two at a time: the first is the label, the second is its value.
+        # This avoids emitting a spurious pair for every value→next-label adjacency.
         for ri, row in enumerate(rows):
             global_row = sec_start + ri + 1          # 1-based sheet row
             non_empty  = [(ci, v) for ci, v in enumerate(row) if not is_empty(v)]
-            if not non_empty:
-                continue
-            for ci, val in non_empty:
-                next_val = row[ci + 1] if ci + 1 < len(row) else None
-                fmt      = number_formats.get((global_row, ci + 2)) if next_val is not None else None
-                val_type = (_type_from_number_format(fmt)
-                            or (infer_cell_type([next_val]) if next_val is not None else 'string'))
-                is_fml   = (global_row, ci + 1) in formula_cells
-                fml_note = '  [formula]' if is_fml else ''
-                if next_val is not None:
-                    lines.append(f"  - '{val}': {repr(next_val)} [{val_type}]{fml_note}")
+
+            i = 0
+            while i < len(non_empty):
+                lbl_ci, lbl_val = non_empty[i]
+                if i + 1 < len(non_empty):
+                    val_ci, val_val = non_empty[i + 1]
+                    fmt      = number_formats.get((global_row, val_ci + 1))
+                    val_type = (_type_from_number_format(fmt)
+                                or infer_cell_type([val_val]))
+                    is_fml   = (global_row, val_ci + 1) in formula_cells
+                    fml_note = '  [formula]' if is_fml else ''
+                    lines.append(
+                        f"  - LABEL '{lbl_val}'  →  VALUE {repr(val_val)} "
+                        f"[{val_type}]{fml_note}"
+                    )
+                    i += 2
                 else:
-                    lines.append(f"  - '{val}': (standalone){fml_note}")
+                    lines.append(f"  - LABEL '{lbl_val}'  →  (no value beside it)")
+                    i += 1
                 count += 1
                 if count >= 50:
                     lines.append('  ... (additional pairs omitted)')
@@ -602,16 +647,22 @@ class ClaudeBackend:
       claude-opus-4-5:    input $15.00  output $75.00
     """
 
-    # USD per 1M tokens
+    # USD per 1M tokens (source: platform.claude.com/docs/en/about-claude/models/overview)
     _PRICING: dict[str, tuple[float, float]] = {
-        'claude-haiku-4-5-20251001':   (0.80,  4.00),
-        'claude-haiku-4-5':            (0.80,  4.00),
-        'claude-sonnet-4-6':           (3.00,  15.00),
-        'claude-sonnet-4-5-20251001':  (3.00,  15.00),
-        'claude-sonnet-4-5':           (3.00,  15.00),
-        'claude-opus-4-5-20251001':    (15.00, 75.00),
-        'claude-opus-4-5':             (15.00, 75.00),
-        'claude-opus-4-8':             (15.00, 75.00),
+        # Current models
+        'claude-opus-4-8':              (5.00,  25.00),
+        'claude-haiku-4-5-20251001':    (1.00,   5.00),
+        'claude-haiku-4-5':             (1.00,   5.00),
+        'claude-sonnet-4-6':            (3.00,  15.00),
+        # Legacy models still available
+        'claude-sonnet-4-5-20250929':   (3.00,  15.00),
+        'claude-sonnet-4-5':            (3.00,  15.00),
+        'claude-opus-4-7':              (5.00,  25.00),
+        'claude-opus-4-6':              (5.00,  25.00),
+        'claude-opus-4-5-20251101':     (5.00,  25.00),
+        'claude-opus-4-5':              (5.00,  25.00),
+        'claude-opus-4-1-20250805':    (15.00,  75.00),
+        'claude-opus-4-1':             (15.00,  75.00),
     }
 
     def __init__(self, model: str = 'claude-haiku-4-5-20251001'):
