@@ -12,6 +12,7 @@ import platform
 import subprocess
 import sys
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
@@ -484,6 +485,28 @@ def _detect_gpu() -> tuple[int, str | None, str | None]:
 
 # ── Backend protocol ──────────────────────────────────────────────────────────
 
+@dataclass
+class CostRecord:
+    """Token usage and USD cost for one API call."""
+    model:        str
+    input_tokens: int
+    output_tokens: int
+    input_cost_usd:  float
+    output_cost_usd: float
+
+    @property
+    def total_cost_usd(self) -> float:
+        return self.input_cost_usd + self.output_cost_usd
+
+    def __str__(self) -> str:
+        return (
+            f'{self.model}  '
+            f'in={self.input_tokens} out={self.output_tokens}  '
+            f'cost=${self.total_cost_usd:.6f} '
+            f'(in=${self.input_cost_usd:.6f} + out=${self.output_cost_usd:.6f})'
+        )
+
+
 @runtime_checkable
 class LLMBackend(Protocol):
     """Minimal interface every inference backend must satisfy.
@@ -572,10 +595,31 @@ class ClaudeBackend:
     Requires ANTHROPIC_API_KEY to be set in the environment.
     Only the Excel structure description (column types, sample values, labels)
     is transmitted — the raw file bytes never leave the machine.
+
+    Pricing (USD per 1M tokens, as of 2025-05):
+      claude-haiku-4-5:   input $0.80   output $4.00
+      claude-sonnet-4-5:  input $3.00   output $15.00
+      claude-opus-4-5:    input $15.00  output $75.00
     """
 
+    # USD per 1M tokens
+    _PRICING: dict[str, tuple[float, float]] = {
+        'claude-haiku-4-5-20251001':   (0.80,  4.00),
+        'claude-haiku-4-5':            (0.80,  4.00),
+        'claude-sonnet-4-6':           (3.00,  15.00),
+        'claude-sonnet-4-5-20251001':  (3.00,  15.00),
+        'claude-sonnet-4-5':           (3.00,  15.00),
+        'claude-opus-4-5-20251001':    (15.00, 75.00),
+        'claude-opus-4-5':             (15.00, 75.00),
+        'claude-opus-4-8':             (15.00, 75.00),
+    }
+
     def __init__(self, model: str = 'claude-haiku-4-5-20251001'):
-        self._model = model
+        self._model     = model
+        self._last_cost: CostRecord | None = None
+
+    def last_cost(self) -> CostRecord | None:
+        return self._last_cost
 
     def chat(self, system: str, user: str) -> str:
         try:
@@ -583,7 +627,7 @@ class ClaudeBackend:
         except ImportError:
             print(
                 "Error: 'anthropic' package is not installed.\n"
-                "Fix:   pip install 'grepxcel[draft-cloud]'",
+                "Fix:   pip install anthropic",
                 file=sys.stderr,
             )
             sys.exit(1)
@@ -594,7 +638,82 @@ class ClaudeBackend:
             system=system,
             messages=[{'role': 'user', 'content': user}],
         )
+        in_tok  = msg.usage.input_tokens
+        out_tok = msg.usage.output_tokens
+        in_p, out_p = self._PRICING.get(self._model, (0.0, 0.0))
+        self._last_cost = CostRecord(
+            model=self._model,
+            input_tokens=in_tok,
+            output_tokens=out_tok,
+            input_cost_usd=in_tok  * in_p  / 1_000_000,
+            output_cost_usd=out_tok * out_p / 1_000_000,
+        )
         return msg.content[0].text
+
+
+# ── Gemini API backend ────────────────────────────────────────────────────────
+
+class GeminiBackend:
+    """Sends inference requests to the Google Gemini API (google-genai SDK).
+
+    Requires GOOGLE_API_KEY to be set in the environment.
+    Only the Excel structure description is transmitted — raw file bytes
+    never leave the machine.
+
+    Pricing (USD per 1M tokens, as of 2025-05, prompts ≤200K tokens):
+      gemini-2.0-flash:       input $0.10   output $0.40
+      gemini-2.5-flash:       input $0.15   output $0.60  (non-thinking)
+      gemini-2.5-pro:         input $1.25   output $10.00 (≤200K)
+    """
+
+    _PRICING: dict[str, tuple[float, float]] = {
+        'gemini-2.0-flash':          (0.10,  0.40),
+        'gemini-2.0-flash-001':      (0.10,  0.40),
+        'gemini-2.5-flash-preview-05-20': (0.15, 0.60),
+        'gemini-2.5-flash':          (0.15,  0.60),
+        'gemini-2.5-pro-preview-05-06':   (1.25, 10.00),
+        'gemini-2.5-pro':            (1.25, 10.00),
+    }
+
+    def __init__(self, model: str = 'gemini-2.0-flash'):
+        self._model     = model
+        self._last_cost: CostRecord | None = None
+
+    def last_cost(self) -> CostRecord | None:
+        return self._last_cost
+
+    def chat(self, system: str, user: str) -> str:
+        try:
+            from google import genai
+            from google.genai import types
+        except ImportError:
+            print(
+                "Error: 'google-genai' package is not installed.\n"
+                "Fix:   pip install google-genai",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        client = genai.Client()  # reads GOOGLE_API_KEY from env
+        response = client.models.generate_content(
+            model=self._model,
+            contents=user,
+            config=types.GenerateContentConfig(
+                system_instruction=system,
+                max_output_tokens=2048,
+                temperature=0.1,
+            ),
+        )
+        in_tok  = response.usage_metadata.prompt_token_count or 0
+        out_tok = response.usage_metadata.candidates_token_count or 0
+        in_p, out_p = self._PRICING.get(self._model, (0.0, 0.0))
+        self._last_cost = CostRecord(
+            model=self._model,
+            input_tokens=in_tok,
+            output_tokens=out_tok,
+            input_cost_usd=in_tok  * in_p  / 1_000_000,
+            output_cost_usd=out_tok * out_p / 1_000_000,
+        )
+        return response.text
 
 
 # ── Pattern writer ────────────────────────────────────────────────────────────
