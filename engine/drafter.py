@@ -115,8 +115,22 @@ consumed by its lbl: anchor (or IGNORE) so the cursor lands on the value next.
 The label is matched for POSITION ONLY and never appears in the output JSON;
 only var: fields appear in the output.
 
-TABLE sections list columns. Column headers become lbl: anchors referenced in the
-HEADER row; the data beneath each column becomes a var: field in the DATA row.
+TABLE sections list columns shaped like:
+    - HEADER 'Datum' (→ lbl:)  →  DATA [datetime] (→ var:)  samples: ...
+
+For each column produce:
+  1. lbl: | <col_name>      | string | <exact HEADER text>   ← the column header anchor
+  2. var: | <group>.<field> | <type> | <regex>              ← the column's data
+Then build the table block:
+    table:*
+     | HEADER:1 | <col_name_1> | <col_name_2> | ...   (all lbl: names, in column order)
+     | DATA:*   | <group>.f1   | <group>.f2   | ...   (all var: names, same order)
+The HEADER: row references ONLY lbl: names; the DATA: row references ONLY var:
+names. Never put a var: name in the HEADER: row or an lbl: name in the DATA: row.
+
+If a column's DATA is empty (the analysis says "use IGNORE in the DATA: row"),
+still put its lbl: in the HEADER: row, but write IGNORE at that position in the
+DATA: row so the column alignment is preserved.
 
 ─── FIELD NAMING ───────────────────────────────────────────────────────────────
 
@@ -410,7 +424,14 @@ class ExcelAnalyzer:
 
         prefix = (f'{label}: TABLE layout' if label
                   else 'Layout: TABLE (first row appears to be column headers)')
-        lines  = ['', prefix, f'Columns ({len(non_empty_h)}):']
+        lines  = [
+            '', prefix,
+            f'Columns ({len(non_empty_h)}) — for EACH column define an lbl: for its '
+            f'HEADER text and a var: for its DATA values. Reference the lbl: names in '
+            f'the HEADER: row and the var: names in the DATA: row (same column order). '
+            f'A column whose DATA is empty has no var: — put its lbl: in the HEADER: '
+            f'row and IGNORE at that position in the DATA: row.',
+        ]
 
         for col_idx, header in non_empty_h:
             col_type, fmt = self._col_type(col_idx, sec_start, data_rows, number_formats)
@@ -421,11 +442,16 @@ class ExcelAnalyzer:
             vals    = [r[col_idx] for r in data_rows
                        if col_idx < len(r) and not is_empty(r[col_idx])]
             samples = [repr(v) for v in vals[:self._DISPLAY_SAMPLES]]
-            line    = f"  - '{header}' [{col_type}]  samples: {', '.join(samples) or '(none)'}"
+            if vals:
+                line = (f"  - HEADER '{header}' (→ lbl:)  →  "
+                        f"DATA [{col_type}] (→ var:)  samples: {', '.join(samples)}")
+            else:
+                line = (f"  - HEADER '{header}' (→ lbl:)  →  "
+                        f"DATA (empty — use IGNORE in the DATA: row)")
             if fmt:
                 line += f'  (format: {fmt})'
             if is_formula:
-                line += '  [formula — consider var:]'
+                line += '  [formula]'
             lines.append(line)
 
         if data_rows:
