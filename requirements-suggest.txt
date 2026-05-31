@@ -1,2 +1,12 @@
-llama-cpp-python>=0.2.90   # in-process GGUF inference for 'grepxcel suggest'
+# Do NOT install this file directly with pip — llama-cpp-python must be compiled
+# with the right hardware backend for your machine (CUDA, Metal, or CPU).
+#
+# Use instead:
+#   python3 scripts/install_llm_deps.py
+#
+# That script auto-detects your GPU and sets the correct CMAKE_ARGS before
+# compiling llama-cpp-python. On machines with no GPU it falls back to CPU.
+#
+# Listed here for reference only (used by install_llm_deps.py):
+llama-cpp-python>=0.2.90   # in-process GGUF inference for 'grepxcel draft'
 huggingface_hub>=0.23      # model download and update checks

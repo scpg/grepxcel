@@ -48,7 +48,7 @@ git clone https://github.com/scpg/grepxcel.git
 cd grepxcel
 python -m venv .venv
 .venv/bin/pip install -e .                            # core (extract command)
-.venv/bin/pip install -r requirements-suggest.txt     # optional: suggest command
+.venv/bin/python3 scripts/install_llm_deps.py         # optional: draft command (auto-detects GPU)
 ```
 
 > **Windows (PowerShell):** use `.venv\Scripts\` instead of `.venv/bin/`, e.g.

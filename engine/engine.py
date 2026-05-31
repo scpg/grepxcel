@@ -576,9 +576,17 @@ class Engine:
         # --- DATA rows ---
         data_tmpl = data_rows[0] if data_rows else None
         footer_tmpl_first = footer_rows[0] if footer_rows else None
+        skip_if_rows = [r for r in instr.rows if r.row_type == 'SKIP_IF']
 
         if data_tmpl:
+            is_bounded    = data_tmpl.max_rows is not None
+            total_scanned = 0  # physical rows seen (skipped + real), for {n,m} bounds
+
             while True:
+                # Hard ceiling for bounded DATA
+                if is_bounded and total_scanned >= data_tmpl.max_rows:
+                    break
+
                 if self._row_is_end_of_data(current_row, anchor_col, data_tmpl, config, scanner):
                     logger.footer_detected(current_row, anchor_col,
                                            scanner.cell_value(current_row, anchor_col))
@@ -592,6 +600,17 @@ class Engine:
                                            scanner.cell_value(current_row, anchor_col))
                     break
 
+                # SKIP_IF — silently skip matching rows (still counts toward bounds)
+                if skip_if_rows and self._row_matches_any_skip_if(
+                    current_row, anchor_col, skip_if_rows, config, scanner
+                ):
+                    logger.data_row_skipped(current_row)
+                    total_scanned += 1
+                    current_row   += 1
+                    if data_tmpl.multiplicity == '1':
+                        break
+                    continue
+
                 row_data, ok = self._match_row(
                     current_row, anchor_col, data_tmpl, defs, config,
                     scanner, tentative_consumed, local_warnings, logger, strict=False,
@@ -601,10 +620,17 @@ class Engine:
 
                 logger.data_row(current_row, len(data_tmpl.columns))
                 extracted['data'].append(row_data)
-                current_row += 1
+                total_scanned += 1
+                current_row   += 1
 
                 if data_tmpl.multiplicity == '1':
                     break
+
+            # Warn if fewer physical rows than the declared minimum were found
+            if is_bounded and total_scanned < data_tmpl.min_rows:
+                local_warnings.append(
+                    logger.warn_data_min_not_reached(data_tmpl.min_rows, total_scanned)
+                )
 
         # --- FOOTER rows (strict: empty non-EMPTY field = fail) ---
         for tmpl_row in footer_rows:
@@ -683,6 +709,33 @@ class Engine:
             tentative_consumed.add((sheet_row, col))
 
         return row_data, True
+
+    def _row_matches_any_skip_if(self, sheet_row: int, anchor_col: int,
+                                  skip_if_rows: list, config: Config,
+                                  scanner) -> bool:
+        """Return True if the sheet row matches ANY SKIP_IF template (OR logic)."""
+        return any(
+            self._row_matches_skip_if(sheet_row, anchor_col, tmpl, config, scanner)
+            for tmpl in skip_if_rows
+        )
+
+    def _row_matches_skip_if(self, sheet_row: int, anchor_col: int,
+                              skip_tmpl: TemplateRow, config: Config,
+                              scanner) -> bool:
+        """
+        Return True if every non-IGNORE column in skip_tmpl matches its condition.
+        EMPTY → cell must be empty/null.
+        IGNORE → don't check this column.
+        """
+        for c_offset, tmpl_col in enumerate(skip_tmpl.columns):
+            if tmpl_col.field == 'IGNORE':
+                continue
+            col = anchor_col + c_offset
+            val = scanner.ws.cell(row=sheet_row, column=col).value
+            if tmpl_col.field == 'EMPTY':
+                if not is_empty(val, config.empty_aliases):
+                    return False
+        return True
 
     def _row_is_end_of_data(self, sheet_row: int, anchor_col: int,
                              data_tmpl: TemplateRow, config: Config,

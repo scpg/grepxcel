@@ -12,6 +12,7 @@ import platform
 import subprocess
 import sys
 import tempfile
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
@@ -42,7 +43,7 @@ In your output, separate columns with ' | ' (space-pipe-space).
    lbl: | FieldName | type | regex
 
    Use lbl: for literal text that marks where a value lives (e.g. "Invoice No:",
-   column headers like "Product", "Qty").  These are matched for position only.
+   column headers like "Product", "Qty").  These are matched for position only. They will allow you to confirm that the analysis and extraction of data is being done correctly and that the file being processed respects the structure that has been defined it should have.
 
 3. Variable definitions — extracted to the output JSON:
    var: | field.name | type | regex
@@ -62,7 +63,13 @@ In your output, separate columns with ' | ' (space-pipe-space).
      var: | line.margin  | percentage |
      var: | inv.date     | date       |
 
+   Important notes:
+     - integers can be negative too — include a leading -? in the regex if needed.
+     - same applies for currency amounts — they often can be negative (e.g. credit notes, negative adjustments).
+
+
 4. Extraction sequence between START: and END:
+   Important note: Headers are "in general" associated to lables, and data cells to variables.  The pattern must reflect this association by referencing the lbl: names in the HEADER: row and the var: names in the DATA: row. (there are exceptions to these rules, but following them will make the pattern easier to understand and maintain).
 
    For scattered key-value cells — two addressing modes:
 
@@ -83,8 +90,64 @@ In your output, separate columns with ' | ' (space-pipe-space).
        | FOOTER:1 | ColA | ColB | ColC
      (Table template rows have a blank column A — start the line with ' | ')
 
-   Row type suffixes:  :1 (exactly one)  :* (one or more)  :N (exactly N)
+   Row type suffixes:  :1 (exactly one)  :* (greedy)  :{n,m} (bounded: min n, max m total rows)
    Column keywords:  FieldName  IGNORE  EMPTY
+
+   For fixed-slot templates (pre-allocated empty rows before the footer), use DATA:{n,m}
+   with one or more SKIP_IF rows to silently skip empty rows:
+     table:1
+       | HEADER:1  | col_desc | col_qty
+       | SKIP_IF   | EMPTY    | IGNORE
+       | DATA:{0,15} | line.description | line.qty
+       | FOOTER:1  | lbl_total | inv.total
+   SKIP_IF uses EMPTY (cell must be null) and IGNORE (don't check). A row matching
+   any SKIP_IF condition is silently excluded from output but still counts toward {n,m}.
+   SKIP_IF is only valid with DATA:{n,m}.
+
+─── HOW TO READ THE ANALYSIS ───────────────────────────────────────────────────
+
+KEY-VALUE sections list lines shaped like:
+    - LABEL 'Invoice No:'  →  VALUE 'AB123456' [string]
+
+Each LABEL → VALUE pair becomes THREE coordinated rows in your pattern:
+  1. lbl: | <label_name>     | string | <exact LABEL text>   ← defines the anchor
+  2. var: | <group>.<field>  | <type> | <regex>              ← defines the value
+  3. inside START:/END:, two sequence steps that alternate:
+        cell:next | <label_name>        (consume the label cell — never output)
+        cell:next | <group>.<field>     (consume the value cell — goes to output)
+
+WHY: the scanner walks cells left-to-right. The label cell comes first and must be
+consumed by its lbl: anchor (or IGNORE) so the cursor lands on the value next.
+The label is matched for POSITION ONLY and never appears in the output JSON;
+only var: fields appear in the output.
+
+TABLE sections list columns shaped like:
+    - HEADER 'Datum' (→ lbl:)  →  DATA [datetime] (→ var:)  samples: ...
+
+For each column produce:
+  1. lbl: | <col_name>      | string | <exact HEADER text>   ← the column header anchor
+  2. var: | <group>.<field> | <type> | <regex>              ← the column's data
+Then build the table block:
+    table:*
+     | HEADER:1 | <col_name_1> | <col_name_2> | ...   (all lbl: names, in column order)
+     | DATA:*   | <group>.f1   | <group>.f2   | ...   (all var: names, same order)
+The HEADER: row references ONLY lbl: names; the DATA: row references ONLY var:
+names. Never put a var: name in the HEADER: row or an lbl: name in the DATA: row.
+
+If a column's DATA is empty (the analysis says "use IGNORE in the DATA: row"),
+still put its lbl: in the HEADER: row, but write IGNORE at that position in the
+DATA: row so the column alignment is preserved.
+
+─── FIELD NAMING ───────────────────────────────────────────────────────────────
+
+Group semantically related values under a shared dot-prefix. Pick the prefix from
+what the value MEANS, not from the label text next to it:
+  - invoice header fields → inv.number, inv.date, inv.due_date
+  - monetary amounts      → amount.net, amount.vat, amount.gross
+  - party / contact info  → client.name, client.email
+  - repeating line items  → line.description, line.qty, line.price
+Use consistent, conventional names. Group every monetary total under one prefix
+(e.g. amount.*), not scattered across unrelated groups.
 
 ─── KEY DESIGN RULES ──────────────────────────────────────────────────────────
 
@@ -284,8 +347,11 @@ class ExcelAnalyzer:
                     continue
 
             # TABLE requires >= 2 rows (header + at least one data row)
-            # and >= 2 non-empty values in the first row.
-            if len(non_empty_first) >= 2 and len(sec_rows) >= 2:
+            # and >= 2 non-empty values in the first row.  A grid whose first row
+            # is mostly colon-terminated labels is really a key-value block laid
+            # out across columns, not a table — route it to the KV describer.
+            if (len(non_empty_first) >= 2 and len(sec_rows) >= 2
+                    and not self._looks_like_kv_grid(sec_rows[0])):
                 lines += self._describe_table_section(
                     sec_rows, sec_start, formula_cells, number_formats, label)
             else:
@@ -293,6 +359,20 @@ class ExcelAnalyzer:
                     sec_rows, sec_start, formula_cells, number_formats, label)
 
         return '\n'.join(lines)
+
+    def _looks_like_kv_grid(self, first_row) -> bool:
+        """True if a grid's first row is mostly colon-terminated labels.
+
+        Column headers ("Date", "Amount", "Receipt No") rarely end with ':',
+        whereas key-value labels ("Employee:", "Department:") usually do. When
+        at least half the non-empty string cells end with ':', the section is a
+        KV block written across columns rather than a real table.
+        """
+        cells = [v for v in first_row if not is_empty(v) and isinstance(v, str)]
+        if len(cells) < 2:
+            return False
+        colon = sum(1 for c in cells if c.rstrip().endswith(':'))
+        return colon >= len(cells) / 2
 
     def _cell_metadata(self, ws, max_row: int, max_col: int) -> tuple[set, dict]:
         """Return (formula_cells, number_formats) using 1-based (row, col) keys."""
@@ -350,7 +430,14 @@ class ExcelAnalyzer:
 
         prefix = (f'{label}: TABLE layout' if label
                   else 'Layout: TABLE (first row appears to be column headers)')
-        lines  = ['', prefix, f'Columns ({len(non_empty_h)}):']
+        lines  = [
+            '', prefix,
+            f'Columns ({len(non_empty_h)}) — for EACH column define an lbl: for its '
+            f'HEADER text and a var: for its DATA values. Reference the lbl: names in '
+            f'the HEADER: row and the var: names in the DATA: row (same column order). '
+            f'A column whose DATA is empty has no var: — put its lbl: in the HEADER: '
+            f'row and IGNORE at that position in the DATA: row.',
+        ]
 
         for col_idx, header in non_empty_h:
             col_type, fmt = self._col_type(col_idx, sec_start, data_rows, number_formats)
@@ -361,11 +448,16 @@ class ExcelAnalyzer:
             vals    = [r[col_idx] for r in data_rows
                        if col_idx < len(r) and not is_empty(r[col_idx])]
             samples = [repr(v) for v in vals[:self._DISPLAY_SAMPLES]]
-            line    = f"  - '{header}' [{col_type}]  samples: {', '.join(samples) or '(none)'}"
+            if vals:
+                line = (f"  - HEADER '{header}' (→ lbl:)  →  "
+                        f"DATA [{col_type}] (→ var:)  samples: {', '.join(samples)}")
+            else:
+                line = (f"  - HEADER '{header}' (→ lbl:)  →  "
+                        f"DATA (empty — use IGNORE in the DATA: row)")
             if fmt:
                 line += f'  (format: {fmt})'
             if is_formula:
-                line += '  [formula — consider var:]'
+                line += '  [formula]'
             lines.append(line)
 
         if data_rows:
@@ -377,25 +469,39 @@ class ExcelAnalyzer:
     ) -> list:
         prefix = (f'{label}: KEY-VALUE layout' if label
                   else 'Layout: KEY-VALUE (scattered cells, not a standard table)')
-        lines  = ['', prefix, 'Cell pairs found:']
+        lines  = [
+            '', prefix,
+            'Label → Value pairs '
+            '(LABEL marks position → define with lbl: and skip with cell:next | IGNORE; '
+            'VALUE is captured → define with var: and read with cell:next):',
+        ]
         count  = 0
 
+        # KV cells alternate LABEL, VALUE across each row. Consume the non-empty
+        # cells two at a time: the first is the label, the second is its value.
+        # This avoids emitting a spurious pair for every value→next-label adjacency.
         for ri, row in enumerate(rows):
             global_row = sec_start + ri + 1          # 1-based sheet row
             non_empty  = [(ci, v) for ci, v in enumerate(row) if not is_empty(v)]
-            if not non_empty:
-                continue
-            for ci, val in non_empty:
-                next_val = row[ci + 1] if ci + 1 < len(row) else None
-                fmt      = number_formats.get((global_row, ci + 2)) if next_val is not None else None
-                val_type = (_type_from_number_format(fmt)
-                            or (infer_cell_type([next_val]) if next_val is not None else 'string'))
-                is_fml   = (global_row, ci + 1) in formula_cells
-                fml_note = '  [formula]' if is_fml else ''
-                if next_val is not None:
-                    lines.append(f"  - '{val}': {repr(next_val)} [{val_type}]{fml_note}")
+
+            i = 0
+            while i < len(non_empty):
+                lbl_ci, lbl_val = non_empty[i]
+                if i + 1 < len(non_empty):
+                    val_ci, val_val = non_empty[i + 1]
+                    fmt      = number_formats.get((global_row, val_ci + 1))
+                    val_type = (_type_from_number_format(fmt)
+                                or infer_cell_type([val_val]))
+                    is_fml   = (global_row, val_ci + 1) in formula_cells
+                    fml_note = '  [formula]' if is_fml else ''
+                    lines.append(
+                        f"  - LABEL '{lbl_val}'  →  VALUE {repr(val_val)} "
+                        f"[{val_type}]{fml_note}"
+                    )
+                    i += 2
                 else:
-                    lines.append(f"  - '{val}': (standalone){fml_note}")
+                    lines.append(f"  - LABEL '{lbl_val}'  →  (no value beside it)")
+                    i += 1
                 count += 1
                 if count >= 50:
                     lines.append('  ... (additional pairs omitted)')
@@ -472,6 +578,28 @@ def _detect_gpu() -> tuple[int, str | None, str | None]:
 
 
 # ── Backend protocol ──────────────────────────────────────────────────────────
+
+@dataclass
+class CostRecord:
+    """Token usage and USD cost for one API call."""
+    model:        str
+    input_tokens: int
+    output_tokens: int
+    input_cost_usd:  float
+    output_cost_usd: float
+
+    @property
+    def total_cost_usd(self) -> float:
+        return self.input_cost_usd + self.output_cost_usd
+
+    def __str__(self) -> str:
+        return (
+            f'{self.model}  '
+            f'in={self.input_tokens} out={self.output_tokens}  '
+            f'cost=${self.total_cost_usd:.6f} '
+            f'(in=${self.input_cost_usd:.6f} + out=${self.output_cost_usd:.6f})'
+        )
+
 
 @runtime_checkable
 class LLMBackend(Protocol):
@@ -561,10 +689,37 @@ class ClaudeBackend:
     Requires ANTHROPIC_API_KEY to be set in the environment.
     Only the Excel structure description (column types, sample values, labels)
     is transmitted — the raw file bytes never leave the machine.
+
+    Pricing (USD per 1M tokens, as of 2025-05):
+      claude-haiku-4-5:   input $0.80   output $4.00
+      claude-sonnet-4-5:  input $3.00   output $15.00
+      claude-opus-4-5:    input $15.00  output $75.00
     """
 
+    # USD per 1M tokens (source: platform.claude.com/docs/en/about-claude/models/overview)
+    _PRICING: dict[str, tuple[float, float]] = {
+        # Current models
+        'claude-opus-4-8':              (5.00,  25.00),
+        'claude-haiku-4-5-20251001':    (1.00,   5.00),
+        'claude-haiku-4-5':             (1.00,   5.00),
+        'claude-sonnet-4-6':            (3.00,  15.00),
+        # Legacy models still available
+        'claude-sonnet-4-5-20250929':   (3.00,  15.00),
+        'claude-sonnet-4-5':            (3.00,  15.00),
+        'claude-opus-4-7':              (5.00,  25.00),
+        'claude-opus-4-6':              (5.00,  25.00),
+        'claude-opus-4-5-20251101':     (5.00,  25.00),
+        'claude-opus-4-5':              (5.00,  25.00),
+        'claude-opus-4-1-20250805':    (15.00,  75.00),
+        'claude-opus-4-1':             (15.00,  75.00),
+    }
+
     def __init__(self, model: str = 'claude-haiku-4-5-20251001'):
-        self._model = model
+        self._model     = model
+        self._last_cost: CostRecord | None = None
+
+    def last_cost(self) -> CostRecord | None:
+        return self._last_cost
 
     def chat(self, system: str, user: str) -> str:
         try:
@@ -572,7 +727,7 @@ class ClaudeBackend:
         except ImportError:
             print(
                 "Error: 'anthropic' package is not installed.\n"
-                "Fix:   pip install 'grepxcel[draft-cloud]'",
+                "Fix:   pip install anthropic",
                 file=sys.stderr,
             )
             sys.exit(1)
@@ -583,12 +738,87 @@ class ClaudeBackend:
             system=system,
             messages=[{'role': 'user', 'content': user}],
         )
+        in_tok  = msg.usage.input_tokens
+        out_tok = msg.usage.output_tokens
+        in_p, out_p = self._PRICING.get(self._model, (0.0, 0.0))
+        self._last_cost = CostRecord(
+            model=self._model,
+            input_tokens=in_tok,
+            output_tokens=out_tok,
+            input_cost_usd=in_tok  * in_p  / 1_000_000,
+            output_cost_usd=out_tok * out_p / 1_000_000,
+        )
         return msg.content[0].text
+
+
+# ── Gemini API backend ────────────────────────────────────────────────────────
+
+class GeminiBackend:
+    """Sends inference requests to the Google Gemini API (google-genai SDK).
+
+    Requires GOOGLE_API_KEY to be set in the environment.
+    Only the Excel structure description is transmitted — raw file bytes
+    never leave the machine.
+
+    Pricing (USD per 1M tokens, as of 2025-05, prompts ≤200K tokens):
+      gemini-2.0-flash:       input $0.10   output $0.40
+      gemini-2.5-flash:       input $0.15   output $0.60  (non-thinking)
+      gemini-2.5-pro:         input $1.25   output $10.00 (≤200K)
+    """
+
+    _PRICING: dict[str, tuple[float, float]] = {
+        'gemini-2.0-flash':          (0.10,  0.40),
+        'gemini-2.0-flash-001':      (0.10,  0.40),
+        'gemini-2.5-flash-preview-05-20': (0.15, 0.60),
+        'gemini-2.5-flash':          (0.15,  0.60),
+        'gemini-2.5-pro-preview-05-06':   (1.25, 10.00),
+        'gemini-2.5-pro':            (1.25, 10.00),
+    }
+
+    def __init__(self, model: str = 'gemini-2.0-flash'):
+        self._model     = model
+        self._last_cost: CostRecord | None = None
+
+    def last_cost(self) -> CostRecord | None:
+        return self._last_cost
+
+    def chat(self, system: str, user: str) -> str:
+        try:
+            from google import genai
+            from google.genai import types
+        except ImportError:
+            print(
+                "Error: 'google-genai' package is not installed.\n"
+                "Fix:   pip install google-genai",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        client = genai.Client()  # reads GOOGLE_API_KEY from env
+        response = client.models.generate_content(
+            model=self._model,
+            contents=user,
+            config=types.GenerateContentConfig(
+                system_instruction=system,
+                max_output_tokens=2048,
+                temperature=0.1,
+            ),
+        )
+        in_tok  = response.usage_metadata.prompt_token_count or 0
+        out_tok = response.usage_metadata.candidates_token_count or 0
+        in_p, out_p = self._PRICING.get(self._model, (0.0, 0.0))
+        self._last_cost = CostRecord(
+            model=self._model,
+            input_tokens=in_tok,
+            output_tokens=out_tok,
+            input_cost_usd=in_tok  * in_p  / 1_000_000,
+            output_cost_usd=out_tok * out_p / 1_000_000,
+        )
+        return response.text
 
 
 # ── Pattern writer ────────────────────────────────────────────────────────────
 
-_TABLE_ROW_PREFIXES = ('HEADER:', 'DATA:', 'FOOTER:', 'SPLITTER:')
+_TABLE_ROW_PREFIXES = ('HEADER:', 'DATA:', 'FOOTER:', 'SPLITTER:', 'SKIP_IF')
 
 
 class PatternWriter:

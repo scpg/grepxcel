@@ -23,9 +23,11 @@ class TemplateColumn:
 
 @dataclass
 class TemplateRow:
-    row_type: str    # HEADER | SPLITTER | DATA | FOOTER
-    multiplicity: str  # '1', '*', or integer string
-    columns: list    # list[TemplateColumn]
+    row_type: str      # HEADER | SPLITTER | DATA | FOOTER | SKIP_IF
+    multiplicity: str  # '1', '*', '{n,m}', or '' for SKIP_IF/HEADER/FOOTER
+    columns: list      # list[TemplateColumn]
+    min_rows: int = 0            # DATA:{n,m} only — minimum total physical rows
+    max_rows: int | None = None  # DATA:{n,m} only — maximum total physical rows
 
 
 @dataclass
