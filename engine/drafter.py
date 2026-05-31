@@ -327,8 +327,11 @@ class ExcelAnalyzer:
                     continue
 
             # TABLE requires >= 2 rows (header + at least one data row)
-            # and >= 2 non-empty values in the first row.
-            if len(non_empty_first) >= 2 and len(sec_rows) >= 2:
+            # and >= 2 non-empty values in the first row.  A grid whose first row
+            # is mostly colon-terminated labels is really a key-value block laid
+            # out across columns, not a table — route it to the KV describer.
+            if (len(non_empty_first) >= 2 and len(sec_rows) >= 2
+                    and not self._looks_like_kv_grid(sec_rows[0])):
                 lines += self._describe_table_section(
                     sec_rows, sec_start, formula_cells, number_formats, label)
             else:
@@ -336,6 +339,20 @@ class ExcelAnalyzer:
                     sec_rows, sec_start, formula_cells, number_formats, label)
 
         return '\n'.join(lines)
+
+    def _looks_like_kv_grid(self, first_row) -> bool:
+        """True if a grid's first row is mostly colon-terminated labels.
+
+        Column headers ("Date", "Amount", "Receipt No") rarely end with ':',
+        whereas key-value labels ("Employee:", "Department:") usually do. When
+        at least half the non-empty string cells end with ':', the section is a
+        KV block written across columns rather than a real table.
+        """
+        cells = [v for v in first_row if not is_empty(v) and isinstance(v, str)]
+        if len(cells) < 2:
+            return False
+        colon = sum(1 for c in cells if c.rstrip().endswith(':'))
+        return colon >= len(cells) / 2
 
     def _cell_metadata(self, ws, max_row: int, max_col: int) -> tuple[set, dict]:
         """Return (formula_cells, number_formats) using 1-based (row, col) keys."""
