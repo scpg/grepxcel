@@ -17,8 +17,8 @@ import tempfile
 
 import pytest
 
-from engine.pattern_parser import PatternParser, PatternError
-from engine.security import SecurityError, validate_pattern_file
+from grepxcel.pattern_parser import PatternParser, PatternError
+from grepxcel.security import SecurityError, validate_pattern_file
 
 
 # ── helpers ─────────────────────────────────────────────────────────────────
@@ -78,7 +78,7 @@ class TestCsvPatternParse:
         ], tmp_path)
         _, _, seq = PatternParser().parse(path)
         # One TableInstruction with HEADER + DATA template rows
-        from engine.models import TableInstruction
+        from grepxcel.models import TableInstruction
         tables = [s for s in seq if isinstance(s, TableInstruction)]
         assert len(tables) == 1
         row_types = [r.row_type for r in tables[0].rows]
@@ -94,7 +94,7 @@ class TestCsvPatternParse:
             ['cell:B5', 'IGNORE'],
             ['END:'],
         ], tmp_path)
-        from engine.models import CellInstruction
+        from grepxcel.models import CellInstruction
         _, _, seq = PatternParser().parse(path)
         cells = [s for s in seq if isinstance(s, CellInstruction)]
         assert [c.field for c in cells] == ['po_label', 'po.number', 'IGNORE']

@@ -20,7 +20,7 @@ import os
 import openpyxl
 import pytest
 
-from engine import Engine, Logger, VerbosityLevel
+from grepxcel import Engine, Logger, VerbosityLevel
 
 _FIXTURES_DIR = os.path.join(os.path.dirname(__file__), '..', 'fixtures')
 

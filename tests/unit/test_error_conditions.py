@@ -12,10 +12,10 @@ These tests ensure that bad input does not produce silent wrong results.
 import openpyxl
 import pytest
 
-from engine.engine import Engine
-from engine.logger import Logger, VerbosityLevel
-from engine.pattern_parser import PatternError, PatternParser
-from engine.security import SecurityError
+from grepxcel.engine import Engine
+from grepxcel.logger import Logger, VerbosityLevel
+from grepxcel.pattern_parser import PatternError, PatternParser
+from grepxcel.security import SecurityError
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────

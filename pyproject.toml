@@ -25,11 +25,11 @@ dev = [
 ]
 
 [project.scripts]
-grepxcel = "engine.cli:main"
+grepxcel = "grepxcel.cli:main"
 
 [tool.setuptools.dynamic]
-version = {attr = "engine.__version__"}
+version = {attr = "grepxcel.__version__"}
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["engine*"]
+include = ["grepxcel*"]

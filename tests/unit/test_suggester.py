@@ -1,4 +1,4 @@
-"""Unit tests for engine.drafter (pattern drafting) and the infer_cell_type utility."""
+"""Unit tests for grepxcel.drafter (pattern drafting) and the infer_cell_type utility."""
 
 import datetime
 import sys
@@ -9,10 +9,10 @@ from unittest.mock import MagicMock, patch
 import openpyxl
 import pytest
 
-from engine.drafter import _type_from_number_format
+from grepxcel.drafter import _type_from_number_format
 
-from engine.drafter import ClaudeBackend, ExcelAnalyzer, LlamaCppClient, PatternDrafter, PatternWriter
-from engine.utils import infer_cell_type
+from grepxcel.drafter import ClaudeBackend, ExcelAnalyzer, LlamaCppClient, PatternDrafter, PatternWriter
+from grepxcel.utils import infer_cell_type
 
 # Backward-compat alias used in a few tests below
 PatternSuggester = PatternDrafter
@@ -504,20 +504,20 @@ class TestDryRun:
     def test_dry_run_no_model_loaded(self, tmp_path):
         data_path = _make_xlsx([['Name'], ['Alice']], tmp_path, 'data.xlsx')
         out_path  = str(tmp_path / 'pattern.xlsx')
-        with patch('engine.drafter.ModelManager') as mock_mm:
+        with patch('grepxcel.drafter.ModelManager') as mock_mm:
             PatternDrafter(input_path=data_path, output_path=out_path, dry_run=True).run()
         mock_mm.assert_not_called()
 
 
 # ── C1: LLMBackend protocol ───────────────────────────────────────────────────
 
-from engine.drafter import LLMBackend  # noqa: E402
+from grepxcel.drafter import LLMBackend  # noqa: E402
 
 
 class TestLLMBackendProtocol:
     def test_llamacppclient_satisfies_protocol(self):
         """LlamaCppClient must implement LLMBackend structurally."""
-        from engine.drafter import LlamaCppClient
+        from grepxcel.drafter import LlamaCppClient
         assert isinstance(LlamaCppClient('dummy.gguf'), LLMBackend)
 
     def test_plain_object_with_chat_satisfies_protocol(self):
@@ -539,7 +539,7 @@ class TestLLMBackendProtocol:
         mock_backend.chat.return_value = (
             "var: | x | integer | .*\nSTART:\ncell:next | x\nEND:"
         )
-        with patch('engine.drafter.ModelManager') as mock_mm:
+        with patch('grepxcel.drafter.ModelManager') as mock_mm:
             PatternDrafter(
                 input_path=data_path, output_path=out_path, backend=mock_backend,
             ).run()
@@ -566,7 +566,7 @@ class TestLLMBackendProtocol:
 
 class TestClaudeBackend:
     def test_satisfies_llm_backend_protocol(self):
-        from engine.drafter import LLMBackend
+        from grepxcel.drafter import LLMBackend
         assert isinstance(ClaudeBackend(), LLMBackend)
 
     def test_default_model(self):
@@ -611,17 +611,17 @@ class TestClaudeBackend:
 
 class TestBackendCLIFlag:
     def test_default_backend_is_local(self):
-        from engine.cli import _build_parser
+        from grepxcel.cli import _build_parser
         args = _build_parser().parse_args(['draft', 'data.xlsx'])
         assert args.backend == 'local'
 
     def test_backend_claude_accepted(self):
-        from engine.cli import _build_parser
+        from grepxcel.cli import _build_parser
         args = _build_parser().parse_args(['draft', '--backend', 'claude', 'data.xlsx'])
         assert args.backend == 'claude'
 
     def test_backend_invalid_rejected(self):
-        from engine.cli import _build_parser
+        from grepxcel.cli import _build_parser
         with pytest.raises(SystemExit):
             _build_parser().parse_args(['draft', '--backend', 'openai', 'data.xlsx'])
 
@@ -634,8 +634,8 @@ class TestBackendCLIFlag:
             "var: | x | integer | .*\nSTART:\ncell:next | x\nEND:"
         )
         # ClaudeBackend is imported lazily inside _run_draft — patch at the source
-        with patch('engine.drafter.ClaudeBackend', return_value=mock_backend):
-            from engine.cli import _build_parser, _run_draft
+        with patch('grepxcel.drafter.ClaudeBackend', return_value=mock_backend):
+            from grepxcel.cli import _build_parser, _run_draft
             args = _build_parser().parse_args([
                 'draft', '--backend', 'claude', data_path, '-o', out_path,
             ])
@@ -647,10 +647,10 @@ class TestBackendCLIFlag:
         """--backend local must never instantiate ClaudeBackend."""
         data_path = _make_xlsx([['X'], [1]], tmp_path, 'data.xlsx')
         out_path  = str(tmp_path / 'out.xlsx')
-        with patch('engine.drafter.ClaudeBackend') as mock_cls, \
-             patch('engine.drafter.ModelManager') as mock_mm:
+        with patch('grepxcel.drafter.ClaudeBackend') as mock_cls, \
+             patch('grepxcel.drafter.ModelManager') as mock_mm:
             mock_mm.return_value.ensure_ready.side_effect = RuntimeError('no model')
-            from engine.cli import _build_parser, _run_draft
+            from grepxcel.cli import _build_parser, _run_draft
             args = _build_parser().parse_args(['draft', 'data.xlsx', '-o', out_path])
             try:
                 _run_draft(args)

@@ -8,7 +8,7 @@ import tempfile
 import datetime
 import pytest
 import openpyxl as _openpyxl
-from engine import Engine, Logger, VerbosityLevel
+from grepxcel import Engine, Logger, VerbosityLevel
 
 FIXTURES = os.path.join(os.path.dirname(__file__), '..', 'fixtures')
 

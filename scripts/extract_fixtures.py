@@ -28,7 +28,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'
 
 import openpyxl
 
-from engine import Engine, Logger, VerbosityLevel
+from grepxcel import Engine, Logger, VerbosityLevel
 
 ROOT     = os.path.join(os.path.dirname(__file__), '..')
 FIXTURES = os.path.join(ROOT, 'tests', 'fixtures')

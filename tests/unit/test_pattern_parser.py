@@ -8,8 +8,8 @@ from pathlib import Path
 import openpyxl
 import pytest
 
-from engine.pattern_parser import PatternParser, PatternError
-from engine.security import SecurityError
+from grepxcel.pattern_parser import PatternParser, PatternError
+from grepxcel.security import SecurityError
 
 
 def _write_pattern(rows: list, tmp_path: Path) -> str:
@@ -153,7 +153,7 @@ class TestSequenceParsing:
         assert seq[0].field == 'IGNORE'
 
     def test_table_instruction_parsed(self, tmp_path):
-        from engine.models import TableInstruction
+        from grepxcel.models import TableInstruction
         path = _write_pattern([
             ['lbl:', 'col_a', 'string', 'A'],
             ['var:', 'line.x', 'string', '.*'],
@@ -170,7 +170,7 @@ class TestSequenceParsing:
         assert len(seq[0].rows) == 2
 
     def test_mixed_cells_and_table(self, tmp_path):
-        from engine.models import CellInstruction, TableInstruction
+        from grepxcel.models import CellInstruction, TableInstruction
         path = _write_pattern([
             ['var:', 'po.number', 'string', '.*'],
             ['var:', 'line.x', 'string', '.*'],

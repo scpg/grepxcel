@@ -96,7 +96,7 @@ Requires Python **3.11+**.
 ### Python API
 
 ```python
-from engine import Engine, Logger, VerbosityLevel
+from grepxcel import Engine, Logger, VerbosityLevel
 
 logger = Logger(level=VerbosityLevel.NORMAL)
 result = Engine().process("pattern.xlsx", "data.xlsx", logger=logger)
@@ -213,7 +213,7 @@ GEMINI_API_KEY=...       grepxcel draft data.xlsx --backend gemini
 ## Project layout
 
 ```
-engine/          ← importable Python package (engine, parser, models, security, cli, drafter)
+grepxcel/        ← importable Python package (engine, parser, models, security, cli, drafter)
 scripts/         ← reusable utility scripts for contributors
 tests/
   fixtures/      ← pattern + data xlsx pairs (one folder per scenario)
