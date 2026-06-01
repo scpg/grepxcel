@@ -36,6 +36,7 @@ suggest = [
 ]
 draft-cloud = [
     "anthropic>=0.40",
+    "google-genai>=0.3",
 ]
 dev = [
     "pytest>=8.0",

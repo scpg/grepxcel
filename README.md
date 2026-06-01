@@ -184,7 +184,7 @@ a *starting point* — review and refine the generated regexes before use.
 |---|---|---|
 | `local` *(default)* | `python3 scripts/install_llm_deps.py` | Runs a GGUF model in-process. **No data leaves your machine.** Model is pinned to a revision and downloaded once (~2.4 GB); set `GREPXCEL_MODEL_AUTOUPDATE=1` to track upstream, `GREPXCEL_MODEL_DIR` to relocate the cache. |
 | `claude` | `pip install -e '.[draft-cloud]'` | Anthropic API. Requires `ANTHROPIC_API_KEY`. Prints a one-line privacy notice and per-call token cost. |
-| `gemini` | `pip install -e '.[draft-cloud]'` | Google Gemini API. Requires `GEMINI_API_KEY`. Prints a one-line privacy notice and per-call token cost. |
+| `gemini` | `pip install -e '.[draft-cloud]'` | Google Gemini API. Requires `GOOGLE_API_KEY`. Prints a one-line privacy notice and per-call token cost. |
 
 > **Privacy:** the cloud backends (`claude`, `gemini`) send only the *structure
 > description* of your sheet (column types, sample values, labels) — never the raw
@@ -194,7 +194,7 @@ a *starting point* — review and refine the generated regexes before use.
 grepxcel draft data.xlsx                       # local model (default)
 grepxcel draft data.xlsx --dry-run             # inspect the analysis, no inference
 ANTHROPIC_API_KEY=sk-... grepxcel draft data.xlsx --backend claude
-GEMINI_API_KEY=...       grepxcel draft data.xlsx --backend gemini
+GOOGLE_API_KEY=...       grepxcel draft data.xlsx --backend gemini
 ```
 
 ---

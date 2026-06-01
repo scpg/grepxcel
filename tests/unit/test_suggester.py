@@ -11,7 +11,7 @@ import pytest
 
 from grepxcel.drafter import _type_from_number_format
 
-from grepxcel.drafter import ClaudeBackend, ExcelAnalyzer, LlamaCppClient, PatternDrafter, PatternWriter
+from grepxcel.drafter import ClaudeBackend, ExcelAnalyzer, GeminiBackend, LlamaCppClient, PatternDrafter, PatternWriter
 from grepxcel.utils import infer_cell_type
 
 # Backward-compat alias used in a few tests below
@@ -607,6 +607,30 @@ class TestClaudeBackend:
         assert exc_info.value.code == 1
 
 
+class TestGeminiBackend:
+    def test_satisfies_llm_backend_protocol(self):
+        from grepxcel.drafter import LLMBackend
+        assert isinstance(GeminiBackend(), LLMBackend)
+
+    def test_default_model(self):
+        assert GeminiBackend()._model == 'gemini-2.0-flash'
+
+    def test_custom_model(self):
+        assert GeminiBackend(model='gemini-2.5-pro')._model == 'gemini-2.5-pro'
+
+    def test_missing_google_genai_exits(self):
+        import builtins
+        real_import = builtins.__import__
+        def mock_import(name, *args, **kwargs):
+            if name == 'google' or name.startswith('google.'):
+                raise ImportError('No module named google')
+            return real_import(name, *args, **kwargs)
+        with patch('builtins.__import__', side_effect=mock_import):
+            with pytest.raises(SystemExit) as exc_info:
+                GeminiBackend().chat('sys', 'user')
+        assert exc_info.value.code == 1
+
+
 # ── C3: --backend CLI flag ────────────────────────────────────────────────────
 
 class TestBackendCLIFlag:
@@ -620,10 +644,33 @@ class TestBackendCLIFlag:
         args = _build_parser().parse_args(['draft', '--backend', 'claude', 'data.xlsx'])
         assert args.backend == 'claude'
 
+    def test_backend_gemini_accepted(self):
+        from grepxcel.cli import _build_parser
+        args = _build_parser().parse_args(['draft', '--backend', 'gemini', 'data.xlsx'])
+        assert args.backend == 'gemini'
+
     def test_backend_invalid_rejected(self):
         from grepxcel.cli import _build_parser
         with pytest.raises(SystemExit):
             _build_parser().parse_args(['draft', '--backend', 'openai', 'data.xlsx'])
+
+    def test_gemini_backend_emits_privacy_warning_and_is_used(self, tmp_path, capsys):
+        """--backend gemini must warn on stderr AND actually instantiate GeminiBackend."""
+        data_path    = _make_xlsx([['X'], [1]], tmp_path, 'data.xlsx')
+        out_path     = str(tmp_path / 'out.xlsx')
+        mock_backend = MagicMock()
+        mock_backend.chat.return_value = (
+            "var: | x | integer | .*\nSTART:\ncell:next | x\nEND:"
+        )
+        with patch('grepxcel.drafter.GeminiBackend', return_value=mock_backend) as mock_cls:
+            from grepxcel.cli import _build_parser, _run_draft
+            args = _build_parser().parse_args([
+                'draft', '--backend', 'gemini', data_path, '-o', out_path,
+            ])
+            _run_draft(args)
+        mock_cls.assert_called_once()
+        mock_backend.chat.assert_called_once()
+        assert 'Google' in capsys.readouterr().err
 
     def test_claude_backend_emits_privacy_warning(self, tmp_path, capsys):
         """--backend claude must print the privacy notice to stderr."""
