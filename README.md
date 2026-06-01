@@ -8,7 +8,7 @@
 
 ## What it does
 
-You describe the layout of your Excel sheet in a **pattern file** (itself an Excel file). The engine reads any matching data file and extracts cells and tables into clean, hierarchical JSON — no coding required to define new patterns.
+You describe the layout of your Excel sheet in a **pattern file** — either an Excel workbook (`.xlsx`) or a plain `.csv` (handy for hand-editing and git diffs). The engine reads any matching data file and extracts cells and tables into clean, hierarchical JSON — no coding required to define new patterns.
 
 Think of it as *grep for Excel*.
 
@@ -36,6 +36,17 @@ Between `START:` and `END:` you list the extraction sequence:
 - `table:*` — match all instances of a repeating mini-table block
 
 Dot notation in `var:` field names creates nested output: `po.number` → `{"po": {"number": …}}`.
+
+### Pattern file formats
+
+A pattern can be authored as **`.xlsx`** or **`.csv`** — both are read into the
+same internal grid, so they behave identically. CSV is convenient for
+hand-editing and produces clean git diffs. When writing CSV:
+
+- One pattern row per CSV line; column A is the keyword (`config:`, `lbl:`, `var:`, `cell:…`).
+- Table-template rows start with an **empty first field** (blank column A), e.g. `,HEADER:1,col_a,col_b`.
+- **Quote any regex containing a comma**, e.g. `var,line.qty,integer,"\d{1,3}"`.
+- Plain text only — formulas (a leading `=`) are rejected, exactly as in `.xlsx`.
 
 ---
 
@@ -133,7 +144,7 @@ Label fields (`lbl:`) are used only for positional anchoring and are never inclu
 
 | Flag | Default | Purpose |
 |---|---|---|
-| `-p FILE` | required | Pattern xlsx file |
+| `-p FILE` | required | Pattern file — `.xlsx` or `.csv` |
 | `--format` | `nested` | Output format: `nested` (default) or `legacy` |
 | `-o DIR` | — | Write JSON to directory (stdout if omitted) |
 | `-l FILE` | — | Append structured log to file |
