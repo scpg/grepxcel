@@ -78,6 +78,12 @@ commands:
 Run 'grepxcel <command> --help' for per-command options.
         """,
     )
+    from . import __version__
+    p.add_argument(
+        '--version',
+        action='version',
+        version=f'%(prog)s {__version__}',
+    )
     sub = p.add_subparsers(dest='command', metavar='COMMAND')
     sub.required = True
 

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "grepxcel"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Pattern-based data extraction for Excel"
 requires-python = ">=3.11"
 dependencies = [
@@ -26,6 +26,9 @@ dev = [
 
 [project.scripts]
 grepxcel = "engine.cli:main"
+
+[tool.setuptools.dynamic]
+version = {attr = "engine.__version__"}
 
 [tool.setuptools.packages.find]
 where = ["."]
