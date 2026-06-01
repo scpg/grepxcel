@@ -25,9 +25,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import openpyxl
 
-from engine.utils import infer_cell_type
-from engine.suggester import ExcelAnalyzer, PatternWriter, PatternSuggester
-from engine.model_manager import ModelManager, MODEL_FILENAME, _CHECK_INTERVAL
+from grepxcel.utils import infer_cell_type
+from grepxcel.suggester import ExcelAnalyzer, PatternWriter, PatternSuggester
+from grepxcel.model_manager import ModelManager, MODEL_FILENAME, _CHECK_INTERVAL
 
 
 # ── terminal colours ──────────────────────────────────────────────────────────
@@ -254,7 +254,7 @@ with tempfile.TemporaryDirectory() as td:
     # GREPXCEL_MODEL_DIR env var
     custom_dir = str(cache / "custom_cache")
     os.environ["GREPXCEL_MODEL_DIR"] = custom_dir
-    from engine.model_manager import default_cache_dir
+    from grepxcel.model_manager import default_cache_dir
     check("GREPXCEL_MODEL_DIR overrides cache dir",
           default_cache_dir() == Path(custom_dir))
     del os.environ["GREPXCEL_MODEL_DIR"]
@@ -385,8 +385,8 @@ with tempfile.TemporaryDirectory() as td:
     mock_client  = MagicMock()
     mock_client.return_value.chat.return_value = LLM_RESPONSE
 
-    with patch("engine.suggester.ModelManager", mock_manager), \
-         patch("engine.suggester.LlamaCppClient", mock_client):
+    with patch("grepxcel.suggester.ModelManager", mock_manager), \
+         patch("grepxcel.suggester.LlamaCppClient", mock_client):
         s    = PatternSuggester(input_path=data_path, output_path=out_path)
         code = s.run()
 
@@ -441,8 +441,8 @@ with tempfile.TemporaryDirectory() as td:
     pattern_path = str(tmp / "pattern.xlsx")
     PatternWriter().write(ROUNDTRIP_PATTERN, pattern_path)
 
-    from engine.engine import Engine
-    from engine.logger import Logger, VerbosityLevel
+    from grepxcel.engine import Engine
+    from grepxcel.logger import Logger, VerbosityLevel
 
     logger = Logger(level=VerbosityLevel.NORMAL)
     try:

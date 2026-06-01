@@ -78,6 +78,12 @@ commands:
 Run 'grepxcel <command> --help' for per-command options.
         """,
     )
+    from . import __version__
+    p.add_argument(
+        '--version',
+        action='version',
+        version=f'%(prog)s {__version__}',
+    )
     sub = p.add_subparsers(dest='command', metavar='COMMAND')
     sub.required = True
 
@@ -195,7 +201,9 @@ backends:
   claude  Send the Excel structure description to the Claude API.
           Requires ANTHROPIC_API_KEY. The raw file is NOT transmitted —
           only column types, sample values, and labels are sent.
+  gemini  Planned for a future release — not yet available.
 
+The Claude backend prints a one-line privacy notice and the per-call token cost.
 Override the local model cache directory with GREPXCEL_MODEL_DIR.
 
 examples:
@@ -231,9 +239,10 @@ def _draft_args(p: argparse.ArgumentParser) -> None:
     )
     p.add_argument(
         '--backend',
-        choices=['local', 'claude'],
+        choices=['local', 'claude', 'gemini'],
         default='local',
-        help='Inference backend: local (default, GGUF model) or claude (Claude API, requires ANTHROPIC_API_KEY)',
+        help='Inference backend: local (default, GGUF model) or claude (requires '
+             'ANTHROPIC_API_KEY). gemini is planned for a future release.',
     )
     _add_security_args(p)
     _add_sheet_arg(p)
@@ -330,13 +339,20 @@ def _run_docs(args) -> int:
 
 def _run_draft(args) -> int:
     from .drafter import ClaudeBackend, PatternDrafter
-    sheet   = _resolve_sheet(args)
-    backend = None
-    if getattr(args, 'backend', 'local') == 'claude':
+    sheet    = _resolve_sheet(args)
+    selected = getattr(args, 'backend', 'local')
+    backend  = None
+    if selected == 'gemini':
+        # Implemented but disabled — planned for a future release.
         print(
-            '[!] Excel structure description will be sent to Anthropic\'s API.',
+            '[!] The Gemini backend is planned for a future release and is not yet '
+            'available.\n    Use --backend local or --backend claude.',
             file=sys.stderr,
         )
+        return 1
+    if selected == 'claude':
+        print("[!] Excel structure description will be sent to Anthropic's API.",
+              file=sys.stderr)
         backend = ClaudeBackend()
     drafter = PatternDrafter(
         input_path=args.file,

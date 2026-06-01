@@ -6,7 +6,7 @@ Direct tests for the security module's load-bearing guarantees:
 
 import pytest
 
-from engine.security import (
+from grepxcel.security import (
     SecurityError,
     assert_xxe_protection,
     check_regex_safety,
@@ -47,7 +47,7 @@ def test_validate_file_runs_xxe_guard_first(monkeypatch, tmp_path):
 def test_regex_parser_uses_re_internal():
     """We require Python >=3.11, so the parser must come from re._parser
     (no fallback to the deprecated top-level sre_parse module)."""
-    from engine import security
+    from grepxcel import security
     import re._parser as expected
     assert security._sre_parse is expected
 

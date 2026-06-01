@@ -48,7 +48,7 @@ git checkout -b my-feature
 
 A few rules:
 
-- No inline `python -c "..."` scripts — put any one-off code in `tmp-scripts/`
+- No inline `python -c "..."` scripts — put any one-off code in `tmp.local/`
 - snake_case for variables/functions, CamelCase for classes
 - Maximum line length: 88 characters
 - All tests must pass before opening a PR

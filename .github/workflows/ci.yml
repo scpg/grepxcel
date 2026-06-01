@@ -31,7 +31,7 @@ jobs:
 
   package:
     # Smoke-test that the package installs and the console entry point works.
-    # The test job above imports `engine` via sys.path; this job validates the
+    # The test job above imports `grepxcel` via sys.path; this job validates the
     # actual installed artifact and the `grepxcel` script defined in pyproject.
     runs-on: ubuntu-latest
     steps:

@@ -155,7 +155,7 @@ def validate_file(
     max_uncompressed_mb: float = DEFAULT_MAX_UNCOMPRESSED_MB,
 ) -> None:
     """
-    Run all security checks on *path* before it is handed to openpyxl.
+    Run all security checks on an .xlsx *path* before it is handed to openpyxl.
     Raises SecurityError with an actionable message on any failure.
     """
     assert_xxe_protection()
@@ -164,6 +164,45 @@ def validate_file(
     _check_magic(path)
     _check_file_size(path, max_file_mb)
     _check_zip_safety(path, max_uncompressed_mb)
+
+
+# Pattern source formats and the checks each needs.
+_PATTERN_EXTENSIONS = {'.xlsx', '.csv'}
+
+
+def validate_pattern_file(
+    path: str,
+    max_file_mb: float = DEFAULT_MAX_FILE_MB,
+    max_uncompressed_mb: float = DEFAULT_MAX_UNCOMPRESSED_MB,
+) -> None:
+    """
+    Validate a pattern source file, dispatching on extension.
+
+    .xlsx → full ZIP/XXE/magic checks (identical to validate_file).
+    .csv  → plain-text checks only (exists + size). CSV is not a ZIP, so the
+            ZIP-bomb and XXE guards do not apply; per-regex ReDoS protection
+            still runs later in PatternParser for every lbl:/var: entry.
+
+    Note: CSV-injection (leading '=') is *not* a threat here — the pattern file
+    is read as text and never re-emitted into a spreadsheet. Leading '=' is still
+    rejected at parse time (in PatternParser) for parity with the xlsx reader.
+    """
+    _, ext = os.path.splitext(path)
+    ext = ext.lower()
+
+    if ext == '.csv':
+        _check_exists(path)
+        _check_file_size(path, max_file_mb)
+        return
+
+    if ext in _PATTERN_EXTENSIONS:  # .xlsx
+        validate_file(path, max_file_mb, max_uncompressed_mb)
+        return
+
+    raise SecurityError(
+        f'Unsupported pattern file type {ext!r}. '
+        f'Pattern files must be one of: {", ".join(sorted(_PATTERN_EXTENSIONS))}.'
+    )
 
 
 # --- individual checks --------------------------------------------------------

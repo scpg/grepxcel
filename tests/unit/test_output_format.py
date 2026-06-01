@@ -7,7 +7,7 @@ _build_row_obj, _build_nested_output, _expand_merged_cells.
 import openpyxl
 import pytest
 
-from engine.engine import (
+from grepxcel.engine import (
     _set_nested,
     _field_local,
     _field_group,
@@ -16,7 +16,7 @@ from engine.engine import (
     _build_nested_output,
     _expand_merged_cells,
 )
-from engine.models import FieldDef
+from grepxcel.models import FieldDef
 
 
 def _fd(name: str, role: str = 'var') -> FieldDef:

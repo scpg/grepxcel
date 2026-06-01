@@ -8,7 +8,7 @@
 
 ## What it does
 
-You describe the layout of your Excel sheet in a **pattern file** (itself an Excel file). The engine reads any matching data file and extracts cells and tables into clean, hierarchical JSON — no coding required to define new patterns.
+You describe the layout of your Excel sheet in a **pattern file** — either an Excel workbook (`.xlsx`) or a plain `.csv` (handy for hand-editing and git diffs). The engine reads any matching data file and extracts cells and tables into clean, hierarchical JSON — no coding required to define new patterns.
 
 Think of it as *grep for Excel*.
 
@@ -36,6 +36,17 @@ Between `START:` and `END:` you list the extraction sequence:
 - `table:*` — match all instances of a repeating mini-table block
 
 Dot notation in `var:` field names creates nested output: `po.number` → `{"po": {"number": …}}`.
+
+### Pattern file formats
+
+A pattern can be authored as **`.xlsx`** or **`.csv`** — both are read into the
+same internal grid, so they behave identically. CSV is convenient for
+hand-editing and produces clean git diffs. When writing CSV:
+
+- One pattern row per CSV line; column A is the keyword (`config:`, `lbl:`, `var:`, `cell:…`).
+- Table-template rows start with an **empty first field** (blank column A), e.g. `,HEADER:1,col_a,col_b`.
+- **Quote any regex containing a comma**, e.g. `var,line.qty,integer,"\d{1,3}"`.
+- Plain text only — formulas (a leading `=`) are rejected, exactly as in `.xlsx`.
 
 ---
 
@@ -85,7 +96,7 @@ Requires Python **3.11+**.
 ### Python API
 
 ```python
-from engine import Engine, Logger, VerbosityLevel
+from grepxcel import Engine, Logger, VerbosityLevel
 
 logger = Logger(level=VerbosityLevel.NORMAL)
 result = Engine().process("pattern.xlsx", "data.xlsx", logger=logger)
@@ -133,7 +144,7 @@ Label fields (`lbl:`) are used only for positional anchoring and are never inclu
 
 | Flag | Default | Purpose |
 |---|---|---|
-| `-p FILE` | required | Pattern xlsx file |
+| `-p FILE` | required | Pattern file — `.xlsx` or `.csv` |
 | `--format` | `nested` | Output format: `nested` (default) or `legacy` |
 | `-o DIR` | — | Write JSON to directory (stdout if omitted) |
 | `-l FILE` | — | Append structured log to file |
@@ -153,19 +164,37 @@ Label fields (`lbl:`) are used only for positional anchoring and are never inclu
 
 ### `grepxcel draft`
 
-Requires `requirements-suggest.txt` to be installed (local LLM — no data sent externally).
-The model is pinned to a specific revision and downloaded once on first run; set
-`GREPXCEL_MODEL_AUTOUPDATE=1` to opt in to upstream updates, and `GREPXCEL_MODEL_DIR`
-to relocate the cache.
-
-The output is a starting point — review and refine the generated regexes before use.
+Drafts a starter pattern file for an unseen Excel file using an LLM. The output is
+a *starting point* — review and refine the generated regexes before use.
 `grepxcel suggest` is a backward-compatible alias for this command.
 
 | Flag | Default | Purpose |
 |---|---|---|
 | `-o FILE` | `draft_pattern.xlsx` | Write draft pattern to this path |
 | `-v` | off | Print the Excel analysis sent to the model + update status |
+| `--dry-run` | off | Print the analysis that would be sent to the model, then exit (no inference) |
+| `--backend local\|claude\|gemini` | `local` | Inference backend (see below) |
 | `--sheet NAME_OR_INDEX` | active | Sheet to analyse |
+| `--max-size MB` | 5 | Compressed file size limit |
+| `--max-uncompressed MB` | 50 | Uncompressed ZIP content limit (ZIP bomb guard) |
+
+#### Backends
+
+| Backend | Install | Notes |
+|---|---|---|
+| `local` *(default)* | `python3 scripts/install_llm_deps.py` | Runs a GGUF model in-process. **No data leaves your machine.** Model is pinned to a revision and downloaded once (~2.4 GB); set `GREPXCEL_MODEL_AUTOUPDATE=1` to track upstream, `GREPXCEL_MODEL_DIR` to relocate the cache. |
+| `claude` | `pip install -e '.[draft-cloud]'` | Anthropic API. Requires `ANTHROPIC_API_KEY`. Prints a one-line privacy notice and per-call token cost. |
+| `gemini` | — | **Planned for a future release** — not yet available. Selecting it prints a notice and exits. |
+
+> **Privacy:** the `claude` cloud backend sends only the *structure description*
+> of your sheet (column types, sample values, labels) — never the raw file. The
+> `local` backend sends nothing over the network during inference.
+
+```bash
+grepxcel draft data.xlsx                       # local model (default)
+grepxcel draft data.xlsx --dry-run             # inspect the analysis, no inference
+ANTHROPIC_API_KEY=sk-... grepxcel draft data.xlsx --backend claude
+```
 
 ---
 
@@ -183,7 +212,7 @@ The output is a starting point — review and refine the generated regexes befor
 ## Project layout
 
 ```
-engine/          ← importable Python package (engine, parser, models, security, cli, drafter)
+grepxcel/        ← importable Python package (engine, parser, models, security, cli, drafter)
 scripts/         ← reusable utility scripts for contributors
 tests/
   fixtures/      ← pattern + data xlsx pairs (one folder per scenario)
@@ -204,7 +233,7 @@ output/          ← JSON extraction results         (gitignored)
 .venv/bin/pytest tests/ -q
 ```
 
-610+ unit and integration tests across 16 fixture scenarios — all green.
+750+ unit and integration tests across 16 fixture scenarios — all green.
 
 ---
 

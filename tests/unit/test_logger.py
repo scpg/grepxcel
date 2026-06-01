@@ -1,5 +1,5 @@
 import pytest
-from engine.logger import (
+from grepxcel.logger import (
     Logger, LogRecord, EngineError, VerbosityLevel,
     Severity, Category, col_letter, cell_ref,
 )

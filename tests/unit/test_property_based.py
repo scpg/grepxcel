@@ -22,8 +22,8 @@ from pathlib import Path
 import openpyxl
 from hypothesis import given, settings, strategies as st
 
-from engine.drafter import ExcelAnalyzer, PatternWriter, _type_from_number_format
-from engine.utils import infer_cell_type, is_empty
+from grepxcel.drafter import ExcelAnalyzer, PatternWriter, _type_from_number_format
+from grepxcel.utils import infer_cell_type, is_empty
 
 # ---------------------------------------------------------------------------
 # Shared constants and strategies

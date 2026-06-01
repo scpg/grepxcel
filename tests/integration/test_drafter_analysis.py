@@ -53,7 +53,7 @@ import re
 import openpyxl
 import pytest
 
-from engine.drafter import ExcelAnalyzer
+from grepxcel.drafter import ExcelAnalyzer
 
 # ---------------------------------------------------------------------------
 # Fixture discovery
@@ -74,7 +74,7 @@ _FULL_FIXTURES: list[str] = [
 
 # Fixtures where the drafter analyser is known not to surface all lbl: literals.
 # These are genuinely hard cases (labels embedded in table rows, not KV pairs)
-# tracked separately from engine correctness.
+# tracked separately from grepxcel correctness.
 _LBL_ANALYSIS_XFAIL: set[str] = {
     '04_excel_template_invoce',  # Vertex42 template: table column headers not surfaced by analyser
 }

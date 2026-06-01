@@ -1,6 +1,7 @@
-"""Unit tests for engine.drafter (pattern drafting) and the infer_cell_type utility."""
+"""Unit tests for grepxcel.drafter (pattern drafting) and the infer_cell_type utility."""
 
 import datetime
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -9,10 +10,10 @@ from unittest.mock import MagicMock, patch
 import openpyxl
 import pytest
 
-from engine.drafter import _type_from_number_format
+from grepxcel.drafter import _type_from_number_format
 
-from engine.drafter import ClaudeBackend, ExcelAnalyzer, LlamaCppClient, PatternDrafter, PatternWriter
-from engine.utils import infer_cell_type
+from grepxcel.drafter import ClaudeBackend, ExcelAnalyzer, GeminiBackend, LlamaCppClient, PatternDrafter, PatternWriter
+from grepxcel.utils import infer_cell_type
 
 # Backward-compat alias used in a few tests below
 PatternSuggester = PatternDrafter
@@ -504,20 +505,20 @@ class TestDryRun:
     def test_dry_run_no_model_loaded(self, tmp_path):
         data_path = _make_xlsx([['Name'], ['Alice']], tmp_path, 'data.xlsx')
         out_path  = str(tmp_path / 'pattern.xlsx')
-        with patch('engine.drafter.ModelManager') as mock_mm:
+        with patch('grepxcel.drafter.ModelManager') as mock_mm:
             PatternDrafter(input_path=data_path, output_path=out_path, dry_run=True).run()
         mock_mm.assert_not_called()
 
 
 # ── C1: LLMBackend protocol ───────────────────────────────────────────────────
 
-from engine.drafter import LLMBackend  # noqa: E402
+from grepxcel.drafter import LLMBackend  # noqa: E402
 
 
 class TestLLMBackendProtocol:
     def test_llamacppclient_satisfies_protocol(self):
         """LlamaCppClient must implement LLMBackend structurally."""
-        from engine.drafter import LlamaCppClient
+        from grepxcel.drafter import LlamaCppClient
         assert isinstance(LlamaCppClient('dummy.gguf'), LLMBackend)
 
     def test_plain_object_with_chat_satisfies_protocol(self):
@@ -539,7 +540,7 @@ class TestLLMBackendProtocol:
         mock_backend.chat.return_value = (
             "var: | x | integer | .*\nSTART:\ncell:next | x\nEND:"
         )
-        with patch('engine.drafter.ModelManager') as mock_mm:
+        with patch('grepxcel.drafter.ModelManager') as mock_mm:
             PatternDrafter(
                 input_path=data_path, output_path=out_path, backend=mock_backend,
             ).run()
@@ -566,7 +567,7 @@ class TestLLMBackendProtocol:
 
 class TestClaudeBackend:
     def test_satisfies_llm_backend_protocol(self):
-        from engine.drafter import LLMBackend
+        from grepxcel.drafter import LLMBackend
         assert isinstance(ClaudeBackend(), LLMBackend)
 
     def test_default_model(self):
@@ -607,23 +608,88 @@ class TestClaudeBackend:
         assert exc_info.value.code == 1
 
 
+@pytest.mark.skip(reason="Gemini backend disabled — planned for a future release")
+class TestGeminiBackend:
+    def test_satisfies_llm_backend_protocol(self):
+        from grepxcel.drafter import LLMBackend
+        assert isinstance(GeminiBackend(), LLMBackend)
+
+    def test_default_model(self):
+        assert GeminiBackend()._model == 'gemini-2.0-flash'
+
+    def test_custom_model(self):
+        assert GeminiBackend(model='gemini-2.5-pro')._model == 'gemini-2.5-pro'
+
+    def test_missing_google_genai_exits(self):
+        import builtins
+        real_import = builtins.__import__
+        def mock_import(name, *args, **kwargs):
+            if name == 'google' or name.startswith('google.'):
+                raise ImportError('No module named google')
+            return real_import(name, *args, **kwargs)
+        with patch('builtins.__import__', side_effect=mock_import):
+            with pytest.raises(SystemExit) as exc_info:
+                GeminiBackend().chat('sys', 'user')
+        assert exc_info.value.code == 1
+
+
 # ── C3: --backend CLI flag ────────────────────────────────────────────────────
 
 class TestBackendCLIFlag:
     def test_default_backend_is_local(self):
-        from engine.cli import _build_parser
+        from grepxcel.cli import _build_parser
         args = _build_parser().parse_args(['draft', 'data.xlsx'])
         assert args.backend == 'local'
 
     def test_backend_claude_accepted(self):
-        from engine.cli import _build_parser
+        from grepxcel.cli import _build_parser
         args = _build_parser().parse_args(['draft', '--backend', 'claude', 'data.xlsx'])
         assert args.backend == 'claude'
 
+    @pytest.mark.skip(reason="Gemini backend disabled — planned for a future release")
+    def test_backend_gemini_accepted(self):
+        from grepxcel.cli import _build_parser
+        args = _build_parser().parse_args(['draft', '--backend', 'gemini', 'data.xlsx'])
+        assert args.backend == 'gemini'
+
     def test_backend_invalid_rejected(self):
-        from engine.cli import _build_parser
+        from grepxcel.cli import _build_parser
         with pytest.raises(SystemExit):
             _build_parser().parse_args(['draft', '--backend', 'openai', 'data.xlsx'])
+
+    @pytest.mark.skip(reason="Gemini backend disabled — planned for a future release")
+    def test_gemini_backend_emits_privacy_warning_and_is_used(self, tmp_path, capsys):
+        """Re-enable when the Gemini backend ships (flip _GEMINI_ENABLED)."""
+        data_path    = _make_xlsx([['X'], [1]], tmp_path, 'data.xlsx')
+        out_path     = str(tmp_path / 'out.xlsx')
+        mock_backend = MagicMock()
+        mock_backend.chat.return_value = (
+            "var: | x | integer | .*\nSTART:\ncell:next | x\nEND:"
+        )
+        with patch('grepxcel.drafter.GeminiBackend', return_value=mock_backend) as mock_cls:
+            from grepxcel.cli import _build_parser, _run_draft
+            args = _build_parser().parse_args([
+                'draft', '--backend', 'gemini', data_path, '-o', out_path,
+            ])
+            _run_draft(args)
+        mock_cls.assert_called_once()
+        mock_backend.chat.assert_called_once()
+        assert 'Google' in capsys.readouterr().err
+
+    def test_gemini_backend_is_disabled_with_future_release_message(self, tmp_path, capsys):
+        """ACTIVE guard: --backend gemini is recognised but disabled — it must
+        print a 'future release' notice, exit non-zero, and run NO inference."""
+        data_path = _make_xlsx([['X'], [1]], tmp_path, 'data.xlsx')
+        out_path  = str(tmp_path / 'out.xlsx')
+        from grepxcel.cli import _build_parser, _run_draft
+        args = _build_parser().parse_args([
+            'draft', '--backend', 'gemini', data_path, '-o', out_path,
+        ])
+        rc  = _run_draft(args)
+        err = capsys.readouterr().err
+        assert rc == 1
+        assert 'future release' in err.lower()
+        assert not os.path.exists(out_path)  # no draft written
 
     def test_claude_backend_emits_privacy_warning(self, tmp_path, capsys):
         """--backend claude must print the privacy notice to stderr."""
@@ -634,8 +700,8 @@ class TestBackendCLIFlag:
             "var: | x | integer | .*\nSTART:\ncell:next | x\nEND:"
         )
         # ClaudeBackend is imported lazily inside _run_draft — patch at the source
-        with patch('engine.drafter.ClaudeBackend', return_value=mock_backend):
-            from engine.cli import _build_parser, _run_draft
+        with patch('grepxcel.drafter.ClaudeBackend', return_value=mock_backend):
+            from grepxcel.cli import _build_parser, _run_draft
             args = _build_parser().parse_args([
                 'draft', '--backend', 'claude', data_path, '-o', out_path,
             ])
@@ -647,10 +713,10 @@ class TestBackendCLIFlag:
         """--backend local must never instantiate ClaudeBackend."""
         data_path = _make_xlsx([['X'], [1]], tmp_path, 'data.xlsx')
         out_path  = str(tmp_path / 'out.xlsx')
-        with patch('engine.drafter.ClaudeBackend') as mock_cls, \
-             patch('engine.drafter.ModelManager') as mock_mm:
+        with patch('grepxcel.drafter.ClaudeBackend') as mock_cls, \
+             patch('grepxcel.drafter.ModelManager') as mock_mm:
             mock_mm.return_value.ensure_ready.side_effect = RuntimeError('no model')
-            from engine.cli import _build_parser, _run_draft
+            from grepxcel.cli import _build_parser, _run_draft
             args = _build_parser().parse_args(['draft', 'data.xlsx', '-o', out_path])
             try:
                 _run_draft(args)

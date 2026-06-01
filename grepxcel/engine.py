@@ -5,7 +5,7 @@ from .models import Config, CellInstruction, TableInstruction, TemplateRow
 from .utils import is_empty, validate_type, _MAX_REGEX_INPUT_LEN
 from .pattern_parser import PatternParser, PatternError
 from .logger import Logger, LogRecord, EngineError, cell_ref
-from .security import validate_file, SecurityError, DEFAULT_MAX_UNCOMPRESSED_MB
+from .security import validate_file, validate_pattern_file, SecurityError, DEFAULT_MAX_UNCOMPRESSED_MB
 
 
 # ── Output helpers ─────────────────────────────────────────────────────────────
@@ -238,13 +238,19 @@ class Engine:
         _raw = {'cells': {}, 'tables': []}
 
         try:
-            for path in (pattern_file, data_file):
-                try:
-                    validate_file(path,
-                                  max_file_mb=max_file_mb,
-                                  max_uncompressed_mb=max_uncompressed_mb)
-                except SecurityError as exc:
-                    logger.fatal(str(exc), found=path)
+            # Pattern file may be .xlsx or .csv; data file is .xlsx only.
+            try:
+                validate_pattern_file(pattern_file,
+                                      max_file_mb=max_file_mb,
+                                      max_uncompressed_mb=max_uncompressed_mb)
+            except SecurityError as exc:
+                logger.fatal(str(exc), found=pattern_file)
+            try:
+                validate_file(data_file,
+                              max_file_mb=max_file_mb,
+                              max_uncompressed_mb=max_uncompressed_mb)
+            except SecurityError as exc:
+                logger.fatal(str(exc), found=data_file)
 
             try:
                 global_config, defs, start_sequence = PatternParser().parse(pattern_file)
@@ -310,13 +316,19 @@ class Engine:
         out: dict = {}
 
         try:
-            for path in (pattern_file, data_file):
-                try:
-                    validate_file(path,
-                                  max_file_mb=max_file_mb,
-                                  max_uncompressed_mb=max_uncompressed_mb)
-                except SecurityError as exc:
-                    logger.fatal(str(exc), found=path)
+            # Pattern file may be .xlsx or .csv; data file is .xlsx only.
+            try:
+                validate_pattern_file(pattern_file,
+                                      max_file_mb=max_file_mb,
+                                      max_uncompressed_mb=max_uncompressed_mb)
+            except SecurityError as exc:
+                logger.fatal(str(exc), found=pattern_file)
+            try:
+                validate_file(data_file,
+                              max_file_mb=max_file_mb,
+                              max_uncompressed_mb=max_uncompressed_mb)
+            except SecurityError as exc:
+                logger.fatal(str(exc), found=data_file)
 
             try:
                 global_config, defs, start_sequence = PatternParser().parse(pattern_file)

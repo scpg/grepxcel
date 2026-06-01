@@ -10,7 +10,7 @@ This rule has no exceptions.
 
 ## Project layout
 
-- `engine/`       — core package (engine, parser, logger, models, security, utils)
+- `grepxcel/`     — core package (engine, parser, logger, models, security, utils)
 - `tests/`        — pytest suite; fixtures are generated xlsx files in `tests/fixtures/`
 - `scripts/`      — reusable utility scripts for contributors (tracked, documented)
 - `tmp.local/`    — throwaway scripts (gitignored); put all ad-hoc code here

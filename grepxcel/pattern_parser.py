@@ -1,3 +1,5 @@
+import csv
+import os
 import re
 
 import openpyxl
@@ -33,13 +35,14 @@ def _coord_str(pos: tuple) -> str:
 class PatternParser:
     def parse(self, filepath: str) -> tuple:
         """
-        Parse a pattern Excel file.
-        Returns (global_config, defs, start_sequence).
-        """
-        wb = openpyxl.load_workbook(filepath)  # data_only=False: we want to see formulas
-        ws = wb.active
+        Parse a pattern file (.xlsx or .csv) into the same structures regardless
+        of source format. Returns (global_config, defs, start_sequence).
 
-        rows = self._read_and_validate(ws)
+        Both formats are read into a common 2D-grid IR (list[list[str|None]]);
+        all semantics below operate on that grid, so the two source formats share
+        one parser. See _read_grid for the format dispatch.
+        """
+        rows = self._read_grid(filepath)
 
         global_config = Config()
         defs = {}
@@ -207,6 +210,70 @@ class PatternParser:
                 i += 1
 
         return global_config, defs, start_sequence
+
+    # ── Grid readers (front-ends over the common 2D-grid IR) ────────────────────
+
+    def _read_grid(self, filepath: str) -> list:
+        """
+        Read a pattern file into the common grid IR, dispatching on extension.
+
+          .csv  → _read_csv_and_validate  (plain text, comma-separated)
+          .xlsx → openpyxl + _read_and_validate  (default)
+
+        Both return list[list[str|None]] with empty cells as None, so the
+        downstream semantic parser is identical for either source format.
+        """
+        _, ext = os.path.splitext(filepath)
+        if ext.lower() == '.csv':
+            return self._read_csv_and_validate(filepath)
+        wb = openpyxl.load_workbook(filepath)  # data_only=False: we want to see formulas
+        ws = wb.active
+        return self._read_and_validate(ws)
+
+    def _read_csv_and_validate(self, filepath: str) -> list:
+        """
+        Read a CSV pattern file into the grid IR with the same content rules as
+        the xlsx reader.
+
+        - Empty fields → None, so a blank column A (which marks table-template
+          rows) behaves identically to a blank xlsx cell.
+        - Leading '=' is rejected for parity with the xlsx formula guard.
+        - Per-cell length is capped at _MAX_PATTERN_CELL_LEN.
+
+        Authoring note: a regex value containing a comma (e.g. \\d{1,3}) must be
+        quoted in the CSV ("\\d{1,3}") — the csv module unquotes it correctly.
+        utf-8-sig transparently strips a BOM written by Excel's "Save as CSV".
+        """
+        rows: list = []
+        try:
+            with open(filepath, newline='', encoding='utf-8-sig') as fh:
+                for line_no, raw in enumerate(csv.reader(fh), start=1):
+                    row_values = []
+                    for col_idx, val in enumerate(raw):
+                        if val == '':
+                            row_values.append(None)
+                            continue
+                        if val.startswith('='):
+                            coord = f'{get_column_letter(col_idx + 1)}{line_no}'
+                            raise SecurityError(
+                                f'Formulas are not allowed in pattern files. '
+                                f'Cell {coord} contains: {val!r}  '
+                                f'Replace it with a plain text value.'
+                            )
+                        if len(val) > _MAX_PATTERN_CELL_LEN:
+                            coord = f'{get_column_letter(col_idx + 1)}{line_no}'
+                            raise SecurityError(
+                                f'Pattern file cell {coord} value is too long '
+                                f'({len(val)} chars, limit is {_MAX_PATTERN_CELL_LEN}). '
+                                f'Pattern values should be short identifiers or regex patterns.'
+                            )
+                        row_values.append(val)
+                    rows.append(row_values)
+        except UnicodeDecodeError as exc:
+            raise SecurityError(
+                f'Pattern CSV {filepath!r} is not valid UTF-8 text: {exc}'
+            )
+        return rows
 
     def _read_and_validate(self, ws) -> list:
         """

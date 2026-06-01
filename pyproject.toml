@@ -1,12 +1,29 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]   # >=77 for PEP 639 SPDX license metadata
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "grepxcel"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Pattern-based data extraction for Excel"
+readme = "README.md"
 requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "scpg" }]
+keywords = ["excel", "xlsx", "spreadsheet", "data-extraction", "pattern", "etl", "openpyxl"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: End Users/Desktop",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Office/Business :: Financial :: Spreadsheet",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Operating System :: OS Independent",
+]
 dependencies = [
     "openpyxl>=3.1",
     "defusedxml>=0.7",
@@ -19,14 +36,26 @@ suggest = [
 ]
 draft-cloud = [
     "anthropic>=0.40",
+    # google-genai supports the Gemini backend, which is disabled and planned
+    # for a future release. Declared here so enabling it later is a one-liner.
+    "google-genai>=0.3",
 ]
 dev = [
     "pytest>=8.0",
 ]
 
+[project.urls]
+Homepage = "https://github.com/scpg/grepxcel"
+Repository = "https://github.com/scpg/grepxcel"
+Issues = "https://github.com/scpg/grepxcel/issues"
+Changelog = "https://github.com/scpg/grepxcel/blob/main/CHANGELOG.md"
+
 [project.scripts]
-grepxcel = "engine.cli:main"
+grepxcel = "grepxcel.cli:main"
+
+[tool.setuptools.dynamic]
+version = {attr = "grepxcel.__version__"}
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["engine*"]
+include = ["grepxcel*"]

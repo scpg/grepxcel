@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from engine.model_manager import (
+from grepxcel.model_manager import (
     ModelManager,
     MODEL_FILENAME,
     MODEL_REVISION,
@@ -161,7 +161,7 @@ class TestCacheDirOverride:
     def test_env_var_overrides_cache_dir(self, tmp_path, monkeypatch):
         custom = str(tmp_path / "custom_cache")
         monkeypatch.setenv("GREPXCEL_MODEL_DIR", custom)
-        from engine.model_manager import default_cache_dir
+        from grepxcel.model_manager import default_cache_dir
         assert default_cache_dir() == Path(custom)
 
 
