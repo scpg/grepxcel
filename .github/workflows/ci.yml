@@ -54,22 +54,13 @@ jobs:
           test -f /tmp/pattern-reference.xlsx
 
   docs-reference:
-    # Keeps docs/pattern-reference.xlsx current.
-    # • On PRs  : regenerates and uploads the file as a downloadable artifact.
-    # • On main : regenerates, then commits and pushes if the file changed.
-    #
-    # Note: the auto-commit uses GITHUB_TOKEN.  If your repository has branch
-    # protection rules that block direct pushes to main, add a bypass exception
-    # for the "github-actions[bot]" actor in the branch protection settings.
+    # Verifies that docs/pattern-reference.xlsx can be regenerated and is current.
+    # The file must be updated locally and included in the PR diff — branch
+    # protection prevents direct commits from CI, so auto-commit is not used.
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
 
     steps:
       - uses: actions/checkout@v6
-        with:
-          # Fetch full history so git push works correctly on the main branch.
-          fetch-depth: 0
 
       - uses: actions/setup-python@v6
         with:
@@ -80,20 +71,19 @@ jobs:
         run: pip install .
 
       - name: Regenerate pattern-reference.xlsx
-        run: grepxcel docs -o docs/pattern-reference.xlsx
+        run: grepxcel docs -o /tmp/pattern-reference.xlsx
 
-      - name: Upload as artifact (pull requests)
-        if: github.event_name == 'pull_request'
+      - name: Check if committed file is current
+        run: |
+          if ! diff -q docs/pattern-reference.xlsx /tmp/pattern-reference.xlsx > /dev/null 2>&1; then
+            echo "::warning::docs/pattern-reference.xlsx is out of date."
+            echo "Run 'grepxcel docs -o docs/pattern-reference.xlsx' locally and include the updated file in your PR."
+          else
+            echo "docs/pattern-reference.xlsx is current."
+          fi
+
+      - name: Upload regenerated reference as artifact
         uses: actions/upload-artifact@v4
         with:
           name: pattern-reference
-          path: docs/pattern-reference.xlsx
-
-      - name: Commit updated reference (main branch only)
-        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add docs/pattern-reference.xlsx
-          git diff --cached --quiet && echo "No change — skipping commit." || \
-            git commit -m "chore: regenerate pattern-reference.xlsx" && git push
+          path: /tmp/pattern-reference.xlsx
