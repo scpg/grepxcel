@@ -1,0 +1,65 @@
+name: Release
+
+# Publishes grepxcel to PyPI when a version tag (v*) is pushed.
+#
+# Security model — no long-lived secrets exist anywhere:
+#   • Authentication uses PyPI Trusted Publishing (OIDC). GitHub mints a
+#     short-lived identity token at run time; PyPI verifies it came from THIS
+#     repo + THIS workflow + the 'pypi' environment. There is no API token to
+#     store, leak, or rotate.
+#   • The build and publish steps are split so only the publish job holds the
+#     id-token permission, and it holds nothing else.
+#   • The 'pypi' environment can be configured with a required reviewer in the
+#     repo settings to add a manual approval gate before any upload.
+#   • The publish action also attaches PEP 740 attestations automatically,
+#     giving every release a verifiable record of what built it and where.
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions: {}            # default: nothing; each job opts in to what it needs
+
+jobs:
+  build:
+    name: Build sdist + wheel
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Build distributions
+        run: |
+          python -m pip install --upgrade build
+          python -m build
+
+      - name: Check metadata
+        run: |
+          python -m pip install --upgrade twine
+          twine check dist/*
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  publish:
+    name: Publish to PyPI
+    needs: build
+    runs-on: ubuntu-latest
+    environment: pypi        # must match the environment registered on PyPI
+    permissions:
+      id-token: write        # OIDC — the only permission needed; no password
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish via Trusted Publishing (OIDC)
+        uses: pypa/gh-action-pypi-publish@release/v1
+        # No 'password:' — authentication is the OIDC handshake configured on PyPI.
