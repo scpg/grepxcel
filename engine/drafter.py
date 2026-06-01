@@ -574,6 +574,38 @@ def _detect_gpu() -> tuple[int, str | None, str | None]:
     except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
         pass
 
+    # AMD XDNA NPU (Ryzen AI — Phoenix / Hawk Point / Strix Point)
+    # Present in Ryzen 7040, 8040, and AI 300 series. Not accessible from
+    # llama-cpp-python; requires ONNX Runtime + VitisAI EP on Windows.
+    # Detected here only to inform the user rather than silently falling back
+    # to CPU with no explanation.
+    # Works on Windows-native (platform.processor()), Linux, and WSL2
+    # (/proc/cpuinfo fallback when platform.processor() returns empty).
+    try:
+        import re
+        _cpu = platform.processor()
+        if not _cpu:  # Linux / WSL2 — platform.processor() is often empty
+            try:
+                with open('/proc/cpuinfo', encoding='utf-8') as _f:
+                    for _line in _f:
+                        if 'model name' in _line.lower():
+                            _cpu = _line.split(':', 1)[-1].strip()
+                            break
+            except OSError:
+                pass
+        if _cpu and 'ryzen' in _cpu.lower() and re.search(
+            r'[78][04]\d{2}|Ryzen AI', _cpu, re.IGNORECASE
+        ):
+            print(
+                '  NPU detected: AMD XDNA (Ryzen AI) — not yet supported by '
+                'llama-cpp-python.\n'
+                '  Inference will run on CPU.  For faster results use:\n'
+                '    grepxcel draft --backend claude  (or --backend gemini)',
+                file=sys.stderr,
+            )
+    except Exception:  # noqa: BLE001 — never crash inference over an info message
+        pass
+
     return 0, None, None
 
 
