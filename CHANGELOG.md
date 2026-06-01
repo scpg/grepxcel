@@ -25,8 +25,9 @@ Initial public release.
   both are read into one common grid representation and behave identically.
 - **`--sheet` / `--all-sheets`** sheet selection.
 - **`draft` command** — drafts a starter pattern for an unseen file using a
-  local GGUF model (default, fully offline) or the Claude / Gemini APIs
-  (`--backend`), with token-cost reporting and a privacy notice for cloud use.
+  local GGUF model (default, fully offline) or the Claude API (`--backend claude`),
+  with token-cost reporting and a privacy notice for cloud use. (A Gemini backend
+  is scaffolded but disabled — planned for a future release.)
 - **`docs` command** — writes a colour-coded `pattern-reference.xlsx`.
 - **`--version`** flag.
 - **Security hardening** — fail-closed XXE protection (defusedxml asserted),

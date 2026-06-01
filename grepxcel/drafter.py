@@ -785,8 +785,21 @@ class ClaudeBackend:
 
 # ── Gemini API backend ────────────────────────────────────────────────────────
 
+# Feature flag: the Gemini backend is implemented but DISABLED — planned for a
+# future release. The full implementation below is kept intact; flip this to True
+# (and re-enable the skipped Gemini tests) to ship it.
+_GEMINI_ENABLED = False
+
+
+class GeminiUnavailableError(RuntimeError):
+    """Raised when the (disabled) Gemini backend is invoked programmatically."""
+
+
 class GeminiBackend:
     """Sends inference requests to the Google Gemini API (google-genai SDK).
+
+    DISABLED — planned for a future release. chat() refuses to run while
+    _GEMINI_ENABLED is False; the implementation is preserved for that release.
 
     Requires GOOGLE_API_KEY to be set in the environment.
     Only the Excel structure description is transmitted — raw file bytes
@@ -815,6 +828,11 @@ class GeminiBackend:
         return self._last_cost
 
     def chat(self, system: str, user: str) -> str:
+        if not _GEMINI_ENABLED:
+            raise GeminiUnavailableError(
+                'The Gemini backend is planned for a future release and is not '
+                'yet available. Use the local or Claude backend instead.'
+            )
         try:
             from google import genai
             from google.genai import types

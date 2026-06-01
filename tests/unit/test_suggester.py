@@ -1,6 +1,7 @@
 """Unit tests for grepxcel.drafter (pattern drafting) and the infer_cell_type utility."""
 
 import datetime
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -607,6 +608,7 @@ class TestClaudeBackend:
         assert exc_info.value.code == 1
 
 
+@pytest.mark.skip(reason="Gemini backend disabled — planned for a future release")
 class TestGeminiBackend:
     def test_satisfies_llm_backend_protocol(self):
         from grepxcel.drafter import LLMBackend
@@ -644,6 +646,7 @@ class TestBackendCLIFlag:
         args = _build_parser().parse_args(['draft', '--backend', 'claude', 'data.xlsx'])
         assert args.backend == 'claude'
 
+    @pytest.mark.skip(reason="Gemini backend disabled — planned for a future release")
     def test_backend_gemini_accepted(self):
         from grepxcel.cli import _build_parser
         args = _build_parser().parse_args(['draft', '--backend', 'gemini', 'data.xlsx'])
@@ -654,8 +657,9 @@ class TestBackendCLIFlag:
         with pytest.raises(SystemExit):
             _build_parser().parse_args(['draft', '--backend', 'openai', 'data.xlsx'])
 
+    @pytest.mark.skip(reason="Gemini backend disabled — planned for a future release")
     def test_gemini_backend_emits_privacy_warning_and_is_used(self, tmp_path, capsys):
-        """--backend gemini must warn on stderr AND actually instantiate GeminiBackend."""
+        """Re-enable when the Gemini backend ships (flip _GEMINI_ENABLED)."""
         data_path    = _make_xlsx([['X'], [1]], tmp_path, 'data.xlsx')
         out_path     = str(tmp_path / 'out.xlsx')
         mock_backend = MagicMock()
@@ -671,6 +675,21 @@ class TestBackendCLIFlag:
         mock_cls.assert_called_once()
         mock_backend.chat.assert_called_once()
         assert 'Google' in capsys.readouterr().err
+
+    def test_gemini_backend_is_disabled_with_future_release_message(self, tmp_path, capsys):
+        """ACTIVE guard: --backend gemini is recognised but disabled — it must
+        print a 'future release' notice, exit non-zero, and run NO inference."""
+        data_path = _make_xlsx([['X'], [1]], tmp_path, 'data.xlsx')
+        out_path  = str(tmp_path / 'out.xlsx')
+        from grepxcel.cli import _build_parser, _run_draft
+        args = _build_parser().parse_args([
+            'draft', '--backend', 'gemini', data_path, '-o', out_path,
+        ])
+        rc  = _run_draft(args)
+        err = capsys.readouterr().err
+        assert rc == 1
+        assert 'future release' in err.lower()
+        assert not os.path.exists(out_path)  # no draft written
 
     def test_claude_backend_emits_privacy_warning(self, tmp_path, capsys):
         """--backend claude must print the privacy notice to stderr."""

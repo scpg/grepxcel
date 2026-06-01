@@ -201,17 +201,15 @@ backends:
   claude  Send the Excel structure description to the Claude API.
           Requires ANTHROPIC_API_KEY. The raw file is NOT transmitted —
           only column types, sample values, and labels are sent.
-  gemini  Send the Excel structure description to the Google Gemini API.
-          Requires GOOGLE_API_KEY. Same data scope as claude (structure only).
+  gemini  Planned for a future release — not yet available.
 
-Both cloud backends print a one-line privacy notice and the per-call token cost.
+The Claude backend prints a one-line privacy notice and the per-call token cost.
 Override the local model cache directory with GREPXCEL_MODEL_DIR.
 
 examples:
   grepxcel draft report.xlsx
   grepxcel draft report.xlsx -o my_pattern.xlsx
   grepxcel draft report.xlsx --backend claude
-  grepxcel draft report.xlsx --backend gemini
   grepxcel draft report.xlsx --dry-run
         """,
     ))
@@ -243,8 +241,8 @@ def _draft_args(p: argparse.ArgumentParser) -> None:
         '--backend',
         choices=['local', 'claude', 'gemini'],
         default='local',
-        help='Inference backend: local (default, GGUF model), claude (requires '
-             'ANTHROPIC_API_KEY), or gemini (requires GOOGLE_API_KEY)',
+        help='Inference backend: local (default, GGUF model) or claude (requires '
+             'ANTHROPIC_API_KEY). gemini is planned for a future release.',
     )
     _add_security_args(p)
     _add_sheet_arg(p)
@@ -340,18 +338,22 @@ def _run_docs(args) -> int:
 # ── draft handler ─────────────────────────────────────────────────────────────
 
 def _run_draft(args) -> int:
-    from .drafter import ClaudeBackend, GeminiBackend, PatternDrafter
+    from .drafter import ClaudeBackend, PatternDrafter
     sheet    = _resolve_sheet(args)
     selected = getattr(args, 'backend', 'local')
     backend  = None
+    if selected == 'gemini':
+        # Implemented but disabled — planned for a future release.
+        print(
+            '[!] The Gemini backend is planned for a future release and is not yet '
+            'available.\n    Use --backend local or --backend claude.',
+            file=sys.stderr,
+        )
+        return 1
     if selected == 'claude':
         print("[!] Excel structure description will be sent to Anthropic's API.",
               file=sys.stderr)
         backend = ClaudeBackend()
-    elif selected == 'gemini':
-        print("[!] Excel structure description will be sent to Google's Gemini API.",
-              file=sys.stderr)
-        backend = GeminiBackend()
     drafter = PatternDrafter(
         input_path=args.file,
         output_path=args.output,

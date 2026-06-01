@@ -36,6 +36,8 @@ suggest = [
 ]
 draft-cloud = [
     "anthropic>=0.40",
+    # google-genai supports the Gemini backend, which is disabled and planned
+    # for a future release. Declared here so enabling it later is a one-liner.
     "google-genai>=0.3",
 ]
 dev = [
