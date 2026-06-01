@@ -25,6 +25,8 @@ jobs:
   build:
     name: Build sdist + wheel
     runs-on: ubuntu-latest
+    permissions:
+      contents: read         # required to check out the repo (esp. while private)
     steps:
       - uses: actions/checkout@v6
 
