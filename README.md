@@ -182,7 +182,7 @@ a *starting point* — review and refine the generated regexes before use.
 
 | Backend | Install | Notes |
 |---|---|---|
-| `local` *(default)* | `python3 scripts/install_llm_deps.py` | Runs a GGUF model in-process. **No data leaves your machine.** Model is pinned to a revision and downloaded once (~2.4 GB); set `GREPXCEL_MODEL_AUTOUPDATE=1` to track upstream, `GREPXCEL_MODEL_DIR` to relocate the cache. |
+| `local` *(default)* | `python3 scripts/install_llm_deps.py` | Runs Qwen2.5-Coder-7B (GGUF) in-process. **No data leaves your machine.** Model is pinned to a revision and downloaded once (~4.7 GB); set `GREPXCEL_MODEL_AUTOUPDATE=1` to track upstream, `GREPXCEL_MODEL_DIR` to relocate the cache. |
 | `claude` | `pip install -e '.[draft-cloud]'` | Anthropic API. Requires `ANTHROPIC_API_KEY`. Prints a one-line privacy notice and per-call token cost. |
 | `gemini` | — | **Planned for a future release** — not yet available. Selecting it prints a notice and exits. |
 

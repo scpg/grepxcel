@@ -25,7 +25,8 @@ Initial public release.
   both are read into one common grid representation and behave identically.
 - **`--sheet` / `--all-sheets`** sheet selection.
 - **`draft` command** — drafts a starter pattern for an unseen file using a
-  local GGUF model (default, fully offline) or the Claude API (`--backend claude`),
+  local GGUF model (Qwen2.5-Coder-7B by default, fully offline) or the Claude
+  API (`--backend claude`),
   with token-cost reporting and a privacy notice for cloud use. (A Gemini backend
   is scaffolded but disabled — planned for a future release.)
 - **`docs` command** — writes a colour-coded `pattern-reference.xlsx`.

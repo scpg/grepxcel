@@ -198,7 +198,7 @@ def _add_draft_subparser(sub) -> None:
         epilog="""
 backends:
   local   (default) Run a local GGUF model via llama-cpp-python.
-          Model is downloaded automatically on first run (~2.4 GB).
+          Model is downloaded automatically on first run (~4.7 GB).
           No data leaves your machine during inference.
   claude  Send the Excel structure description to the Claude API.
           Requires ANTHROPIC_API_KEY. The raw file is NOT transmitted —
