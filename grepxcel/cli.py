@@ -214,7 +214,15 @@ backends:
   gemini  Planned for a future release — not yet available.
 
 The Claude backend prints a one-line privacy notice and the per-call token cost.
-Override the local model cache directory with GREPXCEL_MODEL_DIR.
+
+model cache (local backend):
+  Stored once in ~/.cache/grepxcel/models/ (override with GREPXCEL_MODEL_DIR).
+  grepxcel only downloads when the file is missing — to avoid the HuggingFace
+  download you can place the GGUF there yourself (exact filename), from any
+  source. Faster/alternative downloads:
+    HF_TOKEN=hf_...                 remove the anonymous rate limit (fastest fix)
+    HF_ENDPOINT=https://hf-mirror.com   use a mirror
+  Note: a manually-placed file is NOT hash-verified — trust your source.
 
 examples:
   grepxcel draft report.xlsx

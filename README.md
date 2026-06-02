@@ -215,6 +215,35 @@ grepxcel draft data.xlsx --dry-run             # inspect the analysis, no infere
 ANTHROPIC_API_KEY=sk-... grepxcel draft data.xlsx --backend claude
 ```
 
+#### Model cache & offline / alternative downloads
+
+The local model is stored once in a per-user cache:
+
+- **Default:** `~/.cache/grepxcel/models/` (Linux). Override the location with
+  `GREPXCEL_MODEL_DIR` (handy for Docker volumes or a shared model dir).
+
+If the HuggingFace download is slow or blocked, you don't have to let grepxcel
+fetch it — **grepxcel only downloads when the file isn't already in the cache**,
+so you can supply it yourself from any source:
+
+```bash
+mkdir -p ~/.cache/grepxcel/models            # or your $GREPXCEL_MODEL_DIR
+# download the GGUF anywhere (HF website, a mirror, ModelScope, …), then place it
+# with this EXACT name so grepxcel finds it and skips the download:
+mv Qwen2.5-Coder-7B-Instruct-Q4_K_M.gguf  ~/.cache/grepxcel/models/
+grepxcel draft data.xlsx                     # uses the local file — no download
+```
+
+Other options:
+
+- **Mirror:** `huggingface_hub` honors `HF_ENDPOINT`, e.g.
+  `HF_ENDPOINT=https://hf-mirror.com grepxcel draft data.xlsx` (third-party mirror).
+- **Token:** `HF_TOKEN=hf_...` removes the anonymous rate limit (fastest fix).
+
+> ⚠️ The normal HuggingFace download is **hash-verified** against the pinned
+> revision. A **manually-placed file is not verified** by grepxcel — it trusts
+> whatever is in the cache, so make sure your source is trustworthy.
+
 ---
 
 ## Verbosity levels
