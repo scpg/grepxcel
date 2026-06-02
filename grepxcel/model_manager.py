@@ -22,6 +22,8 @@ import json
 import os
 import sys
 import tempfile
+import threading
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -41,6 +43,31 @@ MODEL_CHAT_FORMAT = None  # auto-detect from GGUF metadata (Qwen embeds a ChatML
 _SIZE_HINT        = "~4.7 GB"
 _CHECK_INTERVAL   = 86_400          # seconds — 24 h
 _AUTOUPDATE_ENV   = "GREPXCEL_MODEL_AUTOUPDATE"
+
+# Download progress watchdog (multi-GB download → never leave the user blind).
+# huggingface_hub shows a live tqdm bar in a TTY; the watchdog adds (a) periodic
+# heartbeats when stderr is NOT a TTY (logs/CI, where the bar can't redraw) and
+# (b) an actionable stall warning if no bytes arrive for a while — the exact case
+# where an anonymous, rate-limited HF download hangs silently.
+_DL_POLL_SECONDS      = 2.0
+_DL_HEARTBEAT_SECONDS = 15.0
+_DL_STALL_SECONDS     = 30.0
+
+
+def _largest_file_bytes(root: str) -> int:
+    """Largest single file size (bytes) under root — tracks the in-flight download.
+
+    hf_hub writes the partial file as <root>/.cache/huggingface/download/*.incomplete,
+    so the biggest file under the temp dir is the download's current size.
+    """
+    best = 0
+    for dirpath, _dirs, names in os.walk(root):
+        for name in names:
+            try:
+                best = max(best, os.path.getsize(os.path.join(dirpath, name)))
+            except OSError:
+                pass
+    return best
 
 
 def _autoupdate_enabled() -> bool:
@@ -187,8 +214,9 @@ class ModelManager:
                 file=sys.stderr,
             )
             print(
-                "This only happens on first run (or when auto-update is enabled "
-                "and a new version is released).",
+                "First run only. Live progress is shown below. Tip: set HF_TOKEN "
+                "(https://huggingface.co/settings/tokens) for faster, rate-limit-free "
+                "downloads.",
                 file=sys.stderr,
             )
 
@@ -197,18 +225,78 @@ class ModelManager:
         # Download into a throw-away temp dir inside cache_dir so that
         # os.replace() is guaranteed to be on the same filesystem (atomic).
         with tempfile.TemporaryDirectory(dir=self.cache_dir, prefix="_dl_") as tmp_dir:
-            downloaded = hf_hub_download(
-                repo_id=MODEL_REPO_ID,
-                filename=MODEL_FILENAME,
-                revision=revision,
-                local_dir=tmp_dir,
-            )
+            # Watchdog: heartbeats (non-TTY) + stall warnings, so a hung
+            # anonymous download is never silent. Only when we announce — the
+            # mocked test path uses announce=False and starts no thread.
+            stop = threading.Event()
+            watcher: threading.Thread | None = None
+            if announce:
+                watcher = threading.Thread(
+                    target=self._watch_download, args=(tmp_dir, stop), daemon=True,
+                )
+                watcher.start()
+            try:
+                downloaded = hf_hub_download(
+                    repo_id=MODEL_REPO_ID,
+                    filename=MODEL_FILENAME,
+                    revision=revision,
+                    local_dir=tmp_dir,
+                )
+            finally:
+                stop.set()
+                if watcher is not None:
+                    watcher.join(timeout=2)
             os.replace(downloaded, str(self.model_path))
 
         self._save_state(revision)
 
         if announce:
             print(f"Model ready: {self.model_path}", file=sys.stderr)
+
+    # ── download progress watchdog ──────────────────────────────────────────────
+
+    def _watch_download(self, tmp_dir: str, stop: threading.Event) -> None:
+        """Watch the in-flight download; emit heartbeats / stall warnings.
+
+        Runs in a daemon thread until `stop` is set. huggingface_hub already
+        draws a live bar in a TTY, so heartbeats are emitted only when stderr is
+        NOT a TTY (keeps an interactive bar clean). A stall warning fires in
+        either case — that's the actionable signal when an anonymous, throttled
+        HF download hangs with no bytes moving.
+        """
+        is_tty       = sys.stderr.isatty()
+        now          = time.monotonic()
+        last_size    = 0
+        last_change  = now
+        last_beat    = now
+        last_stall   = 0.0
+
+        while not stop.wait(_DL_POLL_SECONDS):
+            size = _largest_file_bytes(tmp_dir)
+            now  = time.monotonic()
+
+            if size > last_size:
+                last_size, last_change = size, now
+
+            if size <= 0:
+                continue
+
+            mb = size / (1024 * 1024)
+
+            if not is_tty and (now - last_beat) >= _DL_HEARTBEAT_SECONDS:
+                print(f"  ... {mb:,.0f} MB downloaded", file=sys.stderr)
+                last_beat = now
+
+            stalled_for = now - last_change
+            if stalled_for >= _DL_STALL_SECONDS and (now - last_stall) >= _DL_STALL_SECONDS:
+                print(
+                    f"  [!] No download progress for {int(stalled_for)}s "
+                    f"(stuck at {mb:,.0f} MB). The HuggingFace anonymous rate limit "
+                    f"may be throttling — set HF_TOKEN "
+                    f"(https://huggingface.co/settings/tokens) and re-run.",
+                    file=sys.stderr,
+                )
+                last_stall = now
 
 
 # ── dependency guard ──────────────────────────────────────────────────────────
