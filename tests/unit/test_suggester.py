@@ -723,3 +723,45 @@ class TestBackendCLIFlag:
             except RuntimeError:
                 pass
         mock_cls.assert_not_called()
+
+
+# ── Local-backend dependency check (fail fast + clear message) ─────────────────
+
+class TestLocalBackendDepCheck:
+    def test_fails_fast_with_guidance_when_local_deps_missing(self, tmp_path, capsys):
+        """No cloud backend + deps missing → fail BEFORE analysis, with guidance."""
+        data = _make_xlsx([['X'], [1]], tmp_path, 'data.xlsx')
+        out  = str(tmp_path / 'out.xlsx')
+        with patch('grepxcel.drafter._missing_local_deps',
+                   return_value=['llama-cpp-python', 'huggingface_hub']):
+            rc = PatternDrafter(input_path=data, output_path=out).run()
+        err = capsys.readouterr().err
+        assert rc == 1
+        assert "grepxcel[suggest]" in err            # tells the user what to install
+        assert "Analysing Excel structure" not in err  # failed fast, no analysis
+        assert not os.path.exists(out)                  # nothing written
+
+    def test_dry_run_does_not_require_local_deps(self, tmp_path):
+        """--dry-run never touches the model, so missing local deps must be fine."""
+        data = _make_xlsx([['Product', 'Qty'], ['Widget', 3]], tmp_path, 'data.xlsx')
+        out  = str(tmp_path / 'out.xlsx')
+        with patch('grepxcel.drafter._missing_local_deps',
+                   return_value=['llama-cpp-python', 'huggingface_hub']):
+            rc = PatternDrafter(input_path=data, output_path=out, dry_run=True).run()
+        assert rc == 0
+
+    def test_cloud_backend_does_not_require_local_deps(self, tmp_path):
+        """A provided backend bypasses the local-deps check entirely."""
+        data = _make_xlsx([['X'], [1]], tmp_path, 'data.xlsx')
+        out  = str(tmp_path / 'out.xlsx')
+        mock_backend = MagicMock()
+        mock_backend.chat.return_value = (
+            "var: | x | integer | .*\nSTART:\ncell:next | x\nEND:"
+        )
+        with patch('grepxcel.drafter._missing_local_deps',
+                   return_value=['llama-cpp-python', 'huggingface_hub']):
+            rc = PatternDrafter(
+                input_path=data, output_path=out, backend=mock_backend,
+            ).run()
+        assert rc == 0
+        mock_backend.chat.assert_called_once()

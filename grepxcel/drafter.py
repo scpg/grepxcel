@@ -953,6 +953,40 @@ def _validate_draft(xlsx_path: str) -> None:
     PatternParser().parse(xlsx_path)
 
 
+# ── Local-backend dependency check (speak clearly to the user) ──────────────────
+
+def _missing_local_deps() -> list[str]:
+    """Return the pip names of any local-model deps that aren't importable.
+
+    Uses find_spec so it never imports the heavy packages — just checks presence.
+    """
+    import importlib.util
+    missing = []
+    for module_name, pip_name in (
+        ('huggingface_hub', 'huggingface_hub'),
+        ('llama_cpp',       'llama-cpp-python'),
+    ):
+        if importlib.util.find_spec(module_name) is None:
+            missing.append(pip_name)
+    return missing
+
+
+def _print_local_backend_help(missing: list[str]) -> None:
+    """One clear message: what's missing, that draft is optional, and the options."""
+    print(
+        f"The local 'draft' model isn't installed (missing: {', '.join(missing)}).\n"
+        f"\n"
+        f"'draft' is an optional feature — 'extract' and 'docs' work without it.\n"
+        f"To use the local model (runs fully offline), install it once:\n"
+        f"  pip install 'grepxcel[suggest]'\n"
+        f"  python3 scripts/install_llm_deps.py    # alternative — autodetects GPU\n"
+        f"\n"
+        f"Or skip the local model with a cloud backend (no large download):\n"
+        f"  grepxcel draft --backend claude ...    # needs ANTHROPIC_API_KEY",
+        file=sys.stderr,
+    )
+
+
 # ── Orchestrator ──────────────────────────────────────────────────────────────
 
 class PatternDrafter:
@@ -986,6 +1020,16 @@ class PatternDrafter:
 
     def run(self) -> int:
         """Run the full pipeline. Returns exit code (0 = success, 1 = error)."""
+        # Fail fast: if we'll run the LOCAL model (no cloud backend, not a
+        # dry-run), confirm its optional deps are installed BEFORE doing any
+        # analysis — so the user gets clear guidance up front, not after a wall
+        # of output. dry-run and cloud backends don't need these deps.
+        if self.backend is None and not self.dry_run:
+            missing = _missing_local_deps()
+            if missing:
+                _print_local_backend_help(missing)
+                return 1
+
         # 1. Analyse Excel structure
         print('Analysing Excel structure...', file=sys.stderr)
         try:
