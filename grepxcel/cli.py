@@ -52,14 +52,16 @@ def _add_sheet_arg(p: argparse.ArgumentParser) -> None:
     )
 
 
-def _resolve_sheet(args) -> str | int | None:
-    sheet = getattr(args, 'sheet', None)
-    if sheet is not None:
-        try:
-            return int(sheet)
-        except ValueError:
-            pass
-    return sheet
+def _resolve_sheet(args) -> str | None:
+    """Return the --sheet value unchanged (string or None).
+
+    Resolution happens downstream: a string is matched as a sheet NAME first and
+    falls back to a 0-based index only when no sheet has that name. This lets a
+    numerically-named sheet (e.g. '2025') be selected by name, while '--sheet 0'
+    still works as an index. Converting to int here would wrongly turn the name
+    '2025' into index 2025.
+    """
+    return getattr(args, 'sheet', None)
 
 
 # ── Argument parser ───────────────────────────────────────────────────────────

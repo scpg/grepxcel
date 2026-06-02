@@ -1972,3 +1972,40 @@ class TestMixedSyntaxPurchaseOrder:
 
     def test_footer_grand_total(self):
         assert self.result['row'][0]['footer']['value'] == 3030.0
+
+
+class TestSheetSelectionByNameOrIndex:
+    """Regression: a numerically-named sheet must be selectable by NAME.
+
+    The CLI used to convert '2025' to the integer index 2025 (out of range),
+    so `--sheet 2025` could never reach a sheet literally named '2025'. Sheet
+    resolution now matches a name first and only falls back to a 0-based index
+    when no sheet has that name. 06_merged_cells has sheets '2026' and '2025'.
+    """
+
+    def test_cli_resolve_sheet_keeps_numeric_name_as_string(self):
+        import argparse
+        from grepxcel.cli import _resolve_sheet
+        assert _resolve_sheet(argparse.Namespace(sheet='2025')) == '2025'  # not int
+        assert _resolve_sheet(argparse.Namespace(sheet='Details')) == 'Details'
+        assert _resolve_sheet(argparse.Namespace(sheet=None)) is None
+
+    def test_numeric_sheet_name_selects_by_name(self):
+        r2025, lg25 = run('06_merged_cells', sheet='2025')
+        r2026, lg26 = run('06_merged_cells', sheet='2026')
+        assert not lg25.has_errors()
+        assert not lg26.has_errors()
+        # Name resolution picked different sheets → different extracted data.
+        assert r2025 != r2026
+
+    def test_numeric_string_falls_back_to_index_when_no_such_name(self):
+        # No sheet is named '0', so '0' is resolved as the first sheet (index 0),
+        # matching the integer-index behaviour exactly.
+        by_str, lg = run('06_merged_cells', sheet='0')
+        by_int, _  = run('06_merged_cells', sheet=0)
+        assert not lg.has_errors()
+        assert by_str == by_int
+
+    def test_out_of_range_numeric_string_errors(self):
+        _, lg = run('06_merged_cells', sheet='99')
+        assert lg.has_errors()
