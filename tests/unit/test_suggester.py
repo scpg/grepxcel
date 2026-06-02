@@ -260,9 +260,14 @@ class TestPatternSuggesterMocked:
         assert Path(out_path).exists()
 
     def test_security_error_returns_1(self, tmp_path, capsys):
+        # Inject a backend so the local-deps fail-fast is bypassed — the security
+        # error (missing file) is raised during analysis regardless of backend,
+        # which is what this test verifies. (Without a backend, on a machine
+        # lacking the local deps, the dep-check would short-circuit first.)
         s = PatternSuggester(
             input_path=str(tmp_path / 'nonexistent.xlsx'),
             output_path=str(tmp_path / 'out.xlsx'),
+            backend=MagicMock(),
         )
         code = s.run()
         assert code == 1
