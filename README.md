@@ -186,6 +186,13 @@ a *starting point* — review and refine the generated regexes before use.
 | `claude` | `pip install -e '.[draft-cloud]'` | Anthropic API. Requires `ANTHROPIC_API_KEY`. Prints a one-line privacy notice and per-call token cost. |
 | `gemini` | — | **Planned for a future release** — not yet available. Selecting it prints a notice and exits. |
 
+> **Faster first download (`local` backend):** the model is fetched once from
+> HuggingFace. Anonymous downloads work but are rate-limited and can be slow or
+> stall on the ~4.7 GB file. For a faster, more reliable first run, set a free
+> [HuggingFace token](https://huggingface.co/settings/tokens) (read scope):
+> `HF_TOKEN=hf_... grepxcel draft data.xlsx`. It's optional and one-time — the
+> model is cached afterwards. If a download stalls, grepxcel prints this tip too.
+
 > **Privacy:** the `claude` cloud backend sends only the *structure description*
 > of your sheet (column types, sample values, labels) — never the raw file. The
 > `local` backend sends nothing over the network during inference.

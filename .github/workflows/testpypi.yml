@@ -10,8 +10,11 @@ name: TestPyPI dry-run
 # the real release — no tokens — but scoped to the separate 'testpypi'
 # environment and the TestPyPI Trusted Publisher you register on test.pypi.org.
 #
-# skip-existing: true lets you re-run the rehearsal repeatedly; TestPyPI rejects
-# re-uploading an existing version, and this turns that into a skip, not a fail.
+# Each run auto-derives a unique pre-release version X.Y.Zrc<run_number> from the
+# current __version__ and rewrites it in the CI checkout only (never committed).
+# So every dispatch uploads a FRESH version — no manual bumps, and the real
+# __version__ (e.g. 0.1.0) stays untouched for the actual release.yml publish.
+# (skip-existing stays on as a belt-and-suspenders for re-runs of the same run.)
 
 on:
   workflow_dispatch:
@@ -30,6 +33,17 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
+
+      - name: Derive a unique pre-release version (X.Y.Zrc<run_number>)
+        env:
+          RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          base=$(grep -E '^__version__' grepxcel/__init__.py \
+                   | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+          ver="${base}rc${RUN_NUMBER}"
+          sed -i "s/^__version__ = .*/__version__ = \"${ver}\"/" grepxcel/__init__.py
+          echo "Building TestPyPI version: ${ver}"
+          echo "### TestPyPI build: \`${ver}\`  (install with \`pip install --pre\`)" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Build distributions
         run: |
