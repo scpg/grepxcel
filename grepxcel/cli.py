@@ -196,13 +196,21 @@ def _add_draft_subparser(sub) -> None:
         help='Draft a starter pattern file for an Excel file',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
+'draft' is an OPTIONAL feature. 'extract' and 'docs' work out of the box; the
+local 'draft' model needs an optional install:
+    pip install 'grepxcel[suggest]'      (local model, runs offline)
+    pip install 'grepxcel[draft-cloud]'  (cloud backends, e.g. --backend claude)
+If a dependency is missing, grepxcel tells you exactly what to install.
+
 backends:
   local   (default) Run a local GGUF model via llama-cpp-python.
+          Needs:  pip install 'grepxcel[suggest]'
           Model is downloaded automatically on first run (~4.7 GB).
           No data leaves your machine during inference.
   claude  Send the Excel structure description to the Claude API.
-          Requires ANTHROPIC_API_KEY. The raw file is NOT transmitted —
-          only column types, sample values, and labels are sent.
+          Needs ANTHROPIC_API_KEY and pip install 'grepxcel[draft-cloud]'.
+          The raw file is NOT transmitted — only column types, sample
+          values, and labels are sent.
   gemini  Planned for a future release — not yet available.
 
 The Claude backend prints a one-line privacy notice and the per-call token cost.

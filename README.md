@@ -58,9 +58,21 @@ hand-editing and produces clean git diffs. When writing CSV:
 git clone https://github.com/scpg/grepxcel.git
 cd grepxcel
 python -m venv .venv
-.venv/bin/pip install -e .                            # core (extract command)
-.venv/bin/python3 scripts/install_llm_deps.py         # optional: draft command (auto-detects GPU)
+.venv/bin/pip install -e .                            # core (extract + docs)
+.venv/bin/python3 scripts/install_llm_deps.py         # optional: local draft (auto-detects GPU)
 ```
+
+**What you actually need** — grepxcel ships in layers, so you only install what you use:
+
+| You want to… | Install |
+|---|---|
+| Extract data / generate the docs reference | `pip install grepxcel` *(core — nothing extra)* |
+| Draft patterns with the **local** model (offline) | `pip install 'grepxcel[suggest]'` |
+| Draft patterns with a **cloud** model (Claude) | `pip install 'grepxcel[draft-cloud]'` |
+
+The `extract` and `docs` commands work with the core install alone. The `draft`
+command is optional; if its dependencies are missing, grepxcel tells you exactly
+what to install (and points you at the cloud option as an alternative).
 
 > **Windows (PowerShell):** use `.venv\Scripts\` instead of `.venv/bin/`, e.g.
 > `.venv\Scripts\pip install -e .` and `.venv\Scripts\grepxcel ...`.
