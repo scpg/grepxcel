@@ -306,8 +306,12 @@ def _require_huggingface_hub() -> None:
         import huggingface_hub  # noqa: F401
     except ImportError:
         print(
-            "Error: 'huggingface_hub' is not installed.\n"
-            "Fix:   pip install huggingface_hub",
+            "Error: the local draft backend needs the 'suggest' extra "
+            "(huggingface_hub + llama-cpp-python), which isn't installed.\n"
+            "Fix:   pip install 'grepxcel[suggest]'\n"
+            "       (or: python3 scripts/install_llm_deps.py  — autodetects GPU)\n"
+            "Or skip the local model with a cloud backend: "
+            "grepxcel draft --backend claude ...",
             file=sys.stderr,
         )
         sys.exit(1)

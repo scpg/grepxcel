@@ -672,8 +672,12 @@ class LlamaCppClient:
             from llama_cpp import Llama
         except ImportError:
             print(
-                "Error: 'llama-cpp-python' is not installed.\n"
-                "Fix:   pip install llama-cpp-python",
+                "Error: the local draft backend needs the 'suggest' extra "
+                "(llama-cpp-python + huggingface_hub), which isn't installed.\n"
+                "Fix:   pip install 'grepxcel[suggest]'\n"
+                "       (or: python3 scripts/install_llm_deps.py  — autodetects GPU)\n"
+                "Or skip the local model with a cloud backend: "
+                "grepxcel draft --backend claude ...",
                 file=sys.stderr,
             )
             sys.exit(1)
