@@ -277,14 +277,27 @@ class Engine:
                         expected=f'an index between 0 and {len(wb.worksheets) - 1}',
                     )
                 ws = wb.worksheets[sheet]
-            else:
-                if sheet not in wb.sheetnames:
-                    logger.fatal(
-                        f'Sheet {sheet!r} not found in workbook',
-                        found=sheet,
-                        expected=f'one of: {", ".join(wb.sheetnames)}',
-                    )
+            elif sheet in wb.sheetnames:
+                # Exact name match wins — including numeric names like "2025".
                 ws = wb[sheet]
+            elif str(sheet).lstrip('-').isdigit():
+                # Numeric string with no matching name → treat as a 0-based index.
+                idx = int(sheet)
+                if idx < 0 or idx >= len(wb.worksheets):
+                    logger.fatal(
+                        f'Sheet index {idx} is out of range '
+                        f'(workbook has {len(wb.worksheets)} sheet(s))',
+                        found=str(sheet),
+                        expected=f'an index between 0 and {len(wb.worksheets) - 1}',
+                    )
+                ws = wb.worksheets[idx]
+            else:
+                logger.fatal(
+                    f'Sheet {sheet!r} not found in workbook',
+                    found=sheet,
+                    expected=f'one of: {", ".join(wb.sheetnames)}',
+                )
+                ws = wb.active  # unreachable (logger.fatal raises); keeps ws bound
 
             logger.engine_start(pattern_file, data_file)
             _raw = self._process_sheet(ws, global_config, defs, start_sequence, logger)

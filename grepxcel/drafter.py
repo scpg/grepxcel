@@ -261,11 +261,16 @@ class ExcelAnalyzer:
         return (preamble + body) if preamble else body
 
     def _select_sheet(self, wb):
-        if self.sheet is None:
+        sheet = self.sheet
+        if sheet is None:
             return wb.active
-        if isinstance(self.sheet, int):
-            return wb.worksheets[self.sheet]
-        return wb[self.sheet]
+        if isinstance(sheet, int):
+            return wb.worksheets[sheet]
+        if sheet in wb.sheetnames:
+            return wb[sheet]                       # name match wins (incl. "2025")
+        if str(sheet).lstrip('-').isdigit():       # numeric string, no such name → index
+            return wb.worksheets[int(sheet)]
+        return wb[sheet]                           # raises KeyError → clear failure
 
     def _workbook_preamble(self, wb) -> str:
         """List all sheets with dimensions. Empty for single-sheet workbooks."""

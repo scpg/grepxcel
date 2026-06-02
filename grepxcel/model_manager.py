@@ -30,12 +30,15 @@ from pathlib import Path
 # be an immutable commit SHA from https://huggingface.co/<MODEL_REPO_ID>/commits
 # — never a branch name like "main".
 
-MODEL_REPO_ID    = "bartowski/Phi-3.5-mini-instruct-GGUF"
-MODEL_FILENAME   = "Phi-3.5-mini-instruct-Q4_K_M.gguf"
-MODEL_REVISION   = "6d70da17e749a471ccb62ade694486011a75cda3"  # pinned commit (2024-09-15)
-MODEL_CHAT_FORMAT = None  # auto-detect from GGUF metadata (Phi-3.5 embeds its template)
+# Qwen2.5-Coder-7B-Instruct — the best LOCAL model in our execution-based draft
+# eval (claude-opus is better but cloud-only). It still hits a capability ceiling
+# on the most complex tables, but clearly beats the previous default (Phi-3.5).
+MODEL_REPO_ID    = "bartowski/Qwen2.5-Coder-7B-Instruct-GGUF"
+MODEL_FILENAME   = "Qwen2.5-Coder-7B-Instruct-Q4_K_M.gguf"
+MODEL_REVISION   = "1f629da0c8bed16b9e50cee91c70693650e66c35"  # pinned commit
+MODEL_CHAT_FORMAT = None  # auto-detect from GGUF metadata (Qwen embeds a ChatML template)
 
-_SIZE_HINT        = "~2.4 GB"
+_SIZE_HINT        = "~4.7 GB"
 _CHECK_INTERVAL   = 86_400          # seconds — 24 h
 _AUTOUPDATE_ENV   = "GREPXCEL_MODEL_AUTOUPDATE"
 
