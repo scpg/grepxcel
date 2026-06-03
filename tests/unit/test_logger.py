@@ -183,3 +183,31 @@ def test_to_dict_is_list_of_dicts():
     result = lg.to_dict()
     assert isinstance(result, list)
     assert isinstance(result[0], dict)
+
+
+# ─── summary issues recap ─────────────────────────────────────────────────────
+
+def test_summary_lists_each_issue_cell(capsys):
+    lg = Logger(level=VerbosityLevel.NORMAL, sheet_name='Sheet1')
+    rec = lg.warn_validation(10, 2, 'po.number', 'string', r'PO-\d+', 'xyz')
+    lg.commit_warnings([rec])
+    lg.summary({'cells': {'po.number': 'xyz'}, 'tables': []})
+    out = capsys.readouterr().err
+    assert 'ISSUES' in out
+    assert 'Sheet1!B10' in out      # the failing cell
+    assert 'po.number' in out       # the field
+    assert "'xyz'" in out           # what was found
+
+
+def test_summary_no_issues_section_when_clean(capsys):
+    lg = Logger(level=VerbosityLevel.NORMAL)
+    lg.summary({'cells': {'a': 1}, 'tables': []})
+    out = capsys.readouterr().err
+    assert 'ISSUES' not in out
+
+
+def test_issue_line_marks_error_vs_warning():
+    lg = Logger(level=VerbosityLevel.QUIET)
+    warn = lg.warn_validation(1, 1, 'f', 'string', '.*', 'v')
+    line = lg._issue_line(warn)
+    assert line.startswith('⚠')

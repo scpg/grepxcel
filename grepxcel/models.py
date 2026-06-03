@@ -6,6 +6,7 @@ class Config:
     read_direction: str = 'LR'
     currency_sign: str = '€'
     empty_aliases: list = field(default_factory=list)
+    ignore_case: bool = False  # when True, all regex matching is case-insensitive
 
 
 @dataclass

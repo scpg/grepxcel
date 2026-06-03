@@ -33,6 +33,12 @@ Initial public release.
   per-user cache resolved via `platformdirs` (`~/.cache/grepxcel/models` on Linux,
   `~/Library/Caches/grepxcel/models` on macOS, `%LOCALAPPDATA%\grepxcel\Cache\models`
   on Windows; honors `$XDG_CACHE_HOME`). `GREPXCEL_MODEL_DIR` overrides it.
+- **`config: | ignore.case | yes`** — opt-in case-insensitive regex matching for
+  every `lbl:`/`var:` pattern (global, inherited by tables). Default stays
+  case-sensitive.
+- **Consolidated issue recap** — the extraction summary now ends with an
+  `ISSUES (cell — reason)` block listing every failing cell and why, so problems
+  aren't lost in the scrollback of a long run.
 - **`docs` command** — writes a colour-coded `pattern-reference.xlsx`.
 - **`--version`** flag.
 - **Security hardening** — fail-closed XXE protection (defusedxml asserted),

@@ -153,3 +153,28 @@ def test_unknown_type():
     ok, reason = validate_type('x', 'blob', r'.*')
     assert not ok
     assert 'unknown' in reason
+
+
+# ─── validate_type: ignore_case ──────────────────────────────────────────────
+
+def test_ignore_case_off_is_default_sensitive():
+    # Default behaviour: case matters.
+    ok, _ = validate_type('paid', 'string', r'PAID')
+    assert not ok
+
+def test_ignore_case_string_match():
+    ok, _ = validate_type('paid', 'string', r'PAID', ignore_case=True)
+    assert ok
+
+def test_ignore_case_string_class_match():
+    ok, _ = validate_type('ACME', 'string', r'[a-z]+', ignore_case=True)
+    assert ok
+
+def test_ignore_case_still_respects_pattern():
+    # Case-insensitive does not mean "match anything" — structure still applies.
+    ok, _ = validate_type('paid123', 'string', r'PAID', ignore_case=True)
+    assert not ok
+
+def test_ignore_case_off_explicit():
+    ok, _ = validate_type('paid', 'string', r'PAID', ignore_case=False)
+    assert not ok

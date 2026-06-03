@@ -2009,3 +2009,53 @@ class TestSheetSelectionByNameOrIndex:
     def test_out_of_range_numeric_string_errors(self):
         _, lg = run('06_merged_cells', sheet='99')
         assert lg.has_errors()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# ignore.case config — end-to-end case-insensitive matching
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _write_data(rows: list) -> str:
+    """Write data rows to a temp xlsx; caller must os.unlink() it."""
+    wb = _openpyxl.Workbook()
+    ws = wb.active
+    for row in rows:
+        ws.append(row)
+    fd, path = tempfile.mkstemp(suffix='.xlsx')
+    os.close(fd)
+    wb.save(path)
+    return path
+
+
+def _run(pattern_rows: list, data_rows: list):
+    pat = _write_pattern(pattern_rows)
+    data = _write_data(data_rows)
+    lg = Logger(level=VerbosityLevel.QUIET)
+    result = Engine().process(pattern_file=pat, data_file=data, logger=lg)
+    os.unlink(pat)
+    os.unlink(data)
+    return result, lg
+
+
+class TestIgnoreCaseEndToEnd:
+    _DATA = [['PAID']]  # value differs in case from the pattern regex 'paid'
+
+    def test_case_sensitive_by_default_warns(self):
+        pat = [
+            ['var:', 'status', 'string', r'paid'],
+            ['START:'], ['cell:next', 'status'], ['END:'],
+        ]
+        result, lg = _run(pat, self._DATA)
+        # value is still extracted, but it fails its pattern → a warning
+        assert result['status'] == 'PAID'
+        assert lg.has_warnings()
+
+    def test_ignore_case_yes_no_warning(self):
+        pat = [
+            ['config:', 'ignore.case', 'yes'],
+            ['var:', 'status', 'string', r'paid'],
+            ['START:'], ['cell:next', 'status'], ['END:'],
+        ]
+        result, lg = _run(pat, self._DATA)
+        assert result['status'] == 'PAID'
+        assert not lg.has_warnings()
