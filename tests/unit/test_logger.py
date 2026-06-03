@@ -211,3 +211,20 @@ def test_issue_line_marks_error_vs_warning():
     warn = lg.warn_validation(1, 1, 'f', 'string', '.*', 'v')
     line = lg._issue_line(warn)
     assert line.startswith('⚠')
+
+
+def test_summary_scope_excludes_prior_sheet_issues(capsys):
+    lg = Logger(level=VerbosityLevel.NORMAL, sheet_name='Sheet1')
+    # Sheet 1: one warning
+    lg.begin_summary_scope()
+    lg.commit_warnings([lg.warn_validation(1, 1, 'a', 'string', r'x', 'bad')])
+    lg.summary({'cells': {'a': 'bad'}, 'tables': []})
+    capsys.readouterr()  # discard sheet-1 output
+
+    # Sheet 2: clean — must NOT inherit sheet 1's warning
+    lg.begin_summary_scope()
+    lg.summary({'cells': {'b': 1}, 'tables': []})
+    out = capsys.readouterr().err
+    assert 'Warnings          : 0' in out
+    assert 'ISSUES' not in out
+    assert "'bad'" not in out

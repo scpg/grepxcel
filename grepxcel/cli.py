@@ -226,7 +226,13 @@ model cache (local backend):
   source. Faster/alternative downloads:
     HF_TOKEN=hf_...                 remove the anonymous rate limit (fastest fix)
     HF_ENDPOINT=https://hf-mirror.com   use a mirror
-  Note: a manually-placed file is NOT hash-verified — trust your source.
+  Integrity: a downloaded model is checksummed (sha256) and re-verified on every
+  run; a checksum mismatch (tampering/corruption) aborts. The check is cheap by
+  default — it re-hashes only when the file's size/mtime changed. For high
+  assurance, GREPXCEL_VERIFY_MODEL=full forces a full re-hash every run. A
+  manually-placed file has no recorded checksum and can't be verified — grepxcel
+  warns and proceeds on trust. Use --allow-unverified-model (or
+  GREPXCEL_ALLOW_UNVERIFIED_MODEL=1) to silence the warning / override a mismatch.
 
 examples:
   grepxcel draft report.xlsx
@@ -265,6 +271,13 @@ def _draft_args(p: argparse.ArgumentParser) -> None:
         default='local',
         help='Inference backend: local (default, GGUF model) or claude (requires '
              'ANTHROPIC_API_KEY). gemini is planned for a future release.',
+    )
+    p.add_argument(
+        '--allow-unverified-model',
+        action='store_true',
+        help='Proceed even if the cached local model fails its integrity check '
+             '(checksum mismatch, or a manually-placed file with no recorded '
+             'checksum). Also settable via GREPXCEL_ALLOW_UNVERIFIED_MODEL=1.',
     )
     _add_security_args(p)
     _add_sheet_arg(p)
@@ -385,6 +398,7 @@ def _run_draft(args) -> int:
         verbose=args.verbose,
         dry_run=args.dry_run,
         backend=backend,
+        allow_unverified=getattr(args, 'allow_unverified_model', False),
     )
     return drafter.run()
 
