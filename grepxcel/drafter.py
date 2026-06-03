@@ -1024,6 +1024,7 @@ class PatternDrafter:
         verbose: bool = False,
         dry_run: bool = False,
         backend: LLMBackend | None = None,
+        allow_unverified: bool = False,
     ):
         self.input_path          = input_path
         self.output_path         = output_path
@@ -1033,6 +1034,7 @@ class PatternDrafter:
         self.verbose             = verbose
         self.dry_run             = dry_run
         self.backend             = backend
+        self.allow_unverified    = allow_unverified
 
     def run(self) -> int:
         """Run the full pipeline. Returns exit code (0 = success, 1 = error)."""
@@ -1077,7 +1079,9 @@ class PatternDrafter:
             llm_text = self.backend.chat(_SYSTEM_PROMPT, user_prompt)
         else:
             # Default: local GGUF model via llama-cpp-python
-            model_path = ModelManager().ensure_ready(verbose=self.verbose)
+            model_path = ModelManager(
+                allow_unverified=self.allow_unverified,
+            ).ensure_ready(verbose=self.verbose)
             print('Running local model inference...', file=sys.stderr)
             llm_text   = LlamaCppClient(str(model_path)).chat(_SYSTEM_PROMPT, user_prompt)
 

@@ -42,9 +42,17 @@ Initial public release.
 - **`docs` command** — writes a colour-coded `pattern-reference.xlsx`.
 - **`--version`** flag.
 - **Security hardening** — fail-closed XXE protection (defusedxml asserted),
-  ZIP-bomb guards (size + expansion ratio), AST-based ReDoS detection on every
-  user regex, formula rejection in pattern files, and `.xlsm`/`.xlsb`/`.xls`
+  ZIP-bomb guards (size + expansion ratio), AST-based ReDoS detection plus a hard
+  per-match timeout on the `regex` engine (default 0.25 s,
+  `GREPXCEL_REGEX_TIMEOUT`) so even backtracking patterns the static guard can't
+  see are bounded, formula rejection in pattern files, and `.xlsm`/`.xlsb`/`.xls`
   refusal.
+- **Supply-chain hardening** — all GitHub Actions pinned to immutable commit
+  SHAs (Dependabot keeps them current), least-privilege `permissions:` on CI, and
+  cached-model integrity verification: the downloaded model's sha256 is recorded
+  and re-checked on every run (re-hashing only when size/mtime changed by default,
+  or always with `GREPXCEL_VERIFY_MODEL=full`); a mismatch aborts unless
+  `--allow-unverified-model` / `GREPXCEL_ALLOW_UNVERIFIED_MODEL`.
 
 [Unreleased]: https://github.com/scpg/grepxcel/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/scpg/grepxcel/releases/tag/v0.1.0

@@ -1,6 +1,7 @@
 """Unit tests for engine.model_manager."""
 
 import json
+import os
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -8,6 +9,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+import grepxcel.model_manager as mm
 from grepxcel.model_manager import (
     ModelManager,
     MODEL_FILENAME,
@@ -242,3 +244,104 @@ class TestAutoUpdateOptIn:
         with patch.object(m, "_maybe_update") as mock_update:
             m.ensure_ready()
         mock_update.assert_called_once()
+
+
+# ── cached-model integrity ──────────────────────────────────────────────────────
+
+class TestCachedModelIntegrity:
+    def _model_with_fingerprint(self, tmp_path, content=b"weights-v1"):
+        """A cached model whose sha256+size+mtime are recorded in state.json."""
+        m = _make_manager(tmp_path)
+        p = tmp_path / MODEL_FILENAME
+        p.write_bytes(content)
+        m._save_state(MODEL_REVISION, integrity=m._fingerprint())
+        return m, p
+
+    def test_fast_path_trusts_unchanged_file_without_hashing(self, tmp_path, monkeypatch):
+        m, _ = self._model_with_fingerprint(tmp_path)
+        # Unchanged size+mtime must NOT trigger a re-hash of the 4.7 GB file.
+        monkeypatch.setattr(
+            mm, "_sha256_file",
+            lambda *_: pytest.fail("fast path should not re-hash an unchanged file"),
+        )
+        m._verify_integrity(verbose=False)  # no exception, no hashing
+
+    def test_unchanged_file_passes_ensure_ready(self, tmp_path):
+        m, p = self._model_with_fingerprint(tmp_path)
+        with patch.object(m, "_maybe_update"):
+            assert m.ensure_ready() == p
+
+    def test_tampered_file_aborts(self, tmp_path):
+        m, p = self._model_with_fingerprint(tmp_path)
+        p.write_bytes(b"malicious-content-of-a-different-length")  # size+mtime+hash all change
+        with pytest.raises(SystemExit) as exc:
+            m._verify_integrity(verbose=False)
+        assert exc.value.code == 1
+
+    def test_tampered_file_allowed_with_flag(self, tmp_path):
+        m, p = self._model_with_fingerprint(tmp_path)
+        m._allow_unverified = True
+        p.write_bytes(b"different-content")
+        m._verify_integrity(verbose=False)  # warns, does NOT exit
+
+    def test_missing_fingerprint_warns_and_proceeds(self, tmp_path):
+        m = _make_manager(tmp_path)
+        _fake_model(tmp_path)  # file exists, but no recorded integrity
+        m._verify_integrity(verbose=False)  # Case C — no exit
+
+    def test_benign_metadata_change_rehashes_and_refreshes(self, tmp_path):
+        m, p = self._model_with_fingerprint(tmp_path)
+        old_mtime = m._load_state()["integrity"]["mtime_ns"]
+        # Same content, new mtime (e.g. a copy/restore): re-hash matches → refresh.
+        bumped = p.stat().st_mtime_ns + 5_000_000_000
+        os.utime(p, ns=(bumped, bumped))
+        m._verify_integrity(verbose=False)  # no exit
+        assert m._load_state()["integrity"]["mtime_ns"] != old_mtime
+
+    def test_full_mode_rehashes_even_when_unchanged(self, tmp_path, monkeypatch):
+        m, _ = self._model_with_fingerprint(tmp_path)
+        monkeypatch.setenv("GREPXCEL_VERIFY_MODEL", "full")
+        calls = {"n": 0}
+        real = mm._sha256_file
+        monkeypatch.setattr(mm, "_sha256_file",
+                            lambda p: (calls.__setitem__("n", calls["n"] + 1), real(p))[1])
+        m._verify_integrity(verbose=False)
+        assert calls["n"] == 1  # full mode hashes despite unchanged size+mtime
+
+    def test_full_mode_detects_same_size_tamper(self, tmp_path, monkeypatch):
+        # The gap the fast path can't see: same byte length + reset mtime.
+        m, p = self._model_with_fingerprint(tmp_path, content=b"weights-v1")
+        recorded = m._load_state()["integrity"]
+        p.write_bytes(b"weights-vX")  # identical length, different content
+        os.utime(p, ns=(recorded["mtime_ns"], recorded["mtime_ns"]))  # forge mtime
+        # Fast path would TRUST this; full mode catches it.
+        monkeypatch.setenv("GREPXCEL_VERIFY_MODEL", "full")
+        with pytest.raises(SystemExit) as exc:
+            m._verify_integrity(verbose=False)
+        assert exc.value.code == 1
+
+    def test_download_records_integrity_fingerprint(self, tmp_path, monkeypatch):
+        m = _make_manager(tmp_path)
+        captured: dict = {}
+        monkeypatch.setitem(
+            sys.modules, "huggingface_hub",
+            TestRevisionPinning._fake_hf_module(captured),
+        )
+        m._download(announce=False)
+        integ = m._load_state()["integrity"]
+        assert set(integ) == {"sha256", "size", "mtime_ns"}
+        assert len(integ["sha256"]) == 64
+
+
+class TestAllowUnverifiedFlag:
+    def test_env_var_sets_allow(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("GREPXCEL_ALLOW_UNVERIFIED_MODEL", "1")
+        assert ModelManager(cache_dir=tmp_path)._allow_unverified is True
+
+    def test_constructor_flag_sets_allow(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("GREPXCEL_ALLOW_UNVERIFIED_MODEL", raising=False)
+        assert ModelManager(cache_dir=tmp_path, allow_unverified=True)._allow_unverified is True
+
+    def test_default_is_false(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("GREPXCEL_ALLOW_UNVERIFIED_MODEL", raising=False)
+        assert ModelManager(cache_dir=tmp_path)._allow_unverified is False

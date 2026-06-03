@@ -9,6 +9,10 @@ Supply-chain stance (deliberate):
   - Auto-update is OFF by default. A tool that silently replaces model weights
     from a third-party repo every day is a supply-chain risk. To opt in to
     tracking upstream main, set GREPXCEL_MODEL_AUTOUPDATE=1.
+  - The cached file is checksummed at download time and re-verified cheaply on
+    every reuse (size+mtime fast path; re-hash only on change). A mismatch means
+    the weights on disk are not what we fetched, so it aborts unless the user
+    opts out with GREPXCEL_ALLOW_UNVERIFIED_MODEL / --allow-unverified-model.
 
 All network activity is limited to:
   - one file download of the pinned revision on first run
@@ -18,6 +22,7 @@ All network activity is limited to:
 Inference never touches the network — it runs entirely in-process via llama-cpp-python.
 """
 
+import hashlib
 import json
 import os
 import sys
@@ -43,6 +48,20 @@ MODEL_CHAT_FORMAT = None  # auto-detect from GGUF metadata (Qwen embeds a ChatML
 _SIZE_HINT        = "~4.7 GB"
 _CHECK_INTERVAL   = 86_400          # seconds — 24 h
 _AUTOUPDATE_ENV   = "GREPXCEL_MODEL_AUTOUPDATE"
+
+# Cached-model integrity. hf_hub_download verifies the hash at download time, but
+# the cached multi-GB file is then trusted on every later run. We record its
+# sha256 + size + mtime at download time and re-check cheaply on reuse (see
+# ModelManager._verify_integrity). Set this to opt out of a hard failure when the
+# cached file no longer matches what we downloaded.
+_ALLOW_UNVERIFIED_ENV = "GREPXCEL_ALLOW_UNVERIFIED_MODEL"
+_HASH_CHUNK           = 1024 * 1024  # 1 MiB read buffer for hashing
+
+# Verification mode. Default "fast": trust the size+mtime fast path and only
+# re-hash when those change. Set GREPXCEL_VERIFY_MODEL=full to re-hash the whole
+# file on EVERY run — slower (reads ~4.7 GB each time) but closes the gap where a
+# local attacker overwrites the file with same-size content and resets its mtime.
+_VERIFY_MODE_ENV      = "GREPXCEL_VERIFY_MODEL"
 
 # Download progress watchdog (multi-GB download → never leave the user blind).
 # huggingface_hub shows a live tqdm bar in a TTY; the watchdog adds (a) periodic
@@ -75,6 +94,27 @@ def _autoupdate_enabled() -> bool:
     return os.environ.get(_AUTOUPDATE_ENV, "").strip().lower() in (
         "1", "true", "yes", "on",
     )
+
+
+def _allow_unverified_env() -> bool:
+    """Returns True when GREPXCEL_ALLOW_UNVERIFIED_MODEL opts out of the check."""
+    return os.environ.get(_ALLOW_UNVERIFIED_ENV, "").strip().lower() in (
+        "1", "true", "yes", "on",
+    )
+
+
+def _full_verify_enabled() -> bool:
+    """True when GREPXCEL_VERIFY_MODEL=full forces a re-hash on every run."""
+    return os.environ.get(_VERIFY_MODE_ENV, "").strip().lower() == "full"
+
+
+def _sha256_file(path: Path) -> str:
+    """Streaming sha256 of a file (reads in 1 MiB chunks — never loads 4.7 GB)."""
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(_HASH_CHUNK), b""):
+            h.update(chunk)
+    return h.hexdigest()
 
 
 # ── Cache location ────────────────────────────────────────────────────────────
@@ -121,24 +161,31 @@ class ModelManager:
 
     _STATE_FILE = "state.json"
 
-    def __init__(self, cache_dir: Path | None = None):
+    def __init__(self, cache_dir: Path | None = None, allow_unverified: bool = False):
         self.cache_dir  = Path(cache_dir) if cache_dir else default_cache_dir()
         self.model_path = self.cache_dir / MODEL_FILENAME
         self._state_path = self.cache_dir / self._STATE_FILE
+        # CLI flag OR env var opts out of the cached-model integrity check.
+        self._allow_unverified = bool(allow_unverified) or _allow_unverified_env()
 
     def ensure_ready(self, verbose: bool = False) -> Path:
         """
         Guarantee the model file is present (downloading the pinned revision on
-        first run). Update checks happen only when auto-update is opted in via
-        the GREPXCEL_MODEL_AUTOUPDATE env var.
+        first run). On reuse the cached file's integrity is verified cheaply
+        before it is handed to the inference engine. Update checks happen only
+        when auto-update is opted in via the GREPXCEL_MODEL_AUTOUPDATE env var.
         Returns the path to the model file — always valid on return.
         """
         self.cache_dir.mkdir(parents=True, exist_ok=True)
 
         if not self.model_path.exists():
             self._download(announce=True)
-        elif _autoupdate_enabled():
-            self._maybe_update(verbose)
+        else:
+            # Reusing a cached file we did not just download+verify: confirm it
+            # still matches what we recorded, before trusting it for inference.
+            self._verify_integrity(verbose)
+            if _autoupdate_enabled():
+                self._maybe_update(verbose)
 
         return self.model_path
 
@@ -150,13 +197,27 @@ class ModelManager:
         except Exception:
             return {}
 
-    def _save_state(self, commit_hash: str) -> None:
-        state = {
+    def _save_state(self, commit_hash: str, integrity: dict | None = None) -> None:
+        # Merge into existing state so refreshing last_check (e.g. the no-update
+        # path) never drops the recorded integrity fingerprint.
+        state = self._load_state()
+        state.update({
             "last_check":  datetime.now(timezone.utc).isoformat(),
             "commit_hash": commit_hash,
             "filename":    MODEL_FILENAME,
-        }
+        })
+        if integrity is not None:
+            state["integrity"] = integrity
         self._state_path.write_text(json.dumps(state, indent=2), encoding="utf-8")
+
+    def _fingerprint(self) -> dict:
+        """sha256 + size + mtime_ns of the current model file (hashes the file)."""
+        st = self.model_path.stat()
+        return {
+            "sha256":   _sha256_file(self.model_path),
+            "size":     st.st_size,
+            "mtime_ns": st.st_mtime_ns,
+        }
 
     def _check_due(self, state: dict) -> bool:
         raw = state.get("last_check")
@@ -167,6 +228,85 @@ class ModelManager:
             return elapsed > _CHECK_INTERVAL
         except Exception:
             return True
+
+    # ── cached-model integrity ──────────────────────────────────────────────────
+
+    def _verify_integrity(self, verbose: bool) -> None:
+        """
+        Verify the cached model still matches what we downloaded, cheaply.
+
+        The integrity guarantee is the recorded **sha256** — not size/mtime.
+        size+mtime is only a cache-invalidation hint (cheaply forgeable: an
+        attacker can reset mtime and match a byte length), used to decide whether
+        we may *skip* re-reading 4.7 GB. When they're unchanged we trust the file
+        WITHOUT re-hashing (the fast path); when they differ — or when the user
+        sets GREPXCEL_VERIFY_MODEL=full — we recompute the full sha256 and compare.
+        A hash mismatch is fatal (the weights fed to inference are not what we
+        fetched) unless the user opted out via --allow-unverified-model /
+        GREPXCEL_ALLOW_UNVERIFIED_MODEL. A file with no recorded fingerprint
+        (placed manually, or state.json lost) can't be verified — we warn loudly
+        and proceed, since the user may have supplied it deliberately.
+        """
+        state = self._load_state()
+        integ = state.get("integrity") or {}
+        stored_hash = integ.get("sha256")
+
+        # Case C — nothing to compare against (manual file / lost state).
+        if not stored_hash:
+            if not self._allow_unverified:
+                print(
+                    f"  [!] Cannot verify the cached model at {self.model_path}: no "
+                    f"recorded checksum (placed manually, or download state lost).\n"
+                    f"      Proceeding on trust. Delete it to force a verified "
+                    f"re-download, or pass --allow-unverified-model to silence this.",
+                    file=sys.stderr,
+                )
+            return
+
+        st = self.model_path.stat()
+        unchanged = (
+            st.st_size == integ.get("size") and st.st_mtime_ns == integ.get("mtime_ns")
+        )
+
+        # Case A — fast path. size+mtime unchanged AND no full-verify demand:
+        # trust without hashing 4.7 GB. (size+mtime is a hint, never the proof.)
+        if unchanged and not _full_verify_enabled():
+            if verbose:
+                print("Model integrity: unchanged since download.", file=sys.stderr)
+            return
+
+        # Re-hash: either something moved, or GREPXCEL_VERIFY_MODEL=full was set.
+        if verbose:
+            why = "full verification requested" if unchanged else "file changed on disk"
+            print(f"Verifying model checksum ({why})...", file=sys.stderr)
+        actual = _sha256_file(self.model_path)
+
+        # Case B(i) — content matches what we downloaded; refresh the stat hint
+        # if metadata moved (a touch/copy), then proceed.
+        if actual == stored_hash:
+            if not unchanged:
+                self._save_state(state.get("commit_hash", MODEL_REVISION),
+                                 integrity=self._fingerprint())
+            return
+
+        # Case B(ii) — content differs from what we downloaded.
+        msg = (
+            f"cached model at {self.model_path} does not match the checksum "
+            f"recorded at download time (expected {stored_hash[:12]}…, got "
+            f"{actual[:12]}…). The file was modified, corrupted, or replaced."
+        )
+        if self._allow_unverified:
+            print(f"  [!] WARNING: {msg}\n      Continuing because "
+                  f"--allow-unverified-model was set.", file=sys.stderr)
+            return
+        print(
+            f"Error: {msg}\n"
+            f"Refusing to run a tampered/corrupted model. To fix, delete it and "
+            f"re-download:\n    rm {self.model_path}\n"
+            f"Or, if you trust this file, re-run with --allow-unverified-model.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
     # ── remote metadata (lightweight — no model download) ─────────────────────
 
@@ -267,7 +407,10 @@ class ModelManager:
                     watcher.join(timeout=2)
             os.replace(downloaded, str(self.model_path))
 
-        self._save_state(revision)
+        # Record an integrity fingerprint of exactly what we just downloaded
+        # (hf_hub_download already verified the hash against the Hub). Later runs
+        # compare against this to detect post-download tampering/corruption.
+        self._save_state(revision, integrity=self._fingerprint())
 
         if announce:
             print(f"Model ready: {self.model_path}", file=sys.stderr)
