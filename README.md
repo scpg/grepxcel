@@ -217,10 +217,18 @@ ANTHROPIC_API_KEY=sk-... grepxcel draft data.xlsx --backend claude
 
 #### Model cache & offline / alternative downloads
 
-The local model is stored once in a per-user cache:
+The local model is stored once in the platform-appropriate per-user cache
+(resolved with [`platformdirs`](https://pypi.org/project/platformdirs/), the same
+convention pip uses):
 
-- **Default:** `~/.cache/grepxcel/models/` (Linux). Override the location with
-  `GREPXCEL_MODEL_DIR` (handy for Docker volumes or a shared model dir).
+| OS | Default cache |
+|---|---|
+| Linux | `$XDG_CACHE_HOME/grepxcel/models/` (default `~/.cache/grepxcel/models/`) |
+| macOS | `~/Library/Caches/grepxcel/models/` |
+| Windows | `%LOCALAPPDATA%\grepxcel\Cache\models\` |
+
+Override the location with `GREPXCEL_MODEL_DIR` (handy for Docker volumes or a
+shared model dir) — it takes precedence over the defaults above.
 
 If the HuggingFace download is slow or blocked, you don't have to let grepxcel
 fetch it — **grepxcel only downloads when the file isn't already in the cache**,

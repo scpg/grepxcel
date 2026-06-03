@@ -29,6 +29,10 @@ Initial public release.
   API (`--backend claude`),
   with token-cost reporting and a privacy notice for cloud use. (A Gemini backend
   is scaffolded but disabled — planned for a future release.)
+- **Platform-appropriate model cache** — the local model is stored in the
+  per-user cache resolved via `platformdirs` (`~/.cache/grepxcel/models` on Linux,
+  `~/Library/Caches/grepxcel/models` on macOS, `%LOCALAPPDATA%\grepxcel\Cache\models`
+  on Windows; honors `$XDG_CACHE_HOME`). `GREPXCEL_MODEL_DIR` overrides it.
 - **`docs` command** — writes a colour-coded `pattern-reference.xlsx`.
 - **`--version`** flag.
 - **Security hardening** — fail-closed XXE protection (defusedxml asserted),

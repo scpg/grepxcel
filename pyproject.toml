@@ -33,6 +33,7 @@ dependencies = [
 suggest = [
     "llama-cpp-python>=0.2.90",
     "huggingface_hub>=0.23",
+    "platformdirs>=4.0",
 ]
 draft-cloud = [
     "anthropic>=0.40",
