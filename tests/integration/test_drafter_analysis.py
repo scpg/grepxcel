@@ -178,3 +178,28 @@ def test_lbl_literals_appear_in_analysis(fixture_name):
         f'{fixture_name}: {len(missing)} lbl: literal(s) not found in analysis:\n'
         + '\n'.join(f'  - {m!r}' for m in missing)
     )
+
+
+# ─── --sheet selection errors are clean, not tracebacks (Finding 4) ───────────
+
+class TestSheetSelectionErrors:
+    _DATA = os.path.join(_FIXTURES_DIR, '01_simple_invoice', 'data.xlsx')
+
+    def test_out_of_range_index_raises_clean_valueerror(self):
+        with pytest.raises(ValueError, match='out of range'):
+            ExcelAnalyzer(self._DATA, sheet=99).analyse()
+
+    def test_out_of_range_numeric_string_raises_clean_valueerror(self):
+        with pytest.raises(ValueError, match='out of range'):
+            ExcelAnalyzer(self._DATA, sheet='99').analyse()
+
+    def test_unknown_sheet_name_raises_clean_valueerror(self):
+        with pytest.raises(ValueError, match='not found'):
+            ExcelAnalyzer(self._DATA, sheet='NoSuchSheet').analyse()
+
+    def test_drafter_run_returns_1_on_bad_sheet(self):
+        from grepxcel.drafter import PatternDrafter
+        # dry_run avoids needing the model; sheet error happens in analysis.
+        d = PatternDrafter(self._DATA, output_path='/tmp/_x.xlsx',
+                           sheet='NoSuchSheet', dry_run=True)
+        assert d.run() == 1
