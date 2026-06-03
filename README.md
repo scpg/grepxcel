@@ -3,6 +3,7 @@
 > Pattern-based data extraction for Excel — define what to look for, run, get structured JSON.
 
 ![CI](https://github.com/scpg/grepxcel/actions/workflows/ci.yml/badge.svg)
+[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-support-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/scpg.dev)
 
 ---
 
@@ -351,6 +352,14 @@ output/          ← JSON extraction results         (gitignored)
 - `llama-cpp-python >= 0.2.90` and `huggingface_hub >= 0.23` — only for `grepxcel draft`
 
 ---
+
+## Support
+
+grepxcel is free and open source. If it saves you time and you'd like to say thanks,
+you can [buy me a coffee](https://buymeacoffee.com/scpg.dev) ☕ — entirely optional and
+always appreciated.
+
+[![Buy Me A Coffee](https://img.shields.io/badge/Buy%20Me%20A%20Coffee-support-FFDD00?logo=buymeacoffee&logoColor=black)](https://buymeacoffee.com/scpg.dev)
 
 ## Contributing
 

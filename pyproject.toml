@@ -50,6 +50,7 @@ Homepage = "https://github.com/scpg/grepxcel"
 Repository = "https://github.com/scpg/grepxcel"
 Issues = "https://github.com/scpg/grepxcel/issues"
 Changelog = "https://github.com/scpg/grepxcel/blob/main/CHANGELOG.md"
+Funding = "https://buymeacoffee.com/scpg.dev"
 
 [project.scripts]
 grepxcel = "grepxcel.cli:main"
