@@ -33,6 +33,7 @@ dependencies = [
 suggest = [
     "llama-cpp-python>=0.2.90",
     "huggingface_hub>=0.23",
+    "platformdirs>=4.0",
 ]
 draft-cloud = [
     "anthropic>=0.40",
@@ -49,6 +50,7 @@ Homepage = "https://github.com/scpg/grepxcel"
 Repository = "https://github.com/scpg/grepxcel"
 Issues = "https://github.com/scpg/grepxcel/issues"
 Changelog = "https://github.com/scpg/grepxcel/blob/main/CHANGELOG.md"
+Funding = "https://buymeacoffee.com/scpg.dev"
 
 [project.scripts]
 grepxcel = "grepxcel.cli:main"

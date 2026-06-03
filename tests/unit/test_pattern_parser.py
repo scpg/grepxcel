@@ -370,3 +370,42 @@ class TestCellAddressing:
         ], tmp_path)
         _, _, seq = PatternParser().parse(path)
         assert [s.target for s in seq] == ['A1', 'C1', 'B2']
+
+
+# ── ignore.case config ────────────────────────────────────────────────────────
+
+class TestIgnoreCaseConfig:
+    def test_default_is_case_sensitive(self, tmp_path):
+        path = _write_pattern([['var:', 'po.number', 'string', r'PO-\d+']], tmp_path)
+        config, _, _ = PatternParser().parse(path)
+        assert config.ignore_case is False
+
+    @pytest.mark.parametrize('value', ['yes', 'YES', 'true', 'True', '1', 'on', 'y'])
+    def test_truthy_values_enable(self, tmp_path, value):
+        path = _write_pattern([
+            ['config:', 'ignore.case', value],
+            ['var:', 'po.number', 'string', r'PO-\d+'],
+        ], tmp_path)
+        config, _, _ = PatternParser().parse(path)
+        assert config.ignore_case is True
+
+    @pytest.mark.parametrize('value', ['no', 'No', 'false', '0', 'off', 'n', ''])
+    def test_falsy_values_disable(self, tmp_path, value):
+        path = _write_pattern([
+            ['config:', 'ignore.case', value],
+            ['var:', 'po.number', 'string', r'PO-\d+'],
+        ], tmp_path)
+        config, _, _ = PatternParser().parse(path)
+        assert config.ignore_case is False
+
+    def test_table_inherits_global_ignore_case(self, tmp_path):
+        path = _write_pattern([
+            ['config:', 'ignore.case', 'yes'],
+            ['START:'],
+            ['table:*'],
+            [None, 'HEADER:1', 'col_a'],
+            [None, 'DATA:*', 'col_a'],
+        ], tmp_path)
+        _, _, seq = PatternParser().parse(path)
+        table = [s for s in seq if type(s).__name__ == 'TableInstruction'][0]
+        assert table.config.ignore_case is True

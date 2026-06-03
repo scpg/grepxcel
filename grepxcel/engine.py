@@ -475,7 +475,8 @@ class Engine:
         logger.cell_processed(row, col, instr.field, value)
 
         if value is not None:
-            ok, _ = validate_type(value, fd.type, fd.regex, config.currency_sign, self._max_cell_len)
+            ok, _ = validate_type(value, fd.type, fd.regex, config.currency_sign,
+                                  self._max_cell_len, config.ignore_case)
             if not ok:
                 rec = logger.warn_validation(row, col, instr.field, fd.type, fd.regex, value)
                 logger.commit_warnings([rec])
@@ -721,7 +722,8 @@ class Engine:
                         logger.warn_undefined_field(sheet_row, col, tmpl_col.field)
                     )
                 else:
-                    ok, _ = validate_type(val, fd.type, fd.regex, config.currency_sign, self._max_cell_len)
+                    ok, _ = validate_type(val, fd.type, fd.regex, config.currency_sign,
+                                          self._max_cell_len, config.ignore_case)
                     if not ok:
                         if strict:
                             return {}, False  # HEADER/FOOTER: wrong value = no match
@@ -795,7 +797,8 @@ class Engine:
                 continue
             if is_empty(val, config.empty_aliases):
                 return False
-            ok, _ = validate_type(val, fd.type, fd.regex, config.currency_sign, self._max_cell_len)
+            ok, _ = validate_type(val, fd.type, fd.regex, config.currency_sign,
+                                  self._max_cell_len, config.ignore_case)
             if not ok:
                 return False
 

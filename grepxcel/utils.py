@@ -36,14 +36,20 @@ def _safe_match(regex: str, text: str, flags: int = 0,
 
 
 def validate_type(value, field_type: str, regex: str, currency_sign: str = '€',
-                  max_cell_len: int = _MAX_REGEX_INPUT_LEN) -> tuple:
+                  max_cell_len: int = _MAX_REGEX_INPUT_LEN,
+                  ignore_case: bool = False) -> tuple:
     """
     Validate a cell value against a field type and regex.
     Returns (is_valid: bool, reason: str).
+
+    When ignore_case is True, regex matching is case-insensitive
+    (driven by the `config: | ignore.case | yes` pattern setting).
     """
+    icase = re.IGNORECASE if ignore_case else 0
+
     if field_type == 'string':
         str_val = str(value) if value is not None else ''
-        ok = _safe_match(regex, str_val, re.DOTALL, max_cell_len)
+        ok = _safe_match(regex, str_val, re.DOTALL | icase, max_cell_len)
         return ok, ('' if ok else f'{repr(str_val)} does not match /{regex}/')
 
     elif field_type == 'integer':
@@ -55,7 +61,7 @@ def validate_type(value, field_type: str, regex: str, currency_sign: str = '€'
             value = int(value)
         if not isinstance(value, int):
             return False, f'{repr(value)} is not integer type'
-        ok = _safe_match(regex, str(value), max_len=max_cell_len)
+        ok = _safe_match(regex, str(value), icase, max_cell_len)
         return ok, ('' if ok else f'{value} does not match /{regex}/')
 
     elif field_type in ('currency', 'percentage'):
@@ -64,7 +70,7 @@ def validate_type(value, field_type: str, regex: str, currency_sign: str = '€'
         if not isinstance(value, (int, float)):
             return False, f'{repr(value)} is not numeric'
         str_val = str(value)
-        ok = _safe_match(regex, str_val, max_len=max_cell_len)
+        ok = _safe_match(regex, str_val, icase, max_cell_len)
         return ok, ('' if ok else f'{str_val} does not match /{regex}/')
 
     elif field_type in ('date', 'datetime', 'timestamp'):

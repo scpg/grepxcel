@@ -198,7 +198,28 @@ class Logger:
             f'  Errors            : {len(errors)}',
             '─' * 62,
         ]
+        # Consolidated recap of every problem cell, so failures are never lost
+        # in the scrollback of a long run — one clear line per issue.
+        issues = warnings + errors
+        if issues:
+            lines.append('ISSUES (cell — reason):')
+            for rec in issues:
+                lines.append('  ' + self._issue_line(rec))
+            lines.append('─' * 62)
         self._write(VerbosityLevel.NORMAL, '\n'.join(lines))
+
+    def _issue_line(self, rec: LogRecord) -> str:
+        """One concise line summarising a single problem cell for the recap."""
+        mark = '✗' if rec.severity == Severity.ERROR else '⚠'
+        where = rec.location or '(no cell)'
+        field = f' [{rec.field}]' if rec.field else ''
+        if rec.found and rec.expected:
+            detail = f'found {rec.found}, expected {rec.expected}'
+        elif rec.found:
+            detail = f'found {rec.found}'
+        else:
+            detail = rec.message
+        return f'{mark}  {where}{field}  —  {detail}'
 
     # --- Step-by-step (VERBOSE) --------------------------------------------
 

@@ -82,11 +82,30 @@ def _autoupdate_enabled() -> bool:
 def default_cache_dir() -> Path:
     """
     Returns the directory where the model file and state are stored.
-    Override with the GREPXCEL_MODEL_DIR environment variable
-    (useful for Docker / web-service deployments with a mounted volume).
+
+    Resolution order:
+      1. GREPXCEL_MODEL_DIR env var — explicit override (Docker volumes, a shared
+         model dir, web-service deployments).
+      2. The platform-appropriate per-user cache dir via `platformdirs`
+         (the de-facto standard, used by pip/poetry):
+           - Linux:   $XDG_CACHE_HOME/grepxcel/models  (default ~/.cache/grepxcel/models)
+           - macOS:   ~/Library/Caches/grepxcel/models
+           - Windows: %LOCALAPPDATA%\\grepxcel\\Cache\\models
+      3. Fallback (platformdirs not installed): ~/.cache/grepxcel/models.
+
+    On Linux the platformdirs path matches the historical default, so existing
+    caches keep working unchanged.
     """
     base = os.environ.get("GREPXCEL_MODEL_DIR")
-    return Path(base) if base else Path.home() / ".cache" / "grepxcel" / "models"
+    if base:
+        return Path(base)
+    try:
+        from platformdirs import user_cache_dir
+        return Path(user_cache_dir("grepxcel")) / "models"
+    except ImportError:
+        # platformdirs ships in the [suggest] extra; if a caller reaches here
+        # without it, fall back to the XDG-style default that works on Linux.
+        return Path.home() / ".cache" / "grepxcel" / "models"
 
 
 # ── Model manager ─────────────────────────────────────────────────────────────

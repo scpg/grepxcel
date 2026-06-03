@@ -15,6 +15,21 @@ _A1_RE = re.compile(r'^[A-Z]{1,3}[1-9][0-9]*$', re.IGNORECASE)
 _BOUNDED_DATA_RE = re.compile(r'^\{(\d+),(\d+)\}$')
 
 
+_TRUTHY = frozenset({'1', 'true', 'yes', 'on', 'y'})
+_FALSY  = frozenset({'0', 'false', 'no', 'off', 'n', ''})
+
+
+def _truthy(val) -> bool:
+    """Interpret a config cell as a boolean.
+
+    Accepts yes/no, true/false, on/off, 1/0 (case-insensitive). Excel may store
+    the cell as a real bool, so handle that too. Unknown text → False.
+    """
+    if isinstance(val, bool):
+        return val
+    return str(val).strip().lower() in _TRUTHY
+
+
 class PatternError(Exception):
     """Raised when a pattern file contains a structural or ordering error."""
 
@@ -108,6 +123,7 @@ class PatternParser:
                     read_direction=global_config.read_direction,
                     currency_sign=global_config.currency_sign,
                     empty_aliases=list(global_config.empty_aliases),
+                    ignore_case=global_config.ignore_case,
                 )
                 template_rows = []
                 i += 1
@@ -130,6 +146,8 @@ class PatternParser:
                         key, val = sub[2], sub[3]
                         if key == 'read.direction' and val:
                             table_config.read_direction = str(val)
+                        elif key == 'ignore.case' and val is not None:
+                            table_config.ignore_case = _truthy(val)
                         i += 1
                         continue
 
@@ -334,6 +352,8 @@ class PatternParser:
             config.currency_sign = str(val)
         elif key == 'empty.aliases' and val:
             config.empty_aliases.append(str(val))
+        elif key == 'ignore.case' and val is not None:
+            config.ignore_case = _truthy(val)
 
     def _parse_field(self, row, role: str = 'var') -> FieldDef:
         name  = str(row[1]) if row[1] else ''

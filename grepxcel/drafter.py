@@ -38,6 +38,7 @@ In your output, separate columns with ' | ' (space-pipe-space).
 1. Config rows (optional):
    config: | read.direction | LR          (or TD for top-down column scanning)
    config: | currency.sign  | €
+   config: | ignore.case    | no          (yes = case-insensitive regex matching)
 
 2. Label definitions — anchor cells, NEVER written to output JSON:
    lbl: | FieldName | type | regex

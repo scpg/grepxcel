@@ -24,7 +24,7 @@ The pattern file has four row types:
 
 | Row type | Purpose |
 |---|---|
-| `config:` | Global settings: read direction, currency symbol, empty-cell aliases |
+| `config:` | Global settings: read direction, currency symbol, empty-cell aliases, case-insensitive matching (`ignore.case`) |
 | `lbl:` | Anchor label — matched for position, **never written to output JSON** |
 | `var:` | Data field — extracted and written to output JSON |
 | `doc:` | Comment / documentation row — ignored by the engine |
@@ -47,6 +47,56 @@ hand-editing and produces clean git diffs. When writing CSV:
 - Table-template rows start with an **empty first field** (blank column A), e.g. `,HEADER:1,col_a,col_b`.
 - **Quote any regex containing a comma**, e.g. `var,line.qty,integer,"\d{1,3}"`.
 - Plain text only — formulas (a leading `=`) are rejected, exactly as in `.xlsx`.
+
+---
+
+## Writing the match pattern (regex) — the simple version
+
+The last column of a `lbl:` or `var:` row is a **regex**: a little pattern that
+describes *what the cell should look like*. You don't need to know regex to start —
+here's everything most people need.
+
+**Two rules to remember:**
+
+1. **The whole cell must match.** If your pattern is `\d{4}` (four digits), the cell
+   `2026` matches but `2026-05` does **not** (the `-05` is left over). You don't add
+   `^` or `$` anchors — grepxcel does that for you.
+2. **Leave it blank to accept anything.** No pattern in the last column = "any value
+   is fine". For `date`/`datetime` fields, always leave it blank (the type is checked,
+   not the text).
+
+**The building blocks you'll actually use:**
+
+| You want to match… | Write this | Matches |
+|---|---|---|
+| Any value at all | *(leave blank)* or `.*` | anything |
+| A whole number | `\d+` | `7`, `2026`, `100` |
+| Exactly 4 digits | `\d{4}` | `2026` (not `26`) |
+| Between 1 and 3 digits | `\d{1,3}` | `5`, `42`, `999` |
+| Letters only | `[A-Za-z]+` | `Acme` |
+| A code like `PO-2026` | `PO-\d+` | `PO-1`, `PO-2026` |
+| One of a few words | `paid\|unpaid\|pending` | `paid` |
+| A price like `19.99` | `\d+\.\d{2}` | `19.99` |
+
+Cheat-sheet: `\d` = a digit, `[A-Z]` = one capital letter, `+` = "one or more",
+`{4}` = "exactly four", `{1,3}` = "between one and three", `.` = any character,
+`.*` = "anything", `|` = "or".
+
+**Tips for beginners:**
+
+- **Start loose, then tighten.** Begin with a blank pattern (accept anything), run
+  `extract`, see what comes out, then add a pattern only where you need to be strict.
+- **Use `[A-Z]+`, not `([A-Z])+`.** Both look similar, but the bracket form is faster
+  and the parentheses-with-a-`+` form is rejected by grepxcel as unsafe (it can make
+  matching hang). The tool will tell you if you hit this.
+- **Case doesn't matter?** Add one config row at the top of the pattern file:
+  `config: | ignore.case | yes`. Then `PAID`, `Paid`, and `paid` all match the same
+  pattern. (Default is case-sensitive.)
+- **CSV pattern files:** if your pattern contains a comma (like `\d{1,3}`), wrap it in
+  quotes — `"\d{1,3}"` — so the comma isn't read as a new column.
+
+> Under the hood these are standard [Python `re`](https://docs.python.org/3/library/re.html)
+> patterns, so anything from that syntax works if you already know regex.
 
 ---
 
@@ -215,6 +265,43 @@ grepxcel draft data.xlsx --dry-run             # inspect the analysis, no infere
 ANTHROPIC_API_KEY=sk-... grepxcel draft data.xlsx --backend claude
 ```
 
+#### Model cache & offline / alternative downloads
+
+The local model is stored once in the platform-appropriate per-user cache
+(resolved with [`platformdirs`](https://pypi.org/project/platformdirs/), the same
+convention pip uses):
+
+| OS | Default cache |
+|---|---|
+| Linux | `$XDG_CACHE_HOME/grepxcel/models/` (default `~/.cache/grepxcel/models/`) |
+| macOS | `~/Library/Caches/grepxcel/models/` |
+| Windows | `%LOCALAPPDATA%\grepxcel\Cache\models\` |
+
+Override the location with `GREPXCEL_MODEL_DIR` (handy for Docker volumes or a
+shared model dir) — it takes precedence over the defaults above.
+
+If the HuggingFace download is slow or blocked, you don't have to let grepxcel
+fetch it — **grepxcel only downloads when the file isn't already in the cache**,
+so you can supply it yourself from any source:
+
+```bash
+mkdir -p ~/.cache/grepxcel/models            # or your $GREPXCEL_MODEL_DIR
+# download the GGUF anywhere (HF website, a mirror, ModelScope, …), then place it
+# with this EXACT name so grepxcel finds it and skips the download:
+mv Qwen2.5-Coder-7B-Instruct-Q4_K_M.gguf  ~/.cache/grepxcel/models/
+grepxcel draft data.xlsx                     # uses the local file — no download
+```
+
+Other options:
+
+- **Mirror:** `huggingface_hub` honors `HF_ENDPOINT`, e.g.
+  `HF_ENDPOINT=https://hf-mirror.com grepxcel draft data.xlsx` (third-party mirror).
+- **Token:** `HF_TOKEN=hf_...` removes the anonymous rate limit (fastest fix).
+
+> ⚠️ The normal HuggingFace download is **hash-verified** against the pinned
+> revision. A **manually-placed file is not verified** by grepxcel — it trusts
+> whatever is in the cache, so make sure your source is trustworthy.
+
 ---
 
 ## Verbosity levels
@@ -264,6 +351,14 @@ output/          ← JSON extraction results         (gitignored)
 - `llama-cpp-python >= 0.2.90` and `huggingface_hub >= 0.23` — only for `grepxcel draft`
 
 ---
+
+## Support
+
+grepxcel is free and open source. If it saves you time and you'd like to say thanks,
+you can [buy me a coffee](https://buymeacoffee.com/scpg.dev) ☕ — entirely optional and
+always appreciated.
+
+<a href="https://buymeacoffee.com/scpg.dev" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" height="41" width="174"></a>
 
 ## Contributing
 

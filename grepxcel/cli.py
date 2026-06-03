@@ -195,7 +195,7 @@ def _add_draft_subparser(sub) -> None:
         'draft',
         help='Draft a starter pattern file for an Excel file',
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
+        epilog=r"""
 'draft' is an OPTIONAL feature. 'extract' and 'docs' work out of the box; the
 local 'draft' model needs an optional install:
     pip install 'grepxcel[suggest]'      (local model, runs offline)
@@ -214,7 +214,19 @@ backends:
   gemini  Planned for a future release — not yet available.
 
 The Claude backend prints a one-line privacy notice and the per-call token cost.
-Override the local model cache directory with GREPXCEL_MODEL_DIR.
+
+model cache (local backend):
+  Stored once in the per-user cache (platform-appropriate, via platformdirs):
+    Linux    ~/.cache/grepxcel/models/   (honors $XDG_CACHE_HOME)
+    macOS    ~/Library/Caches/grepxcel/models/
+    Windows  %LOCALAPPDATA%\grepxcel\Cache\models\
+  Override the location with GREPXCEL_MODEL_DIR (takes precedence).
+  grepxcel only downloads when the file is missing — to avoid the HuggingFace
+  download you can place the GGUF there yourself (exact filename), from any
+  source. Faster/alternative downloads:
+    HF_TOKEN=hf_...                 remove the anonymous rate limit (fastest fix)
+    HF_ENDPOINT=https://hf-mirror.com   use a mirror
+  Note: a manually-placed file is NOT hash-verified — trust your source.
 
 examples:
   grepxcel draft report.xlsx
