@@ -4,6 +4,9 @@
 
 ![CI](https://github.com/scpg/grepxcel/actions/workflows/ci.yml/badge.svg)
 
+If grepxcel saves you time, you can support it ☕
+<a href="https://buymeacoffee.com/scpg.dev" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" height="32" width="135"></a>
+
 ---
 
 ## What it does
