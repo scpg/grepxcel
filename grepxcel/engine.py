@@ -380,6 +380,7 @@ class Engine:
                        start_sequence: list, logger: Logger) -> dict:
         """Run extraction on a single worksheet. Returns raw flat result dict."""
         _raw = {'cells': {}, 'tables': []}
+        logger.begin_summary_scope()  # scope summary/ISSUES to THIS sheet
         logger.sheet_name = ws.title
         _expand_merged_cells(ws)
         _warn_uncached_formulas(ws, logger)

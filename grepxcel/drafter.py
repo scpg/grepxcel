@@ -265,13 +265,28 @@ class ExcelAnalyzer:
         sheet = self.sheet
         if sheet is None:
             return wb.active
+
+        n = len(wb.worksheets)
+        available = ', '.join(wb.sheetnames)
+
+        def _by_index(idx: int):
+            # Support negative indices; bound-check with a clear message.
+            if -n <= idx < n:
+                return wb.worksheets[idx]
+            raise ValueError(
+                f'Sheet index {idx} is out of range — the workbook has {n} '
+                f'sheet(s) (valid: 0..{n - 1}). Available sheets: {available}'
+            )
+
         if isinstance(sheet, int):
-            return wb.worksheets[sheet]
+            return _by_index(sheet)
         if sheet in wb.sheetnames:
             return wb[sheet]                       # name match wins (incl. "2025")
         if str(sheet).lstrip('-').isdigit():       # numeric string, no such name → index
-            return wb.worksheets[int(sheet)]
-        return wb[sheet]                           # raises KeyError → clear failure
+            return _by_index(int(sheet))
+        raise ValueError(
+            f'Sheet {sheet!r} not found. Available sheets: {available}'
+        )
 
     def _workbook_preamble(self, wb) -> str:
         """List all sheets with dimensions. Empty for single-sheet workbooks."""
@@ -1009,6 +1024,7 @@ class PatternDrafter:
         verbose: bool = False,
         dry_run: bool = False,
         backend: LLMBackend | None = None,
+        allow_unverified: bool = False,
     ):
         self.input_path          = input_path
         self.output_path         = output_path
@@ -1018,6 +1034,7 @@ class PatternDrafter:
         self.verbose             = verbose
         self.dry_run             = dry_run
         self.backend             = backend
+        self.allow_unverified    = allow_unverified
 
     def run(self) -> int:
         """Run the full pipeline. Returns exit code (0 = success, 1 = error)."""
@@ -1041,6 +1058,10 @@ class PatternDrafter:
         except SecurityError as exc:
             print(f'Security error: {exc}', file=sys.stderr)
             return 1
+        except ValueError as exc:
+            # Bad --sheet selection (unknown name / out-of-range index).
+            print(f'Error: {exc}', file=sys.stderr)
+            return 1
 
         if self.verbose or self.dry_run:
             print('\n── Excel analysis ──────────────────────────────', file=sys.stderr)
@@ -1058,7 +1079,9 @@ class PatternDrafter:
             llm_text = self.backend.chat(_SYSTEM_PROMPT, user_prompt)
         else:
             # Default: local GGUF model via llama-cpp-python
-            model_path = ModelManager().ensure_ready(verbose=self.verbose)
+            model_path = ModelManager(
+                allow_unverified=self.allow_unverified,
+            ).ensure_ready(verbose=self.verbose)
             print('Running local model inference...', file=sys.stderr)
             llm_text   = LlamaCppClient(str(model_path)).chat(_SYSTEM_PROMPT, user_prompt)
 

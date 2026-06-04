@@ -118,6 +118,10 @@ class Logger:
         self.level = level
         self.sheet_name = sheet_name
         self._records: list[LogRecord] = []
+        # Index into _records marking where the current sheet's records begin, so
+        # summary()/the ISSUES recap report only *this* sheet's warnings in
+        # --all-sheets mode (records accumulate across sheets for programmatic use).
+        self._summary_start = 0
         self._file = None
         if log_file:
             self._file = open(log_file, 'w', encoding='utf-8')
@@ -172,6 +176,14 @@ class Logger:
             min_level=VerbosityLevel.NORMAL,
         )
 
+    def begin_summary_scope(self) -> None:
+        """Mark the start of a new sheet's records.
+
+        Called per sheet so the summary + ISSUES recap reflect only the current
+        sheet, not warnings accumulated from earlier sheets in --all-sheets mode.
+        """
+        self._summary_start = len(self._records)
+
     def summary(self, result: dict):
         cells_count = len(result.get('cells', {}))
         tables = result.get('tables', [])
@@ -181,8 +193,9 @@ class Logger:
             idx = t['table_index']
             by_group[idx] = by_group.get(idx, 0) + 1
 
-        warnings = [r for r in self._records if r.severity == Severity.WARNING]
-        errors = [r for r in self._records if r.severity == Severity.ERROR]
+        scoped = self._records[self._summary_start:]
+        warnings = [r for r in scoped if r.severity == Severity.WARNING]
+        errors = [r for r in scoped if r.severity == Severity.ERROR]
 
         lines = [
             '',

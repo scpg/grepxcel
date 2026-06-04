@@ -1,11 +1,34 @@
-import re
 import datetime
+import os
+
+# Use the third-party `regex` engine instead of stdlib `re` for one reason:
+# it supports a hard per-match `timeout=`, which stdlib `re` does not. A static
+# ReDoS guard (security.check_regex_safety) can only catch known-dangerous
+# *shapes*; it can never be complete. The timeout is the actual guarantee — no
+# single match can run longer than _REGEX_TIMEOUT_SECONDS, so a catastrophic
+# pattern that slips past the static guard is bounded instead of hanging.
+# `regex` is a superset of `re`, so every pattern users already write still works.
+import regex as _re
 
 _ZERO_WIDTH = set('​‌‍﻿ ')
 
 # Maximum length of a cell value string passed to regex matching.
 # Prevents ReDoS via extremely long cell content against complex patterns.
 _MAX_REGEX_INPUT_LEN = 1_000
+
+# Hard wall-clock bound on a single regex match (seconds). Safe patterns on a
+# <=1000-char cell finish in microseconds; this only ever fires on catastrophic
+# backtracking. Override with GREPXCEL_REGEX_TIMEOUT for unusual workloads.
+def _regex_timeout() -> float:
+    raw = os.environ.get('GREPXCEL_REGEX_TIMEOUT', '').strip()
+    if raw:
+        try:
+            val = float(raw)
+            if val > 0:
+                return val
+        except ValueError:
+            pass
+    return 0.25
 
 
 def is_empty(value, empty_aliases=None) -> bool:
@@ -27,12 +50,20 @@ def is_empty(value, empty_aliases=None) -> bool:
 def _safe_match(regex: str, text: str, flags: int = 0,
                 max_len: int = _MAX_REGEX_INPUT_LEN) -> bool:
     """
-    Run re.fullmatch with a hard cap on input length to prevent ReDoS.
-    Returns False when the text exceeds max_len rather than attempting the match.
+    Run a full-match with two independent ReDoS defenses:
+      1. a hard cap on input length (skip the match entirely if exceeded), and
+      2. a hard per-match wall-clock timeout via the `regex` engine.
+
+    Returns False when the text exceeds max_len, when the match times out
+    (catastrophic backtracking), or when there is simply no match.
     """
     if len(text) > max_len:
         return False
-    return bool(re.fullmatch(regex, text, flags))
+    try:
+        return bool(_re.fullmatch(regex, text, flags, timeout=_regex_timeout()))
+    except TimeoutError:
+        # Catastrophic backtracking — bounded, not hung. Treat as no-match.
+        return False
 
 
 def validate_type(value, field_type: str, regex: str, currency_sign: str = '€',
@@ -45,11 +76,11 @@ def validate_type(value, field_type: str, regex: str, currency_sign: str = '€'
     When ignore_case is True, regex matching is case-insensitive
     (driven by the `config: | ignore.case | yes` pattern setting).
     """
-    icase = re.IGNORECASE if ignore_case else 0
+    icase = _re.IGNORECASE if ignore_case else 0
 
     if field_type == 'string':
         str_val = str(value) if value is not None else ''
-        ok = _safe_match(regex, str_val, re.DOTALL | icase, max_cell_len)
+        ok = _safe_match(regex, str_val, _re.DOTALL | icase, max_cell_len)
         return ok, ('' if ok else f'{repr(str_val)} does not match /{regex}/')
 
     elif field_type == 'integer':
