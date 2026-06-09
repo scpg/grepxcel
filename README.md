@@ -233,6 +233,10 @@ Drafts a starter pattern file for an unseen Excel file using an LLM. The output 
 a *starting point* — review and refine the generated regexes before use.
 `grepxcel suggest` is a backward-compatible alias for this command.
 
+> Curious which model to use, and how good `draft` actually is? See
+> [docs/EVALUATION.md](docs/EVALUATION.md) for the methodology, model
+> comparisons (local vs cloud), and honest notes on where it succeeds and fails.
+
 | Flag | Default | Purpose |
 |---|---|---|
 | `-o FILE` | `draft_pattern.xlsx` | Write draft pattern to this path |
@@ -247,13 +251,21 @@ a *starting point* — review and refine the generated regexes before use.
 
 | Backend | Install | Notes |
 |---|---|---|
-| `local` *(default)* | `python3 scripts/install_llm_deps.py` | Runs Qwen2.5-Coder-7B (GGUF) in-process. **No data leaves your machine.** Model is pinned to a revision and downloaded once (~4.7 GB); set `GREPXCEL_MODEL_AUTOUPDATE=1` to track upstream, `GREPXCEL_MODEL_DIR` to relocate the cache. |
-| `claude` | `pip install -e '.[draft-cloud]'` | Anthropic API. Requires `ANTHROPIC_API_KEY`. Prints a one-line privacy notice and per-call token cost. |
+| `local` *(default)* | `python3 scripts/install_llm_deps.py` | Runs Gemma-4-E4B (GGUF) in-process. **No data leaves your machine.** Model is pinned to a revision and downloaded once (~5 GB); set `GREPXCEL_MODEL_AUTOUPDATE=1` to track upstream, `GREPXCEL_MODEL_DIR` to relocate the cache. |
+| `github` | `pip install -e '.[draft-cloud]'` | **GitHub Models** — free with a GitHub subscription (quota-limited, no per-token charge), and the **highest-quality option** in our eval. Requires `GITHUB_TOKEN` (fine-grained, `Models: read`). Pick a model with `--github-model`, e.g. `openai/gpt-4.1`, `openai/gpt-4o`, `meta/llama-3.3-70b-instruct`. Per-draft token usage + remaining quota are printed. |
+| `claude` | `pip install -e '.[draft-cloud]'` | Anthropic API. Requires `ANTHROPIC_API_KEY`. Prints a one-line privacy notice and per-call token cost (~$0.003–0.04/draft). |
 | `gemini` | — | **Planned for a future release** — not yet available. Selecting it prints a notice and exits. |
+
+Backends read keys from a `.env` file in the project (or any parent) directory,
+so you don't have to export them. Real environment variables take precedence.
+On draft quality (execution-based eval, all fixtures): the free **`github`**
+models (`openai/gpt-4.1`, `openai/gpt-4o`, `meta/llama-3.3-70b-instruct`) lead by
+a wide margin, ahead of the `local` model — see
+[docs/EVALUATION.md](docs/EVALUATION.md).
 
 > **Faster first download (`local` backend):** the model is fetched once from
 > HuggingFace. Anonymous downloads work but are rate-limited and can be slow or
-> stall on the ~4.7 GB file. For a faster, more reliable first run, set a free
+> stall on the ~5 GB file. For a faster, more reliable first run, set a free
 > [HuggingFace token](https://huggingface.co/settings/tokens) (read scope):
 > `HF_TOKEN=hf_... grepxcel draft data.xlsx`. It's optional and one-time — the
 > model is cached afterwards. If a download stalls, grepxcel prints this tip too.
@@ -291,7 +303,7 @@ so you can supply it yourself from any source:
 mkdir -p ~/.cache/grepxcel/models            # or your $GREPXCEL_MODEL_DIR
 # download the GGUF anywhere (HF website, a mirror, ModelScope, …), then place it
 # with this EXACT name so grepxcel finds it and skips the download:
-mv Qwen2.5-Coder-7B-Instruct-Q4_K_M.gguf  ~/.cache/grepxcel/models/
+mv gemma-4-E4B-it-Q4_K_M.gguf  ~/.cache/grepxcel/models/
 grepxcel draft data.xlsx                     # uses the local file — no download
 ```
 
@@ -301,9 +313,13 @@ Other options:
   `HF_ENDPOINT=https://hf-mirror.com grepxcel draft data.xlsx` (third-party mirror).
 - **Token:** `HF_TOKEN=hf_...` removes the anonymous rate limit (fastest fix).
 
-> ⚠️ The normal HuggingFace download is **hash-verified** against the pinned
-> revision. A **manually-placed file is not verified** by grepxcel — it trusts
-> whatever is in the cache, so make sure your source is trustworthy.
+> The normal HuggingFace download is **hash-verified** against the pinned
+> revision. A **manually-placed file is also trusted automatically when its
+> sha256 matches the pinned build** (grepxcel ships the known-good hash, so the
+> trust is portable across machines). A file that doesn't match a known-good
+> hash and has no recorded fingerprint is used on trust with a warning — make
+> sure such a source is trustworthy, or pass `--allow-unverified-model` to
+> silence the warning.
 
 ---
 

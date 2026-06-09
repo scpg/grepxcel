@@ -37,15 +37,18 @@ from pathlib import Path
 # be an immutable commit SHA from https://huggingface.co/<MODEL_REPO_ID>/commits
 # — never a branch name like "main".
 
-# Qwen2.5-Coder-7B-Instruct — the best LOCAL model in our execution-based draft
-# eval (claude-opus is better but cloud-only). It still hits a capability ceiling
-# on the most complex tables, but clearly beats the previous default (Phi-3.5).
-MODEL_REPO_ID    = "bartowski/Qwen2.5-Coder-7B-Instruct-GGUF"
-MODEL_FILENAME   = "Qwen2.5-Coder-7B-Instruct-Q4_K_M.gguf"
-MODEL_REVISION   = "1f629da0c8bed16b9e50cee91c70693650e66c35"  # pinned commit
-MODEL_CHAT_FORMAT = None  # auto-detect from GGUF metadata (Qwen embeds a ChatML template)
+# Gemma-4-E4B-it — the best LOCAL model in our execution-based draft eval
+# (~51% value-recall across all fixtures vs ~42% for the previous default
+# Qwen2.5-Coder-7B). Cloud models and the free GitHub Models backend are still
+# stronger (81-86%); for the highest quality at no dollar cost use
+# `grepxcel draft --backend github`. Gemma 4 is a large generational jump over
+# Gemma 2 on this task. ~5 GB Q4_K_M, comfortable on an 8 GB GPU.
+MODEL_REPO_ID    = "unsloth/gemma-4-E4B-it-GGUF"
+MODEL_FILENAME   = "gemma-4-E4B-it-Q4_K_M.gguf"
+MODEL_REVISION   = "653803f092503c04a65164346f3208a36e707693"  # pinned commit
+MODEL_CHAT_FORMAT = None  # auto-detect from GGUF metadata (Gemma embeds its template)
 
-_SIZE_HINT        = "~4.7 GB"
+_SIZE_HINT        = "~5.0 GB"
 _CHECK_INTERVAL   = 86_400          # seconds — 24 h
 _AUTOUPDATE_ENV   = "GREPXCEL_MODEL_AUTOUPDATE"
 
@@ -62,6 +65,34 @@ _HASH_CHUNK           = 1024 * 1024  # 1 MiB read buffer for hashing
 # file on EVERY run — slower (reads ~4.7 GB each time) but closes the gap where a
 # local attacker overwrites the file with same-size content and resets its mtime.
 _VERIFY_MODE_ENV      = "GREPXCEL_VERIFY_MODEL"
+
+# ── Known-good model hashes (code-pinned trust anchor) ─────────────────────────
+# sha256 == the HuggingFace git-LFS oid of the pinned build (the same value the
+# Hub verifies at download time). Because this lives in the code it is
+# version-controlled, so trust travels between machines and survives a lost or
+# stale local state.json: a cached file whose sha256 matches the entry here is
+# trusted on ANY machine, with no recorded fingerprint required, and a stale
+# state.json is healed automatically. Models not listed here fall back to the
+# per-machine state.json fingerprint (the original behaviour) — that's expected
+# for ad-hoc / experimental models that aren't the shipped default.
+#
+# When bumping the pinned model (MODEL_REVISION / MODEL_FILENAME), update the
+# matching entry here. Fetch the value from the Hub without downloading:
+#   HfApi().get_paths_info(MODEL_REPO_ID, [MODEL_FILENAME], revision=MODEL_REVISION)[0].lfs.sha256
+KNOWN_MODEL_HASHES: dict[str, str] = {
+    # Current default.
+    "gemma-4-E4B-it-Q4_K_M.gguf":
+        "519b9793ed6ce0ff530f1b7c96e848e08e49e7af4d57bb97f76215963a54146d",
+    # Previous default — kept so an already-cached copy stays trusted.
+    "Qwen2.5-Coder-7B-Instruct-Q4_K_M.gguf":
+        "1664fccab734674a50763490a8c6931b70e3f2f8ec10031b54806d30e5f956b6",
+}
+
+
+def _known_hashes_for(filename: str) -> set[str]:
+    """Acceptable sha256(s) for a cached model file from the code-pinned registry."""
+    h = KNOWN_MODEL_HASHES.get(filename)
+    return {h} if h else set()
 
 # Download progress watchdog (multi-GB download → never leave the user blind).
 # huggingface_hub shows a live tqdm bar in a TTY; the watchdog adds (a) periodic
@@ -250,9 +281,36 @@ class ModelManager:
         state = self._load_state()
         integ = state.get("integrity") or {}
         stored_hash = integ.get("sha256")
+        known = _known_hashes_for(MODEL_FILENAME)
 
-        # Case C — nothing to compare against (manual file / lost state).
+        # Case C — no recorded fingerprint (manual file / lost or stale state).
         if not stored_hash:
+            # Code-pinned trust anchor: if we know the good hash for this model,
+            # verify against it directly — no local fingerprint needed, and it
+            # works identically on a fresh machine (the portable case). A match
+            # is silently trusted and recorded; a non-match warns but still
+            # proceeds (a file with no fingerprint may have been placed
+            # deliberately), unless silenced with --allow-unverified-model.
+            if known:
+                actual = _sha256_file(self.model_path)
+                if actual in known:
+                    self._save_state(state.get("commit_hash", MODEL_REVISION),
+                                     integrity=self._fingerprint())
+                    if verbose:
+                        print("Model integrity: matches a known-good release.",
+                              file=sys.stderr)
+                    return
+                if not self._allow_unverified:
+                    print(
+                        f"  [!] Cached model at {self.model_path} has no recorded "
+                        f"checksum and does not match a known-good release "
+                        f"(got {actual[:12]}…).\n"
+                        f"      Proceeding on trust. Delete it to force a verified "
+                        f"re-download, or pass --allow-unverified-model to silence "
+                        f"this.",
+                        file=sys.stderr,
+                    )
+                return
             if not self._allow_unverified:
                 print(
                     f"  [!] Cannot verify the cached model at {self.model_path}: no "
@@ -287,6 +345,18 @@ class ModelManager:
             if not unchanged:
                 self._save_state(state.get("commit_hash", MODEL_REVISION),
                                  integrity=self._fingerprint())
+            return
+
+        # Case B(i-known) — the recorded fingerprint is stale/wrong, but the file
+        # matches a code-pinned known-good release. Trust it and heal the local
+        # record. (This is the cross-machine case: a state.json copied from
+        # another device can record a different build than the authentic file.)
+        if known and actual in known:
+            self._save_state(state.get("commit_hash", MODEL_REVISION),
+                             integrity=self._fingerprint())
+            if verbose:
+                print("Model integrity: matches a known-good release "
+                      "(healed a stale local record).", file=sys.stderr)
             return
 
         # Case B(ii) — content differs from what we downloaded.

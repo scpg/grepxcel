@@ -25,10 +25,16 @@ Initial public release.
   both are read into one common grid representation and behave identically.
 - **`--sheet` / `--all-sheets`** sheet selection.
 - **`draft` command** — drafts a starter pattern for an unseen file using a
-  local GGUF model (Qwen2.5-Coder-7B by default, fully offline) or the Claude
-  API (`--backend claude`),
-  with token-cost reporting and a privacy notice for cloud use. (A Gemini backend
-  is scaffolded but disabled — planned for a future release.)
+  local GGUF model (**Gemma-4-E4B** by default, fully offline), **GitHub Models**
+  (`--backend github`, free with a GitHub subscription — the highest-quality
+  option in our eval), or the Claude API (`--backend claude`), with token-usage /
+  cost reporting and a privacy notice for cloud use. Cloud backends read keys
+  from a `.env` file automatically. (A Gemini backend is scaffolded but disabled
+  — planned for a future release.)
+- **Portable model-trust registry** — `KNOWN_MODEL_HASHES` pins the sha256 of
+  the bundled model in code, so a cached or manually-placed file matching the
+  known-good build is trusted on any machine (and a stale local trust record is
+  healed automatically), without re-downloading.
 - **Platform-appropriate model cache** — the local model is stored in the
   per-user cache resolved via `platformdirs` (`~/.cache/grepxcel/models` on Linux,
   `~/Library/Caches/grepxcel/models` on macOS, `%LOCALAPPDATA%\grepxcel\Cache\models`
