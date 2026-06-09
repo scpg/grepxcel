@@ -259,7 +259,7 @@ class TestCachedModelIntegrity:
 
     def test_fast_path_trusts_unchanged_file_without_hashing(self, tmp_path, monkeypatch):
         m, _ = self._model_with_fingerprint(tmp_path)
-        # Unchanged size+mtime must NOT trigger a re-hash of the 4.7 GB file.
+        # Unchanged size+mtime must NOT trigger a re-hash of the multi-GB file.
         monkeypatch.setattr(
             mm, "_sha256_file",
             lambda *_: pytest.fail("fast path should not re-hash an unchanged file"),

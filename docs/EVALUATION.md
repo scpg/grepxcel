@@ -71,45 +71,45 @@ high value-recall is a naming difference, not a defect.
 
 ---
 
-## Findings (representative subset: fixtures 01, 02, 03, 05, 09)
+## Findings (full set — all 17 fixtures, value-recall)
 
-### Local models, current code
+| Rank | Model | Backend | Value-recall | Fixtures ≥99% | $ |
+|---|---|---|---|---|---|
+| 1 | `openai/gpt-4.1` | github | **86%** | 12/17 | free |
+| 1 | `mistral-ai/codestral-2501` | github | **86%** | 12/17 | free |
+| 3 | `openai/gpt-4o` | github | 83% | 12/17 | free |
+| 4 | `meta/llama-3.3-70b-instruct` | github | 81% | 12/17 | free |
+| 5 | **gemma-4-e4b** *(default local)* | local | 51% | 8/16 | free |
+| 6 | qwen-coder-7b *(previous default)* | local | 42% | 5/15 | free |
+| — | `deepseek/deepseek-v3-0324` | github | *rate-limited, partial* | — | free |
 
-| Fixture | Layout | qwen-coder-7b | gemma-4-e4b |
-|---|---|---|---|
-| 01_simple_invoice | key-value | 100% | 100% |
-| 02_product_catalog | table | 100% | 0% |
-| 03_purchase_order | mixed | 33% | 100% |
-| 05_expense_report | tables | 10% | 0% |
-| 09_sales_by_region | table | 100% | 100% |
-| **value-recall avg** | | **~69%** | **~60%** |
-
-(Values are value-recall. The corresponding key-scores averaged ~20% and ~18%
-respectively — a stark illustration of how much the strict metric understates
-extraction quality.)
+The whole benchmark cost **$0.00** (GitHub Models is free with a subscription;
+local runs on your GPU).
 
 Takeaways:
 
-- **qwen-coder-7b** (the shipped default) and **gemma-4-e4b** are roughly
-  comparable and far more capable than key-score suggests. They differ on *which*
-  fixtures they nail rather than on overall strength.
-- **Gemma 4 is a generational leap over Gemma 2.** The older `gemma-2-9b` scored
-  ~0% across the board in earlier runs; `gemma-4-e4b` is now a credible local
-  option at a similar (~5 GB) footprint.
-- Genuine failures remain (e.g. `gemma-4-e4b` on `02`/`05`) — these are real,
-  not naming artefacts (value-recall is also 0%).
+- **The free GitHub Models backend wins by a wide margin.** The four large
+  GitHub models (81–86%) clearly beat the local models (42–51%), at no dollar
+  cost. For the best quality, use `grepxcel draft --backend github`
+  (`--github-model openai/gpt-4.1` or `openai/gpt-4o`).
+- **`codestral` (a code model) tied `gpt-4.1` for first** — drafting a structured
+  pattern is a code-like task, so this fits.
+- **`gemma-4-e4b` is the best *local* model** (the shipped default), ahead of the
+  previous default `qwen-coder-7b` by ~9 points, at a similar ~5 GB footprint.
+  **Gemma 4 is a generational leap over Gemma 2** (`gemma-2-9b` scored ~0%).
+- **`deepseek-v3` is not usable for bulk via GitHub** — its tight quota window
+  throttles rapid runs (`Too many requests`).
+- An earlier 5-fixture subset over-flattered the local models (qwen ~69%) because
+  it excluded the hard fixtures; the full set above is the honest picture.
 
-### Cloud models
+For the hardest real-world tables, the capable cloud/GitHub models extract
+end-to-end where local models stall — e.g. the messy 9-column Bundesliga
+schedule (empty `split` column) is extracted in full by GPT-4o and Claude Opus,
+while local models produce structurally close but non-extracting patterns.
 
-For the hardest real-world tables, capable cloud models extract end-to-end where
-local 7B-class models stall. `claude-opus-4-8` handled a messy 9-column
-Bundesliga schedule (merged-cell banners removed, an empty `split` column) and
-extracted all 306 rows; the local models produced structurally close but
-non-extracting patterns. Indicative cost: **~$0.02–0.04 per draft** for Opus.
-
-Rough cloud ordering (quality, and cost per 1M tokens): `claude-opus-4-8`
-(\$5/\$25) > `claude-sonnet-4-6` (\$3/\$15) ≈ `claude-haiku-4-5` (\$1/\$5).
-Gemini backends exist in code but require GCP billing to be enabled.
+Anthropic `claude` backend (metered) ordering and cost per 1M tokens:
+`claude-opus-4-8` (\$5/\$25) > `claude-sonnet-4-6` (\$3/\$15) ≈ `claude-haiku-4-5`
+(\$1/\$5); ~$0.003–0.04 per draft. Gemini exists in code but needs GCP billing.
 
 ---
 
@@ -133,11 +133,14 @@ two patterns extract the same information?" rather than exact key equality.
 
 ## Practical guidance
 
-- **Default local model:** `qwen-coder-7b` — strong on key-value layouts, decent
-  on tables, runs offline. `gemma-4-e4b` is a fair alternative worth trying.
-- **Hard or unfamiliar tables:** use `--backend claude` (Opus for the toughest
-  cases). It is the most reliable path to a working pattern on messy input, at a
-  few cents per draft.
+- **Best quality, free:** `--backend github --github-model openai/gpt-4.1`
+  (or `openai/gpt-4o`). Free with a GitHub subscription, and the strongest
+  results in this eval. Needs `GITHUB_TOKEN` with `Models: read`.
+- **Fully offline / no account:** the default `local` backend (`gemma-4-e4b`) —
+  best of the local models, runs on your machine, nothing leaves it.
+- **Metered alternative:** `--backend claude` (Opus for the toughest cases) — a
+  few cents per draft; use it if you prefer Anthropic or have no GitHub access.
+- **Avoid for bulk:** `deepseek-v3` via GitHub (rate-limited).
 - **Always expect to rename fields** in the drafted pattern. The model gets the
   structure and values; the names are yours to set.
 - A draft is a *starting point*, not a finished pattern — open it, fix regexes

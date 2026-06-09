@@ -203,17 +203,23 @@ local 'draft' model needs an optional install:
 If a dependency is missing, grepxcel tells you exactly what to install.
 
 backends:
-  local   (default) Run a local GGUF model via llama-cpp-python.
+  local   (default) Run a local GGUF model (Gemma-4-E4B) via llama-cpp-python.
           Needs:  pip install 'grepxcel[suggest]'
-          Model is downloaded automatically on first run (~4.7 GB).
+          Model is downloaded automatically on first run (~5 GB).
           No data leaves your machine during inference.
+  github  Send the Excel structure description to GitHub Models (free with a
+          GitHub subscription, quota-limited). Highest draft quality in our eval.
+          Needs GITHUB_TOKEN (Models: read) and pip install 'grepxcel[draft-cloud]'.
+          Choose a model with --github-model (e.g. openai/gpt-4.1, openai/gpt-4o).
   claude  Send the Excel structure description to the Claude API.
           Needs ANTHROPIC_API_KEY and pip install 'grepxcel[draft-cloud]'.
           The raw file is NOT transmitted — only column types, sample
           values, and labels are sent.
   gemini  Planned for a future release — not yet available.
 
-The Claude backend prints a one-line privacy notice and the per-call token cost.
+Keys are read from a .env file (current dir or any parent) if present.
+The cloud backends print the per-call token usage; github also prints the
+remaining quota, claude prints the per-call dollar cost.
 
 model cache (local backend):
   Stored once in the per-user cache (platform-appropriate, via platformdirs):

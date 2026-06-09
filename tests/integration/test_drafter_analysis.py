@@ -21,7 +21,7 @@ Option C (pipeline smoke — not yet implemented here)
 
 Option D (full LLM similarity — manual QA only)
     Run the real model, check that the draft is structurally valid.  Not suitable
-    for CI: slow per fixture × 15 fixtures, non-deterministic, requires a ~4.7 GB
+    for CI: slow per fixture × 15 fixtures, non-deterministic, requires a ~5 GB
     model download.
 
 Option E (future — semantic / vector similarity)

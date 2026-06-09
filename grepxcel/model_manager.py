@@ -37,15 +37,18 @@ from pathlib import Path
 # be an immutable commit SHA from https://huggingface.co/<MODEL_REPO_ID>/commits
 # — never a branch name like "main".
 
-# Qwen2.5-Coder-7B-Instruct — the best LOCAL model in our execution-based draft
-# eval (claude-opus is better but cloud-only). It still hits a capability ceiling
-# on the most complex tables, but clearly beats the previous default (Phi-3.5).
-MODEL_REPO_ID    = "bartowski/Qwen2.5-Coder-7B-Instruct-GGUF"
-MODEL_FILENAME   = "Qwen2.5-Coder-7B-Instruct-Q4_K_M.gguf"
-MODEL_REVISION   = "1f629da0c8bed16b9e50cee91c70693650e66c35"  # pinned commit
-MODEL_CHAT_FORMAT = None  # auto-detect from GGUF metadata (Qwen embeds a ChatML template)
+# Gemma-4-E4B-it — the best LOCAL model in our execution-based draft eval
+# (~51% value-recall across all fixtures vs ~42% for the previous default
+# Qwen2.5-Coder-7B). Cloud models and the free GitHub Models backend are still
+# stronger (81-86%); for the highest quality at no dollar cost use
+# `grepxcel draft --backend github`. Gemma 4 is a large generational jump over
+# Gemma 2 on this task. ~5 GB Q4_K_M, comfortable on an 8 GB GPU.
+MODEL_REPO_ID    = "unsloth/gemma-4-E4B-it-GGUF"
+MODEL_FILENAME   = "gemma-4-E4B-it-Q4_K_M.gguf"
+MODEL_REVISION   = "653803f092503c04a65164346f3208a36e707693"  # pinned commit
+MODEL_CHAT_FORMAT = None  # auto-detect from GGUF metadata (Gemma embeds its template)
 
-_SIZE_HINT        = "~4.7 GB"
+_SIZE_HINT        = "~5.0 GB"
 _CHECK_INTERVAL   = 86_400          # seconds — 24 h
 _AUTOUPDATE_ENV   = "GREPXCEL_MODEL_AUTOUPDATE"
 
@@ -77,6 +80,10 @@ _VERIFY_MODE_ENV      = "GREPXCEL_VERIFY_MODEL"
 # matching entry here. Fetch the value from the Hub without downloading:
 #   HfApi().get_paths_info(MODEL_REPO_ID, [MODEL_FILENAME], revision=MODEL_REVISION)[0].lfs.sha256
 KNOWN_MODEL_HASHES: dict[str, str] = {
+    # Current default.
+    "gemma-4-E4B-it-Q4_K_M.gguf":
+        "519b9793ed6ce0ff530f1b7c96e848e08e49e7af4d57bb97f76215963a54146d",
+    # Previous default — kept so an already-cached copy stays trusted.
     "Qwen2.5-Coder-7B-Instruct-Q4_K_M.gguf":
         "1664fccab734674a50763490a8c6931b70e3f2f8ec10031b54806d30e5f956b6",
 }
