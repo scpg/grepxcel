@@ -233,6 +233,10 @@ Drafts a starter pattern file for an unseen Excel file using an LLM. The output 
 a *starting point* — review and refine the generated regexes before use.
 `grepxcel suggest` is a backward-compatible alias for this command.
 
+> Curious which model to use, and how good `draft` actually is? See
+> [docs/EVALUATION.md](docs/EVALUATION.md) for the methodology, model
+> comparisons (local vs cloud), and honest notes on where it succeeds and fails.
+
 | Flag | Default | Purpose |
 |---|---|---|
 | `-o FILE` | `draft_pattern.xlsx` | Write draft pattern to this path |
