@@ -76,14 +76,14 @@ _FULL_FIXTURES: list[str] = [
 # These are genuinely hard cases (labels embedded in table rows, not KV pairs)
 # tracked separately from grepxcel correctness.
 _LBL_ANALYSIS_XFAIL: set[str] = {
-    '04_excel_template_invoce',  # Vertex42 template: table column headers not surfaced by analyser
+    '17_excel_template_invoice',  # Vertex42 template: table column headers not surfaced by analyser
 }
 
 # Some fixtures require a non-active sheet to match the reference pattern.
 _SHEET_OVERRIDES: dict[str, str | int] = {
     '12_multi_sheet': 'Details',
     '06_merged_cells': '2025',   # reference pattern targets the '2025' sheet
-    '04_excel_template_invoce': 'Invoice',  # active sheet is 'About'; pattern targets 'Invoice'
+    '17_excel_template_invoice': 'Invoice',  # active sheet is 'About'; pattern targets 'Invoice'
 }
 
 

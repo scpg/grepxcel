@@ -784,11 +784,15 @@ class TestOutputShape:
             'vendor': {'name': 'Acme'},
         }
 
-    def test_empty_pattern_returns_empty_dict(self, tmp_path):
-        result = _ok(
+    def test_empty_start_block_is_fatal(self, tmp_path):
+        # Hardened behavior: an empty START: … END: block defines no extraction
+        # steps, so the engine treats it as a fatal error rather than silently
+        # returning {}. The partial result is still an empty dict.
+        result, lg = _run(
             [['START:'], ['END:']],
             {'A1': 'ignored'}, tmp_path,
         )
+        assert lg.has_errors()
         assert result == {}
 
     def test_all_null_values_still_nested(self, tmp_path):

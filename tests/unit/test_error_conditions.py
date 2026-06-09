@@ -480,3 +480,301 @@ class TestRegressionGuards:
         )
         assert not lg.has_errors()
         assert len(lg.issues()) == 0
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# HARDENED PATTERN SANITY VALIDATION
+#   A pattern file is ALWAYS sanity-checked. Malformed patterns must be trapped
+#   (PatternError at parse, or a fatal engine error) — never silently tolerated.
+# ═════════════════════════════════════════════════════════════════════════════
+
+class TestUnknownFieldType:
+    """A var:/lbl: type outside the engine's known set is rejected at parse."""
+
+    def test_typo_type_rejected(self, tmp_path):
+        path = _write_pattern([
+            ['var:', 'x.v', 'currncy', '.*'],     # typo for 'currency'
+            ['START:'], ['cell:A1', 'x.v'], ['END:'],
+        ], tmp_path)
+        with pytest.raises(PatternError, match='Unknown field type'):
+            PatternParser().parse(path)
+
+    @pytest.mark.parametrize('type_name', [
+        'string', 'text', 'integer', 'number', 'float', 'decimal',
+        'currency', 'percentage', 'boolean', 'bool',
+        'date', 'datetime', 'timestamp',
+    ])
+    def test_all_valid_types_accepted(self, tmp_path, type_name):
+        path = _write_pattern([
+            ['var:', 'x.v', type_name, '.*'],
+            ['START:'], ['cell:A1', 'x.v'], ['END:'],
+        ], tmp_path)
+        _, defs, _ = PatternParser().parse(path)
+        assert defs['x.v'].type == type_name
+
+
+class TestMissingFieldName:
+    """var:/lbl: rows must name a field."""
+
+    def test_var_without_name_rejected(self, tmp_path):
+        path = _write_pattern([
+            ['var:', None, 'string', '.*'],
+            ['START:'], ['cell:A1', 'IGNORE'], ['END:'],
+        ], tmp_path)
+        with pytest.raises(PatternError, match='no field name'):
+            PatternParser().parse(path)
+
+    def test_lbl_without_name_rejected(self, tmp_path):
+        path = _write_pattern([
+            ['lbl:', None, 'string', 'X'],
+            ['START:'], ['cell:A1', 'IGNORE'], ['END:'],
+        ], tmp_path)
+        with pytest.raises(PatternError, match='no field name'):
+            PatternParser().parse(path)
+
+
+class TestEmptyExtractionSequence:
+    """A pattern that defines no extraction steps is a fatal engine error
+    (covers: missing START:, empty file, END: before START:, empty block)."""
+
+    def test_missing_start_marker_is_fatal(self, tmp_path):
+        lg = _engine_run(
+            [['var:', 'x.v', 'string', '.*'], ['cell:A1', 'x.v'], ['END:']],
+            {'A1': 'val'}, tmp_path,
+        )
+        assert lg.has_errors()
+
+    def test_empty_pattern_is_fatal(self, tmp_path):
+        lg = _engine_run([], {'A1': 'val'}, tmp_path)
+        assert lg.has_errors()
+
+    def test_end_before_start_is_fatal(self, tmp_path):
+        lg = _engine_run(
+            [['var:', 'x.v', 'string', '.*'],
+             ['END:'], ['START:'], ['cell:A1', 'x.v']],
+            {'A1': 'val'}, tmp_path,
+        )
+        assert lg.has_errors()
+
+    def test_empty_start_block_is_fatal(self, tmp_path):
+        lg = _engine_run([['START:'], ['END:']], {'A1': 'val'}, tmp_path)
+        assert lg.has_errors()
+
+
+class TestTableStructureRules:
+    """DATA is required; HEADER must precede DATA; FOOTER must follow DATA."""
+
+    def test_empty_table_block_rejected(self, tmp_path):
+        # Previously crashed with IndexError — must be a clean PatternError now.
+        path = _write_pattern([
+            ['START:'], ['table:*'], ['END:'],
+        ], tmp_path)
+        with pytest.raises(PatternError, match='no DATA row'):
+            PatternParser().parse(path)
+
+    def test_table_without_data_rejected(self, tmp_path):
+        path = _write_pattern([
+            ['lbl:', 'h', 'string', 'H'],
+            ['START:'], ['table:*'],
+            [None, 'HEADER:1', 'h'],            # HEADER but no DATA
+            ['END:'],
+        ], tmp_path)
+        with pytest.raises(PatternError, match='no DATA row'):
+            PatternParser().parse(path)
+
+    def test_header_after_data_rejected(self, tmp_path):
+        path = _write_pattern([
+            ['lbl:', 'h', 'string', 'H'], ['var:', 'd', 'string', '.*'],
+            ['START:'], ['table:*'],
+            [None, 'DATA:*', 'd'],
+            [None, 'HEADER:1', 'h'],            # HEADER after DATA
+            ['END:'],
+        ], tmp_path)
+        with pytest.raises(PatternError, match='HEADER row after a DATA row'):
+            PatternParser().parse(path)
+
+    def test_footer_before_data_rejected(self, tmp_path):
+        path = _write_pattern([
+            ['var:', 'd', 'string', '.*'], ['var:', 'f', 'string', '.*'],
+            ['START:'], ['table:*'],
+            [None, 'FOOTER:1', 'f'],            # FOOTER before DATA
+            [None, 'DATA:*', 'd'],
+            ['END:'],
+        ], tmp_path)
+        with pytest.raises(PatternError, match='FOOTER row before a DATA row'):
+            PatternParser().parse(path)
+
+    def test_data_only_table_accepted(self, tmp_path):
+        path = _write_pattern([
+            ['var:', 'd', 'string', '.*'],
+            ['START:'], ['table:*'],
+            [None, 'DATA:*', 'd'],
+            ['END:'],
+        ], tmp_path)
+        _, _, seq = PatternParser().parse(path)
+        assert len(seq) == 1
+
+    def test_header_data_footer_in_order_accepted(self, tmp_path):
+        path = _write_pattern([
+            ['lbl:', 'h', 'string', 'H'],
+            ['var:', 'd', 'string', '.*'], ['var:', 'f', 'string', '.*'],
+            ['START:'], ['table:*'],
+            [None, 'HEADER:1', 'h'],
+            [None, 'DATA:*', 'd'],
+            [None, 'FOOTER:1', 'f'],
+            ['END:'],
+        ], tmp_path)
+        _, _, seq = PatternParser().parse(path)
+        assert len(seq) == 1
+
+
+class TestMultiplicityValidation:
+    """table:/DATA:/HEADER:/FOOTER: multiplicities and row keywords are validated."""
+
+    def test_bad_table_multiplicity_rejected(self, tmp_path):
+        path = _write_pattern([
+            ['var:', 'd', 'string', '.*'],
+            ['START:'], ['table:foo'],
+            [None, 'DATA:*', 'd'], ['END:'],
+        ], tmp_path)
+        with pytest.raises(PatternError, match='Invalid table multiplicity'):
+            PatternParser().parse(path)
+
+    def test_bad_data_multiplicity_rejected(self, tmp_path):
+        path = _write_pattern([
+            ['var:', 'd', 'string', '.*'],
+            ['START:'], ['table:*'],
+            [None, 'DATA:xyz', 'd'], ['END:'],
+        ], tmp_path)
+        with pytest.raises(PatternError, match='Invalid DATA multiplicity'):
+            PatternParser().parse(path)
+
+    def test_bad_header_multiplicity_rejected(self, tmp_path):
+        path = _write_pattern([
+            ['lbl:', 'h', 'string', 'H'], ['var:', 'd', 'string', '.*'],
+            ['START:'], ['table:*'],
+            [None, 'HEADER:foo', 'h'],
+            [None, 'DATA:*', 'd'], ['END:'],
+        ], tmp_path)
+        with pytest.raises(PatternError, match='Invalid HEADER multiplicity'):
+            PatternParser().parse(path)
+
+    def test_unknown_row_type_rejected(self, tmp_path):
+        path = _write_pattern([
+            ['lbl:', 'h', 'string', 'H'], ['var:', 'd', 'string', '.*'],
+            ['START:'], ['table:*'],
+            [None, 'HEDER:1', 'h'],             # typo for HEADER
+            [None, 'DATA:*', 'd'], ['END:'],
+        ], tmp_path)
+        with pytest.raises(PatternError, match='Unknown table row type'):
+            PatternParser().parse(path)
+
+    def test_table_numeric_multiplicity_accepted(self, tmp_path):
+        path = _write_pattern([
+            ['var:', 'd', 'string', '.*'],
+            ['START:'], ['table:2'],
+            [None, 'DATA:*', 'd'], ['END:'],
+        ], tmp_path)
+        _, _, seq = PatternParser().parse(path)
+        assert seq[0].multiplicity == '2'
+
+
+class TestRegexSanity:
+    """Pattern regexes are checked for compilability and ReDoS safety."""
+
+    def test_malformed_regex_rejected(self, tmp_path):
+        path = _write_pattern([
+            ['var:', 'x.v', 'string', '[A-'],   # unterminated character class
+            ['START:'], ['cell:A1', 'x.v'], ['END:'],
+        ], tmp_path)
+        with pytest.raises(SecurityError, match='Invalid regex'):
+            PatternParser().parse(path)
+
+    def test_redos_pattern_rejected(self, tmp_path):
+        path = _write_pattern([
+            ['var:', 'x.v', 'string', r'(a+)+$'],   # classic nested-quantifier ReDoS
+            ['START:'], ['cell:A1', 'x.v'], ['END:'],
+        ], tmp_path)
+        with pytest.raises(SecurityError, match='nested unbounded quantifiers'):
+            PatternParser().parse(path)
+
+
+class TestNewFieldTypesEndToEnd:
+    """number/float/decimal, text, and boolean validate correctly end-to-end."""
+
+    def test_number_accepts_float(self, tmp_path):
+        lg = _engine_run(
+            [['var:', 'm.v', 'number', r'.*'],
+             ['START:'], ['cell:A1', 'm.v'], ['END:']],
+            {'A1': 3.5}, tmp_path,
+        )
+        assert not lg.has_errors()
+        assert lg.issues() == []
+
+    def test_number_rejects_text(self, tmp_path):
+        lg = _engine_run(
+            [['var:', 'm.v', 'number', r'.*'],
+             ['START:'], ['cell:A1', 'm.v'], ['END:']],
+            {'A1': 'not a number'}, tmp_path,
+        )
+        assert not lg.has_errors()
+        assert len(lg.issues()) == 1            # validation warning, not fatal
+
+    def test_boolean_accepts_bool(self, tmp_path):
+        lg = _engine_run(
+            [['var:', 'b.v', 'boolean', r'.*'],
+             ['START:'], ['cell:A1', 'b.v'], ['END:']],
+            {'A1': True}, tmp_path,
+        )
+        assert not lg.has_errors()
+        assert lg.issues() == []
+
+    def test_boolean_rejects_number(self, tmp_path):
+        lg = _engine_run(
+            [['var:', 'b.v', 'boolean', r'.*'],
+             ['START:'], ['cell:A1', 'b.v'], ['END:']],
+            {'A1': 5}, tmp_path,
+        )
+        assert not lg.has_errors()
+        assert len(lg.issues()) == 1
+
+    def test_text_alias_behaves_like_string(self, tmp_path):
+        lg = _engine_run(
+            [['var:', 't.v', 'text', r'[A-Z]+'],
+             ['START:'], ['cell:A1', 't.v'], ['END:']],
+            {'A1': 'ABC'}, tmp_path,
+        )
+        assert not lg.has_errors()
+        assert lg.issues() == []
+
+
+class TestSheetDimensionLimits:
+    """The data sheet must fit within the configured row/column limits; an
+    oversized sheet fails cleanly and the limit can be raised."""
+
+    _PAT = [['var:', 'x.v', 'string', '.*'],
+            ['START:'], ['cell:A1', 'x.v'], ['END:']]
+
+    def _run(self, data_cells, tmp_path, max_rows, max_cols):
+        pat = _write_pattern(self._PAT, tmp_path)
+        dat = _write_data(data_cells, tmp_path)
+        lg = Logger(level=VerbosityLevel.QUIET)
+        Engine().process(pat, dat, logger=lg, max_rows=max_rows, max_cols=max_cols)
+        return lg
+
+    def test_too_many_rows_is_fatal(self, tmp_path):
+        lg = self._run({'A1': 'v', 'A6': 'x'}, tmp_path, max_rows=5, max_cols=100)
+        assert lg.has_errors()
+
+    def test_too_many_columns_is_fatal(self, tmp_path):
+        lg = self._run({'A1': 'v', 'E1': 'x'}, tmp_path, max_rows=100, max_cols=3)
+        assert lg.has_errors()
+
+    def test_within_limits_ok(self, tmp_path):
+        lg = self._run({'A1': 'v'}, tmp_path, max_rows=100, max_cols=100)
+        assert not lg.has_errors()
+
+    def test_raised_limit_allows_larger_sheet(self, tmp_path):
+        # The same sheet that failed at max_rows=5 passes once the limit is raised.
+        lg = self._run({'A1': 'v', 'A6': 'x'}, tmp_path, max_rows=10, max_cols=100)
+        assert not lg.has_errors()

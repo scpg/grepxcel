@@ -13,10 +13,26 @@ _MAX_PATTERN_CELL_LEN = 1_000  # max characters in any pattern file cell value
 
 _A1_RE = re.compile(r'^[A-Z]{1,3}[1-9][0-9]*$', re.IGNORECASE)
 _BOUNDED_DATA_RE = re.compile(r'^\{(\d+),(\d+)\}$')
+_POSINT_RE = re.compile(r'^[1-9][0-9]*$')
+
+# Recognised template-row keywords inside a table: block.
+_VALID_TABLE_ROW_TYPES = frozenset({'HEADER', 'DATA', 'FOOTER', 'SPLITTER', 'SKIP_IF'})
 
 
 _TRUTHY = frozenset({'1', 'true', 'yes', 'on', 'y'})
 _FALSY  = frozenset({'0', 'false', 'no', 'off', 'n', ''})
+
+# Field types the engine knows how to validate (see utils.validate_type).
+# Keep this in lockstep with that function — a name here that it can't handle
+# would parse cleanly but make every value fail validation.
+_VALID_FIELD_TYPES = frozenset({
+    'string', 'text',
+    'integer',
+    'number', 'float', 'decimal',
+    'currency', 'percentage',
+    'boolean', 'bool',
+    'date', 'datetime', 'timestamp',
+})
 
 
 def _truthy(val) -> bool:
@@ -83,10 +99,10 @@ class PatternParser:
                 if col_a == 'config:':
                     self._apply_global_config(row, global_config)
                 elif col_a in ('def:', 'var:'):
-                    fd = self._parse_field(row, role='var')
+                    fd = self._parse_field(row, role='var', row_num=i + 1)
                     defs[fd.name] = fd
                 elif col_a == 'lbl:':
-                    fd = self._parse_field(row, role='lbl')
+                    fd = self._parse_field(row, role='lbl', row_num=i + 1)
                     defs[fd.name] = fd
                 elif col_a in ('doc:', 'info:'):
                     pass  # inline documentation — ignored by engine
@@ -119,6 +135,13 @@ class PatternParser:
 
             elif col_a and col_a.startswith('table:'):
                 mult = col_a.split(':', 1)[1]
+                # table:<mult> must be '*' or a positive instance count.
+                if mult != '*' and not _POSINT_RE.match(mult):
+                    raise PatternError(
+                        f"Invalid table multiplicity 'table:{mult}' at pattern row "
+                        f"{i + 1}. Use 'table:*' (all instances) or a positive "
+                        f"count like 'table:1'."
+                    )
                 table_config = Config(
                     read_direction=global_config.read_direction,
                     currency_sign=global_config.currency_sign,
@@ -162,6 +185,34 @@ class PatternParser:
                             row_mult = ''
                         else:
                             row_type, row_mult = sub_b_str.rsplit(':', 1)
+
+                        # Reject typo'd row keywords (e.g. 'HEDER:1') — otherwise
+                        # they would be silently dropped by the engine.
+                        if row_type not in _VALID_TABLE_ROW_TYPES:
+                            raise PatternError(
+                                f"Unknown table row type {sub_b_str!r} at pattern "
+                                f"row {i + 1}. Valid row types: "
+                                f"{', '.join(sorted(_VALID_TABLE_ROW_TYPES))}."
+                            )
+
+                        # Validate the multiplicity for each row type.
+                        #   DATA            → '*', positive int, or '{n,m}'
+                        #   HEADER/FOOTER/SPLITTER → a positive int (e.g. ':1')
+                        if row_type == 'DATA':
+                            if not (row_mult == '*' or _POSINT_RE.match(row_mult)
+                                    or _BOUNDED_DATA_RE.match(row_mult)):
+                                raise PatternError(
+                                    f"Invalid DATA multiplicity 'DATA:{row_mult}' at "
+                                    f"pattern row {i + 1}. Use 'DATA:*', 'DATA:1', or "
+                                    f"a bounded 'DATA:{{n,m}}'."
+                                )
+                        elif row_type in ('HEADER', 'FOOTER', 'SPLITTER'):
+                            if not _POSINT_RE.match(row_mult):
+                                raise PatternError(
+                                    f"Invalid {row_type} multiplicity "
+                                    f"'{row_type}:{row_mult}' at pattern row {i + 1}. "
+                                    f"Use a positive count like '{row_type}:1'."
+                                )
 
                         cols_raw = list(sub[2:])
                         while cols_raw and cols_raw[-1] is None:
@@ -217,6 +268,32 @@ class PatternParser:
                             'SKIP_IF requires DATA:{n,m}. '
                             'SKIP_IF has no effect with DATA:* or DATA:1.'
                         )
+
+                # Structural rules for a table block:
+                #   • at least one DATA row is required (HEADER and FOOTER are
+                #     optional). A block with no DATA extracts nothing and would
+                #     otherwise crash the engine.
+                #   • any HEADER row must come before the first DATA row.
+                #   • any FOOTER row must come after the last DATA row.
+                row_types = [r.row_type for r in template_rows]
+                if 'DATA' not in row_types:
+                    raise PatternError(
+                        f"table:{mult} block has no DATA row — a table must define "
+                        f"at least one DATA row (HEADER and FOOTER are optional). "
+                        f"Add e.g. a 'DATA:*' row."
+                    )
+                _data_idxs  = [k for k, t in enumerate(row_types) if t == 'DATA']
+                _first_data, _last_data = _data_idxs[0], _data_idxs[-1]
+                if any(k > _first_data for k, t in enumerate(row_types) if t == 'HEADER'):
+                    raise PatternError(
+                        f"table:{mult} block has a HEADER row after a DATA row — "
+                        f"HEADER rows must come before DATA."
+                    )
+                if any(k < _last_data for k, t in enumerate(row_types) if t == 'FOOTER'):
+                    raise PatternError(
+                        f"table:{mult} block has a FOOTER row before a DATA row — "
+                        f"FOOTER rows must come after DATA."
+                    )
 
                 start_sequence.append(TableInstruction(
                     multiplicity=mult,
@@ -355,9 +432,20 @@ class PatternParser:
         elif key == 'ignore.case' and val is not None:
             config.ignore_case = _truthy(val)
 
-    def _parse_field(self, row, role: str = 'var') -> FieldDef:
+    def _parse_field(self, row, role: str = 'var', row_num: int | None = None) -> FieldDef:
+        where = f' at pattern row {row_num}' if row_num is not None else ''
         name  = str(row[1]) if row[1] else ''
+        if not name:
+            raise PatternError(
+                f"A {role}: definition{where} has no field name. "
+                f"Expected:  {role}: | <name> | <type> | <regex>"
+            )
         type_ = str(row[2]) if row[2] else 'string'
+        if type_ not in _VALID_FIELD_TYPES:
+            raise PatternError(
+                f"Unknown field type {type_!r} for {role}: {name!r}{where}. "
+                f"Valid types: {', '.join(sorted(_VALID_FIELD_TYPES))}."
+            )
         regex = str(row[3]) if row[3] else '.*'
         check_regex_safety(regex, field_name=name)
         return FieldDef(name=name, type=type_, regex=regex, role=role)

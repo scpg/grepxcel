@@ -52,6 +52,20 @@ Initial public release.
   aren't lost in the scrollback of a long run.
 - **`docs` command** — writes a colour-coded `pattern-reference.xlsx`.
 - **`--version`** flag.
+- **Pattern-file sanity validation** — every pattern file is now fully
+  validated up front; malformed patterns fail with a clear message instead of
+  silently producing wrong/empty output or crashing. New checks: unknown field
+  types, unnamed `var:`/`lbl:` fields, patterns with no `START:` section, empty
+  `START: … END:` blocks, `table:` blocks with no `DATA` row, `HEADER` after
+  `DATA` / `FOOTER` before `DATA`, unknown table row keywords, and invalid
+  `table:`/`DATA:`/`HEADER:`/`FOOTER:` multiplicities.
+- **More field types** — added `number`/`float`/`decimal` (plain numerics),
+  `text` (alias for `string`), and `boolean` (TRUE/FALSE) alongside the existing
+  `string`, `integer`, `currency`, `percentage`, `date`/`datetime`/`timestamp`.
+- **Data-sheet size limits** — a guard against oversized sheets with sensible
+  defaults (`--max-rows` 2048, `--max-columns` 1024). Larger sheets fail with a
+  message explaining how to raise the limit (up to Excel's maximum) and that the
+  tool is untested at that scale.
 - **Security hardening** — fail-closed XXE protection (defusedxml asserted),
   ZIP-bomb guards (size + expansion ratio), AST-based ReDoS detection plus a hard
   per-match timeout on the `regex` engine (default 0.25 s,

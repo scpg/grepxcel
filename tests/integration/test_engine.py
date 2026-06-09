@@ -984,7 +984,7 @@ class TestAnnualBudget:
       Each instance has instance['header']['title'] = 'INCOME' or 'EXPENSES'.
     """
     def setup_method(self):
-        self.result, self.lg = run('15_anual_budget')
+        self.result, self.lg = run('15_annual_budget')
 
     # ── no errors or warnings ─────────────────────────────────────────────────
 

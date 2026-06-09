@@ -78,7 +78,7 @@ def validate_type(value, field_type: str, regex: str, currency_sign: str = '€'
     """
     icase = _re.IGNORECASE if ignore_case else 0
 
-    if field_type == 'string':
+    if field_type in ('string', 'text'):
         str_val = str(value) if value is not None else ''
         ok = _safe_match(regex, str_val, _re.DOTALL | icase, max_cell_len)
         return ok, ('' if ok else f'{repr(str_val)} does not match /{regex}/')
@@ -95,7 +95,7 @@ def validate_type(value, field_type: str, regex: str, currency_sign: str = '€'
         ok = _safe_match(regex, str(value), icase, max_cell_len)
         return ok, ('' if ok else f'{value} does not match /{regex}/')
 
-    elif field_type in ('currency', 'percentage'):
+    elif field_type in ('currency', 'percentage', 'number', 'float', 'decimal'):
         if isinstance(value, bool):
             return False, f'boolean is not {field_type}'
         if not isinstance(value, (int, float)):
@@ -103,6 +103,12 @@ def validate_type(value, field_type: str, regex: str, currency_sign: str = '€'
         str_val = str(value)
         ok = _safe_match(regex, str_val, icase, max_cell_len)
         return ok, ('' if ok else f'{str_val} does not match /{regex}/')
+
+    elif field_type in ('boolean', 'bool'):
+        # Excel TRUE/FALSE → openpyxl returns a Python bool. (bool is a subclass
+        # of int, so the numeric branches above explicitly reject it first.)
+        ok = isinstance(value, bool)
+        return ok, ('' if ok else f'{repr(value)} is not a boolean')
 
     elif field_type in ('date', 'datetime', 'timestamp'):
         ok = isinstance(value, (datetime.date, datetime.datetime))

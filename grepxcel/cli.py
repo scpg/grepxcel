@@ -153,6 +153,18 @@ examples:
         help='Maximum cell character length passed to regex matching (default: 1000)',
     )
     p.add_argument(
+        '--max-rows',
+        type=int, default=2048, metavar='N',
+        help='Maximum rows in the data sheet (default: 2048; Excel max is 1048576, '
+             'untested above the default)',
+    )
+    p.add_argument(
+        '--max-columns',
+        type=int, default=1024, metavar='N',
+        help='Maximum columns in the data sheet (default: 1024; Excel max is 16384, '
+             'untested above the default)',
+    )
+    p.add_argument(
         '--format',
         choices=['nested', 'legacy'], default='nested',
         help='Output format: nested (default) or legacy ({"cells":{}, "tables":[]})',
@@ -331,6 +343,8 @@ def _process_file(pattern: str, data_file: str, args, stem: str = None) -> bool:
                 max_file_mb=args.max_size,
                 max_uncompressed_mb=args.max_uncompressed,
                 max_cell_len=args.max_cell_len,
+                max_rows=args.max_rows,
+                max_cols=args.max_columns,
                 output_format=output_format,
             )
         else:
@@ -339,6 +353,8 @@ def _process_file(pattern: str, data_file: str, args, stem: str = None) -> bool:
                 max_file_mb=args.max_size,
                 max_uncompressed_mb=args.max_uncompressed,
                 max_cell_len=args.max_cell_len,
+                max_rows=args.max_rows,
+                max_cols=args.max_columns,
                 sheet=_resolve_sheet(args),
                 output_format=output_format,
             )
