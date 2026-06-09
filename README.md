@@ -160,11 +160,12 @@ Requires Python **3.11+**.
 
 ### Python API
 
-```python
-from grepxcel import Engine, Logger, VerbosityLevel
+The one-call entry point is `grepxcel.extract()`:
 
-logger = Logger(level=VerbosityLevel.NORMAL)
-result = Engine().process("pattern.xlsx", "data.xlsx", logger=logger)
+```python
+import grepxcel
+
+result = grepxcel.extract("pattern.xlsx", "data.xlsx")
 
 # Fields are grouped by dot-notation prefix
 print(result["po"]["number"])        # "PO-2026"
@@ -173,6 +174,20 @@ print(result["vendor"]["name"])      # "Acme Supplies"
 # Tables are arrays of instance objects
 for row in result["line"][0]["data"]:
     print(row["item"], row["qty"])
+
+# Options: a specific sheet, every sheet, or the legacy output shape
+result  = grepxcel.extract("pattern.xlsx", "data.xlsx", sheet="Q1")
+by_sheet = grepxcel.extract("pattern.xlsx", "data.xlsx", all_sheets=True)
+```
+
+`extract()` is silent by default. For progress/warnings, or to reuse one engine
+across many calls, use the underlying `Engine` directly:
+
+```python
+from grepxcel import Engine, Logger, VerbosityLevel
+
+logger = Logger(level=VerbosityLevel.NORMAL)
+result = Engine().process("pattern.xlsx", "data.xlsx", logger=logger)
 ```
 
 ---

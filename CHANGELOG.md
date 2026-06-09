@@ -13,6 +13,11 @@ Initial public release.
 
 ### Added
 
+- **`grepxcel.extract()` Python API** — a one-call facade
+  (`grepxcel.extract("pattern.xlsx", "data.xlsx") -> dict`) that wraps `Engine`,
+  is silent by default (library-friendly), and supports `sheet=`,
+  `all_sheets=True`, and `output_format=`. `Engine` remains available for finer
+  control.
 - **`extract` command** — pattern-based data extraction from `.xlsx` files into
   nested or legacy JSON. Pattern files describe layout with `config:` / `lbl:` /
   `var:` / `doc:` rows and a `START:`…`END:` extraction sequence.
