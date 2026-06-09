@@ -1,5 +1,5 @@
 """
-Unit tests for the output-format helpers in engine.engine:
+Unit tests for the output-format helpers in grepxcel.engine:
 _set_nested, _field_local, _field_group, _table_group,
 _build_row_obj, _build_nested_output, _expand_merged_cells.
 """
