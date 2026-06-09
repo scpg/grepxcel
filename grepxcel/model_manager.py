@@ -63,6 +63,30 @@ _HASH_CHUNK           = 1024 * 1024  # 1 MiB read buffer for hashing
 # local attacker overwrites the file with same-size content and resets its mtime.
 _VERIFY_MODE_ENV      = "GREPXCEL_VERIFY_MODEL"
 
+# ── Known-good model hashes (code-pinned trust anchor) ─────────────────────────
+# sha256 == the HuggingFace git-LFS oid of the pinned build (the same value the
+# Hub verifies at download time). Because this lives in the code it is
+# version-controlled, so trust travels between machines and survives a lost or
+# stale local state.json: a cached file whose sha256 matches the entry here is
+# trusted on ANY machine, with no recorded fingerprint required, and a stale
+# state.json is healed automatically. Models not listed here fall back to the
+# per-machine state.json fingerprint (the original behaviour) — that's expected
+# for ad-hoc / experimental models that aren't the shipped default.
+#
+# When bumping the pinned model (MODEL_REVISION / MODEL_FILENAME), update the
+# matching entry here. Fetch the value from the Hub without downloading:
+#   HfApi().get_paths_info(MODEL_REPO_ID, [MODEL_FILENAME], revision=MODEL_REVISION)[0].lfs.sha256
+KNOWN_MODEL_HASHES: dict[str, str] = {
+    "Qwen2.5-Coder-7B-Instruct-Q4_K_M.gguf":
+        "1664fccab734674a50763490a8c6931b70e3f2f8ec10031b54806d30e5f956b6",
+}
+
+
+def _known_hashes_for(filename: str) -> set[str]:
+    """Acceptable sha256(s) for a cached model file from the code-pinned registry."""
+    h = KNOWN_MODEL_HASHES.get(filename)
+    return {h} if h else set()
+
 # Download progress watchdog (multi-GB download → never leave the user blind).
 # huggingface_hub shows a live tqdm bar in a TTY; the watchdog adds (a) periodic
 # heartbeats when stderr is NOT a TTY (logs/CI, where the bar can't redraw) and
@@ -250,9 +274,36 @@ class ModelManager:
         state = self._load_state()
         integ = state.get("integrity") or {}
         stored_hash = integ.get("sha256")
+        known = _known_hashes_for(MODEL_FILENAME)
 
-        # Case C — nothing to compare against (manual file / lost state).
+        # Case C — no recorded fingerprint (manual file / lost or stale state).
         if not stored_hash:
+            # Code-pinned trust anchor: if we know the good hash for this model,
+            # verify against it directly — no local fingerprint needed, and it
+            # works identically on a fresh machine (the portable case). A match
+            # is silently trusted and recorded; a non-match warns but still
+            # proceeds (a file with no fingerprint may have been placed
+            # deliberately), unless silenced with --allow-unverified-model.
+            if known:
+                actual = _sha256_file(self.model_path)
+                if actual in known:
+                    self._save_state(state.get("commit_hash", MODEL_REVISION),
+                                     integrity=self._fingerprint())
+                    if verbose:
+                        print("Model integrity: matches a known-good release.",
+                              file=sys.stderr)
+                    return
+                if not self._allow_unverified:
+                    print(
+                        f"  [!] Cached model at {self.model_path} has no recorded "
+                        f"checksum and does not match a known-good release "
+                        f"(got {actual[:12]}…).\n"
+                        f"      Proceeding on trust. Delete it to force a verified "
+                        f"re-download, or pass --allow-unverified-model to silence "
+                        f"this.",
+                        file=sys.stderr,
+                    )
+                return
             if not self._allow_unverified:
                 print(
                     f"  [!] Cannot verify the cached model at {self.model_path}: no "
@@ -287,6 +338,18 @@ class ModelManager:
             if not unchanged:
                 self._save_state(state.get("commit_hash", MODEL_REVISION),
                                  integrity=self._fingerprint())
+            return
+
+        # Case B(i-known) — the recorded fingerprint is stale/wrong, but the file
+        # matches a code-pinned known-good release. Trust it and heal the local
+        # record. (This is the cross-machine case: a state.json copied from
+        # another device can record a different build than the authentic file.)
+        if known and actual in known:
+            self._save_state(state.get("commit_hash", MODEL_REVISION),
+                             integrity=self._fingerprint())
+            if verbose:
+                print("Model integrity: matches a known-good release "
+                      "(healed a stale local record).", file=sys.stderr)
             return
 
         # Case B(ii) — content differs from what we downloaded.

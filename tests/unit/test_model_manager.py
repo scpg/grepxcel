@@ -333,6 +333,71 @@ class TestCachedModelIntegrity:
         assert len(integ["sha256"]) == 64
 
 
+class TestKnownModelHashRegistry:
+    """The code-pinned KNOWN_MODEL_HASHES registry is a portable trust anchor:
+    a cached file matching a known-good hash is trusted on any machine, even
+    with no recorded fingerprint or a stale one, and the local record is healed."""
+
+    import hashlib as _hashlib
+
+    @staticmethod
+    def _sha(content: bytes) -> str:
+        import hashlib
+        return hashlib.sha256(content).hexdigest()
+
+    def _pin_known(self, monkeypatch, content: bytes) -> None:
+        """Point the registry at the sha256 of `content` for the model filename."""
+        monkeypatch.setattr(
+            mm, "KNOWN_MODEL_HASHES",
+            {MODEL_FILENAME: self._sha(content)},
+        )
+
+    def test_known_hash_trusts_file_with_no_fingerprint(self, tmp_path, monkeypatch):
+        content = b"authentic-weights"
+        self._pin_known(monkeypatch, content)
+        m = _make_manager(tmp_path)
+        (tmp_path / MODEL_FILENAME).write_bytes(content)  # file present, NO state.json
+        m._verify_integrity(verbose=False)  # must not exit
+        # trust is healed into a recorded fingerprint for the fast path next time
+        assert m._load_state()["integrity"]["sha256"] == self._sha(content)
+
+    def test_known_hash_heals_stale_state(self, tmp_path, monkeypatch):
+        content = b"authentic-weights"
+        self._pin_known(monkeypatch, content)
+        m = _make_manager(tmp_path)
+        p = tmp_path / MODEL_FILENAME
+        p.write_bytes(content)
+        # Record a WRONG fingerprint (as a synced/stale state.json would have),
+        # with a different size so the fast path is skipped and a re-hash occurs.
+        m._save_state(MODEL_REVISION, integrity={
+            "sha256": "0" * 64, "size": 999999, "mtime_ns": 1,
+        })
+        m._verify_integrity(verbose=False)  # must not exit — file matches known good
+        assert m._load_state()["integrity"]["sha256"] == self._sha(content)  # healed
+
+    def test_unknown_file_with_no_fingerprint_still_proceeds(self, tmp_path, monkeypatch):
+        # File does not match the known-good hash and has no fingerprint:
+        # warn-and-proceed (does not exit), preserving the manual-file path.
+        self._pin_known(monkeypatch, b"the-real-weights")
+        m = _make_manager(tmp_path)
+        (tmp_path / MODEL_FILENAME).write_bytes(b"some-other-file")
+        m._verify_integrity(verbose=False)  # no exit
+
+    def test_known_mismatch_with_stale_state_still_aborts(self, tmp_path, monkeypatch):
+        # A recorded fingerprint that mismatches AND a file that is not a known
+        # good build is genuine tamper evidence → fatal.
+        self._pin_known(monkeypatch, b"the-real-weights")
+        m = _make_manager(tmp_path)
+        p = tmp_path / MODEL_FILENAME
+        p.write_bytes(b"tampered")
+        m._save_state(MODEL_REVISION, integrity={
+            "sha256": "a" * 64, "size": 4, "mtime_ns": 1,
+        })
+        with pytest.raises(SystemExit) as exc:
+            m._verify_integrity(verbose=False)
+        assert exc.value.code == 1
+
+
 class TestAllowUnverifiedFlag:
     def test_env_var_sets_allow(self, tmp_path, monkeypatch):
         monkeypatch.setenv("GREPXCEL_ALLOW_UNVERIFIED_MODEL", "1")
