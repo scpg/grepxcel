@@ -1,4 +1,4 @@
-"""Unit tests for engine.model_manager."""
+"""Unit tests for grepxcel.model_manager."""
 
 import json
 import os

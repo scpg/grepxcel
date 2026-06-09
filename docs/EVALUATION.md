@@ -75,30 +75,37 @@ high value-recall is a naming difference, not a defect.
 
 | Rank | Model | Backend | Value-recall | Fixtures ≥99% | $ |
 |---|---|---|---|---|---|
-| 1 | `openai/gpt-4.1` | github | **86%** | 12/17 | free |
 | 1 | `mistral-ai/codestral-2501` | github | **86%** | 12/17 | free |
-| 3 | `openai/gpt-4o` | github | 83% | 12/17 | free |
-| 4 | `meta/llama-3.3-70b-instruct` | github | 81% | 12/17 | free |
-| 5 | **gemma-4-e4b** *(default local)* | local | 51% | 8/16 | free |
-| 6 | qwen-coder-7b *(previous default)* | local | 42% | 5/15 | free |
+| 1 | `openai/gpt-4.1` | github | **86%** | 12/17 | free |
+| 1 | `openai/gpt-4o` | github | **86%** | 12/17 | free |
+| 4 | `meta/llama-3.3-70b-instruct` | github | 63–81% | 8–12/17 | free |
+| 5 | **gemma-4-e4b** *(default local)* | local | 51% | 8/17 | free |
+| 6 | qwen-coder-7b *(previous default)* | local | 42% | 5/17 | free |
 | — | `deepseek/deepseek-v3-0324` | github | *rate-limited, partial* | — | free |
 
 The whole benchmark cost **$0.00** (GitHub Models is free with a subscription;
-local runs on your GPU).
+local runs on your GPU). Figures are from two full runs; LLM sampling
+(temperature 0.1) gives a few points of run-to-run variance — see the llama note.
 
 Takeaways:
 
-- **The free GitHub Models backend wins by a wide margin.** The four large
-  GitHub models (81–86%) clearly beat the local models (42–51%), at no dollar
-  cost. For the best quality, use `grepxcel draft --backend github`
-  (`--github-model openai/gpt-4.1` or `openai/gpt-4o`).
-- **`codestral` (a code model) tied `gpt-4.1` for first** — drafting a structured
-  pattern is a code-like task, so this fits.
+- **The free GitHub Models backend wins by a wide margin.** The large GitHub
+  models clearly beat the local models (42–51%), at no dollar cost. For the best
+  quality, use `grepxcel draft --backend github` (`--github-model openai/gpt-4.1`,
+  `openai/gpt-4o`, or `mistral-ai/codestral-2501`).
+- **Three-way tie at the top (86%):** `codestral`, `gpt-4.1`, and `gpt-4o` are
+  indistinguishable — pick any. `codestral` (a code model) tying the GPTs fits,
+  since drafting a structured pattern is a code-like task.
+- **`llama-3.3-70b` is the least consistent** of the GitHub models (≈81% one run,
+  ≈63% another) — run-to-run sampling variance plus occasional throttling. Still
+  well ahead of the local models, but less reliable than the top three.
 - **`gemma-4-e4b` is the best *local* model** (the shipped default), ahead of the
   previous default `qwen-coder-7b` by ~9 points, at a similar ~5 GB footprint.
-  **Gemma 4 is a generational leap over Gemma 2** (`gemma-2-9b` scored ~0%).
+  **Gemma 4 is a generational leap over Gemma 2** (`gemma-2-9b` scored ~0%). Its
+  remaining failures are drafted patterns that over-specify cells (e.g. expecting
+  a cell past the end of the sheet) — a local-model quality limit, not a crash.
 - **`deepseek-v3` is not usable for bulk via GitHub** — its tight quota window
-  throttles rapid runs (`Too many requests`).
+  throttles rapid runs (`Too many requests`); confirmed across two runs.
 - An earlier 5-fixture subset over-flattered the local models (qwen ~69%) because
   it excluded the hard fixtures; the full set above is the honest picture.
 
