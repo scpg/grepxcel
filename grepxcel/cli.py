@@ -267,10 +267,18 @@ def _draft_args(p: argparse.ArgumentParser) -> None:
     )
     p.add_argument(
         '--backend',
-        choices=['local', 'claude', 'gemini'],
+        choices=['local', 'claude', 'gemini', 'github'],
         default='local',
-        help='Inference backend: local (default, GGUF model) or claude (requires '
-             'ANTHROPIC_API_KEY). gemini is planned for a future release.',
+        help='Inference backend: local (default, GGUF model), claude (requires '
+             'ANTHROPIC_API_KEY), or github (GitHub Models, requires GITHUB_TOKEN '
+             "with 'Models: read'; use --github-model to pick a model). gemini is "
+             'planned for a future release.',
+    )
+    p.add_argument(
+        '--github-model',
+        default='openai/gpt-4o-mini',
+        help="GitHub Models model id when --backend github, e.g. 'openai/gpt-4o', "
+             "'meta/llama-3.3-70b-instruct' (default: openai/gpt-4o-mini).",
     )
     p.add_argument(
         '--allow-unverified-model',
@@ -372,8 +380,41 @@ def _run_docs(args) -> int:
 
 # ── draft handler ─────────────────────────────────────────────────────────────
 
+def _load_dotenv() -> None:
+    """Load KEY=VALUE pairs from a .env file (searched from the current
+    directory upward) into the environment, so cloud backends pick up
+    ANTHROPIC_API_KEY / GITHUB_TOKEN etc. without manual exporting.
+
+    Real environment variables always win: existing keys are never overridden,
+    and the file is only read (no execution). Quotes around values are stripped.
+    """
+    directory = os.getcwd()
+    while True:
+        env_path = os.path.join(directory, '.env')
+        if os.path.isfile(env_path):
+            break
+        parent = os.path.dirname(directory)
+        if parent == directory:
+            return  # reached filesystem root without finding a .env
+        directory = parent
+    try:
+        with open(env_path, encoding='utf-8') as fh:
+            for line in fh:
+                line = line.strip()
+                if not line or line.startswith('#') or '=' not in line:
+                    continue
+                key, val = line.split('=', 1)
+                key = key.strip()
+                val = val.strip().strip('"').strip("'")
+                if key:
+                    os.environ.setdefault(key, val)
+    except OSError:
+        pass
+
+
 def _run_draft(args) -> int:
-    from .drafter import ClaudeBackend, PatternDrafter
+    _load_dotenv()  # let --backend claude/github find their keys without exporting
+    from .drafter import ClaudeBackend, GitHubModelsBackend, PatternDrafter
     sheet    = _resolve_sheet(args)
     selected = getattr(args, 'backend', 'local')
     backend  = None
@@ -389,6 +430,11 @@ def _run_draft(args) -> int:
         print("[!] Excel structure description will be sent to Anthropic's API.",
               file=sys.stderr)
         backend = ClaudeBackend()
+    elif selected == 'github':
+        gh_model = getattr(args, 'github_model', 'openai/gpt-4o-mini')
+        print(f"[!] Excel structure description will be sent to GitHub Models ({gh_model}).",
+              file=sys.stderr)
+        backend = GitHubModelsBackend(model=gh_model)
     drafter = PatternDrafter(
         input_path=args.file,
         output_path=args.output,

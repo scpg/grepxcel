@@ -634,24 +634,41 @@ def _detect_gpu() -> tuple[int, str | None, str | None]:
 
 @dataclass
 class CostRecord:
-    """Token usage and USD cost for one API call."""
+    """Token usage and USD cost for one API call.
+
+    For metered APIs (Claude, Gemini) the *_cost_usd fields carry the dollar
+    cost. For quota-based services (GitHub Models, included with a
+    subscription) the dollar cost is 0 and consumption is reported instead via
+    the optional rate-limit fields below (remaining / limit for requests and
+    tokens, as returned in the provider's response headers)."""
     model:        str
     input_tokens: int
     output_tokens: int
     input_cost_usd:  float
     output_cost_usd: float
+    # Optional quota signal (GitHub Models) — None for metered backends.
+    rate_remaining_requests: int | None = None
+    rate_limit_requests:     int | None = None
+    rate_remaining_tokens:   int | None = None
+    rate_limit_tokens:       int | None = None
 
     @property
     def total_cost_usd(self) -> float:
         return self.input_cost_usd + self.output_cost_usd
 
     def __str__(self) -> str:
-        return (
+        base = (
             f'{self.model}  '
             f'in={self.input_tokens} out={self.output_tokens}  '
             f'cost=${self.total_cost_usd:.6f} '
             f'(in=${self.input_cost_usd:.6f} + out=${self.output_cost_usd:.6f})'
         )
+        if self.rate_remaining_requests is not None:
+            base += (
+                f'  quota: {self.rate_remaining_requests}/{self.rate_limit_requests} req, '
+                f'{self.rate_remaining_tokens}/{self.rate_limit_tokens} tok remaining'
+            )
+        return base
 
 
 @runtime_checkable
@@ -891,6 +908,87 @@ class GeminiBackend:
         return response.text
 
 
+# ── GitHub Models backend ─────────────────────────────────────────────────────
+
+class GitHubModelsBackend:
+    """Sends inference requests to GitHub Models (OpenAI-compatible endpoint).
+
+    Access is included with a GitHub account / Copilot subscription, so there
+    is no per-token dollar cost — consumption is governed by rate limits
+    instead. Those limits (requests + tokens, with the remaining amounts) are
+    returned in x-ratelimit-* response headers and captured into the
+    CostRecord so usage stays visible.
+
+    Requires GITHUB_TOKEN in the environment, with the 'Models: read'
+    fine-grained permission. Model ids are namespaced, e.g. 'openai/gpt-4o',
+    'meta/llama-3.3-70b-instruct', 'deepseek/deepseek-v3-0324'.
+    Only the Excel structure description is transmitted — raw bytes never leave
+    the machine.
+    """
+
+    ENDPOINT = 'https://models.github.ai/inference'
+
+    def __init__(self, model: str = 'openai/gpt-4o-mini'):
+        self._model     = model
+        self._last_cost: CostRecord | None = None
+
+    def last_cost(self) -> CostRecord | None:
+        return self._last_cost
+
+    @staticmethod
+    def _int_header(headers, name: str) -> int | None:
+        try:
+            v = headers.get(name)
+            return int(v) if v is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    def chat(self, system: str, user: str) -> str:
+        try:
+            from openai import OpenAI
+        except ImportError:
+            print(
+                "Error: the GitHub Models backend needs the 'openai' package.\n"
+                "Fix:   pip install openai",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        token = os.environ.get('GITHUB_TOKEN')
+        if not token:
+            raise RuntimeError(
+                'GITHUB_TOKEN is not set. Create a fine-grained token with the '
+                "'Models: read' permission at https://github.com/settings/tokens "
+                'and add GITHUB_TOKEN=... to your environment or .env file.'
+            )
+        client = OpenAI(base_url=self.ENDPOINT, api_key=token)
+        raw = client.chat.completions.with_raw_response.create(
+            model=self._model,
+            messages=[
+                {'role': 'system', 'content': system},
+                {'role': 'user',   'content': user},
+            ],
+            temperature=0.1,
+            max_tokens=2048,
+        )
+        completion = raw.parse()
+        usage = completion.usage
+        in_tok  = getattr(usage, 'prompt_tokens', 0) or 0
+        out_tok = getattr(usage, 'completion_tokens', 0) or 0
+        h = raw.headers
+        self._last_cost = CostRecord(
+            model=self._model,
+            input_tokens=in_tok,
+            output_tokens=out_tok,
+            input_cost_usd=0.0,   # included in the subscription quota
+            output_cost_usd=0.0,
+            rate_remaining_requests=self._int_header(h, 'x-ratelimit-remaining-requests'),
+            rate_limit_requests=self._int_header(h, 'x-ratelimit-limit-requests'),
+            rate_remaining_tokens=self._int_header(h, 'x-ratelimit-remaining-tokens'),
+            rate_limit_tokens=self._int_header(h, 'x-ratelimit-limit-tokens'),
+        )
+        return completion.choices[0].message.content
+
+
 # ── Pattern writer ────────────────────────────────────────────────────────────
 
 _TABLE_ROW_PREFIXES = ('HEADER:', 'DATA:', 'FOOTER:', 'SPLITTER:', 'SKIP_IF')
@@ -1077,6 +1175,24 @@ class PatternDrafter:
         if self.backend is not None:
             print('Running inference...', file=sys.stderr)
             llm_text = self.backend.chat(_SYSTEM_PROMPT, user_prompt)
+            # Surface usage / consumption when the backend tracks it.
+            cost = self.backend.last_cost() if hasattr(self.backend, 'last_cost') else None
+            if cost is not None:
+                if cost.rate_remaining_requests is not None:
+                    print(
+                        f'  Usage: {cost.input_tokens} in + {cost.output_tokens} out tokens '
+                        f'(included in GitHub subscription quota)\n'
+                        f'  Quota remaining: {cost.rate_remaining_requests}/'
+                        f'{cost.rate_limit_requests} requests, '
+                        f'{cost.rate_remaining_tokens}/{cost.rate_limit_tokens} tokens',
+                        file=sys.stderr,
+                    )
+                else:
+                    print(
+                        f'  Usage: {cost.input_tokens} in + {cost.output_tokens} out tokens '
+                        f'(cost ${cost.total_cost_usd:.6f})',
+                        file=sys.stderr,
+                    )
         else:
             # Default: local GGUF model via llama-cpp-python
             model_path = ModelManager(
