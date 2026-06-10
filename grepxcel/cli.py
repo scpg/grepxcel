@@ -103,7 +103,7 @@ def _add_extract_subparser(sub) -> None:
         epilog="""
 verbosity:
   (none)  warnings + summary on stderr, extracted JSON on stdout
-  -v      + step-by-step: cells found, tables matched
+  -v      + per-field trace: 'field ← B1 = value ✓/✗' for cells and table data
   -vv     + every anchor probe and rejection reason
   -d      same as -vv (debug mode)
 

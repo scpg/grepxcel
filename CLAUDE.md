@@ -56,13 +56,22 @@ If the venv does not exist it prints a clear error with setup instructions and e
 
 ## Running the CLI
 
+The CLI is subcommand-based: `extract`, `draft`, `docs` (run `grepxcel <cmd> --help`).
+
 ```bash
-.venv/bin/grepxcel -p pattern.xlsx data.xlsx
-.venv/bin/grepxcel -p pattern.xlsx data.xlsx -v --output output/
-.venv/bin/grepxcel -p pattern.xlsx data.xlsx -vv            # debug: anchor probes
-.venv/bin/grepxcel -p pattern.xlsx data.xlsx -d             # same as -vv
-.venv/bin/grepxcel -p pattern.xlsx data.xlsx --sheet Sheet2
+.venv/bin/grepxcel extract -p pattern.xlsx data.xlsx
+.venv/bin/grepxcel extract -p pattern.xlsx data.xlsx -v            # per-field trace: field ← B1 = value ✓/✗
+.venv/bin/grepxcel extract -p pattern.xlsx data.xlsx -vv           # debug: anchor probes
+.venv/bin/grepxcel extract -p pattern.xlsx data.xlsx -d            # same as -vv
+.venv/bin/grepxcel extract -p pattern.xlsx data.xlsx -o output/    # write JSON to a directory
+.venv/bin/grepxcel extract -p pattern.xlsx data.xlsx --sheet Sheet2
+.venv/bin/grepxcel extract -p pattern.xlsx jan.xlsx feb.xlsx       # multiple data files
+.venv/bin/grepxcel draft data.xlsx                                 # draft a starter pattern (local LLM)
+.venv/bin/grepxcel docs                                            # write pattern-reference.xlsx
 ```
+
+> The pattern file may be `.xlsx` **or** `.csv`. `suggest` is a hidden
+> backward-compatible alias for `draft`.
 
 > **Note on venv activation:** `source .venv/bin/activate` is not needed.
 > Both `grepxcel` and `pytest` are installed with a shebang pointing directly to
@@ -72,19 +81,24 @@ If the venv does not exist it prints a clear error with setup instructions and e
 > shell builtin that modifies shell state and Claude Code intentionally blocks
 > compound commands (`&&`, `||`, `;`) from matching permission patterns.
 
-### CLI parameters
+### CLI parameters (`grepxcel extract`)
 
 | Flag | Default | Purpose |
 |---|---|---|
-| `-p FILE` | required | Pattern xlsx file |
-| `-o DIR` | — | Write JSON to directory (stdout if omitted) |
-| `-l FILE` | — | Append structured log to file |
-| `-v` / `-vv` | off | Verbosity: step-by-step / anchor probes |
-| `-d` / `--debug` | off | Same as `-vv` |
-| `--max-size MB` | 5 | Compressed file size limit |
-| `--max-uncompressed MB` | 50 | Uncompressed ZIP content limit (ZIP bomb guard) |
-| `--max-cell-len N` | 1000 | Max cell chars fed to regex (ReDoS guard) |
+| `-p, --pattern FILE` | required | Pattern file (`.xlsx` or `.csv`) |
+| `FILE...` (positional) | required | One or more data `.xlsx` files |
+| `-o, --output DIR` | — | Write JSON to directory (stdout if omitted) |
+| `-l, --log FILE` | — | Append structured log to file |
+| `-v` / `-vv` | off | Verbosity: per-field trace / anchor probes |
+| `-d, --debug` | off | Same as `-vv` |
 | `--sheet NAME_OR_INDEX` | active | Sheet name or 0-based index to process |
+| `--all-sheets` | off | Process every sheet; output keyed by sheet name |
+| `--format {nested,legacy}` | nested | Output shape |
+| `--max-rows N` | 2048 | Max data-sheet rows (Excel max 1,048,576) |
+| `--max-columns N` | 1024 | Max data-sheet columns (Excel max 16,384) |
+| `--max-cell-len N` | 1000 | Max cell chars fed to regex (ReDoS guard) |
+| `--max-size MB` | 5 | Compressed file size limit |
+| `--max-uncompressed MB` | 50 | Uncompressed ZIP content limit (ZIP-bomb guard) |
 
 ### Output convention
 
