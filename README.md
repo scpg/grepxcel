@@ -338,6 +338,49 @@ Other options:
 > sure such a source is trustworthy, or pass `--allow-unverified-model` to
 > silence the warning.
 
+#### Behind a corporate proxy / TLS inspection (experimental)
+
+Corporate networks often route HTTPS through an inspection proxy (NetSkope,
+Zscaler, …) that re-signs traffic with a **company CA** Python doesn't trust by
+default — so the model download and the cloud backends fail with
+`CERTIFICATE_VERIFY_FAILED`. grepxcel can trust that CA (TLS verification stays
+on — it is never disabled):
+
+- **Best:** have IT install the corporate root CA in your OS trust store, then
+  `pip install truststore` (it ships with the `suggest` / `draft-cloud` extras).
+  grepxcel then uses the OS store automatically — no env vars needed.
+- **Or** point grepxcel at the CA `.pem` file:
+  ```bash
+  grepxcel draft data.xlsx --ca-bundle /path/to/corporate-ca.pem
+  # or: export GREPXCEL_CA_BUNDLE=/path/to/corporate-ca.pem
+  #     (REQUESTS_CA_BUNDLE / SSL_CERT_FILE are also honored)
+  ```
+- If your network requires a proxy, set `HTTPS_PROXY` / `NO_PROXY` as usual
+  (both `requests` and `httpx` read them automatically).
+- Run `grepxcel doctor` to verify the setup — it does a live TLS handshake.
+
+> ⚠️ This support has **not been tested against a real intercept proxy**;
+> grepxcel prints a one-time notice when proxy/CA settings are in effect.
+
+### `grepxcel doctor`
+
+Preflight check that tells you exactly what's needed to run the tool.
+
+```bash
+grepxcel doctor            # everything: extract + draft + proxy/TLS
+grepxcel doctor extract    # only what extract needs (offline)
+grepxcel doctor draft      # only what draft needs (deps, keys, model, proxy/TLS)
+```
+
+It prints a `✓/⚠/✗` checklist — Python version, dependencies, API keys, the
+local-model cache + disk space, and proxy/CA config with a live handshake — and
+**exits non-zero** if the selected area has a blocking (`✗`) problem.
+
+| Flag | Purpose |
+|---|---|
+| `area` | `extract`, `draft`, or `all` (default `all`) |
+| `--no-probe` | Skip the live TLS handshake (offline / faster) |
+
 ---
 
 ## Verbosity levels

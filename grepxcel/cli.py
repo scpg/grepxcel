@@ -76,6 +76,7 @@ commands:
   extract   Extract data from Excel files using a pattern file
   draft     Use a local LLM to draft a starter pattern file for an Excel file
   docs      Write a pattern-format reference xlsx (pattern-reference.xlsx)
+  doctor    Check the environment is ready (deps, keys, model, proxy/TLS)
 
 Run 'grepxcel <command> --help' for per-command options.
         """,
@@ -92,7 +93,36 @@ Run 'grepxcel <command> --help' for per-command options.
     _add_extract_subparser(sub)
     _add_draft_subparser(sub)
     _add_docs_subparser(sub)
+    _add_doctor_subparser(sub)
     return p
+
+
+def _add_doctor_subparser(sub) -> None:
+    p = sub.add_parser(
+        'doctor',
+        help='Check the environment is ready (deps, API keys, model, proxy/TLS)',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+examples:
+  grepxcel doctor              # check everything (extract + draft + proxy/TLS)
+  grepxcel doctor extract      # only what 'extract' needs (offline)
+  grepxcel doctor draft        # only what 'draft' needs (local + cloud + proxy)
+
+Exits non-zero if the selected area has a blocking (✗) problem.
+        """,
+    )
+    p.add_argument(
+        'area',
+        nargs='?',
+        choices=['extract', 'draft', 'all'],
+        default='all',
+        help="Which area to check: extract, draft, or all (default: all)",
+    )
+    p.add_argument(
+        '--no-probe',
+        action='store_true',
+        help='Skip the live TLS handshake probe (offline / faster)',
+    )
 
 
 def _add_extract_subparser(sub) -> None:
@@ -305,6 +335,15 @@ def _draft_args(p: argparse.ArgumentParser) -> None:
              '(checksum mismatch, or a manually-placed file with no recorded '
              'checksum). Also settable via GREPXCEL_ALLOW_UNVERIFIED_MODEL=1.',
     )
+    p.add_argument(
+        '--ca-bundle',
+        metavar='FILE',
+        default=None,
+        help='Path to a corporate CA bundle (.pem) to trust behind a '
+             'TLS-inspection proxy (NetSkope/Zscaler). Also via GREPXCEL_CA_BUNDLE '
+             '/ REQUESTS_CA_BUNDLE / SSL_CERT_FILE. TLS verification stays on. '
+             '(Experimental — not tested against a real intercept proxy.)',
+    )
     _add_security_args(p)
     _add_sheet_arg(p)
 
@@ -400,6 +439,15 @@ def _run_docs(args) -> int:
     return 0
 
 
+# ── doctor handler ───────────────────────────────────────────────────────────
+
+def _run_doctor(args) -> int:
+    from .doctor import run_doctor
+    _load_dotenv()  # reflect .env-provided keys / proxy / CA settings
+    return run_doctor(area=getattr(args, 'area', 'all'),
+                      probe=not getattr(args, 'no_probe', False))
+
+
 # ── draft handler ─────────────────────────────────────────────────────────────
 
 def _load_dotenv() -> None:
@@ -436,6 +484,10 @@ def _load_dotenv() -> None:
 
 def _run_draft(args) -> int:
     _load_dotenv()  # let --backend claude/github find their keys without exporting
+    # Wire corporate-proxy / custom-CA TLS trust before any network call
+    # (model download or cloud backend). Verification stays on.
+    from .proxy_support import enable_corporate_tls
+    enable_corporate_tls(getattr(args, 'ca_bundle', None))
     from .drafter import ClaudeBackend, GitHubModelsBackend, PatternDrafter
     sheet    = _resolve_sheet(args)
     selected = getattr(args, 'backend', 'local')
@@ -487,6 +539,9 @@ def main(argv=None):
 
     if args.command == 'docs':
         sys.exit(_run_docs(args))
+
+    if args.command == 'doctor':
+        sys.exit(_run_doctor(args))
 
     # extract
     all_ok = True

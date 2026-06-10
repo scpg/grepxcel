@@ -805,7 +805,12 @@ class ClaudeBackend:
                 file=sys.stderr,
             )
             sys.exit(1)
-        client = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY from env
+        # Honor a corporate CA bundle / OS trust store behind a TLS-inspection
+        # proxy (httpx ignores REQUESTS_CA_BUNDLE on its own). See proxy_support.
+        from .proxy_support import make_httpx_client
+        _http = make_httpx_client()
+        _kw = {'http_client': _http} if _http is not None else {}
+        client = anthropic.Anthropic(**_kw)  # reads ANTHROPIC_API_KEY from env
         msg = client.messages.create(
             model=self._model,
             max_tokens=2048,
@@ -885,6 +890,9 @@ class GeminiBackend:
                 file=sys.stderr,
             )
             sys.exit(1)
+        # NOTE: when this backend is enabled, wire corporate-proxy CA trust here
+        # too — the google-genai SDK takes an http_options transport; adapt
+        # proxy_support.make_httpx_client() to it (see proxy_support).
         client = genai.Client()  # reads GOOGLE_API_KEY from env
         response = client.models.generate_content(
             model=self._model,
@@ -960,7 +968,11 @@ class GitHubModelsBackend:
                 "'Models: read' permission at https://github.com/settings/tokens "
                 'and add GITHUB_TOKEN=... to your environment or .env file.'
             )
-        client = OpenAI(base_url=self.ENDPOINT, api_key=token)
+        # Corporate-proxy CA trust (see proxy_support / ClaudeBackend above).
+        from .proxy_support import make_httpx_client
+        _http = make_httpx_client()
+        _kw = {'http_client': _http} if _http is not None else {}
+        client = OpenAI(base_url=self.ENDPOINT, api_key=token, **_kw)
         raw = client.chat.completions.with_raw_response.create(
             model=self._model,
             messages=[
