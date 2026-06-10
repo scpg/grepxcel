@@ -228,8 +228,10 @@ Label fields (`lbl:`) are used only for positional anchoring and are never inclu
 | `--format` | `nested` | Output format: `nested` (default) or `legacy` |
 | `-o DIR` | — | Write JSON to directory (stdout if omitted) |
 | `-l FILE` | — | Append structured log to file |
-| `-v` / `-vv` | off | Verbosity: step-by-step / anchor probes |
+| `-v` / `-vv` | off | Verbosity: per-field trace (`field ← B1 = value ✓/✗`) / anchor probes |
 | `-d` / `--debug` | off | Same as `-vv` |
+| `--max-rows N` | 2048 | Max data-sheet rows (raise up to Excel's 1,048,576; untested above default) |
+| `--max-columns N` | 1024 | Max data-sheet columns (raise up to Excel's 16,384; untested above default) |
 | `--max-size MB` | 5 | Compressed file size limit |
 | `--max-uncompressed MB` | 50 | Uncompressed ZIP content limit (ZIP bomb guard) |
 | `--max-cell-len N` | 1000 | Max cell chars fed to regex (ReDoS guard) |

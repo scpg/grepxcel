@@ -38,7 +38,7 @@ _FULL_FIXTURES: list[str] = sorted(
 _SHEET_OVERRIDES: dict[str, str] = {
     '12_multi_sheet': 'Details',
     '06_merged_cells': '2025',
-    '04_excel_template_invoce': 'Invoice',
+    '17_excel_template_invoice': 'Invoice',
 }
 
 

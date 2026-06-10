@@ -984,7 +984,7 @@ class TestAnnualBudget:
       Each instance has instance['header']['title'] = 'INCOME' or 'EXPENSES'.
     """
     def setup_method(self):
-        self.result, self.lg = run('15_anual_budget')
+        self.result, self.lg = run('15_annual_budget')
 
     # ── no errors or warnings ─────────────────────────────────────────────────
 
@@ -2059,3 +2059,47 @@ class TestIgnoreCaseEndToEnd:
         result, lg = _run(pat, self._DATA)
         assert result['status'] == 'PAID'
         assert not lg.has_warnings()
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# Verbose per-field extraction trace (-v): 'field ← cell = value ✓/✗'
+# ═════════════════════════════════════════════════════════════════════════════
+
+class TestVerboseExtractionTrace:
+    """At VERBOSE, the engine emits a per-field trace for scalar cells and table
+    DATA fields so users can see what was extracted from where and whether it
+    passed validation — the key aid for debugging non-matching patterns."""
+
+    def _verbose_run(self, fixture_name: str):
+        folder = os.path.join(FIXTURES, fixture_name)
+        lg = Logger(level=VerbosityLevel.VERBOSE)
+        Engine().process(
+            pattern_file=os.path.join(folder, 'pattern.xlsx'),
+            data_file=os.path.join(folder, 'data.xlsx'),
+            logger=lg,
+        )
+
+    def test_scalar_and_table_field_traces(self, capsys):
+        # fixture 03 has scalar cells + a table whose 'X' item fails its regex.
+        self._verbose_run('03_purchase_order')
+        err = capsys.readouterr().err
+        assert 'po.number' in err and '←' in err          # scalar cell trace
+        assert 'row.item' in err and '✓' in err           # table DATA field, passing
+        assert '✗' in err and 'does not match' in err     # the failing 'X' item
+
+    def test_clean_fixture_has_no_fail_marks(self, capsys):
+        # fixture 01 is all-valid → every field passes, no ✗ in the trace.
+        self._verbose_run('01_simple_invoice')
+        err = capsys.readouterr().err
+        assert '✓' in err
+        assert '✗' not in err
+
+    def test_quiet_emits_no_trace(self, capsys):
+        folder = os.path.join(FIXTURES, '01_simple_invoice')
+        lg = Logger(level=VerbosityLevel.QUIET)
+        Engine().process(
+            pattern_file=os.path.join(folder, 'pattern.xlsx'),
+            data_file=os.path.join(folder, 'data.xlsx'),
+            logger=lg,
+        )
+        assert '←' not in capsys.readouterr().err

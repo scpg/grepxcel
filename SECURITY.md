@@ -20,14 +20,14 @@ You can expect an acknowledgement within 72 hours and a fix or mitigation plan w
 
 In scope:
 
-- `grepxcel` CLI and Python API (`engine/` package)
+- `grepxcel` CLI and Python API (`grepxcel/` package)
 - Malicious Excel file handling (formula injection, ZIP bombs, oversized files, XXE)
 - Any path traversal or code execution issue triggered by a crafted `.xlsx` file
 
 Out of scope:
 
 - Issues in `tmp.local/` (development-only, gitignored, never installed)
-- Vulnerabilities in the local LLM used by `grepxcel suggest` (third-party model)
+- Vulnerabilities in the local LLM used by `grepxcel draft` (third-party model)
 - Social engineering or phishing
 
 ## Security design notes
@@ -41,13 +41,15 @@ grepxcel applies several defences against malicious Excel files:
   (ZIP bomb guard).
 - Per-cell character length limit and AST-based nested-quantifier rejection
   (ReDoS guard) on every user-supplied regex.
+- Data-sheet size limits (`--max-rows` 2048, `--max-columns` 1024 by default) so
+  an unexpectedly huge sheet fails fast instead of exhausting time/memory.
 - Formula detection: pattern files must contain plain text only.
 - `data_only=True` when loading data files (formulas are never executed).
 - `.xlsm` / `.xlsb` / `.xls` are rejected; only macro-free `.xlsx` is accepted.
 
-### `grepxcel suggest` (optional extra) supply chain
+### `grepxcel draft` (optional extra) supply chain
 
-The optional `suggest` command downloads a GGUF model from Hugging Face:
+The optional `draft` command downloads a GGUF model from Hugging Face:
 
 - The model is **pinned to an immutable commit revision**; `huggingface_hub`
   verifies the file hash against the Hub for that revision.

@@ -228,3 +228,56 @@ def test_summary_scope_excludes_prior_sheet_issues(capsys):
     assert 'Warnings          : 0' in out
     assert 'ISSUES' not in out
     assert "'bad'" not in out
+
+
+# ─── per-field extraction trace (VERBOSE) ─────────────────────────────────────
+
+def test_cell_trace_shows_pass_mark(capsys):
+    lg = Logger(level=VerbosityLevel.VERBOSE, sheet_name='Sheet1')
+    lg.cell_processed(1, 2, 'po.number', 'PO-2026', ok=True, regex=r'PO-\d+')
+    out = capsys.readouterr().err
+    assert 'po.number' in out
+    assert 'Sheet1!B1' in out
+    assert '←' in out
+    assert '✓' in out
+
+
+def test_cell_trace_shows_fail_mark_and_regex(capsys):
+    lg = Logger(level=VerbosityLevel.VERBOSE, sheet_name='Sheet1')
+    lg.cell_processed(1, 1, 'code', 'bad', ok=False, regex=r'[A-Z]{3}')
+    out = capsys.readouterr().err
+    assert '✗' in out
+    assert 'does not match /[A-Z]{3}/' in out
+
+
+def test_cell_trace_no_mark_when_ok_none(capsys):
+    # An empty optional field (ok=None) → traced without a ✓/✗ mark.
+    lg = Logger(level=VerbosityLevel.VERBOSE)
+    lg.cell_processed(1, 1, 'x', None, ok=None)
+    out = capsys.readouterr().err
+    assert '✓' not in out and '✗' not in out
+
+
+def test_trace_suppressed_below_verbose(capsys):
+    lg = Logger(level=VerbosityLevel.NORMAL)
+    lg.cell_processed(1, 1, 'x', 'v', ok=True)
+    out = capsys.readouterr().err
+    assert out == ''            # NORMAL must not print the per-field trace
+
+
+def test_commit_traces_emits_only_at_verbose(capsys):
+    line = '  [FIELD] f ← A1 = 1 ✓'
+    quiet = Logger(level=VerbosityLevel.QUIET)
+    quiet.commit_traces([line])
+    assert capsys.readouterr().err == ''
+
+    verbose = Logger(level=VerbosityLevel.VERBOSE)
+    verbose.commit_traces([line])
+    assert line in capsys.readouterr().err
+
+
+def test_trace_field_returns_line_without_emitting(capsys):
+    lg = Logger(level=VerbosityLevel.VERBOSE, sheet_name='S')
+    line = lg.trace_field(4, 1, 'row.item', 'Laptop', ok=True)
+    assert capsys.readouterr().err == ''     # building a trace does not print
+    assert 'row.item' in line and 'S!A4' in line and '✓' in line

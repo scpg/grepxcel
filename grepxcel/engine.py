@@ -8,6 +8,39 @@ from .logger import Logger, LogRecord, EngineError, cell_ref
 from .security import validate_file, validate_pattern_file, SecurityError, DEFAULT_MAX_UNCOMPRESSED_MB
 
 
+# ── Data-sheet size limits ──────────────────────────────────────────────────────
+#
+# grepxcel targets normal-sized spreadsheets. Very large sheets are both a
+# performance risk and untested territory, so the data sheet's dimensions are
+# bounded by conservative defaults. The user can raise them (up to Excel's hard
+# maximum) but is warned the tool is not validated at that scale.
+DEFAULT_MAX_DATA_ROWS = 2048
+DEFAULT_MAX_DATA_COLS = 1024
+EXCEL_MAX_ROWS = 1_048_576   # Excel's hard row ceiling
+EXCEL_MAX_COLS = 16_384      # Excel's hard column ceiling (XFD)
+
+
+def _check_sheet_dimensions(ws, max_rows: int, max_cols: int, logger) -> None:
+    """Fatal-error if the worksheet exceeds the configured row/column limits.
+
+    The message tells the user how to raise the limit and that doing so is
+    untested territory. Calls logger.fatal (which raises EngineError).
+    """
+    nrows = ws.max_row or 0
+    ncols = ws.max_column or 0
+    if nrows > max_rows or ncols > max_cols:
+        logger.fatal(
+            f"Sheet {ws.title!r} is too large for grepxcel's limits: "
+            f"{nrows} row(s) × {ncols} column(s). grepxcel targets normal-sized "
+            f"spreadsheets. You can raise the limits with --max-rows / "
+            f"--max-columns (up to Excel's maximum of {EXCEL_MAX_ROWS:,} rows and "
+            f"{EXCEL_MAX_COLS:,} columns), but the tool has not been tested at that "
+            f"scale, so correct behavior is not guaranteed.",
+            found=f"{nrows} rows × {ncols} columns",
+            expected=f"≤ {max_rows} rows and ≤ {max_cols} columns",
+        )
+
+
 # ── Output helpers ─────────────────────────────────────────────────────────────
 
 def _range_ref(r1: int, c1: int, r2: int, c2: int) -> str:
@@ -228,6 +261,8 @@ class Engine:
                 max_file_mb: float = 5,
                 max_uncompressed_mb: float = DEFAULT_MAX_UNCOMPRESSED_MB,
                 max_cell_len: int = _MAX_REGEX_INPUT_LEN,
+                max_rows: int = DEFAULT_MAX_DATA_ROWS,
+                max_cols: int = DEFAULT_MAX_DATA_COLS,
                 sheet: str | int | None = None,
                 output_format: str = 'nested') -> dict:
         if logger is None:
@@ -256,6 +291,14 @@ class Engine:
                 global_config, defs, start_sequence = PatternParser().parse(pattern_file)
             except (SecurityError, PatternError) as exc:
                 logger.fatal(str(exc), found=pattern_file)
+
+            if not start_sequence:
+                logger.fatal(
+                    'Pattern file defines no extraction steps — it has no START: '
+                    'section, or the START: … END: block is empty.',
+                    found=pattern_file,
+                    expected='a START: … END: block with at least one cell: or table: instruction',
+                )
 
             try:
                 wb = openpyxl.load_workbook(data_file, data_only=True)
@@ -299,6 +342,8 @@ class Engine:
                 )
                 ws = wb.active  # unreachable (logger.fatal raises); keeps ws bound
 
+            _check_sheet_dimensions(ws, max_rows, max_cols, logger)
+
             logger.engine_start(pattern_file, data_file)
             _raw = self._process_sheet(ws, global_config, defs, start_sequence, logger)
 
@@ -316,6 +361,8 @@ class Engine:
                     max_file_mb: float = 5,
                     max_uncompressed_mb: float = DEFAULT_MAX_UNCOMPRESSED_MB,
                     max_cell_len: int = _MAX_REGEX_INPUT_LEN,
+                    max_rows: int = DEFAULT_MAX_DATA_ROWS,
+                    max_cols: int = DEFAULT_MAX_DATA_COLS,
                     output_format: str = 'nested') -> dict:
         """
         Process every sheet in data_file using the same pattern.
@@ -348,6 +395,14 @@ class Engine:
             except (SecurityError, PatternError) as exc:
                 logger.fatal(str(exc), found=pattern_file)
 
+            if not start_sequence:
+                logger.fatal(
+                    'Pattern file defines no extraction steps — it has no START: '
+                    'section, or the START: … END: block is empty.',
+                    found=pattern_file,
+                    expected='a START: … END: block with at least one cell: or table: instruction',
+                )
+
             try:
                 wb = openpyxl.load_workbook(data_file, data_only=True)
             except Exception as exc:
@@ -362,6 +417,7 @@ class Engine:
             for ws in wb.worksheets:
                 _raw = {'cells': {}, 'tables': []}
                 try:
+                    _check_sheet_dimensions(ws, max_rows, max_cols, logger)
                     _raw = self._process_sheet(ws, global_config, defs, start_sequence, logger)
                 except EngineError:
                     pass  # per-sheet fatal; log and continue
@@ -473,14 +529,17 @@ class Engine:
                 found='no matching def: row in pattern file',
             )
 
-        logger.cell_processed(row, col, instr.field, value)
-
+        # Validate before tracing so the -v trace can show ✓/✗ per field.
+        ok = None
         if value is not None:
             ok, _ = validate_type(value, fd.type, fd.regex, config.currency_sign,
                                   self._max_cell_len, config.ignore_case)
-            if not ok:
-                rec = logger.warn_validation(row, col, instr.field, fd.type, fd.regex, value)
-                logger.commit_warnings([rec])
+
+        logger.cell_processed(row, col, instr.field, value, ok=ok, regex=fd.regex)
+
+        if ok is False:
+            rec = logger.warn_validation(row, col, instr.field, fd.type, fd.regex, value)
+            logger.commit_warnings([rec])
 
         result['cells'][instr.field] = value
 
@@ -543,12 +602,15 @@ class Engine:
             logger.anchor_probe(anchor_row, anchor_col, scanner.cell_value(anchor_row, anchor_col))
 
             local_warnings: list[LogRecord] = []
+            local_traces: list[str] = []
             match = self._attempt_match(
-                anchor_row, anchor_col, instr, scanner, defs, config, local_warnings, logger
+                anchor_row, anchor_col, instr, scanner, defs, config,
+                local_warnings, local_traces, logger,
             )
 
             if match is not None:
                 logger.commit_warnings(local_warnings)
+                logger.commit_traces(local_traces)
                 return match, search_cursor + 1
 
             logger.anchor_rejected(anchor_row, anchor_col, 'mini-table pattern did not match')
@@ -557,7 +619,8 @@ class Engine:
     def _attempt_match(self, anchor_row: int, anchor_col: int,
                        instr: TableInstruction, scanner: SheetScanner,
                        defs: dict, config: Config,
-                       local_warnings: list, logger: Logger) -> dict | None:
+                       local_warnings: list, local_traces: list,
+                       logger: Logger) -> dict | None:
         """
         Tentatively match the full mini-table at (anchor_row, anchor_col).
         On success: consumes all cells, returns extracted data.
@@ -581,7 +644,8 @@ class Engine:
         for tmpl_row in header_rows:
             row_data, ok = self._match_row(
                 current_row, anchor_col, tmpl_row, defs, config,
-                scanner, tentative_consumed, local_warnings, logger, strict=True,
+                scanner, tentative_consumed, local_warnings, local_traces,
+                logger, strict=True,
             )
             if not ok:
                 return None
@@ -640,7 +704,8 @@ class Engine:
 
                 row_data, ok = self._match_row(
                     current_row, anchor_col, data_tmpl, defs, config,
-                    scanner, tentative_consumed, local_warnings, logger, strict=False,
+                    scanner, tentative_consumed, local_warnings, local_traces,
+                    logger, strict=False,
                 )
                 if not ok:
                     return None
@@ -663,7 +728,8 @@ class Engine:
         for tmpl_row in footer_rows:
             row_data, ok = self._match_row(
                 current_row, anchor_col, tmpl_row, defs, config,
-                scanner, tentative_consumed, local_warnings, logger, strict=True,
+                scanner, tentative_consumed, local_warnings, local_traces,
+                logger, strict=True,
             )
             if not ok:
                 return None
@@ -683,13 +749,16 @@ class Engine:
 
     def _match_row(self, sheet_row: int, anchor_col: int, tmpl_row: TemplateRow,
                    defs: dict, config: Config, scanner: SheetScanner,
-                   tentative_consumed: set, local_warnings: list, logger: Logger,
-                   strict: bool = False) -> tuple:
+                   tentative_consumed: set, local_warnings: list, local_traces: list,
+                   logger: Logger, strict: bool = False) -> tuple:
         """
         Match a single template row against a sheet row.
         strict=True: empty value in a non-EMPTY field causes immediate failure (HEADER/FOOTER).
         strict=False: empty value is warned but allowed (DATA).
         Returns (row_data: dict, success: bool).
+
+        For DATA rows (strict=False) a per-field extraction trace is appended to
+        local_traces; the caller commits it only if the whole mini-table matches.
         """
         row_data = {}
 
@@ -717,11 +786,17 @@ class Engine:
                     logger.warn_empty_field(sheet_row, col, tmpl_col.field, fd_type)
                 )
                 row_data[tmpl_col.field] = None
+                local_traces.append(
+                    logger.trace_field(sheet_row, col, tmpl_col.field, None, ok=None)
+                )
             else:
+                trace_ok: bool | None = True
+                trace_regex = ''
                 if fd is None:
                     local_warnings.append(
                         logger.warn_undefined_field(sheet_row, col, tmpl_col.field)
                     )
+                    trace_ok = False
                 else:
                     ok, _ = validate_type(val, fd.type, fd.regex, config.currency_sign,
                                           self._max_cell_len, config.ignore_case)
@@ -732,7 +807,13 @@ class Engine:
                             logger.warn_validation(sheet_row, col, tmpl_col.field,
                                                    fd.type, fd.regex, val)
                         )
+                    trace_ok, trace_regex = ok, fd.regex
                 row_data[tmpl_col.field] = val
+                if not strict:
+                    local_traces.append(
+                        logger.trace_field(sheet_row, col, tmpl_col.field, val,
+                                           ok=trace_ok, regex=trace_regex)
+                    )
 
             tentative_consumed.add((sheet_row, col))
 

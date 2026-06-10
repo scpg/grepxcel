@@ -82,16 +82,24 @@ referenced in the `START:` section, or documents the pattern.
 | Type         | Accepts                                       | Regex target           |
 |--------------|-----------------------------------------------|------------------------|
 | `string`     | Any text                                      | The cell text as-is    |
+| `text`       | Alias for `string`                            | The cell text as-is    |
 | `integer`    | Whole numbers (Excel integers or whole floats)| `str(int_value)`       |
+| `number` / `float` / `decimal` | Any number, int or float (not a boolean)    | `str(numeric_value)`   |
 | `currency`   | Any number (int or float)                     | `str(numeric_value)`   |
 | `percentage` | Any number (int or float). Excel stores a percentage as a fraction, e.g. 62.5% → `0.625` | `str(numeric_value)` |
+| `boolean` / `bool` | Excel `TRUE`/`FALSE`                    | n/a (type check only)  |
 | `date`       | Excel date cells                              | n/a (type check only)  |
 | `datetime`   | Excel datetime cells                          | n/a (type check only)  |
 | `timestamp`  | Same as `datetime`                            | n/a (type check only)  |
 
-`percentage` validates identically to `currency` (both require a numeric cell);
-it exists to document intent — a reader sees that the field holds a percentage.
-For `date`/`datetime`/`timestamp`, the regex column is ignored.
+`text` is a synonym for `string`. `number`/`float`/`decimal` behave like
+`currency`/`percentage` (any numeric cell) but carry no money/percentage intent —
+use them for plain decimals such as quantities or measurements. `percentage`
+validates identically to `currency`; it exists to document intent. For
+`boolean`/`date`/`datetime`/`timestamp`, the regex column is ignored.
+
+> An unknown type name (e.g. a typo like `currncy`) is rejected when the pattern
+> file is parsed, so a mistyped type fails fast instead of silently mis-validating.
 
 ---
 
