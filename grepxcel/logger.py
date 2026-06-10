@@ -8,7 +8,8 @@ web frontend rendering.
 Verbosity levels:
   0  QUIET   — no console output during processing
   1  NORMAL  — summary + all validation issues with descriptions (default)
-  2  VERBOSE — + step-by-step: cells found, tables matched
+  2  VERBOSE — + step-by-step: per-field trace (field ← cell = value ✓/✗),
+                tables matched
   3  DEBUG   — + every anchor attempted and why it was accepted or rejected
 """
 
@@ -236,14 +237,43 @@ class Logger:
 
     # --- Step-by-step (VERBOSE) --------------------------------------------
 
-    def cell_processed(self, row: int, col: int, field: str, value):
+    def cell_processed(self, row: int, col: int, field: str, value,
+                       ok: Optional[bool] = None, regex: str = ''):
+        """Trace a scalar cell extraction at VERBOSE: 'field ← B1 = value ✓/✗'.
+
+        ok=None  → no validation mark (e.g. an empty optional field);
+        ok=True  → ✓ ; ok=False → ✗ plus the regex it failed.
+        """
         location = cell_ref(row, col, self.sheet_name)
         rec = LogRecord(Severity.INFO, Category.EXTRACTION,
                         f'{field} = {repr(value)}',
                         location=location, field=field)
         self._records.append(rec)
         self._write(VerbosityLevel.VERBOSE,
-                    f'  [CELL]  {location:<12} {field}  →  {repr(value)}')
+                    self._trace_line(field, location, value, ok, regex, kind='CELL'))
+
+    def _trace_line(self, field: str, location: str, value,
+                    ok: Optional[bool] = None, regex: str = '',
+                    kind: str = 'CELL') -> str:
+        """Render one per-field extraction-trace line."""
+        mark = '' if ok is None else (' ✓' if ok else ' ✗')
+        line = f'  [{kind}] {field:<20} ← {location:<10} = {repr(value)}{mark}'
+        if ok is False and regex:
+            line += f'   (does not match /{regex}/)'
+        return line
+
+    def trace_field(self, row: int, col: int, field: str, value,
+                    ok: Optional[bool] = None, regex: str = '') -> str:
+        """Build a per-field trace line for a table cell. Returned (not emitted)
+        so the caller can commit it only when the mini-table actually matches —
+        mirroring how local_warnings are collected and committed."""
+        return self._trace_line(field, cell_ref(row, col, self.sheet_name),
+                                value, ok, regex, kind='FIELD')
+
+    def commit_traces(self, traces: list) -> None:
+        """Emit per-field trace lines collected during a committed mini-table match."""
+        for line in traces:
+            self._write(VerbosityLevel.VERBOSE, line)
 
     def cell_ignored(self, row: int, col: int, value):
         location = cell_ref(row, col, self.sheet_name)

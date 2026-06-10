@@ -529,14 +529,17 @@ class Engine:
                 found='no matching def: row in pattern file',
             )
 
-        logger.cell_processed(row, col, instr.field, value)
-
+        # Validate before tracing so the -v trace can show ✓/✗ per field.
+        ok = None
         if value is not None:
             ok, _ = validate_type(value, fd.type, fd.regex, config.currency_sign,
                                   self._max_cell_len, config.ignore_case)
-            if not ok:
-                rec = logger.warn_validation(row, col, instr.field, fd.type, fd.regex, value)
-                logger.commit_warnings([rec])
+
+        logger.cell_processed(row, col, instr.field, value, ok=ok, regex=fd.regex)
+
+        if ok is False:
+            rec = logger.warn_validation(row, col, instr.field, fd.type, fd.regex, value)
+            logger.commit_warnings([rec])
 
         result['cells'][instr.field] = value
 
@@ -599,12 +602,15 @@ class Engine:
             logger.anchor_probe(anchor_row, anchor_col, scanner.cell_value(anchor_row, anchor_col))
 
             local_warnings: list[LogRecord] = []
+            local_traces: list[str] = []
             match = self._attempt_match(
-                anchor_row, anchor_col, instr, scanner, defs, config, local_warnings, logger
+                anchor_row, anchor_col, instr, scanner, defs, config,
+                local_warnings, local_traces, logger,
             )
 
             if match is not None:
                 logger.commit_warnings(local_warnings)
+                logger.commit_traces(local_traces)
                 return match, search_cursor + 1
 
             logger.anchor_rejected(anchor_row, anchor_col, 'mini-table pattern did not match')
@@ -613,7 +619,8 @@ class Engine:
     def _attempt_match(self, anchor_row: int, anchor_col: int,
                        instr: TableInstruction, scanner: SheetScanner,
                        defs: dict, config: Config,
-                       local_warnings: list, logger: Logger) -> dict | None:
+                       local_warnings: list, local_traces: list,
+                       logger: Logger) -> dict | None:
         """
         Tentatively match the full mini-table at (anchor_row, anchor_col).
         On success: consumes all cells, returns extracted data.
@@ -637,7 +644,8 @@ class Engine:
         for tmpl_row in header_rows:
             row_data, ok = self._match_row(
                 current_row, anchor_col, tmpl_row, defs, config,
-                scanner, tentative_consumed, local_warnings, logger, strict=True,
+                scanner, tentative_consumed, local_warnings, local_traces,
+                logger, strict=True,
             )
             if not ok:
                 return None
@@ -696,7 +704,8 @@ class Engine:
 
                 row_data, ok = self._match_row(
                     current_row, anchor_col, data_tmpl, defs, config,
-                    scanner, tentative_consumed, local_warnings, logger, strict=False,
+                    scanner, tentative_consumed, local_warnings, local_traces,
+                    logger, strict=False,
                 )
                 if not ok:
                     return None
@@ -719,7 +728,8 @@ class Engine:
         for tmpl_row in footer_rows:
             row_data, ok = self._match_row(
                 current_row, anchor_col, tmpl_row, defs, config,
-                scanner, tentative_consumed, local_warnings, logger, strict=True,
+                scanner, tentative_consumed, local_warnings, local_traces,
+                logger, strict=True,
             )
             if not ok:
                 return None
@@ -739,13 +749,16 @@ class Engine:
 
     def _match_row(self, sheet_row: int, anchor_col: int, tmpl_row: TemplateRow,
                    defs: dict, config: Config, scanner: SheetScanner,
-                   tentative_consumed: set, local_warnings: list, logger: Logger,
-                   strict: bool = False) -> tuple:
+                   tentative_consumed: set, local_warnings: list, local_traces: list,
+                   logger: Logger, strict: bool = False) -> tuple:
         """
         Match a single template row against a sheet row.
         strict=True: empty value in a non-EMPTY field causes immediate failure (HEADER/FOOTER).
         strict=False: empty value is warned but allowed (DATA).
         Returns (row_data: dict, success: bool).
+
+        For DATA rows (strict=False) a per-field extraction trace is appended to
+        local_traces; the caller commits it only if the whole mini-table matches.
         """
         row_data = {}
 
@@ -773,11 +786,17 @@ class Engine:
                     logger.warn_empty_field(sheet_row, col, tmpl_col.field, fd_type)
                 )
                 row_data[tmpl_col.field] = None
+                local_traces.append(
+                    logger.trace_field(sheet_row, col, tmpl_col.field, None, ok=None)
+                )
             else:
+                trace_ok: bool | None = True
+                trace_regex = ''
                 if fd is None:
                     local_warnings.append(
                         logger.warn_undefined_field(sheet_row, col, tmpl_col.field)
                     )
+                    trace_ok = False
                 else:
                     ok, _ = validate_type(val, fd.type, fd.regex, config.currency_sign,
                                           self._max_cell_len, config.ignore_case)
@@ -788,7 +807,13 @@ class Engine:
                             logger.warn_validation(sheet_row, col, tmpl_col.field,
                                                    fd.type, fd.regex, val)
                         )
+                    trace_ok, trace_regex = ok, fd.regex
                 row_data[tmpl_col.field] = val
+                if not strict:
+                    local_traces.append(
+                        logger.trace_field(sheet_row, col, tmpl_col.field, val,
+                                           ok=trace_ok, regex=trace_regex)
+                    )
 
             tentative_consumed.add((sheet_row, col))
 

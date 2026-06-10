@@ -62,6 +62,10 @@ Initial public release.
 - **More field types** — added `number`/`float`/`decimal` (plain numerics),
   `text` (alias for `string`), and `boolean` (TRUE/FALSE) alongside the existing
   `string`, `integer`, `currency`, `percentage`, `date`/`datetime`/`timestamp`.
+- **Verbose extraction trace** — `-v` now prints a per-field trace
+  (`field ← B1 = value ✓`/`✗`) for both scalar cells and table DATA fields, with
+  the failing regex shown on a `✗`, so it's easy to see what was extracted from
+  where and why a pattern didn't match.
 - **Data-sheet size limits** — a guard against oversized sheets with sensible
   defaults (`--max-rows` 2048, `--max-columns` 1024). Larger sheets fail with a
   message explaining how to raise the limit (up to Excel's maximum) and that the
