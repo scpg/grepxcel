@@ -91,6 +91,7 @@ class PatternParser:
                 break
 
             if col_a == 'START:':
+                self._check_comment_zone(row, 1, i + 1, 'START:')   # B+ may be a # comment
                 in_start = True
                 i += 1
                 continue
@@ -98,12 +99,15 @@ class PatternParser:
             if not in_start:
                 if col_a == 'config:':
                     self._apply_global_config(row, global_config)
+                    self._check_comment_zone(row, 3, i + 1, 'config:')    # D+ comment
                 elif col_a in ('def:', 'var:'):
                     fd = self._parse_field(row, role='var', row_num=i + 1)
                     defs[fd.name] = fd
+                    self._check_comment_zone(row, 4, i + 1, col_a)        # E+ comment
                 elif col_a == 'lbl:':
                     fd = self._parse_field(row, role='lbl', row_num=i + 1)
                     defs[fd.name] = fd
+                    self._check_comment_zone(row, 4, i + 1, 'lbl:')       # E+ comment
                 elif col_a in ('doc:', 'info:'):
                     pass  # inline documentation — ignored by engine
                 i += 1
@@ -113,6 +117,7 @@ class PatternParser:
             if col_a and col_a.startswith('cell:'):
                 raw = col_a.split(':', 1)[1]
                 field = str(row[1] or 'IGNORE')
+                self._check_comment_zone(row, 2, i + 1, 'cell:')      # C+ may be a # comment
                 if raw in ('1', 'next'):
                     start_sequence.append(CellInstruction(multiplicity=raw, field=field))
                 elif _A1_RE.match(raw):
@@ -420,6 +425,29 @@ class PatternParser:
         while len(row) < length:
             row.append(None)
         return row
+
+    def _check_comment_zone(self, row, start_idx: int, row_num: int, context: str) -> None:
+        """Validate the trailing cells (from start_idx) of a non-table row.
+
+        The trailing cells may be empty, or a comment: a cell whose text starts
+        with '#' begins a comment that runs to the end of the row. Any non-empty
+        cell that is not a comment (and not already inside one) is a mistake —
+        fail fast so a value typed into the wrong column is never silently lost.
+        Comments are NOT processed for table rows (there '#' is a literal value).
+        """
+        in_comment = False
+        for j in range(start_idx, len(row)):
+            val = row[j]
+            if val is None or in_comment:
+                continue
+            if str(val).lstrip().startswith('#'):
+                in_comment = True
+                continue
+            raise PatternError(
+                f"Unexpected content {val!r} in column {get_column_letter(j + 1)} "
+                f"at pattern row {row_num} ({context}). Columns after the {context} "
+                f"fields may only contain a comment starting with '#'."
+            )
 
     def _apply_global_config(self, row, config: Config):
         key, val = row[1], row[2]
