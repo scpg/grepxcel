@@ -29,6 +29,8 @@ _FULL_FIXTURES: list[str] = sorted(
     if os.path.isdir(os.path.join(_FIXTURES_DIR, name))
     and os.path.exists(os.path.join(_FIXTURES_DIR, name, 'pattern.xlsx'))
     and os.path.exists(os.path.join(_FIXTURES_DIR, name, 'data.xlsx'))
+    # Exclude UNDER_REVIEW LLM drafts — they aren't curated reference fixtures yet.
+    and not os.path.exists(os.path.join(_FIXTURES_DIR, name, 'UNDER_REVIEW'))
 )
 
 # Fixtures whose reference pattern targets a non-active sheet. Using the right

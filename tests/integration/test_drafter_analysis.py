@@ -61,10 +61,17 @@ from grepxcel.drafter import ExcelAnalyzer
 
 _FIXTURES_DIR = os.path.join(os.path.dirname(__file__), '..', 'fixtures')
 
+def _under_review(name: str) -> bool:
+    """A fixture carrying an UNDER_REVIEW marker is an LLM draft being refined; it
+    is excluded from these curated-quality sweeps until promoted (see the marker)."""
+    return os.path.exists(os.path.join(_FIXTURES_DIR, name, 'UNDER_REVIEW'))
+
+
 _DATA_FIXTURES: list[str] = sorted(
     name for name in os.listdir(_FIXTURES_DIR)
     if os.path.isdir(os.path.join(_FIXTURES_DIR, name))
     and os.path.exists(os.path.join(_FIXTURES_DIR, name, 'data.xlsx'))
+    and not _under_review(name)
 )
 
 _FULL_FIXTURES: list[str] = [
