@@ -31,7 +31,7 @@ _VALID_FIELD_TYPES = frozenset({
     'number', 'float', 'decimal',
     'currency', 'percentage',
     'boolean', 'bool',
-    'date', 'datetime', 'timestamp',
+    'time', 'date', 'datetime', 'timestamp',
 })
 
 

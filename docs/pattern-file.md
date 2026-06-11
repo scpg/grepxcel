@@ -88,6 +88,7 @@ referenced in the `START:` section, or documents the pattern.
 | `currency`   | Any number (int or float)                     | `str(numeric_value)`   |
 | `percentage` | Any number (int or float). Excel stores a percentage as a fraction, e.g. 62.5% → `0.625` | `str(numeric_value)` |
 | `boolean` / `bool` | Excel `TRUE`/`FALSE`                    | n/a (type check only)  |
+| `time`       | Excel **time-only** cells (no date part)      | n/a (type check only)  |
 | `date`       | Excel date cells                              | n/a (type check only)  |
 | `datetime`   | Excel datetime cells                          | n/a (type check only)  |
 | `timestamp`  | Same as `datetime`                            | n/a (type check only)  |
@@ -96,7 +97,9 @@ referenced in the `START:` section, or documents the pattern.
 `currency`/`percentage` (any numeric cell) but carry no money/percentage intent —
 use them for plain decimals such as quantities or measurements. `percentage`
 validates identically to `currency`; it exists to document intent. For
-`boolean`/`date`/`datetime`/`timestamp`, the regex column is ignored.
+`boolean`/`time`/`date`/`datetime`/`timestamp`, the regex column is ignored.
+`time` matches **time-only** cells (e.g. `14:30`); a cell that also has a date is
+a `datetime`, not a `time`.
 
 > An unknown type name (e.g. a typo like `currncy`) is rejected when the pattern
 > file is parsed, so a mistyped type fails fast instead of silently mis-validating.

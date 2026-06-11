@@ -144,7 +144,7 @@ class DocsGenerator:
         row(['doc:', '', '', '', 'var: defines a data field. Extracted and written to output JSON.'], 'doc')
         row(['doc:', '', '', '', 'Dot notation creates nested JSON: po.number → {"po": {"number": ...}}'], 'doc')
         row(['doc:', '', '', '', 'All var: fields in one table DATA row must share the same group prefix.'], 'doc')
-        row(['doc:', '', '', '', 'Types: string text integer number/float/decimal currency percentage boolean date datetime'], 'doc')
+        row(['doc:', '', '', '', 'Types: string text integer number/float/decimal currency percentage boolean time date datetime'], 'doc')
         row(['doc:', '', '', '', 'Regex: Python re.fullmatch pattern. Leave blank for date/datetime. .* matches anything.'], 'doc')
         row(['doc:', '', '', '', 'Comments: a doc:/info: row is a whole-line comment. On config/var/lbl/cell/START rows,'], 'doc')
         row(['doc:', '', '', '', 'a cell starting with # AFTER the real columns is a trailing comment to end of row'], 'doc')

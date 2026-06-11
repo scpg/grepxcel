@@ -502,7 +502,7 @@ class TestUnknownFieldType:
     @pytest.mark.parametrize('type_name', [
         'string', 'text', 'integer', 'number', 'float', 'decimal',
         'currency', 'percentage', 'boolean', 'bool',
-        'date', 'datetime', 'timestamp',
+        'time', 'date', 'datetime', 'timestamp',
     ])
     def test_all_valid_types_accepted(self, tmp_path, type_name):
         path = _write_pattern([
@@ -746,6 +746,27 @@ class TestNewFieldTypesEndToEnd:
         )
         assert not lg.has_errors()
         assert lg.issues() == []
+
+    def test_time_accepts_time_only_cell(self, tmp_path):
+        import datetime
+        lg = _engine_run(
+            [['var:', 't.v', 'time', r'.*'],
+             ['START:'], ['cell:A1', 't.v'], ['END:']],
+            {'A1': datetime.time(14, 30)}, tmp_path,
+        )
+        assert not lg.has_errors()
+        assert lg.issues() == []
+
+    def test_time_rejects_a_datetime(self, tmp_path):
+        # A cell that also has a date is a datetime, not a time → validation warning.
+        import datetime
+        lg = _engine_run(
+            [['var:', 't.v', 'time', r'.*'],
+             ['START:'], ['cell:A1', 't.v'], ['END:']],
+            {'A1': datetime.datetime(2026, 1, 1, 14, 30)}, tmp_path,
+        )
+        assert not lg.has_errors()
+        assert len(lg.issues()) == 1
 
 
 class TestSheetDimensionLimits:
