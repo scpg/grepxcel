@@ -41,6 +41,7 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import urllib.request
 from pathlib import Path
 
@@ -95,8 +96,9 @@ def _build_parser():
     p.add_argument('--cuda-version', default=DEFAULT_CUDA_VERSION, metavar='VERSION',
                    help=f'CUDA Toolkit version (default: {DEFAULT_CUDA_VERSION}). '
                         f'Known: {", ".join(KNOWN_RELEASES)}')
-    p.add_argument('--download-dir', default='/tmp', metavar='PATH',
-                   help='Directory to save the runfile (default: /tmp)')
+    p.add_argument('--download-dir', default=tempfile.gettempdir(), metavar='PATH',
+                   help='Directory to save the runfile (default: the system temp '
+                        'dir — honors TMPDIR/TEMP/TMP; cross-platform)')
     p.add_argument('--install-prefix', default='/usr/local', metavar='PATH',
                    help='Parent directory for the CUDA install (default: /usr/local)')
     p.add_argument('--bashrc-file', default=str(Path.home() / '.bashrc'), metavar='FILE',

@@ -9,7 +9,7 @@ handled by ModelManager.
 
 import os
 import platform
-import subprocess
+import subprocess  # nosec B404 — only fixed-argv, shell-free GPU probes (see below)
 import sys
 import tempfile
 from dataclasses import dataclass
@@ -562,7 +562,7 @@ def _detect_gpu() -> tuple[int, str | None, str | None]:
 
     # NVIDIA CUDA (works on Linux, Windows, and WSL2 with NVIDIA WSL2 driver)
     try:
-        proc = subprocess.run(
+        proc = subprocess.run(  # nosec — B603/B607: fixed argv, no shell, no user input
             ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"],
             capture_output=True, text=True, timeout=5,
         )
@@ -582,7 +582,7 @@ def _detect_gpu() -> tuple[int, str | None, str | None]:
 
     # Vulkan (any GPU on Windows/Linux — AMD, Intel, NVIDIA without CUDA driver)
     try:
-        proc = subprocess.run(
+        proc = subprocess.run(  # nosec — B603/B607: fixed argv, no shell, no user input
             ["vulkaninfo", "--summary"],
             capture_output=True, text=True, timeout=5,
         )
@@ -624,7 +624,7 @@ def _detect_gpu() -> tuple[int, str | None, str | None]:
                 '    grepxcel draft --backend claude  (or --backend gemini)',
                 file=sys.stderr,
             )
-    except Exception:  # noqa: BLE001 — never crash inference over an info message
+    except Exception:  # noqa: BLE001  # nosec B110 — best-effort info message; never crash inference
         pass
 
     return 0, None, None

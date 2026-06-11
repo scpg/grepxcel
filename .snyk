@@ -1,0 +1,35 @@
+# Snyk (https://snyk.io) policy file.
+#
+# This file documents triaged static-analysis findings for grepxcel. The shipped
+# package (grepxcel/) is also annotated inline with `# nosec <id> — <reason>` for
+# bandit; this file is the Snyk-side record of the same review.
+#
+# When the Snyk integration token is available, convert the accepted items below
+# into real `ignore:` entries keyed by Snyk's issue IDs (with an `expires:` date).
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# Reviewed & ACCEPTED (intentional, low-risk) — shipped package grepxcel/
+# ─────────────────────────────────────────────────────────────────────────────
+#  • grepxcel/drafter.py  — subprocess.run(["nvidia-smi"|"vulkaninfo", ...])
+#      Fixed argument list, no shell=True, no user input. Used only to detect a
+#      GPU for picking the llama.cpp backend. (bandit B404/B603/B607)
+#  • grepxcel/drafter.py  — except Exception: pass around an info message.
+#      Best-effort; must never crash inference over a status print. (bandit B110)
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# FIXED (no longer findings)
+# ─────────────────────────────────────────────────────────────────────────────
+#  • grepxcel/doctor.py — urlopen() now rejects non-http(s) schemes before use.
+#  • scripts/install_cuda.py — temp dir default is tempfile.gettempdir()
+#      (TMPDIR/TEMP/TMP, cross-platform) instead of a hardcoded /tmp.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# scripts/ (dev/installer utilities — NOT shipped in the wheel)
+# ─────────────────────────────────────────────────────────────────────────────
+#  • install_cuda.py / install_llm_deps.py / verify_suggest.py / _bootstrap.py
+#      legitimately shell out to pip / nvidia-smi / vulkaninfo with fixed argv,
+#      no shell. Lower priority; install_cuda.py is pending a broader rework.
+
+version: v1.5.0
+ignore: {}
+patch: {}

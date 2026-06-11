@@ -21,6 +21,7 @@ import shutil
 import ssl
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 
 from . import proxy_support
@@ -128,9 +129,13 @@ def tls_probe(url: str = 'https://huggingface.co', timeout: float = 6.0) -> Resu
     Returns OK if TLS verified (even on an HTTP error response — the connection
     and certificate were fine), FAIL on a certificate-trust failure (the corp
     proxy case), WARN if simply unreachable (offline / blocked)."""
+    # Only ever probe http(s) — never let urlopen handle file://, ftp://, etc.
+    if urllib.parse.urlparse(url).scheme not in ('http', 'https'):
+        return (FAIL, f'TLS handshake {url}', 'refusing to probe a non-http(s) URL')
     proxy_support.enable_corporate_tls(announce=False)
     try:
-        urllib.request.urlopen(urllib.request.Request(url, method='HEAD'), timeout=timeout)
+        # nosec B310 — scheme is validated to http/https just above.
+        urllib.request.urlopen(urllib.request.Request(url, method='HEAD'), timeout=timeout)  # nosec B310
         return (OK, f'TLS handshake {url}', 'verified')
     except urllib.error.HTTPError:
         return (OK, f'TLS handshake {url}', 'reached server, certificate verified')
