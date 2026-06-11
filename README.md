@@ -238,6 +238,24 @@ Label fields (`lbl:`) are used only for positional anchoring and are never inclu
 | `--sheet NAME_OR_INDEX` | active | Sheet name or 0-based index to process |
 | `--all-sheets` | off | Process every sheet; output is a dict keyed by sheet name (mutually exclusive with `--sheet`) |
 
+### `grepxcel validate-pattern`
+
+Check that a pattern file (`.xlsx` or `.csv`) is valid to use — **without** running
+an extraction. It applies the same rules extraction does (structure, field types,
+multiplicities, regex safety, comments) and additionally flags an empty extraction
+sequence and references to undefined fields. **Exits non-zero** if any file is invalid.
+
+```bash
+grepxcel validate-pattern pattern.xlsx
+grepxcel validate-pattern pattern.csv -v       # + parsed config, fields, and steps
+grepxcel validate-pattern a.xlsx b.csv         # validate several at once
+```
+
+| Flag | Purpose |
+|---|---|
+| `FILE...` | One or more pattern files to validate |
+| `-v`, `--verbose` | Print the parsed config, fields, and extraction sequence |
+
 ### `grepxcel docs`
 
 | Flag | Default | Purpose |

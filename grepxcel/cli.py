@@ -73,10 +73,11 @@ def _build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 commands:
-  extract   Extract data from Excel files using a pattern file
-  draft     Use a local LLM to draft a starter pattern file for an Excel file
-  docs      Write a pattern-format reference xlsx (pattern-reference.xlsx)
-  doctor    Check the environment is ready (deps, keys, model, proxy/TLS)
+  extract            Extract data from Excel files using a pattern file
+  validate-pattern   Check a pattern file is valid to use (no extraction)
+  draft              Use a local LLM to draft a starter pattern file
+  docs               Write a pattern-format reference xlsx (pattern-reference.xlsx)
+  doctor             Check the environment is ready (deps, keys, model, proxy/TLS)
 
 Run 'grepxcel <command> --help' for per-command options.
         """,
@@ -91,10 +92,34 @@ Run 'grepxcel <command> --help' for per-command options.
     sub.required = True
 
     _add_extract_subparser(sub)
+    _add_validate_subparser(sub)
     _add_draft_subparser(sub)
     _add_docs_subparser(sub)
     _add_doctor_subparser(sub)
     return p
+
+
+def _add_validate_subparser(sub) -> None:
+    p = sub.add_parser(
+        'validate-pattern',
+        help='Check a pattern file (.xlsx or .csv) is valid to use',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Parses the pattern with the same rules extraction uses (structure, types,
+multiplicities, regex safety, comments) and also flags an empty extraction
+sequence and references to undefined fields. Exits non-zero if any file is
+invalid.
+
+examples:
+  grepxcel validate-pattern pattern.xlsx
+  grepxcel validate-pattern pattern.csv -v        # + parsed fields & steps
+  grepxcel validate-pattern a.xlsx b.csv          # validate several
+        """,
+    )
+    p.add_argument('files', nargs='+', metavar='FILE',
+                   help='Pattern file(s) to validate (.xlsx or .csv)')
+    p.add_argument('-v', '--verbose', action='store_true',
+                   help='Print the parsed config, fields, and extraction sequence')
 
 
 def _add_doctor_subparser(sub) -> None:
@@ -439,6 +464,13 @@ def _run_docs(args) -> int:
     return 0
 
 
+# ── validate-pattern handler ─────────────────────────────────────────────────
+
+def _run_validate(args) -> int:
+    from .pattern_check import run_validate
+    return run_validate(args.files, verbose=getattr(args, 'verbose', False))
+
+
 # ── doctor handler ───────────────────────────────────────────────────────────
 
 def _run_doctor(args) -> int:
@@ -542,6 +574,9 @@ def main(argv=None):
 
     if args.command == 'doctor':
         sys.exit(_run_doctor(args))
+
+    if args.command == 'validate-pattern':
+        sys.exit(_run_validate(args))
 
     # extract
     all_ok = True

@@ -51,6 +51,12 @@ Initial public release.
   `ISSUES (cell — reason)` block listing every failing cell and why, so problems
   aren't lost in the scrollback of a long run.
 - **`docs` command** — writes a colour-coded `pattern-reference.xlsx`.
+- **`validate-pattern` command** — `grepxcel validate-pattern FILE...` checks a
+  pattern file (`.xlsx` or `.csv`) is valid to use *without* extracting: it runs
+  the full parser (structure, types, multiplicities, regex safety, comments) and
+  additionally flags an empty extraction sequence and references to undefined
+  fields. `-v` prints the parsed config, fields, and steps; non-zero exit if any
+  file is invalid.
 - **`doctor` command** — `grepxcel doctor [extract|draft|all]` preflight check:
   Python version, core/optional deps, API keys, the local-model cache + disk
   space, and corporate-proxy / TLS trust with a live handshake probe. Prints a
