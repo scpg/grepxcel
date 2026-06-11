@@ -37,12 +37,16 @@ suggest = [
     "llama-cpp-python>=0.2.90",
     "huggingface_hub>=0.23",
     "platformdirs>=4.0",
+    # Corporate TLS-inspection proxy support: lets grepxcel trust the OS
+    # certificate store (where IT installs the company CA). Optional + guarded.
+    "truststore>=0.9",
 ]
 draft-cloud = [
     "anthropic>=0.40",
     # google-genai supports the Gemini backend, which is disabled and planned
     # for a future release. Declared here so enabling it later is a one-liner.
     "google-genai>=0.3",
+    "truststore>=0.9",   # corporate-proxy CA trust — see note in [suggest]
 ]
 dev = [
     "pytest>=8.0",

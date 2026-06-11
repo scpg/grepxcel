@@ -51,6 +51,17 @@ Initial public release.
   `ISSUES (cell — reason)` block listing every failing cell and why, so problems
   aren't lost in the scrollback of a long run.
 - **`docs` command** — writes a colour-coded `pattern-reference.xlsx`.
+- **`doctor` command** — `grepxcel doctor [extract|draft|all]` preflight check:
+  Python version, core/optional deps, API keys, the local-model cache + disk
+  space, and corporate-proxy / TLS trust with a live handshake probe. Prints a
+  `✓/⚠/✗` checklist and exits non-zero on a blocking problem.
+- **Corporate TLS-inspection proxy support** (experimental) — grepxcel can run
+  behind an intercept proxy (e.g. NetSkope/Zscaler) that re-signs HTTPS with a
+  company CA. Optional `truststore` uses the OS trust store automatically; or set
+  `--ca-bundle` / `GREPXCEL_CA_BUNDLE` (also honors `REQUESTS_CA_BUNDLE` /
+  `SSL_CERT_FILE`). Covers the local-model download and the cloud `draft`
+  backends. TLS verification is never disabled. *Not yet tested against a real
+  intercept proxy — `enable_corporate_tls` prints a one-time caveat.*
 - **`--version`** flag.
 - **Pattern-file sanity validation** — every pattern file is now fully
   validated up front; malformed patterns fail with a clear message instead of

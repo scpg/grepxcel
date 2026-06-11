@@ -15,8 +15,44 @@ colour coding:
   HEADER/DATA/FOOTER — light lavender (table template rows)
 """
 
+import datetime
+import os
+
 import openpyxl
 from openpyxl.styles import PatternFill, Font, Alignment
+
+
+def _pin_core_timestamps(path: str, ts: datetime.datetime) -> None:
+    """Make the workbook byte-reproducible. openpyxl stamps both core.xml's
+    <modified> AND every zip member's mod-time with now() on save, so we patch
+    core.xml's created/modified and rewrite every member with a fixed mod-time."""
+    import re
+    import zipfile
+
+    ts_iso = ts.strftime('%Y-%m-%dT%H:%M:%SZ')
+    fixed_date = (ts.year, ts.month, ts.day, ts.hour, ts.minute, ts.second)
+
+    with zipfile.ZipFile(path) as zin:
+        infos = zin.infolist()
+        data = {i.filename: zin.read(i.filename) for i in infos}
+    core = data.get('docProps/core.xml')
+    if core is not None:
+        text = core.decode('utf-8')
+        for tag in ('created', 'modified'):
+            text = re.sub(rf'(<dcterms:{tag}[^>]*>)[^<]*(</dcterms:{tag}>)',
+                          rf'\g<1>{ts_iso}\g<2>', text)
+        data['docProps/core.xml'] = text.encode('utf-8')
+
+    tmp = path + '.tmp'
+    with zipfile.ZipFile(tmp, 'w', zipfile.ZIP_DEFLATED) as zout:
+        for info in infos:                     # preserve order; fix the mod-time
+            zi = zipfile.ZipInfo(info.filename, date_time=fixed_date)
+            zi.compress_type = info.compress_type
+            zi.external_attr = info.external_attr
+            zi.internal_attr = info.internal_attr
+            zi.create_system = info.create_system
+            zout.writestr(zi, data[info.filename])
+    os.replace(tmp, path)
 
 
 # Row colours (ARGB hex, no leading '#')
@@ -108,7 +144,7 @@ class DocsGenerator:
         row(['doc:', '', '', '', 'var: defines a data field. Extracted and written to output JSON.'], 'doc')
         row(['doc:', '', '', '', 'Dot notation creates nested JSON: po.number → {"po": {"number": ...}}'], 'doc')
         row(['doc:', '', '', '', 'All var: fields in one table DATA row must share the same group prefix.'], 'doc')
-        row(['doc:', '', '', '', 'Types: string  integer  currency  percentage  date  datetime'], 'doc')
+        row(['doc:', '', '', '', 'Types: string text integer number/float/decimal currency percentage boolean date datetime'], 'doc')
         row(['doc:', '', '', '', 'Regex: Python re.fullmatch pattern. Leave blank for date/datetime. .* matches anything.'], 'doc')
         row(['var:', 'po.number',    'string',   r'PO-[0-9]{4}',    'Matches e.g. "PO-2026". Output key: {"po": {"number": ...}}'], 'var')
         row(['var:', 'po.date',      'date',     '',                 'Any date cell. Leave regex empty for date/datetime.'], 'var')
@@ -189,4 +225,14 @@ class DocsGenerator:
                 fill_key = 'tmpl'
             row([keyword, syntax, '', description], fill_key)
 
+        # Deterministic output so regenerating yields identical bytes (the
+        # docs-reference CI check byte-compares). openpyxl forces <modified> to
+        # now() at save time (writer/excel.py), so we pin the timestamps in
+        # core.xml *after* saving. Honors SOURCE_DATE_EPOCH.
+        epoch = os.environ.get('SOURCE_DATE_EPOCH')
+        if epoch:
+            ts = datetime.datetime.fromtimestamp(int(epoch), datetime.timezone.utc)
+        else:
+            ts = datetime.datetime(2020, 1, 1, tzinfo=datetime.timezone.utc)
         wb.save(output_path)
+        _pin_core_timestamps(output_path, ts)
