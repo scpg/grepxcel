@@ -110,6 +110,12 @@ def validate_type(value, field_type: str, regex: str, currency_sign: str = '€'
         ok = isinstance(value, bool)
         return ok, ('' if ok else f'{repr(value)} is not a boolean')
 
+    elif field_type == 'time':
+        # A time-only cell → openpyxl returns datetime.time. datetime.datetime is
+        # NOT a datetime.time, so a date/datetime cell is (correctly) rejected here.
+        ok = isinstance(value, datetime.time)
+        return ok, ('' if ok else f'{repr(value)} is not a time')
+
     elif field_type in ('date', 'datetime', 'timestamp'):
         ok = isinstance(value, (datetime.date, datetime.datetime))
         return ok, ('' if ok else f'{repr(value)} is not a {field_type}')

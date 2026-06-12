@@ -161,6 +161,37 @@ class TestCsvPatternParse:
         assert cfg.read_direction == 'LR'
         assert 'x' in defs
 
+    def test_semicolon_delimiter_autodetected(self, tmp_path):
+        """Excel in many locales exports CSV with ';' (comma is the decimal
+        separator there). The reader must sniff the delimiter, not assume ','."""
+        path = _write_text(
+            'config:;read.direction;LR\n'
+            'lbl:;po_label;string;PO:\n'
+            'var:;po.number;string;PO-\\d+\n'
+            'START:\n'
+            'cell:next;po_label\n'
+            'cell:next;po.number\n'
+            'END:\n',
+            tmp_path,
+        )
+        cfg, defs, seq = PatternParser().parse(path)
+        assert cfg.read_direction == 'LR'
+        assert defs['po.number'].regex == r'PO-\d+'
+        assert len(seq) == 2          # the START: block is seen, not collapsed
+
+    def test_tab_delimiter_autodetected(self, tmp_path):
+        path = _write_text(
+            'config:\tread.direction\tLR\n'
+            'var:\tx\tstring\t.*\n'
+            'START:\n'
+            'cell:next\tx\n'
+            'END:\n',
+            tmp_path,
+        )
+        cfg, defs, seq = PatternParser().parse(path)
+        assert cfg.read_direction == 'LR'
+        assert 'x' in defs and len(seq) == 1
+
 
 # ── validate_pattern_file dispatcher ────────────────────────────────────────
 

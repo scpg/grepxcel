@@ -16,6 +16,7 @@ import json
 import os
 import sys
 
+from .color import colorize_marks, should_color
 from .engine import Engine
 from .logger import Logger, VerbosityLevel
 
@@ -23,9 +24,17 @@ from .logger import Logger, VerbosityLevel
 # ── JSON serialisation ────────────────────────────────────────────────────────
 
 def _json_default(obj):
-    """Serialise types that json.dump does not handle natively."""
-    if isinstance(obj, (datetime.date, datetime.datetime)):
+    """Serialise types that json.dump does not handle natively.
+
+    Excel cells surface as several datetime flavours: dates/datetimes and
+    time-of-day all have ``.isoformat()``; durations ([h]:mm cells) come through
+    as ``timedelta``, which has no isoformat, so render it as ``str`` (e.g.
+    ``"8:30:00"``).
+    """
+    if isinstance(obj, (datetime.date, datetime.datetime, datetime.time)):
         return obj.isoformat()
+    if isinstance(obj, datetime.timedelta):
+        return str(obj)
     raise TypeError(f'Type {type(obj).__name__} is not JSON serialisable')
 
 
@@ -73,10 +82,11 @@ def _build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 commands:
-  extract   Extract data from Excel files using a pattern file
-  draft     Use a local LLM to draft a starter pattern file for an Excel file
-  docs      Write a pattern-format reference xlsx (pattern-reference.xlsx)
-  doctor    Check the environment is ready (deps, keys, model, proxy/TLS)
+  extract            Extract data from Excel files using a pattern file
+  validate-pattern   Check a pattern file is valid to use (no extraction)
+  draft              Use a local LLM to draft a starter pattern file
+  docs               Write a pattern-format reference xlsx (pattern-reference.xlsx)
+  doctor             Check the environment is ready (deps, keys, model, proxy/TLS)
 
 Run 'grepxcel <command> --help' for per-command options.
         """,
@@ -91,10 +101,34 @@ Run 'grepxcel <command> --help' for per-command options.
     sub.required = True
 
     _add_extract_subparser(sub)
+    _add_validate_subparser(sub)
     _add_draft_subparser(sub)
     _add_docs_subparser(sub)
     _add_doctor_subparser(sub)
     return p
+
+
+def _add_validate_subparser(sub) -> None:
+    p = sub.add_parser(
+        'validate-pattern',
+        help='Check a pattern file (.xlsx or .csv) is valid to use',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Parses the pattern with the same rules extraction uses (structure, types,
+multiplicities, regex safety, comments) and also flags an empty extraction
+sequence and references to undefined fields. Exits non-zero if any file is
+invalid.
+
+examples:
+  grepxcel validate-pattern pattern.xlsx
+  grepxcel validate-pattern pattern.csv -v        # + parsed fields & steps
+  grepxcel validate-pattern a.xlsx b.csv          # validate several
+        """,
+    )
+    p.add_argument('files', nargs='+', metavar='FILE',
+                   help='Pattern file(s) to validate (.xlsx or .csv)')
+    p.add_argument('-v', '--verbose', action='store_true',
+                   help='Print the parsed config, fields, and extraction sequence')
 
 
 def _add_doctor_subparser(sub) -> None:
@@ -398,7 +432,9 @@ def _process_file(pattern: str, data_file: str, args, stem: str = None) -> bool:
                 output_format=output_format,
             )
     except Exception as exc:
-        print(f'\n  ✗  Unexpected error processing {data_file}: {exc}', file=sys.stderr)
+        print(colorize_marks(
+            f'\n  ✗  Unexpected error processing {data_file}: {exc}',
+            should_color(sys.stderr)), file=sys.stderr)
         return False
     finally:
         logger.close()
@@ -437,6 +473,13 @@ def _run_docs(args) -> int:
     DocsGenerator().write(args.output)
     print(f'Pattern reference written to: {args.output}', file=sys.stderr)
     return 0
+
+
+# ── validate-pattern handler ─────────────────────────────────────────────────
+
+def _run_validate(args) -> int:
+    from .pattern_check import run_validate
+    return run_validate(args.files, verbose=getattr(args, 'verbose', False))
 
 
 # ── doctor handler ───────────────────────────────────────────────────────────
@@ -542,6 +585,9 @@ def main(argv=None):
 
     if args.command == 'doctor':
         sys.exit(_run_doctor(args))
+
+    if args.command == 'validate-pattern':
+        sys.exit(_run_validate(args))
 
     # extract
     all_ok = True

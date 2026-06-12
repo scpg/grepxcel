@@ -56,7 +56,7 @@ If the venv does not exist it prints a clear error with setup instructions and e
 
 ## Running the CLI
 
-The CLI is subcommand-based: `extract`, `draft`, `docs`, `doctor` (run `grepxcel <cmd> --help`).
+The CLI is subcommand-based: `extract`, `validate-pattern`, `draft`, `docs`, `doctor` (run `grepxcel <cmd> --help`).
 
 ```bash
 .venv/bin/grepxcel extract -p pattern.xlsx data.xlsx
@@ -66,6 +66,8 @@ The CLI is subcommand-based: `extract`, `draft`, `docs`, `doctor` (run `grepxcel
 .venv/bin/grepxcel extract -p pattern.xlsx data.xlsx -o output/    # write JSON to a directory
 .venv/bin/grepxcel extract -p pattern.xlsx data.xlsx --sheet Sheet2
 .venv/bin/grepxcel extract -p pattern.xlsx jan.xlsx feb.xlsx       # multiple data files
+.venv/bin/grepxcel validate-pattern pattern.xlsx                   # check a pattern is valid (no extraction)
+.venv/bin/grepxcel validate-pattern pattern.csv -v                # + parsed fields & extraction steps
 .venv/bin/grepxcel draft data.xlsx                                 # draft a starter pattern (local LLM)
 .venv/bin/grepxcel draft data.xlsx --ca-bundle corp-ca.pem         # behind a corporate TLS-inspection proxy
 .venv/bin/grepxcel docs                                            # write pattern-reference.xlsx

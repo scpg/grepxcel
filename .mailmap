@@ -1,0 +1,8 @@
+# Canonicalises commit identities for display (git shortlog/log --use-mailmap,
+# and GitHub's contributors graph). This corrects DISPLAY ONLY — it does not
+# rewrite history or change commit SHAs. See `git help shortlog` (MAPPING AUTHORS).
+#
+# Early commits used a placeholder identity before the maintainer identity was
+# configured; map them to the canonical GitHub no-reply identity.
+SCPG <1386818+scpg@users.noreply.github.com> <test@example.com>
+SCPG <1386818+scpg@users.noreply.github.com> Test User <test@example.com>

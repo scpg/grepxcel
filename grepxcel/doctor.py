@@ -21,9 +21,11 @@ import shutil
 import ssl
 import sys
 import urllib.error
+import urllib.parse
 import urllib.request
 
 from . import proxy_support
+from .color import colorize_marks, should_color
 
 OK, WARN, FAIL = 'ok', 'warn', 'fail'
 _MARK = {OK: '✓', WARN: '⚠', FAIL: '✗'}
@@ -128,9 +130,13 @@ def tls_probe(url: str = 'https://huggingface.co', timeout: float = 6.0) -> Resu
     Returns OK if TLS verified (even on an HTTP error response — the connection
     and certificate were fine), FAIL on a certificate-trust failure (the corp
     proxy case), WARN if simply unreachable (offline / blocked)."""
+    # Only ever probe http(s) — never let urlopen handle file://, ftp://, etc.
+    if urllib.parse.urlparse(url).scheme not in ('http', 'https'):
+        return (FAIL, f'TLS handshake {url}', 'refusing to probe a non-http(s) URL')
     proxy_support.enable_corporate_tls(announce=False)
     try:
-        urllib.request.urlopen(urllib.request.Request(url, method='HEAD'), timeout=timeout)
+        # nosec B310 — scheme is validated to http/https just above.
+        urllib.request.urlopen(urllib.request.Request(url, method='HEAD'), timeout=timeout)  # nosec B310
         return (OK, f'TLS handshake {url}', 'verified')
     except urllib.error.HTTPError:
         return (OK, f'TLS handshake {url}', 'reached server, certificate verified')
@@ -188,6 +194,7 @@ def run_doctor(area: str = 'all', probe: bool = True, out=None) -> int:
         sections.append(('draft — cloud backends', check_draft_cloud()))
         sections.append(('network — proxy / TLS', check_proxy_tls(probe=probe)))
 
+    color = should_color(out)
     print(f'grepxcel doctor — checking: {area}\n' + '─' * 62, file=out)
     any_fail = False
     proxy_fail = False
@@ -198,14 +205,15 @@ def run_doctor(area: str = 'all', probe: bool = True, out=None) -> int:
                 any_fail = True
                 if 'TLS' in name or 'CA bundle' in name:
                     proxy_fail = True
-            print(f'    {_MARK[status]}  {name:<28} {detail}', file=out)
+            print(colorize_marks(
+                f'    {_MARK[status]}  {name:<28} {detail}', color), file=out)
 
     if proxy_fail:
         print('\n' + proxy_support.cert_failure_hint(), file=out)
 
     print('\n' + '─' * 62, file=out)
     if any_fail:
-        print('  ✗ Not ready — resolve the ✗ items above.', file=out)
+        print(colorize_marks('  ✗ Not ready — resolve the ✗ items above.', color), file=out)
     else:
-        print('  ✓ Ready. (⚠ items are optional / situational.)', file=out)
+        print(colorize_marks('  ✓ Ready. (⚠ items are optional / situational.)', color), file=out)
     return 1 if any_fail else 0

@@ -21,6 +21,8 @@ from typing import Optional, NoReturn
 import os
 import sys
 
+from .color import colorize_marks, should_color
+
 
 # ---------------------------------------------------------------------------
 # Severity and verbosity enums
@@ -126,6 +128,8 @@ class Logger:
         self._file = None
         if log_file:
             self._file = open(log_file, 'w', encoding='utf-8')
+        # Colour the console copy only when stderr is an interactive terminal.
+        self._color = should_color(sys.stderr)
 
     def close(self):
         if self._file:
@@ -526,9 +530,9 @@ class Logger:
 
     def _write(self, min_level: VerbosityLevel, text: str):
         if self.level >= min_level:
-            print(text, file=sys.stderr)
+            print(colorize_marks(text, self._color), file=sys.stderr)
         if self._file:
-            self._file.write(text + '\n')
+            self._file.write(text + '\n')   # file log is always plain text
             self._file.flush()
 
     def _hint_validation(self, field_type: str, regex: str, value) -> str:

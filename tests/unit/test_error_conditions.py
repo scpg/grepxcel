@@ -502,7 +502,7 @@ class TestUnknownFieldType:
     @pytest.mark.parametrize('type_name', [
         'string', 'text', 'integer', 'number', 'float', 'decimal',
         'currency', 'percentage', 'boolean', 'bool',
-        'date', 'datetime', 'timestamp',
+        'time', 'date', 'datetime', 'timestamp',
     ])
     def test_all_valid_types_accepted(self, tmp_path, type_name):
         path = _write_pattern([
@@ -747,6 +747,27 @@ class TestNewFieldTypesEndToEnd:
         assert not lg.has_errors()
         assert lg.issues() == []
 
+    def test_time_accepts_time_only_cell(self, tmp_path):
+        import datetime
+        lg = _engine_run(
+            [['var:', 't.v', 'time', r'.*'],
+             ['START:'], ['cell:A1', 't.v'], ['END:']],
+            {'A1': datetime.time(14, 30)}, tmp_path,
+        )
+        assert not lg.has_errors()
+        assert lg.issues() == []
+
+    def test_time_rejects_a_datetime(self, tmp_path):
+        # A cell that also has a date is a datetime, not a time → validation warning.
+        import datetime
+        lg = _engine_run(
+            [['var:', 't.v', 'time', r'.*'],
+             ['START:'], ['cell:A1', 't.v'], ['END:']],
+            {'A1': datetime.datetime(2026, 1, 1, 14, 30)}, tmp_path,
+        )
+        assert not lg.has_errors()
+        assert len(lg.issues()) == 1
+
 
 class TestSheetDimensionLimits:
     """The data sheet must fit within the configured row/column limits; an
@@ -778,3 +799,128 @@ class TestSheetDimensionLimits:
         # The same sheet that failed at max_rows=5 passes once the limit is raised.
         lg = self._run({'A1': 'v', 'A6': 'x'}, tmp_path, max_rows=10, max_cols=100)
         assert not lg.has_errors()
+
+
+class TestNestingConflict:
+    """A field cannot be both a value and the parent of another (e.g. 'a.b' and
+    'a.b.c') — the nested output would crash. The parser must reject it."""
+
+    def test_value_and_parent_conflict_rejected(self, tmp_path):
+        path = _write_pattern([
+            ['var:', 'a.b', 'string', '.*'],
+            ['var:', 'a.b.c', 'string', '.*'],
+            ['START:'], ['cell:A1', 'a.b'], ['cell:B1', 'a.b.c'], ['END:'],
+        ], tmp_path)
+        with pytest.raises(PatternError, match='cannot be both'):
+            PatternParser().parse(path)
+
+    def test_conflict_via_undefined_reference_rejected(self, tmp_path):
+        # Even if 'a.b' is only referenced (not defined), it still conflicts.
+        path = _write_pattern([
+            ['var:', 'a.b.c', 'string', '.*'],
+            ['START:'], ['cell:A1', 'a.b'], ['cell:B1', 'a.b.c'], ['END:'],
+        ], tmp_path)
+        with pytest.raises(PatternError, match='cannot be both'):
+            PatternParser().parse(path)
+
+    def test_sibling_fields_are_fine(self, tmp_path):
+        path = _write_pattern([
+            ['var:', 'a.b', 'string', '.*'],
+            ['var:', 'a.c', 'string', '.*'],
+            ['START:'], ['cell:A1', 'a.b'], ['cell:B1', 'a.c'], ['END:'],
+        ], tmp_path)
+        _, _, seq = PatternParser().parse(path)
+        assert len(seq) == 2
+
+    def test_lbl_prefix_is_not_a_conflict(self, tmp_path):
+        # lbl: fields are stripped from output, so an lbl: prefix never nests.
+        path = _write_pattern([
+            ['lbl:', 'a.b', 'string', 'Label'],
+            ['var:', 'a.b.c', 'string', '.*'],
+            ['START:'], ['cell:A1', 'a.b'], ['cell:B1', 'a.b.c'], ['END:'],
+        ], tmp_path)
+        _, _, seq = PatternParser().parse(path)
+        assert len(seq) == 2
+
+
+class TestPatternComments:
+    """'#' trailing comments: allowed on config/var/lbl/cell/START rows, fail fast
+    on stray non-'#' content, and NOT processed in table rows ('#' is literal there)."""
+
+    def test_comment_on_var_row_keeps_regex(self, tmp_path):
+        path = _write_pattern([
+            ['var:', 'x.v', 'string', '.*', '# the value field'],   # col E comment
+            ['START:'], ['cell:A1', 'x.v'], ['END:'],
+        ], tmp_path)
+        _, defs, _ = PatternParser().parse(path)
+        assert defs['x.v'].regex == '.*'   # the comment did not touch the regex (col D)
+
+    def test_comment_on_lbl_row(self, tmp_path):
+        path = _write_pattern([
+            ['lbl:', 'h', 'string', 'Title', '# header label'],
+            ['START:'], ['cell:A1', 'h'], ['END:'],
+        ], tmp_path)
+        _, defs, _ = PatternParser().parse(path)
+        assert defs['h'].role == 'lbl'
+
+    def test_comment_on_config_row(self, tmp_path):
+        path = _write_pattern([
+            ['config:', 'currency.sign', '$', '# US dollars'],     # col D comment
+            ['var:', 'x.v', 'string', '.*'],
+            ['START:'], ['cell:A1', 'x.v'], ['END:'],
+        ], tmp_path)
+        cfg, _, _ = PatternParser().parse(path)
+        assert cfg.currency_sign == '$'
+
+    def test_comment_on_cell_row(self, tmp_path):
+        path = _write_pattern([
+            ['var:', 'x.v', 'string', '.*'],
+            ['START:'], ['cell:A1', 'x.v', '# grab the value'], ['END:'],   # col C comment
+        ], tmp_path)
+        _, _, seq = PatternParser().parse(path)
+        assert seq[0].field == 'x.v'
+
+    def test_comment_on_start_row(self, tmp_path):
+        path = _write_pattern([
+            ['var:', 'x.v', 'string', '.*'],
+            ['START:', '# begin extraction'], ['cell:A1', 'x.v'], ['END:'],
+        ], tmp_path)
+        _, _, seq = PatternParser().parse(path)
+        assert len(seq) == 1
+
+    def test_comment_spans_remaining_cells(self, tmp_path):
+        path = _write_pattern([
+            ['var:', 'x.v', 'string', '.*', '# a comment', 'continuing here'],
+            ['START:'], ['cell:A1', 'x.v'], ['END:'],
+        ], tmp_path)
+        _, defs, _ = PatternParser().parse(path)   # 'continuing here' is part of the comment
+        assert 'x.v' in defs
+
+    def test_stray_content_without_hash_rejected(self, tmp_path):
+        path = _write_pattern([
+            ['var:', 'x.v', 'string', '.*', 'oops wrong column'],   # no '#'
+            ['START:'], ['cell:A1', 'x.v'], ['END:'],
+        ], tmp_path)
+        with pytest.raises(PatternError, match='only contain a comment'):
+            PatternParser().parse(path)
+
+    def test_hash_regex_in_column_d_is_not_a_comment(self, tmp_path):
+        # A regex (col D) that legitimately starts with '#' is a regex, not a comment.
+        path = _write_pattern([
+            ['var:', 'x.code', 'string', r'#\d+'],
+            ['START:'], ['cell:A1', 'x.code'], ['END:'],
+        ], tmp_path)
+        _, defs, _ = PatternParser().parse(path)
+        assert defs['x.code'].regex == r'#\d+'
+
+    def test_hash_is_literal_in_table_rows(self, tmp_path):
+        # Tables get no comment processing: a '#'-leading column cell stays literal.
+        path = _write_pattern([
+            ['var:', 'd', 'string', '.*'],
+            ['START:'], ['table:*'],
+            [None, 'DATA:*', 'd', '#notacomment'],
+            ['END:'],
+        ], tmp_path)
+        _, _, seq = PatternParser().parse(path)
+        cols = [c.field for c in seq[0].rows[0].columns]
+        assert '#notacomment' in cols   # kept as a literal column, not stripped as a comment

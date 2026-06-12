@@ -88,6 +88,7 @@ referenced in the `START:` section, or documents the pattern.
 | `currency`   | Any number (int or float)                     | `str(numeric_value)`   |
 | `percentage` | Any number (int or float). Excel stores a percentage as a fraction, e.g. 62.5% → `0.625` | `str(numeric_value)` |
 | `boolean` / `bool` | Excel `TRUE`/`FALSE`                    | n/a (type check only)  |
+| `time`       | Excel **time-only** cells (no date part)      | n/a (type check only)  |
 | `date`       | Excel date cells                              | n/a (type check only)  |
 | `datetime`   | Excel datetime cells                          | n/a (type check only)  |
 | `timestamp`  | Same as `datetime`                            | n/a (type check only)  |
@@ -96,10 +97,49 @@ referenced in the `START:` section, or documents the pattern.
 `currency`/`percentage` (any numeric cell) but carry no money/percentage intent —
 use them for plain decimals such as quantities or measurements. `percentage`
 validates identically to `currency`; it exists to document intent. For
-`boolean`/`date`/`datetime`/`timestamp`, the regex column is ignored.
+`boolean`/`time`/`date`/`datetime`/`timestamp`, the regex column is ignored.
+`time` matches **time-only** cells (e.g. `14:30`); a cell that also has a date is
+a `datetime`, not a `time`.
 
 > An unknown type name (e.g. a typo like `currncy`) is rejected when the pattern
 > file is parsed, so a mistyped type fails fast instead of silently mis-validating.
+
+---
+
+## Comments
+
+Two ways to annotate a pattern file:
+
+**Comment rows** — a `doc:` (or `info:`) in column A makes the whole row a
+comment, ignored by the engine. Use these for headings or notes that sit on their
+own line (including above a `table:` block).
+
+**Trailing `#` comments** — on a `config:`, `var:`/`def:`, `lbl:`, `cell:`, or
+`START:` row, a cell whose text starts with `#` begins a comment that runs to the
+end of the row. The comment must come **after** the row's real columns:
+
+| Row | Real columns | Comment goes in |
+|-----|--------------|-----------------|
+| `var:` / `lbl:` / `def:` | A–D (keyword, name, type, regex) | column **E** onward |
+| `cell:` | A–B (instruction, field) | column **C** onward |
+| `config:` | A–C (keyword, key, value) | column **D** onward |
+| `START:` | A | column **B** onward |
+
+```
+var:       amount.net    currency   \d+(\.\d{2})?   # net amount, before VAT
+cell:next  amount.net                               # first value after the label
+```
+
+Rules:
+
+- A `#` in a **value column is a value, not a comment** — e.g. the regex in
+  `var: | code | string | #\d+` matches `#123`; the `#` is part of the regex.
+- **`table:` rows do not support `#` comments.** `HEADER:` / `DATA:` / `FOOTER:`
+  rows use their trailing columns for the table's own columns, so `#` there is a
+  literal value (free to use). Annotate a table with a `doc:` row above it instead.
+- **Fail fast:** any non-empty cell in a comment position that does *not* start
+  with `#` is rejected as an error — this catches a value typed into the wrong
+  column instead of silently dropping it.
 
 ---
 
