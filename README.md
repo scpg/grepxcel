@@ -1,6 +1,10 @@
 # grepxcel
 
+> **Treat Excel as a reliable data source — with the DevOps discipline of observability, fail-fast, and proper logging.**
+>
 > Pattern-based data extraction for Excel — define what to look for, run, get structured JSON.
+>
+> *The philosophy behind it: [docs/MINDSET.md](docs/MINDSET.md).*
 
 ![CI](https://github.com/scpg/grepxcel/actions/workflows/ci.yml/badge.svg)
 
