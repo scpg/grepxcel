@@ -309,7 +309,44 @@ class PatternParser:
             else:
                 i += 1
 
+        self._check_nesting_conflicts(defs, start_sequence)
         return global_config, defs, start_sequence
+
+    def _check_nesting_conflicts(self, defs, start_sequence) -> None:
+        """A field cannot be both a value AND the parent of another field, e.g.
+        'week1.day' alongside 'week1.day.timeIn'. The nested output would try to
+        assign a key into a scalar value and crash. Detect this here and fail
+        fast with a clear message instead of a TypeError deep in output building.
+
+        Only fields that actually reach the output are considered: those
+        referenced in the sequence, excluding IGNORE/EMPTY and lbl: anchors
+        (lbl: values are stripped from the JSON, so they never nest)."""
+        names: set[str] = set()
+        for instr in start_sequence:
+            fields = []
+            if isinstance(instr, CellInstruction):
+                fields = [instr.field]
+            elif isinstance(instr, TableInstruction):
+                fields = [c.field for r in instr.rows for c in r.columns]
+            for field in fields:
+                if field in ('IGNORE', 'EMPTY'):
+                    continue
+                fd = defs.get(field)
+                if fd is not None and fd.role == 'lbl':
+                    continue
+                names.add(field)
+
+        ordered = sorted(names)
+        for idx, parent in enumerate(ordered):
+            for child in ordered[idx + 1:]:
+                if child.startswith(parent + '.'):
+                    raise PatternError(
+                        f"Field {parent!r} is used both as a value and as the "
+                        f"parent of {child!r} — a field name cannot be both. "
+                        f"Rename one (e.g. {parent!r} -> '{parent}.value')."
+                    )
+
+    # ── Grid readers (front-ends over the common 2D-grid IR) ────────────────────
 
     # ── Grid readers (front-ends over the common 2D-grid IR) ────────────────────
 
@@ -330,6 +367,25 @@ class PatternParser:
         ws = wb.active
         return self._read_and_validate(ws)
 
+    @staticmethod
+    def _detect_delimiter(sample: str) -> str:
+        """Pick the CSV delimiter from ``,`` ``;`` or tab.
+
+        csv.Sniffer is tried first (it understands quoting), but it raises on
+        short or ragged samples — pattern files are ragged by nature (a lone
+        ``START:`` line next to multi-column ``var:`` lines). The fallback then
+        chooses whichever candidate appears on the most lines, defaulting to
+        ``,`` when none is present (a genuinely single-column file).
+        """
+        try:
+            return csv.Sniffer().sniff(sample, delimiters=',;\t').delimiter
+        except csv.Error:
+            pass
+        counts = {d: sum(d in line for line in sample.splitlines())
+                  for d in (',', ';', '\t')}
+        best = max(counts, key=counts.get)
+        return best if counts[best] else ','
+
     def _read_csv_and_validate(self, filepath: str) -> list:
         """
         Read a CSV pattern file into the grid IR with the same content rules as
@@ -340,14 +396,23 @@ class PatternParser:
         - Leading '=' is rejected for parity with the xlsx formula guard.
         - Per-cell length is capped at _MAX_PATTERN_CELL_LEN.
 
-        Authoring note: a regex value containing a comma (e.g. \\d{1,3}) must be
-        quoted in the CSV ("\\d{1,3}") — the csv module unquotes it correctly.
+        The delimiter is auto-detected (``,`` ``;`` or tab) so CSVs exported by
+        Excel in locales that use ``;`` as the list separator parse correctly;
+        it falls back to ``,`` when the sample is ambiguous (e.g. one column).
+
+        Authoring note: a regex value containing the active delimiter (e.g. a
+        comma in \\d{1,3} when the file is comma-separated) must be quoted in the
+        CSV ("\\d{1,3}") — the csv module unquotes it correctly.
         utf-8-sig transparently strips a BOM written by Excel's "Save as CSV".
         """
         rows: list = []
         try:
             with open(filepath, newline='', encoding='utf-8-sig') as fh:
-                for line_no, raw in enumerate(csv.reader(fh), start=1):
+                sample = fh.read(8192)
+                fh.seek(0)
+                delimiter = self._detect_delimiter(sample)
+                for line_no, raw in enumerate(
+                        csv.reader(fh, delimiter=delimiter), start=1):
                     row_values = []
                     for col_idx, val in enumerate(raw):
                         if val == '':

@@ -4,9 +4,12 @@ _set_nested, _field_local, _field_group, _table_group,
 _build_row_obj, _build_nested_output, _expand_merged_cells.
 """
 
+import datetime
+
 import openpyxl
 import pytest
 
+from grepxcel.cli import _json_default
 from grepxcel.engine import (
     _set_nested,
     _field_local,
@@ -307,3 +310,25 @@ class TestExpandMergedCells:
         ws.merge_cells('A1:B1')
         _expand_merged_cells(ws)
         assert ws['B1'].value is None
+
+
+class TestJsonDefault:
+    """The JSON encoder must serialise every datetime flavour Excel produces:
+    date, datetime, time-of-day, and duration (timedelta)."""
+
+    def test_date_and_datetime(self):
+        assert _json_default(datetime.date(2026, 6, 11)) == '2026-06-11'
+        assert _json_default(
+            datetime.datetime(2026, 6, 11, 9, 5)) == '2026-06-11T09:05:00'
+
+    def test_time_of_day(self):
+        # Regression: 'time' became a field type but the encoder couldn't emit it.
+        assert _json_default(datetime.time(9, 5)) == '09:05:00'
+
+    def test_timedelta_duration(self):
+        # Excel [h]:mm cells arrive as timedelta — str() gives "8:30:00".
+        assert _json_default(datetime.timedelta(hours=8, minutes=30)) == '8:30:00'
+
+    def test_unknown_type_still_raises(self):
+        with pytest.raises(TypeError, match='not JSON serialisable'):
+            _json_default(object())

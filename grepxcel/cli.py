@@ -23,9 +23,17 @@ from .logger import Logger, VerbosityLevel
 # ── JSON serialisation ────────────────────────────────────────────────────────
 
 def _json_default(obj):
-    """Serialise types that json.dump does not handle natively."""
-    if isinstance(obj, (datetime.date, datetime.datetime)):
+    """Serialise types that json.dump does not handle natively.
+
+    Excel cells surface as several datetime flavours: dates/datetimes and
+    time-of-day all have ``.isoformat()``; durations ([h]:mm cells) come through
+    as ``timedelta``, which has no isoformat, so render it as ``str`` (e.g.
+    ``"8:30:00"``).
+    """
+    if isinstance(obj, (datetime.date, datetime.datetime, datetime.time)):
         return obj.isoformat()
+    if isinstance(obj, datetime.timedelta):
+        return str(obj)
     raise TypeError(f'Type {type(obj).__name__} is not JSON serialisable')
 
 

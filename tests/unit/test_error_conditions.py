@@ -801,6 +801,48 @@ class TestSheetDimensionLimits:
         assert not lg.has_errors()
 
 
+class TestNestingConflict:
+    """A field cannot be both a value and the parent of another (e.g. 'a.b' and
+    'a.b.c') — the nested output would crash. The parser must reject it."""
+
+    def test_value_and_parent_conflict_rejected(self, tmp_path):
+        path = _write_pattern([
+            ['var:', 'a.b', 'string', '.*'],
+            ['var:', 'a.b.c', 'string', '.*'],
+            ['START:'], ['cell:A1', 'a.b'], ['cell:B1', 'a.b.c'], ['END:'],
+        ], tmp_path)
+        with pytest.raises(PatternError, match='cannot be both'):
+            PatternParser().parse(path)
+
+    def test_conflict_via_undefined_reference_rejected(self, tmp_path):
+        # Even if 'a.b' is only referenced (not defined), it still conflicts.
+        path = _write_pattern([
+            ['var:', 'a.b.c', 'string', '.*'],
+            ['START:'], ['cell:A1', 'a.b'], ['cell:B1', 'a.b.c'], ['END:'],
+        ], tmp_path)
+        with pytest.raises(PatternError, match='cannot be both'):
+            PatternParser().parse(path)
+
+    def test_sibling_fields_are_fine(self, tmp_path):
+        path = _write_pattern([
+            ['var:', 'a.b', 'string', '.*'],
+            ['var:', 'a.c', 'string', '.*'],
+            ['START:'], ['cell:A1', 'a.b'], ['cell:B1', 'a.c'], ['END:'],
+        ], tmp_path)
+        _, _, seq = PatternParser().parse(path)
+        assert len(seq) == 2
+
+    def test_lbl_prefix_is_not_a_conflict(self, tmp_path):
+        # lbl: fields are stripped from output, so an lbl: prefix never nests.
+        path = _write_pattern([
+            ['lbl:', 'a.b', 'string', 'Label'],
+            ['var:', 'a.b.c', 'string', '.*'],
+            ['START:'], ['cell:A1', 'a.b'], ['cell:B1', 'a.b.c'], ['END:'],
+        ], tmp_path)
+        _, _, seq = PatternParser().parse(path)
+        assert len(seq) == 2
+
+
 class TestPatternComments:
     """'#' trailing comments: allowed on config/var/lbl/cell/START rows, fail fast
     on stray non-'#' content, and NOT processed in table rows ('#' is literal there)."""
