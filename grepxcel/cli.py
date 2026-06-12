@@ -16,6 +16,7 @@ import json
 import os
 import sys
 
+from .color import colorize_marks, should_color
 from .engine import Engine
 from .logger import Logger, VerbosityLevel
 
@@ -431,7 +432,9 @@ def _process_file(pattern: str, data_file: str, args, stem: str = None) -> bool:
                 output_format=output_format,
             )
     except Exception as exc:
-        print(f'\n  ✗  Unexpected error processing {data_file}: {exc}', file=sys.stderr)
+        print(colorize_marks(
+            f'\n  ✗  Unexpected error processing {data_file}: {exc}',
+            should_color(sys.stderr)), file=sys.stderr)
         return False
     finally:
         logger.close()

@@ -12,6 +12,7 @@ from __future__ import annotations
 import sys
 from dataclasses import dataclass, field
 
+from .color import colorize_marks, should_color
 from .models import CellInstruction, TableInstruction
 from .pattern_parser import PatternError, PatternParser
 from .security import SecurityError
@@ -93,16 +94,17 @@ def check_pattern(path: str) -> CheckResult:
 def render_result(result: CheckResult, verbose: bool = False, out=None) -> None:
     """Print a human-readable report for one CheckResult."""
     out = out or sys.stderr
+    color = should_color(out)
     if result.valid:
-        print(f'{_MARK_OK}  {result.path}  —  VALID '
+        print(colorize_marks(f'{_MARK_OK}  {result.path}  —  VALID '
               f'({result.n_fields} field(s), {result.n_steps} extraction step(s))',
-              file=out)
+              color), file=out)
     else:
-        print(f'{_MARK_FAIL}  {result.path}  —  INVALID', file=out)
+        print(colorize_marks(f'{_MARK_FAIL}  {result.path}  —  INVALID', color), file=out)
     for err in result.errors:
-        print(f'   {_MARK_FAIL} {err}', file=out)
+        print(colorize_marks(f'   {_MARK_FAIL} {err}', color), file=out)
     for warn in result.warnings:
-        print(f'   {_MARK_WARN} {warn}', file=out)
+        print(colorize_marks(f'   {_MARK_WARN} {warn}', color), file=out)
 
     if verbose and result.defs is not None:
         cfg = result.config
