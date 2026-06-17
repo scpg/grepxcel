@@ -185,6 +185,45 @@ class TestSequenceParsing:
         assert isinstance(seq[1], TableInstruction)
 
 
+# ── SKIP_IF ──────────────────────────────────────────────────────────────────
+
+class TestSkipIfParsing:
+    """SKIP_IF is valid with DATA:{n,m} and DATA:* — only forbidden with DATA:1."""
+
+    def _skip_if_block(self, data_mult: str) -> list:
+        return [
+            ['lbl:', 'col_a', 'string', 'A'],
+            ['var:', 'line.x', 'string', '.*'],
+            ['START:'],
+            ['table:*'],
+            [None, 'HEADER:1', 'col_a'],
+            [None, 'SKIP_IF', 'EMPTY'],
+            [None, f'DATA:{data_mult}', 'line.x'],
+            ['END:'],
+        ]
+
+    def test_skip_if_with_bounded_data_is_valid(self, tmp_path):
+        path = _write_pattern(self._skip_if_block('{0,10}'), tmp_path)
+        _, _, seq = PatternParser().parse(path)  # must not raise
+        from grepxcel.models import TableInstruction
+        table = next(s for s in seq if isinstance(s, TableInstruction))
+        assert any(r.row_type == 'SKIP_IF' for r in table.rows)
+
+    def test_skip_if_with_star_data_is_valid(self, tmp_path):
+        """SKIP_IF with DATA:* must parse successfully — filter semantics are clear."""
+        path = _write_pattern(self._skip_if_block('*'), tmp_path)
+        _, _, seq = PatternParser().parse(path)  # must not raise
+        from grepxcel.models import TableInstruction
+        table = next(s for s in seq if isinstance(s, TableInstruction))
+        assert any(r.row_type == 'SKIP_IF' for r in table.rows)
+
+    def test_skip_if_with_data_1_raises(self, tmp_path):
+        """SKIP_IF with DATA:1 is still invalid — ambiguous semantics."""
+        path = _write_pattern(self._skip_if_block('1'), tmp_path)
+        with pytest.raises(PatternError, match='SKIP_IF'):
+            PatternParser().parse(path)
+
+
 # ── Security validation ───────────────────────────────────────────────────────
 
 class TestPatternParserSecurity:
@@ -480,18 +519,38 @@ class TestSeekInstruction:
         _, _, seq = PatternParser().parse(path)
         assert any(isinstance(s, SeekInstruction) for s in seq)
 
-    def test_abs_ref_after_seek_must_be_forward(self, tmp_path):
-        """cell:A1 after seek:B2 raises PatternError — A1 is before B2 in LR order."""
+    def test_seek_then_same_cell_abs_is_valid(self, tmp_path):
+        """seek:I4 followed immediately by cell:I4 must parse without error.
+        seek resets the ordering constraint entirely (last_abs_pos → None),
+        so the first abs ref after seek is unchecked."""
+        path = _write_pattern([
+            ['var:', 'x', 'string', '.*'],
+            ['START:'],
+            ['seek:I4'],
+            ['cell:I4', 'x'],
+            ['END:'],
+        ], tmp_path)
+        _, _, seq = PatternParser().parse(path)  # must not raise
+        from grepxcel.models import CellInstruction, SeekInstruction
+        assert any(isinstance(s, SeekInstruction) for s in seq)
+        assert any(isinstance(s, CellInstruction) and s.target == 'I4' for s in seq)
+
+    def test_abs_ref_after_seek_no_parser_constraint(self, tmp_path):
+        """After seek:, the abs-ref ordering constraint is fully reset to None.
+        Backward abs refs are not rejected at parse time — the engine catches
+        them at runtime. This allows seek:I4; cell:I4 and similar patterns."""
         path = _write_pattern([
             ['var:', 'x', 'string', '.*'],
             ['var:', 'y', 'string', '.*'],
             ['START:'],
             ['seek:B2'],
-            ['cell:A1', 'y'],   # A1=(1,1) < B2=(2,2) in LR → must be rejected
+            ['cell:A1', 'y'],   # A1 < B2 in LR — allowed at parse time, caught at runtime
             ['END:'],
         ], tmp_path)
-        with pytest.raises(PatternError, match='unreachable'):
-            PatternParser().parse(path)
+        _, _, seq = PatternParser().parse(path)   # must NOT raise
+        from grepxcel.models import CellInstruction
+        abs_cells = [s for s in seq if isinstance(s, CellInstruction) and s.multiplicity == 'abs']
+        assert any(c.target == 'A1' for c in abs_cells)
 
     def test_abs_ref_after_seek_forward_is_valid(self, tmp_path):
         """cell:B5 after seek:B2 is valid — B5 is forward of B2 in LR order."""

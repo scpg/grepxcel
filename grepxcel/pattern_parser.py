@@ -146,10 +146,10 @@ class PatternParser:
                         f"Use a cell coordinate like 'seek:G5' (A1-notation)."
                     )
                 ref = raw.upper()
-                new_pos = coordinate_to_tuple(ref)
-                # seek: always resets the abs-ref ordering constraint — it is an
-                # explicit cursor reposition that intentionally may move backward.
-                last_abs_pos = new_pos
+                # seek: fully resets the abs-ref ordering constraint so that the
+                # cell immediately at the seek target (or any cell after it) is
+                # accepted. Backward refs after seek are caught at runtime.
+                last_abs_pos = None
                 self._check_comment_zone(row, 1, i + 1, 'seek:')    # B+ may be a # comment
                 start_sequence.append(SeekInstruction(target=ref))
                 i += 1
@@ -282,12 +282,15 @@ class PatternParser:
                         raise PatternError(
                             f'Only one {kind} row is allowed per table block.'
                         )
-                    # SKIP_IF without a bounded DATA row is meaningless
+                    # SKIP_IF is meaningful with DATA:* and DATA:{n,m} (rows are
+                    # filtered from output while scanning continues). It is not
+                    # meaningful with DATA:1 — skipping the only row creates
+                    # ambiguous extraction semantics.
                     skip_if_rows = [r for r in template_rows if r.row_type == 'SKIP_IF']
-                    if skip_if_rows and not has_bounded:
+                    if skip_if_rows and has_one:
                         raise PatternError(
-                            'SKIP_IF requires DATA:{n,m}. '
-                            'SKIP_IF has no effect with DATA:* or DATA:1.'
+                            'SKIP_IF requires DATA:{n,m} or DATA:*. '
+                            'SKIP_IF has no effect with DATA:1.'
                         )
 
                 # Structural rules for a table block:
