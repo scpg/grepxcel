@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`--backend server` (OpenAI-compatible server)** — new `draft` backend that talks
+  to any server exposing `/v1/chat/completions` (LM Studio, Ollama, vLLM,
+  text-generation-inference). Default URL: `http://localhost:1234/v1`. Enables
+  GPU/NPU-accelerated local inference on Windows (via LM Studio) while grepxcel
+  runs inside WSL2. Model is auto-discovered unless `--server-model` is set.
+  `grepxcel doctor` now probes the server and reports loaded models.
+
 - **`seek:` instruction** — new extraction-sequence instruction that repositions the
   scanner cursor to a target cell (A1-notation) **without reading it**. Enables
   backward repositioning after reading scattered absolute cells, so the next

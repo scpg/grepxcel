@@ -103,3 +103,31 @@ def test_probe_warn_on_unreachable(monkeypatch):
         raise urllib.error.URLError('timed out')
     _patch_urlopen(monkeypatch, raise_timeout)
     assert doctor.tls_probe()[0] == doctor.WARN
+
+
+# ── server backend check ────────────────────────────────────────────────────
+
+def test_check_server_ok_when_reachable(monkeypatch):
+    import json
+    body = json.dumps({'data': [{'id': 'qwen2.5-coder-7b'}]}).encode()
+    resp = io.BytesIO(body)
+    monkeypatch.setattr(doctor.urllib.request, 'urlopen', lambda *a, **k: resp)
+    st = _statuses(doctor.check_server(url='http://localhost:1234/v1'))
+    assert st['server'] == doctor.OK
+
+
+def test_check_server_warn_when_unreachable(monkeypatch):
+    def raise_err(*a, **k):
+        raise urllib.error.URLError('Connection refused')
+    monkeypatch.setattr(doctor.urllib.request, 'urlopen', raise_err)
+    st = _statuses(doctor.check_server(url='http://localhost:1234/v1'))
+    assert st['server'] == doctor.WARN
+
+
+def test_check_server_warn_when_no_models(monkeypatch):
+    import json
+    body = json.dumps({'data': []}).encode()
+    resp = io.BytesIO(body)
+    monkeypatch.setattr(doctor.urllib.request, 'urlopen', lambda *a, **k: resp)
+    st = _statuses(doctor.check_server(url='http://localhost:1234/v1'))
+    assert st['server'] == doctor.WARN

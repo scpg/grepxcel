@@ -282,7 +282,7 @@ a *starting point* — review and refine the generated regexes before use.
 | `-o FILE` | `draft_pattern.xlsx` | Write draft pattern to this path |
 | `-v` | off | Print the Excel analysis sent to the model + update status |
 | `--dry-run` | off | Print the analysis that would be sent to the model, then exit (no inference) |
-| `--backend local\|claude\|gemini` | `local` | Inference backend (see below) |
+| `--backend local\|claude\|github\|server\|gemini` | `local` | Inference backend (see below) |
 | `--sheet NAME_OR_INDEX` | active | Sheet to analyse |
 | `--max-size MB` | 5 | Compressed file size limit |
 | `--max-uncompressed MB` | 50 | Uncompressed ZIP content limit (ZIP bomb guard) |
@@ -294,6 +294,7 @@ a *starting point* — review and refine the generated regexes before use.
 | `local` *(default)* | `python3 scripts/install_llm_deps.py` | Runs Gemma-4-E4B (GGUF) in-process. **No data leaves your machine.** Model is pinned to a revision and downloaded once (~5 GB); set `GREPXCEL_MODEL_AUTOUPDATE=1` to track upstream, `GREPXCEL_MODEL_DIR` to relocate the cache. |
 | `github` | `pip install -e '.[draft-cloud]'` | **GitHub Models** — free with a GitHub subscription (quota-limited, no per-token charge), and the **highest-quality option** in our eval. Requires `GITHUB_TOKEN` (fine-grained, `Models: read`). Pick a model with `--github-model`, e.g. `openai/gpt-4.1`, `openai/gpt-4o`, `meta/llama-3.3-70b-instruct`. Per-draft token usage + remaining quota are printed. |
 | `claude` | `pip install -e '.[draft-cloud]'` | Anthropic API. Requires `ANTHROPIC_API_KEY`. Prints a one-line privacy notice and per-call token cost (~$0.003–0.04/draft). |
+| `server` | `pip install openai` | Any **OpenAI-compatible server** (LM Studio, Ollama, vLLM, text-generation-inference). Default URL: `http://localhost:1234/v1` (override with `--server-url` or `GREPXCEL_SERVER_URL`). Model is auto-discovered unless `--server-model` is set. Data stays local. |
 | `gemini` | — | **Planned for a future release** — not yet available. Selecting it prints a notice and exits. |
 
 Backends read keys from a `.env` file in the project (or any parent) directory,
@@ -318,6 +319,8 @@ a wide margin, ahead of the `local` model — see
 grepxcel draft data.xlsx                       # local model (default)
 grepxcel draft data.xlsx --dry-run             # inspect the analysis, no inference
 ANTHROPIC_API_KEY=sk-... grepxcel draft data.xlsx --backend claude
+grepxcel draft data.xlsx --backend server      # LM Studio / Ollama on localhost:1234
+grepxcel draft data.xlsx --backend server --server-url http://host:8080/v1
 ```
 
 #### Model cache & offline / alternative downloads

@@ -291,6 +291,12 @@ backends:
           Needs ANTHROPIC_API_KEY and pip install 'grepxcel[draft-cloud]'.
           The raw file is NOT transmitted — only column types, sample
           values, and labels are sent.
+  server  Send the Excel structure description to any OpenAI-compatible API
+          server (LM Studio, Ollama, vLLM, text-generation-inference, etc.).
+          Needs pip install openai. Default URL: http://localhost:1234/v1
+          (override with --server-url or GREPXCEL_SERVER_URL). Model is
+          auto-discovered unless --server-model is set. Data stays local
+          unless you point --server-url at a remote host.
   gemini  Planned for a future release — not yet available.
 
 Keys are read from a .env file (current dir or any parent) if present.
@@ -349,18 +355,37 @@ def _draft_args(p: argparse.ArgumentParser) -> None:
     )
     p.add_argument(
         '--backend',
-        choices=['local', 'claude', 'gemini', 'github'],
+        choices=['local', 'claude', 'gemini', 'github', 'server'],
         default='local',
         help='Inference backend: local (default, GGUF model), claude (requires '
-             'ANTHROPIC_API_KEY), or github (GitHub Models, requires GITHUB_TOKEN '
-             "with 'Models: read'; use --github-model to pick a model). gemini is "
-             'planned for a future release.',
+             'ANTHROPIC_API_KEY), github (GitHub Models, requires GITHUB_TOKEN '
+             "with 'Models: read'; use --github-model to pick a model), "
+             'server (any OpenAI-compatible server, e.g. LM Studio / Ollama / '
+             'vLLM; use --server-url). gemini is planned for a future release.',
     )
     p.add_argument(
         '--github-model',
         default='openai/gpt-4o-mini',
         help="GitHub Models model id when --backend github, e.g. 'openai/gpt-4o', "
              "'meta/llama-3.3-70b-instruct' (default: openai/gpt-4o-mini).",
+    )
+    p.add_argument(
+        '--server-url',
+        default=os.environ.get('GREPXCEL_SERVER_URL', 'http://localhost:1234/v1'),
+        help='Base URL for --backend server (default: http://localhost:1234/v1). '
+             'Also settable via GREPXCEL_SERVER_URL.',
+    )
+    p.add_argument(
+        '--server-model',
+        default=os.environ.get('GREPXCEL_SERVER_MODEL'),
+        help='Model id for --backend server; if omitted, auto-discovers the '
+             'first loaded model via /v1/models. Also via GREPXCEL_SERVER_MODEL.',
+    )
+    p.add_argument(
+        '--server-api-key',
+        default=os.environ.get('GREPXCEL_SERVER_API_KEY', 'not-needed'),
+        help='API key for --backend server (most local servers ignore this). '
+             'Also via GREPXCEL_SERVER_API_KEY.',
     )
     p.add_argument(
         '--allow-unverified-model',
@@ -531,7 +556,7 @@ def _run_draft(args) -> int:
     # (model download or cloud backend). Verification stays on.
     from .proxy_support import enable_corporate_tls
     enable_corporate_tls(getattr(args, 'ca_bundle', None))
-    from .drafter import ClaudeBackend, GitHubModelsBackend, PatternDrafter
+    from .drafter import ClaudeBackend, GitHubModelsBackend, OpenAICompatBackend, PatternDrafter
     sheet    = _resolve_sheet(args)
     selected = getattr(args, 'backend', 'local')
     backend  = None
@@ -552,6 +577,13 @@ def _run_draft(args) -> int:
         print(f"[!] Excel structure description will be sent to GitHub Models ({gh_model}).",
               file=sys.stderr)
         backend = GitHubModelsBackend(model=gh_model)
+    elif selected == 'server':
+        srv_url = getattr(args, 'server_url', 'http://localhost:1234/v1')
+        srv_model = getattr(args, 'server_model', None)
+        srv_key = getattr(args, 'server_api_key', 'not-needed')
+        backend = OpenAICompatBackend(
+            base_url=srv_url, model=srv_model, api_key=srv_key,
+        )
     drafter = PatternDrafter(
         input_path=args.file,
         output_path=args.output,

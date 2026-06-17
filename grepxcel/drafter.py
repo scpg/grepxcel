@@ -1010,6 +1010,74 @@ class GitHubModelsBackend:
         return completion.choices[0].message.content
 
 
+# ── OpenAI-compatible server backend ──────────────────────────────────────
+
+class OpenAICompatBackend:
+    """Sends inference to any OpenAI-compatible API server.
+
+    Works with LM Studio, Ollama, vLLM, text-generation-inference, or any
+    server exposing /v1/chat/completions.  Data stays local unless the user
+    explicitly points at a remote URL.
+    """
+
+    def __init__(
+        self,
+        base_url: str = 'http://localhost:1234/v1',
+        model: str | None = None,
+        api_key: str = 'not-needed',
+    ):
+        self._base_url = base_url
+        self._model    = model
+        self._api_key  = api_key
+        self._last_cost: CostRecord | None = None
+
+    def last_cost(self) -> CostRecord | None:
+        return self._last_cost
+
+    def chat(self, system: str, user: str) -> str:
+        try:
+            from openai import OpenAI
+        except ImportError:
+            print(
+                "Error: the server backend needs the 'openai' package.\n"
+                "Fix:   pip install openai",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        client = OpenAI(base_url=self._base_url, api_key=self._api_key)
+        model = self._model or self._resolve_model(client)
+        completion = client.chat.completions.create(
+            model=model,
+            messages=[
+                {'role': 'system', 'content': system},
+                {'role': 'user',   'content': user},
+            ],
+            temperature=0.1,
+            max_tokens=2048,
+        )
+        usage = completion.usage
+        in_tok  = getattr(usage, 'prompt_tokens', 0) or 0
+        out_tok = getattr(usage, 'completion_tokens', 0) or 0
+        self._last_cost = CostRecord(
+            model=model,
+            input_tokens=in_tok,
+            output_tokens=out_tok,
+            input_cost_usd=0.0,
+            output_cost_usd=0.0,
+        )
+        return completion.choices[0].message.content
+
+    @staticmethod
+    def _resolve_model(client) -> str:
+        models = client.models.list()
+        if models.data:
+            return models.data[0].id
+        raise RuntimeError(
+            'No models loaded on the server. Load a model in LM Studio / '
+            'Ollama first, then retry.'
+        )
+
+
 # ── Pattern writer ────────────────────────────────────────────────────────────
 
 _TABLE_ROW_PREFIXES = ('HEADER:', 'DATA:', 'FOOTER:', 'SPLITTER:', 'SKIP_IF')
