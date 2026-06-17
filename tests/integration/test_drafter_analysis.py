@@ -54,6 +54,7 @@ import openpyxl
 import pytest
 
 from grepxcel.drafter import ExcelAnalyzer
+from tests.conftest import find_pattern_xlsx
 
 # ---------------------------------------------------------------------------
 # Fixture discovery
@@ -76,7 +77,7 @@ _DATA_FIXTURES: list[str] = sorted(
 
 _FULL_FIXTURES: list[str] = [
     name for name in _DATA_FIXTURES
-    if os.path.exists(os.path.join(_FIXTURES_DIR, name, 'pattern.xlsx'))
+    if find_pattern_xlsx(os.path.join(_FIXTURES_DIR, name)) is not None
 ]
 
 # Fixtures where the drafter analyser is known not to surface all lbl: literals.
@@ -107,7 +108,7 @@ def _pattern_info(fixture_name: str) -> tuple[bool, list[str]]:
     lbl: col D holds a regex; simple backslash sequences are de-escaped so
     the literal string can be searched for directly in the analysis text.
     """
-    path = os.path.join(_FIXTURES_DIR, fixture_name, 'pattern.xlsx')
+    path = find_pattern_xlsx(os.path.join(_FIXTURES_DIR, fixture_name))
     wb   = openpyxl.load_workbook(path, data_only=True)
     ws   = wb.active
     has_table    = False

@@ -9,6 +9,7 @@ import datetime
 import pytest
 import openpyxl as _openpyxl
 from grepxcel import Engine, Logger, VerbosityLevel
+from tests.conftest import find_pattern_xlsx
 
 FIXTURES = os.path.join(os.path.dirname(__file__), '..', 'fixtures')
 
@@ -41,7 +42,7 @@ def run(fixture_name: str, sheet=None):
     lg = Logger(level=VerbosityLevel.QUIET)
     kwargs = {} if sheet is None else {'sheet': sheet}
     result = Engine().process(
-        pattern_file=os.path.join(folder, 'pattern.xlsx'),
+        pattern_file=find_pattern_xlsx(folder),
         data_file=os.path.join(folder, 'data.xlsx'),
         logger=lg,
         **kwargs,
@@ -53,7 +54,7 @@ def run_all_sheets(fixture_name: str):
     folder = os.path.join(FIXTURES, fixture_name)
     lg = Logger(level=VerbosityLevel.QUIET)
     result = Engine().process_all(
-        pattern_file=os.path.join(folder, 'pattern.xlsx'),
+        pattern_file=find_pattern_xlsx(folder),
         data_file=os.path.join(folder, 'data.xlsx'),
         logger=lg,
     )
@@ -2074,7 +2075,7 @@ class TestVerboseExtractionTrace:
         folder = os.path.join(FIXTURES, fixture_name)
         lg = Logger(level=VerbosityLevel.VERBOSE)
         Engine().process(
-            pattern_file=os.path.join(folder, 'pattern.xlsx'),
+            pattern_file=find_pattern_xlsx(folder),
             data_file=os.path.join(folder, 'data.xlsx'),
             logger=lg,
         )
@@ -2098,7 +2099,7 @@ class TestVerboseExtractionTrace:
         folder = os.path.join(FIXTURES, '01_simple_invoice')
         lg = Logger(level=VerbosityLevel.QUIET)
         Engine().process(
-            pattern_file=os.path.join(folder, 'pattern.xlsx'),
+            pattern_file=find_pattern_xlsx(folder),
             data_file=os.path.join(folder, 'data.xlsx'),
             logger=lg,
         )

@@ -6,9 +6,10 @@ import pytest
 
 import grepxcel
 from grepxcel import Engine, Logger, VerbosityLevel
+from tests.conftest import find_pattern_xlsx
 
 _FIX = os.path.join(os.path.dirname(__file__), '..', 'fixtures', '01_simple_invoice')
-_PATTERN = os.path.join(_FIX, 'pattern.xlsx')
+_PATTERN = find_pattern_xlsx(_FIX)
 _DATA = os.path.join(_FIX, 'data.xlsx')
 
 
