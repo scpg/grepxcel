@@ -12,7 +12,7 @@ import pytest
 
 from grepxcel.drafter import _type_from_number_format
 
-from grepxcel.drafter import ClaudeBackend, ExcelAnalyzer, GeminiBackend, LlamaCppClient, PatternDrafter, PatternWriter
+from grepxcel.drafter import ClaudeBackend, ExcelAnalyzer, GeminiBackend, LlamaCppClient, OpenAICompatBackend, PatternDrafter, PatternWriter
 from grepxcel.utils import infer_cell_type
 
 # Backward-compat alias used in a few tests below
@@ -638,6 +638,90 @@ class TestGeminiBackend:
         assert exc_info.value.code == 1
 
 
+# ── OpenAI-compatible server backend ─────────────────────────────────────────
+
+class TestOpenAICompatBackend:
+    def test_satisfies_llm_backend_protocol(self):
+        from grepxcel.drafter import LLMBackend
+        assert isinstance(OpenAICompatBackend(), LLMBackend)
+
+    def test_default_base_url(self):
+        assert OpenAICompatBackend()._base_url == 'http://localhost:1234/v1'
+
+    def test_custom_base_url(self):
+        b = OpenAICompatBackend(base_url='http://myhost:8080/v1')
+        assert b._base_url == 'http://myhost:8080/v1'
+
+    def test_chat_returns_model_content(self):
+        mock_openai = MagicMock()
+        mock_completion = MagicMock()
+        mock_completion.choices = [MagicMock(message=MagicMock(content='pattern output'))]
+        mock_completion.usage = MagicMock(prompt_tokens=100, completion_tokens=50)
+        mock_openai.OpenAI.return_value.chat.completions.create.return_value = mock_completion
+        mock_openai.OpenAI.return_value.models.list.return_value = MagicMock(
+            data=[MagicMock(id='test-model')]
+        )
+
+        with patch.dict('sys.modules', {'openai': mock_openai}):
+            result = OpenAICompatBackend().chat('sys prompt', 'user prompt')
+
+        assert result == 'pattern output'
+
+    def test_chat_uses_specified_model(self):
+        mock_openai = MagicMock()
+        mock_completion = MagicMock()
+        mock_completion.choices = [MagicMock(message=MagicMock(content='ok'))]
+        mock_completion.usage = MagicMock(prompt_tokens=10, completion_tokens=5)
+        mock_openai.OpenAI.return_value.chat.completions.create.return_value = mock_completion
+
+        with patch.dict('sys.modules', {'openai': mock_openai}):
+            OpenAICompatBackend(model='my-model').chat('sys', 'user')
+
+        create_call = mock_openai.OpenAI.return_value.chat.completions.create
+        assert create_call.call_args.kwargs['model'] == 'my-model'
+
+    def test_auto_discovers_model_when_none_specified(self):
+        mock_openai = MagicMock()
+        mock_completion = MagicMock()
+        mock_completion.choices = [MagicMock(message=MagicMock(content='ok'))]
+        mock_completion.usage = MagicMock(prompt_tokens=10, completion_tokens=5)
+        mock_openai.OpenAI.return_value.chat.completions.create.return_value = mock_completion
+        mock_openai.OpenAI.return_value.models.list.return_value = MagicMock(
+            data=[MagicMock(id='discovered-model')]
+        )
+
+        with patch.dict('sys.modules', {'openai': mock_openai}):
+            OpenAICompatBackend().chat('sys', 'user')
+
+        create_call = mock_openai.OpenAI.return_value.chat.completions.create
+        assert create_call.call_args.kwargs['model'] == 'discovered-model'
+
+    def test_no_models_loaded_raises_runtime_error(self):
+        mock_openai = MagicMock()
+        mock_openai.OpenAI.return_value.models.list.return_value = MagicMock(data=[])
+
+        with patch.dict('sys.modules', {'openai': mock_openai}):
+            with pytest.raises(RuntimeError, match='No models loaded'):
+                OpenAICompatBackend().chat('sys', 'user')
+
+    def test_last_cost_reports_zero_dollars(self):
+        mock_openai = MagicMock()
+        mock_completion = MagicMock()
+        mock_completion.choices = [MagicMock(message=MagicMock(content='ok'))]
+        mock_completion.usage = MagicMock(prompt_tokens=100, completion_tokens=50)
+        mock_openai.OpenAI.return_value.chat.completions.create.return_value = mock_completion
+
+        with patch.dict('sys.modules', {'openai': mock_openai}):
+            b = OpenAICompatBackend(model='test-model')
+            b.chat('sys', 'user')
+
+        cost = b.last_cost()
+        assert cost is not None
+        assert cost.input_tokens == 100
+        assert cost.output_tokens == 50
+        assert cost.total_cost_usd == 0.0
+
+
 # ── C3: --backend CLI flag ────────────────────────────────────────────────────
 
 class TestBackendCLIFlag:
@@ -656,6 +740,56 @@ class TestBackendCLIFlag:
         from grepxcel.cli import _build_parser
         args = _build_parser().parse_args(['draft', '--backend', 'gemini', 'data.xlsx'])
         assert args.backend == 'gemini'
+
+    def test_backend_server_accepted(self):
+        from grepxcel.cli import _build_parser
+        args = _build_parser().parse_args(['draft', '--backend', 'server', 'data.xlsx'])
+        assert args.backend == 'server'
+
+    def test_server_url_flag_parsed(self):
+        from grepxcel.cli import _build_parser
+        args = _build_parser().parse_args([
+            'draft', '--backend', 'server',
+            '--server-url', 'http://myhost:8080/v1',
+            'data.xlsx',
+        ])
+        assert args.server_url == 'http://myhost:8080/v1'
+
+    def test_server_url_defaults_to_lmstudio(self):
+        from grepxcel.cli import _build_parser
+        args = _build_parser().parse_args(['draft', 'data.xlsx'])
+        assert args.server_url == 'http://localhost:1234/v1'
+
+    def test_server_model_flag_parsed(self):
+        from grepxcel.cli import _build_parser
+        args = _build_parser().parse_args([
+            'draft', '--backend', 'server',
+            '--server-model', 'qwen2.5-coder-7b',
+            'data.xlsx',
+        ])
+        assert args.server_model == 'qwen2.5-coder-7b'
+
+    def test_server_model_defaults_to_none(self):
+        from grepxcel.cli import _build_parser
+        args = _build_parser().parse_args(['draft', 'data.xlsx'])
+        assert args.server_model is None
+
+    def test_server_backend_wires_openai_compat(self, tmp_path, capsys):
+        data_path = _make_xlsx([['X'], [1]], tmp_path, 'data.xlsx')
+        out_path  = str(tmp_path / 'out.xlsx')
+        mock_backend = MagicMock()
+        mock_backend.chat.return_value = (
+            "var: | x | integer | .*\nSTART:\ncell:next | x\nEND:"
+        )
+        with patch('grepxcel.drafter.OpenAICompatBackend',
+                   return_value=mock_backend) as mock_cls:
+            from grepxcel.cli import _build_parser, _run_draft
+            args = _build_parser().parse_args([
+                'draft', '--backend', 'server', data_path, '-o', out_path,
+            ])
+            _run_draft(args)
+        mock_cls.assert_called_once()
+        mock_backend.chat.assert_called_once()
 
     def test_backend_invalid_rejected(self):
         from grepxcel.cli import _build_parser

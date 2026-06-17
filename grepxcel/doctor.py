@@ -124,6 +124,29 @@ def check_draft_cloud() -> list[Result]:
     return res
 
 
+def check_server(url: str = 'http://localhost:1234/v1') -> list[Result]:
+    """Probe an OpenAI-compatible server at *url*/models."""
+    import json
+    res: list[Result] = []
+    models_url = url.rstrip('/') + '/models'
+    try:
+        resp = urllib.request.urlopen(
+            urllib.request.Request(models_url, method='GET'),
+            timeout=3,
+        )
+        data = json.loads(resp.read())
+        model_ids = [m.get('id', '?') for m in data.get('data', [])]
+        if model_ids:
+            res.append((OK, 'server', f'{url} — loaded: {", ".join(model_ids[:3])}'))
+        else:
+            res.append((WARN, 'server', f'{url} — reachable but no models loaded'))
+    except (urllib.error.URLError, OSError) as exc:
+        res.append((WARN, 'server', f'{url} — not reachable: {exc}'))
+    except Exception as exc:
+        res.append((WARN, 'server', f'{url} — probe error: {exc}'))
+    return res
+
+
 def tls_probe(url: str = 'https://huggingface.co', timeout: float = 6.0) -> Result:
     """Live HTTPS handshake honoring proxy env + configured CA trust.
 
@@ -192,6 +215,8 @@ def run_doctor(area: str = 'all', probe: bool = True, out=None) -> int:
     if area in ('draft', 'all'):
         sections.append(('draft — local model', check_draft_local()))
         sections.append(('draft — cloud backends', check_draft_cloud()))
+        srv_url = os.environ.get('GREPXCEL_SERVER_URL', 'http://localhost:1234/v1')
+        sections.append(('draft — server backend', check_server(url=srv_url)))
         sections.append(('network — proxy / TLS', check_proxy_tls(probe=probe)))
 
     color = should_color(out)
