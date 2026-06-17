@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`seek:` instruction** — new extraction-sequence instruction that repositions the
+  scanner cursor to a target cell (A1-notation) **without reading it**. Enables
+  backward repositioning after reading scattered absolute cells, so the next
+  `cell:next` starts from the seek position. Example: `seek:I4` followed by
+  `cell:I4 | employee.name` is now valid even after reading a cell on a later row.
+
+### Changed
+
+- **`SKIP_IF` now works with `DATA:*`** — previously restricted to `DATA:{n,m}`
+  only. With `DATA:*`, `SKIP_IF` rows are filtered from output while scanning
+  continues forward. `DATA:1` remains restricted (ambiguous semantics).
+
+### Fixed
+
+- **`seek:` ordering reset** — `seek:X` followed immediately by `cell:X` no longer
+  raises a "before or equal to previous reference" parse error. The absolute-ref
+  ordering constraint is now fully reset (to `None`) after every `seek:`, so the
+  first abs ref after a seek is unchecked at parse time. Backward refs after seek
+  are still caught at runtime by the engine's "already passed" check.
+
 ## [0.1.0] — Unreleased
 
 Initial public release.
