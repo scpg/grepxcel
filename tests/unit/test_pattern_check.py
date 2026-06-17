@@ -80,3 +80,18 @@ def test_verbose_shows_fields_and_sequence(tmp_path):
     run_validate([_write(_VALID, tmp_path)], verbose=True, out=buf)
     out = buf.getvalue()
     assert 'VALID' in out and 'fields:' in out and 'extraction sequence:' in out and 'x.v' in out
+
+
+def test_verbose_shows_seek_instruction(tmp_path):
+    """seek: appears in the verbose extraction-sequence listing."""
+    rows = [
+        ['var:', 'x', 'string', '.*'],
+        ['START:'],
+        ['seek:G5'],
+        ['cell:next', 'x'],
+        ['END:'],
+    ]
+    buf = io.StringIO()
+    run_validate([_write(rows, tmp_path)], verbose=True, out=buf)
+    out = buf.getvalue()
+    assert 'seek:G5' in out

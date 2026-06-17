@@ -13,7 +13,7 @@ import sys
 from dataclasses import dataclass, field
 
 from .color import colorize_marks, should_color
-from .models import CellInstruction, TableInstruction
+from .models import CellInstruction, TableInstruction, SeekInstruction
 from .pattern_parser import PatternError, PatternParser
 from .security import SecurityError
 
@@ -118,6 +118,8 @@ def render_result(result: CheckResult, verbose: bool = False, out=None) -> None:
             if isinstance(instr, CellInstruction):
                 tgt = instr.target or instr.multiplicity
                 print(f'     cell:{tgt:<6} -> {instr.field}', file=out)
+            elif isinstance(instr, SeekInstruction):
+                print(f'     seek:{instr.target}', file=out)
             elif isinstance(instr, TableInstruction):
                 print(f'     table:{instr.multiplicity}', file=out)
                 for trow in instr.rows:

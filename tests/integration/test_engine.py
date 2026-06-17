@@ -2104,3 +2104,59 @@ class TestVerboseExtractionTrace:
             logger=lg,
         )
         assert '←' not in capsys.readouterr().err
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# seek: cursor repositioning
+# ═════════════════════════════════════════════════════════════════════════════
+
+class TestSeekEngine:
+    """End-to-end tests for seek: instruction (cursor repositioning without reading)."""
+
+    def test_seek_to_earlier_cell_enables_backward_read(self):
+        """cell:C1 reads C1 (cursor → D1); seek:A1 repositions; cell:next reads A1."""
+        pat = [
+            ['var:', 'last',  'string', '.*'],
+            ['var:', 'first', 'string', '.*'],
+            ['START:'],
+            ['cell:C1', 'last'],    # read C1; cursor advances past C1
+            ['seek:A1'],            # reposition cursor to A1
+            ['cell:next', 'first'], # A1 not consumed → reads A1
+            ['END:'],
+        ]
+        data = [['a_value', None, 'c_value']]  # A1="a_value", B1=None, C1="c_value"
+        result, lg = _run(pat, data)
+        assert result.get('last') == 'c_value'
+        assert result.get('first') == 'a_value'
+        assert not lg.has_errors()
+
+    def test_seek_skips_already_consumed_cells(self):
+        """seek back to a consumed cell; cell:next skips it and reads the next one."""
+        pat = [
+            ['var:', 'x', 'string', '.*'],
+            ['var:', 'y', 'string', '.*'],
+            ['START:'],
+            ['cell:A1', 'x'],   # reads and consumes A1
+            ['seek:A1'],        # reposition cursor back to A1
+            ['cell:next', 'y'], # A1 consumed → reads A2
+            ['END:'],
+        ]
+        data = [['A1_value'], ['A2_value']]
+        result, lg = _run(pat, data)
+        assert result.get('x') == 'A1_value'
+        assert result.get('y') == 'A2_value'
+        assert not lg.has_errors()
+
+    def test_seek_forward_skips_cells_before_target(self):
+        """seek:C1 with cursor at A1 skips A1 and B1; cell:next reads C1."""
+        pat = [
+            ['var:', 'x', 'string', '.*'],
+            ['START:'],
+            ['seek:C1'],        # jump forward: cursor set to C1 position
+            ['cell:next', 'x'], # reads C1 (first non-empty at or after C1)
+            ['END:'],
+        ]
+        data = [['skip_a', 'skip_b', 'read_c']]
+        result, lg = _run(pat, data)
+        assert result.get('x') == 'read_c'
+        assert not lg.has_errors()

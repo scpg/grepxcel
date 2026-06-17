@@ -43,3 +43,8 @@ class TableInstruction:
     multiplicity: str  # '1' or '*'
     config: Config     # table-level config (may override global)
     rows: list         # list[TemplateRow]
+
+
+@dataclass
+class SeekInstruction:
+    target: str  # A1-notation cell address, e.g. 'G5' — cursor repositions here without reading

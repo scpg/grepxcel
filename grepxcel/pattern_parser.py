@@ -6,7 +6,7 @@ import openpyxl
 from openpyxl.utils import get_column_letter
 from openpyxl.utils.cell import coordinate_to_tuple
 
-from .models import Config, FieldDef, TemplateColumn, TemplateRow, CellInstruction, TableInstruction
+from .models import Config, FieldDef, TemplateColumn, TemplateRow, CellInstruction, TableInstruction, SeekInstruction
 from .security import check_regex_safety, SecurityError
 
 _MAX_PATTERN_CELL_LEN = 1_000  # max characters in any pattern file cell value
@@ -136,6 +136,22 @@ class PatternParser:
                         f"Unknown cell instruction 'cell:{raw}' at pattern row {i + 1}. "
                         f"Use 'cell:next', 'cell:1', or a cell coordinate like 'cell:B5'."
                     )
+                i += 1
+
+            elif col_a and col_a.startswith('seek:'):
+                raw = col_a.split(':', 1)[1]
+                if not _A1_RE.match(raw):
+                    raise PatternError(
+                        f"Invalid seek instruction 'seek:{raw}' at pattern row {i + 1}. "
+                        f"Use a cell coordinate like 'seek:G5' (A1-notation)."
+                    )
+                ref = raw.upper()
+                new_pos = coordinate_to_tuple(ref)
+                # seek: always resets the abs-ref ordering constraint — it is an
+                # explicit cursor reposition that intentionally may move backward.
+                last_abs_pos = new_pos
+                self._check_comment_zone(row, 1, i + 1, 'seek:')    # B+ may be a # comment
+                start_sequence.append(SeekInstruction(target=ref))
                 i += 1
 
             elif col_a and col_a.startswith('table:'):
