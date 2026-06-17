@@ -164,6 +164,7 @@ class DocsGenerator:
         row(['doc:', '', '', '', 'Everything between START: and END: defines the extraction order.'], 'doc')
         row(['doc:', '', '', '', 'cell:next  reads the next non-empty cell (alias: cell:1). Scans in read.direction order.'], 'doc')
         row(['doc:', '', '', '', 'cell:B5    jumps directly to cell B5 (absolute A1-notation reference).'], 'doc')
+        row(['doc:', '', '', '', 'seek:G5    repositions the cursor to G5 WITHOUT reading it. Next cell:next starts from there.'], 'doc')
         row(['doc:', '', '', '', 'table:*    finds all instances of a repeating table block.'], 'doc')
         row(['START:'], 'marker')
 
@@ -193,7 +194,7 @@ class DocsGenerator:
         row(['doc:', '', '', '', 'n = min total physical rows expected, m = max total rows to scan.'], 'doc')
         row(['doc:', '', '', '', 'SKIP_IF: rows matching the condition are silently excluded from output'], 'doc')
         row(['doc:', '', '', '', 'but still count toward the {n,m} bounds.'], 'doc')
-        row(['doc:', '', '', '', 'SKIP_IF is only valid with DATA:{n,m}.'], 'doc')
+        row(['doc:', '', '', '', 'SKIP_IF is valid with DATA:{n,m} (rows count toward bounds) and DATA:* (rows filtered, scan continues).'], 'doc')
         row(['table:1'], 'table')
         row([None, 'HEADER:1', 'col_item', 'col_qty'], 'tmpl')
         row([None, 'SKIP_IF',  'EMPTY',    'IGNORE'], 'tmpl')
@@ -214,11 +215,12 @@ class DocsGenerator:
             ('cell:next','cell:next | FieldName',      'Read next non-empty cell (alias: cell:1).'),
             ('cell:next','cell:next | IGNORE',         'Skip next non-empty cell without capturing.'),
             ('cell:next','cell:B5 | FieldName',        'Jump directly to B5 (absolute reference). Ordering must be forward.'),
+            ('seek:',    'seek:G5',                    'Reposition cursor to G5 without reading it. Resets abs-ref ordering constraint.'),
             ('table:*',  'table:*  (or table:1)',      'Begin a repeating table block.'),
             ('HEADER:N', ' | HEADER:1 | F1 | F2',     'Strict header row template (col A must be blank).'),
             ('DATA:*',      ' | DATA:* | F1 | F2',           'Data row template (greedy, lenient validation).'),
             ('DATA:{n,m}',  ' | DATA:{0,15} | F1 | F2',      'Bounded data: scan at most m physical rows, warn if < n.'),
-            ('SKIP_IF',     ' | SKIP_IF | EMPTY | IGNORE',    'Skip row if non-IGNORE columns match. Only with DATA:{n,m}.'),
+            ('SKIP_IF',     ' | SKIP_IF | EMPTY | IGNORE',    'Skip row if non-IGNORE columns match. Valid with DATA:{n,m} and DATA:*.'),
             ('FOOTER:N',    ' | FOOTER:1 | F1 | F2',          'Strict footer row template.'),
             ('SPLITTER',    ' | SPLITTER:1',                   'All columns must be blank (separator row).'),
         ]

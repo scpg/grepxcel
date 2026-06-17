@@ -40,6 +40,7 @@ Between `START:` and `END:` you list the extraction sequence:
 
 - `cell:next fieldName` — read the next non-empty cell into a field (alias: `cell:1`)
 - `cell:B5 fieldName` — jump directly to an absolute cell (A1-notation reference)
+- `seek:G5` — reposition the cursor to G5 **without** reading it; the next `cell:next` starts from there
 - `table:*` — match all instances of a repeating mini-table block
 
 Dot notation in `var:` field names creates nested output: `po.number` → `{"po": {"number": …}}`.

@@ -6,7 +6,7 @@ import openpyxl
 from openpyxl.utils import get_column_letter
 from openpyxl.utils.cell import coordinate_to_tuple
 
-from .models import Config, FieldDef, TemplateColumn, TemplateRow, CellInstruction, TableInstruction
+from .models import Config, FieldDef, TemplateColumn, TemplateRow, CellInstruction, TableInstruction, SeekInstruction
 from .security import check_regex_safety, SecurityError
 
 _MAX_PATTERN_CELL_LEN = 1_000  # max characters in any pattern file cell value
@@ -138,6 +138,22 @@ class PatternParser:
                     )
                 i += 1
 
+            elif col_a and col_a.startswith('seek:'):
+                raw = col_a.split(':', 1)[1]
+                if not _A1_RE.match(raw):
+                    raise PatternError(
+                        f"Invalid seek instruction 'seek:{raw}' at pattern row {i + 1}. "
+                        f"Use a cell coordinate like 'seek:G5' (A1-notation)."
+                    )
+                ref = raw.upper()
+                # seek: fully resets the abs-ref ordering constraint so that the
+                # cell immediately at the seek target (or any cell after it) is
+                # accepted. Backward refs after seek are caught at runtime.
+                last_abs_pos = None
+                self._check_comment_zone(row, 1, i + 1, 'seek:')    # B+ may be a # comment
+                start_sequence.append(SeekInstruction(target=ref))
+                i += 1
+
             elif col_a and col_a.startswith('table:'):
                 mult = col_a.split(':', 1)[1]
                 # table:<mult> must be '*' or a positive instance count.
@@ -266,12 +282,15 @@ class PatternParser:
                         raise PatternError(
                             f'Only one {kind} row is allowed per table block.'
                         )
-                    # SKIP_IF without a bounded DATA row is meaningless
+                    # SKIP_IF is meaningful with DATA:* and DATA:{n,m} (rows are
+                    # filtered from output while scanning continues). It is not
+                    # meaningful with DATA:1 — skipping the only row creates
+                    # ambiguous extraction semantics.
                     skip_if_rows = [r for r in template_rows if r.row_type == 'SKIP_IF']
-                    if skip_if_rows and not has_bounded:
+                    if skip_if_rows and has_one:
                         raise PatternError(
-                            'SKIP_IF requires DATA:{n,m}. '
-                            'SKIP_IF has no effect with DATA:* or DATA:1.'
+                            'SKIP_IF requires DATA:{n,m} or DATA:*. '
+                            'SKIP_IF has no effect with DATA:1.'
                         )
 
                 # Structural rules for a table block:

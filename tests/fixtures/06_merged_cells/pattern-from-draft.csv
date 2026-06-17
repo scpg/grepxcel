@@ -1,0 +1,20 @@
+config:,read.direction,LR,,
+config:,currency.sign,€,,
+lbl:,col_category,string,Category,
+lbl:,col_product,string,Product,
+lbl:,col_price,string,Price,
+var:,report.title,string,SALES.*,
+var:,item.category,string,.+,
+var:,item.name,string,.+,
+var:,item.price,currency,.*,
+var:,footer.label,string,Grand Total,
+var:,footer.total,currency,.*,
+START:,,,,
+cell:1,report.title,,,
+cell:1,IGNORE,,,
+cell:1,IGNORE,,,
+table:*,,,,
+,HEADER:1,col_category,col_product,col_price
+,DATA:*,item.category,item.name,item.price
+,FOOTER:1,IGNORE,footer.label,footer.total
+END:,,,,

@@ -1,7 +1,7 @@
 import openpyxl
 from openpyxl.utils import get_column_letter
 from openpyxl.utils.cell import coordinate_to_tuple
-from .models import Config, CellInstruction, TableInstruction, TemplateRow
+from .models import Config, CellInstruction, TableInstruction, TemplateRow, SeekInstruction
 from .utils import is_empty, validate_type, _MAX_REGEX_INPUT_LEN
 from .pattern_parser import PatternParser, PatternError
 from .logger import Logger, LogRecord, EngineError, cell_ref
@@ -452,6 +452,8 @@ class Engine:
                 elif isinstance(instruction, TableInstruction):
                     self._process_table(instruction, scanner, defs, _raw, table_index, logger)
                     table_index += 1
+                elif isinstance(instruction, SeekInstruction):
+                    self._process_seek(instruction, scanner, logger)
         except EngineError:
             pass  # already logged; return partial result
 
@@ -542,6 +544,24 @@ class Engine:
             logger.commit_warnings([rec])
 
         result['cells'][instr.field] = value
+
+    # -------------------------------------------------------------------------
+    # seek: processing
+    # -------------------------------------------------------------------------
+
+    def _process_seek(self, instr: SeekInstruction, scanner: SheetScanner, logger: Logger):
+        """Reposition the scanner cursor to the given cell without reading it."""
+        row, col = coordinate_to_tuple(instr.target)
+        idx = scanner.scan_order_index.get((row, col))
+        if idx is None:
+            logger.fatal(
+                f"seek:{instr.target} targets a cell outside the sheet's used range",
+                location=cell_ref(row, col, logger.sheet_name),
+                expected='a valid cell within the used range of the sheet',
+                found=f'cell {instr.target} is not in the scan order '
+                      f'(sheet used range: {scanner.ws.max_row} rows × {scanner.ws.max_column} cols)',
+            )
+        scanner.cursor = idx
 
     # -------------------------------------------------------------------------
     # table:* processing

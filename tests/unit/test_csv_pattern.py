@@ -18,6 +18,7 @@ import tempfile
 import pytest
 
 from grepxcel.pattern_parser import PatternParser, PatternError
+from tests.conftest import find_pattern_xlsx
 from grepxcel.security import SecurityError, validate_pattern_file
 
 
@@ -210,11 +211,9 @@ class TestValidatePatternFile:
             validate_pattern_file(path, max_file_mb=0)
 
     def test_xlsx_delegates_to_full_validation(self):
-        """A real fixture pattern.xlsx must pass the full xlsx validation path."""
-        xlsx = os.path.join(
-            os.path.dirname(__file__), '..', 'fixtures',
-            '01_simple_invoice', 'pattern.xlsx',
-        )
+        """A real fixture pattern xlsx must pass the full xlsx validation path."""
+        folder = os.path.join(os.path.dirname(__file__), '..', 'fixtures', '01_simple_invoice')
+        xlsx = find_pattern_xlsx(folder)
         validate_pattern_file(xlsx)  # must not raise
 
     def test_unknown_extension_rejected(self, tmp_path):

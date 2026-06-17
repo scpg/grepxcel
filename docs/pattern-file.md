@@ -190,6 +190,44 @@ labels you don't need.
 
 ---
 
+## seek: instruction
+
+Reposition the scanner cursor to a specific cell **without reading it**. The
+next `cell:next` after a `seek:` starts scanning from the new position.
+
+| Column A   | Meaning |
+|------------|---------|
+| `seek:G5`  | Move cursor to G5; does not consume the cell |
+
+**When to use it:** when you need to read scattered absolute cells from
+different regions of the sheet and the natural scan order would require jumping
+backward. A typical pattern is: read a group of cells from one column, then
+`seek:` back to an earlier row in a different column and read those cells with
+absolute references.
+
+```
+cell:B7    | company.phone     ← last cell in left column (row 7)
+seek:I4                        ← reposition: back to row 4, right column
+cell:I4    | employee.name     ← absolute ref at the seek position is valid
+cell:I5    | employee.manager
+cell:I6    | employee.week_starting
+seek:B9                        ← reposition again before the table
+table:*
+```
+
+**Ordering rules after `seek:`:** the abs-ref ordering constraint resets
+completely. The first `cell:abs` after a `seek:` may be at, before, or after
+the seek target — the parser accepts it; backward references are caught at
+runtime by the engine's "already passed" check.
+
+**`seek:` does not read the target cell.** It only moves the cursor. Already-
+consumed cells are still skipped by subsequent `cell:next` instructions.
+
+`seek:` is not valid inside a table block. Annotate it with a `doc:` row above
+if you want to explain why the reposition is needed.
+
+---
+
 ## table: instructions
 
 Extract one or more instances of a repeating mini-table. The engine searches the data sheet greedily and collects every matching block.
@@ -218,7 +256,35 @@ Each template row occupies one physical row in the pattern file. Column B holds 
 
 **SPLITTER rows** (`SPLITTER:1`) — every column in the row must be empty in the data. Used to represent a blank separator row between sections.
 
-**DATA rows** (`DATA:*`) — collected until the row is entirely empty **or** a FOOTER row is detected. Missing values in DATA rows produce a warning but do not reject the match.
+**DATA rows** — come in three forms:
+
+| Multiplicity | Meaning |
+|---|---|
+| `DATA:*` | Greedy — collect rows until empty row or FOOTER detected |
+| `DATA:1` | Collect exactly one physical row per instance |
+| `DATA:{n,m}` | Scan at most *m* physical rows total; warn if fewer than *n* non-skipped rows are found |
+
+Missing values in DATA rows produce a warning but do not reject the match.
+
+**SKIP_IF rows** — silently exclude a data row from output when the row matches
+the condition. Useful for skipping empty or irrelevant rows without rejecting the
+whole table instance. Column positions use the same field keywords as DATA:
+
+| Column keyword | Meaning in SKIP_IF |
+|---|---|
+| `EMPTY` | This column's cell must be empty for the row to be skipped |
+| `IGNORE` | Do not check this column |
+
+A row is skipped when **all** non-`IGNORE` columns satisfy their condition.
+`SKIP_IF` is valid with `DATA:*` and `DATA:{n,m}`. It is not valid with `DATA:1`.
+
+With `DATA:{n,m}`: skipped rows still count toward the `{n,m}` bounds.
+With `DATA:*`: skipped rows are silently filtered; scanning continues.
+
+```
+    | SKIP_IF   | IGNORE | EMPTY | EMPTY | IGNORE |   ← skip rows with empty col2 and col3
+    | DATA:{0,7}| date   | timeIn | breaks | total |
+```
 
 **FOOTER rows** (`FOOTER:1`) — matched strictly, like HEADER.
 
@@ -306,8 +372,9 @@ In this example:
 | Regex with nested quantifiers `(a+)+`      | Fatal error — processing stops |
 | Invalid regex syntax                       | Fatal error — processing stops |
 | Field referenced in `START:` but not defined | Fatal error                  |
-| Absolute `cell:` references out of reading order | Fatal error (at parse time) |
+| Consecutive absolute `cell:` references out of reading order | Fatal error (at parse time) |
 | `cell:` absolute target already passed by cursor | Fatal error              |
+| `seek:` target outside the sheet's used range | Fatal error                |
 | `lbl:` absolute target is empty            | Fatal error                    |
 | Data cell fails type/regex validation      | Warning logged, value kept     |
 | Data cell empty where a value was expected | Warning logged, `null` stored  |

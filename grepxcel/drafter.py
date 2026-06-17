@@ -84,6 +84,15 @@ In your output, separate columns with ' | ' (space-pipe-space).
    self-documenting and independent of scan order.
    Absolute references must appear in forward reading order (LR: row then column).
 
+   To reposition the cursor without reading a cell — use seek:
+
+     seek:G5                (move cursor to G5; the next cell:next starts from G5)
+
+   seek: is for sheets where you must jump backward (or forward past a gap) to
+   a new region after reading some scattered absolute cells. It does NOT read the
+   target cell — it only sets the cursor position. Use it sparingly; prefer
+   cell:next for the common sequential case and cell:B5 for isolated static cells.
+
    For repeating tables:
      table:*                   (bare keyword, no pipe, starts a table block)
        | HEADER:1 | ColA | ColB | ColC
