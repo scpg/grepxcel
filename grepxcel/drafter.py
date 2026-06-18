@@ -1131,6 +1131,8 @@ class PatternWriter:
             row_num += 1
 
         wb.save(output_path)
+        from .pattern_colors import colorize_pattern_file
+        colorize_pattern_file(output_path)
 
 
 # ── Validation helpers ────────────────────────────────────────────────────────
