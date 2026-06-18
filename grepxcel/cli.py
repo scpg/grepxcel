@@ -86,6 +86,7 @@ commands:
   validate-pattern   Check a pattern file is valid to use (no extraction)
   draft              Use a local LLM to draft a starter pattern file
   docs               Write a pattern-format reference xlsx (pattern-reference.xlsx)
+  lint               Inspect an Excel file for potential extraction issues
   doctor             Check the environment is ready (deps, keys, model, proxy/TLS)
 
 Run 'grepxcel <command> --help' for per-command options.
@@ -104,6 +105,7 @@ Run 'grepxcel <command> --help' for per-command options.
     _add_validate_subparser(sub)
     _add_draft_subparser(sub)
     _add_docs_subparser(sub)
+    _add_lint_subparser(sub)
     _add_doctor_subparser(sub)
     return p
 
@@ -129,6 +131,25 @@ examples:
                    help='Pattern file(s) to validate (.xlsx or .csv)')
     p.add_argument('-v', '--verbose', action='store_true',
                    help='Print the parsed config, fields, and extraction sequence')
+
+
+def _add_lint_subparser(sub) -> None:
+    p = sub.add_parser(
+        'lint',
+        help='Inspect an Excel file for potential extraction issues',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Checks an Excel data file before extraction: format, encryption/IRM,
+sheet dimensions (declared vs real extent), merged cells, formula cells,
+and known corporate-environment issues. Reports ✓/⚠/✗/ℹ.
+
+examples:
+  grepxcel lint data.xlsx
+  grepxcel lint jan.xlsx feb.xlsx        # lint several files
+        """,
+    )
+    p.add_argument('files', nargs='+', metavar='FILE',
+                   help='Excel file(s) to inspect (.xlsx)')
 
 
 def _add_doctor_subparser(sub) -> None:
@@ -500,6 +521,13 @@ def _run_docs(args) -> int:
     return 0
 
 
+# ── lint handler ─────────────────────────────────────────────────────────────
+
+def _run_lint(args) -> int:
+    from .lint import run_lint
+    return run_lint(args.files)
+
+
 # ── validate-pattern handler ─────────────────────────────────────────────────
 
 def _run_validate(args) -> int:
@@ -617,6 +645,9 @@ def main(argv=None):
 
     if args.command == 'doctor':
         sys.exit(_run_doctor(args))
+
+    if args.command == 'lint':
+        sys.exit(_run_lint(args))
 
     if args.command == 'validate-pattern':
         sys.exit(_run_validate(args))

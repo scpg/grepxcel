@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`lint` command** — `grepxcel lint data.xlsx` inspects an Excel file before
+  extraction, reporting potential issues with a ✓/⚠/✗/ℹ checklist: file format
+  and accessibility, encryption/IRM detection (OLE Compound Documents from
+  Microsoft Information Protection), sheet dimensions with declared-vs-real
+  extent inflation, merged cells, formula cells (stale cached values), empty
+  sheets, and multi-sheet inventory. Advisory notes explain known corporate
+  environment issues (MIP/IRM sensitivity labels, password protection,
+  conditional formatting) even when not yet auto-detected.
+
 - **`--backend server` (OpenAI-compatible server)** — new `draft` backend that talks
   to any server exposing `/v1/chat/completions` (LM Studio, Ollama, vLLM,
   text-generation-inference). Default URL: `http://localhost:1234/v1`. Enables
@@ -27,6 +36,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **`SKIP_IF` now works with `DATA:*`** — previously restricted to `DATA:{n,m}`
   only. With `DATA:*`, `SKIP_IF` rows are filtered from output while scanning
   continues forward. `DATA:1` remains restricted (ambiguous semantics).
+
+### Changed
+
+- **Extent guard uses real data extent** — the `--max-rows` / `--max-columns`
+  guard now measures the actual used extent (non-empty cells) instead of
+  openpyxl's declared `max_row`/`max_column`, which can be inflated by
+  styled-but-empty cells. Sheets with formatting beyond the data boundary
+  now warn and proceed instead of being rejected.
 
 ### Fixed
 

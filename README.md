@@ -159,6 +159,9 @@ Requires Python **3.11+**.
 # Generate a colour-coded pattern reference file
 .venv/bin/grepxcel docs -o pattern-reference.xlsx
 
+# Inspect an Excel file before extraction (format, encryption, extent, merges)
+.venv/bin/grepxcel lint data.xlsx
+
 # Use a local LLM to draft a starter pattern for an unseen Excel file
 .venv/bin/grepxcel draft data.xlsx -o draft-pattern.xlsx
 ```
@@ -387,6 +390,27 @@ on — it is never disabled):
 
 > ⚠️ This support has **not been tested against a real intercept proxy**;
 > grepxcel prints a one-time notice when proxy/CA settings are in effect.
+
+### `grepxcel lint`
+
+Inspect an Excel data file before extraction — catches issues that would cause
+extraction to fail or produce unexpected results.
+
+```bash
+grepxcel lint data.xlsx
+grepxcel lint jan.xlsx feb.xlsx        # lint several files
+```
+
+It prints a `✓/⚠/✗/ℹ` checklist covering:
+- **File format** — extension, ZIP integrity, encryption/IRM detection
+- **Microsoft Information Protection (MIP)** — detects OLE Compound Documents
+  (encrypted by sensitivity labels) and explains how to obtain an extractable copy
+- **Sheet dimensions** — declared vs real used extent (detects styling inflation)
+- **Merged cells** — listed with a note on how grepxcel handles them
+- **Formula cells** — warns about potentially stale cached values
+- **Empty sheets** — nothing to extract
+- **Advisory notes** — known limitations not yet auto-detected (password
+  protection, conditional formatting, pivot tables, VBA)
 
 ### `grepxcel doctor`
 

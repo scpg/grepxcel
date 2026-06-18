@@ -20,25 +20,60 @@ EXCEL_MAX_ROWS = 1_048_576   # Excel's hard row ceiling
 EXCEL_MAX_COLS = 16_384      # Excel's hard column ceiling (XFD)
 
 
+def _used_extent(ws) -> tuple[int, int]:
+    """Return (last_row, last_col) with actual non-empty cell values.
+
+    openpyxl's max_row/max_column includes styled-but-empty cells, which
+    inflates the declared dimensions. This scans for the real data boundary.
+    """
+    last_row = 0
+    last_col = 0
+    for row_idx, row in enumerate(ws.iter_rows(values_only=True), start=1):
+        for col_idx, val in enumerate(row, start=1):
+            if val is not None:
+                last_row = row_idx
+                if col_idx > last_col:
+                    last_col = col_idx
+    return last_row, last_col
+
+
 def _check_sheet_dimensions(ws, max_rows: int, max_cols: int, logger) -> None:
     """Fatal-error if the worksheet exceeds the configured row/column limits.
 
-    The message tells the user how to raise the limit and that doing so is
-    untested territory. Calls logger.fatal (which raises EngineError).
+    Uses the real used extent (non-empty cells) rather than openpyxl's
+    declared max_row/max_column, which can be inflated by formatting on
+    empty cells. Warns when declared > used but used is within limits.
     """
-    nrows = ws.max_row or 0
-    ncols = ws.max_column or 0
-    if nrows > max_rows or ncols > max_cols:
+    declared_rows = ws.max_row or 0
+    declared_cols = ws.max_column or 0
+
+    if declared_rows <= max_rows and declared_cols <= max_cols:
+        return
+
+    used_rows, used_cols = _used_extent(ws)
+
+    if used_rows > max_rows or used_cols > max_cols:
         logger.fatal(
             f"Sheet {ws.title!r} is too large for grepxcel's limits: "
-            f"{nrows} row(s) × {ncols} column(s). grepxcel targets normal-sized "
+            f"{used_rows} row(s) × {used_cols} column(s) of data. "
+            f"grepxcel targets normal-sized "
             f"spreadsheets. You can raise the limits with --max-rows / "
             f"--max-columns (up to Excel's maximum of {EXCEL_MAX_ROWS:,} rows and "
             f"{EXCEL_MAX_COLS:,} columns), but the tool has not been tested at that "
             f"scale, so correct behavior is not guaranteed.",
-            found=f"{nrows} rows × {ncols} columns",
+            found=f"{used_rows} rows × {used_cols} columns",
             expected=f"≤ {max_rows} rows and ≤ {max_cols} columns",
         )
+
+    logger._emit(
+        severity='WARNING', category='STRUCTURAL',
+        message=(
+            f"Sheet {ws.title!r} declares {declared_rows} row(s) × "
+            f"{declared_cols} column(s) but only {used_rows} × {used_cols} "
+            f"contain data (likely empty formatted cells). "
+            f"Proceeding with real data extent."
+        ),
+    )
 
 
 # ── Output helpers ─────────────────────────────────────────────────────────────
