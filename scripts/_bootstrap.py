@@ -27,4 +27,7 @@ def ensure_venv() -> None:
         sys.exit(1)
 
     if os.path.abspath(sys.executable) != os.path.abspath(venv_py):
-        sys.exit(subprocess.run([venv_py] + sys.argv).returncode)
+        # nosec B603 — fixed venv interpreter path (built from __file__, not user
+        # input), no shell; sys.argv is passed as argv to python, never parsed by
+        # a shell. Re-exec of the same script under the venv interpreter.
+        sys.exit(subprocess.run([venv_py] + sys.argv).returncode)  # nosec B603

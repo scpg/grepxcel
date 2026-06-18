@@ -31,13 +31,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `cell:next` starts from the seek position. Example: `seek:I4` followed by
   `cell:I4 | employee.name` is now valid even after reading a cell on a later row.
 
+- **Coloured pattern files** — generated `.xlsx` pattern files (from `draft`) are
+  now colour-coded by row type for readability: `config:` orange, `lbl:` blue,
+  `var:` green, `#` comments grey italic, `START:`/`END:` grey, `table:` purple,
+  and `HEADER`/`DATA`/`FOOTER`/`SKIP_IF` tinted. Column widths auto-fit. Content
+  is never changed. The reusable `scripts/colorize_pattern.py` applies the same
+  formatting to any existing pattern file (CSV patterns are unaffected).
+
 ### Changed
 
 - **`SKIP_IF` now works with `DATA:*`** — previously restricted to `DATA:{n,m}`
   only. With `DATA:*`, `SKIP_IF` rows are filtered from output while scanning
   continues forward. `DATA:1` remains restricted (ambiguous semantics).
-
-### Changed
 
 - **Extent guard uses real data extent** — the `--max-rows` / `--max-columns`
   guard now measures the actual used extent (non-empty cells) instead of

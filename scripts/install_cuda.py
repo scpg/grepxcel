@@ -575,7 +575,9 @@ def main():
         _step(2, total_steps, 'Verify installation')
         nvcc_path = cuda_dir / 'bin' / 'nvcc'
         if nvcc_path.exists():
-            r = subprocess.run([str(nvcc_path), '--version'], capture_output=True, text=True)
+            # nosec B603 — fixed nvcc path under the install dir, no shell, no
+            # user-controlled argv. List form: arguments are never shell-parsed.
+            r = subprocess.run([str(nvcc_path), '--version'], capture_output=True, text=True)  # nosec B603
             _ok(f'nvcc: {r.stdout.splitlines()[0] if r.stdout else "found"}')
         else:
             _warn(f'nvcc not found at {nvcc_path} — installation may have failed.')
