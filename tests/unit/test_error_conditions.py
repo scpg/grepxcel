@@ -800,6 +800,51 @@ class TestSheetDimensionLimits:
         lg = self._run({'A1': 'v', 'A6': 'x'}, tmp_path, max_rows=10, max_cols=100)
         assert not lg.has_errors()
 
+    def test_styled_empty_rows_beyond_limit_warns_not_fatal(self, tmp_path):
+        """Styled-but-empty rows inflate openpyxl max_row; the guard should
+        use real used extent and WARN, not reject."""
+        from openpyxl.styles import Font
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws['A1'] = 'value'
+        ws['A3'] = 'other'
+        # Style a cell far beyond the limit — no data, just formatting
+        ws.cell(row=100, column=1).font = Font(bold=True)
+        dat = str(tmp_path / 'data_styled.xlsx')
+        wb.save(dat)
+        pat = _write_pattern(self._PAT, tmp_path)
+        lg = Logger(level=VerbosityLevel.QUIET)
+        Engine().process(pat, dat, logger=lg, max_rows=5, max_cols=100)
+        assert not lg.has_errors()
+        assert lg.has_warnings()
+
+    def test_styled_empty_cols_beyond_limit_warns_not_fatal(self, tmp_path):
+        """Styled-but-empty columns inflate openpyxl max_column; the guard
+        should use real used extent and WARN, not reject."""
+        from openpyxl.styles import PatternFill
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws['A1'] = 'value'
+        ws.cell(row=1, column=50).fill = PatternFill('solid', fgColor='FF0000')
+        dat = str(tmp_path / 'data_styled.xlsx')
+        wb.save(dat)
+        pat = _write_pattern(self._PAT, tmp_path)
+        lg = Logger(level=VerbosityLevel.QUIET)
+        Engine().process(pat, dat, logger=lg, max_rows=100, max_cols=3)
+        assert not lg.has_errors()
+        assert lg.has_warnings()
+
+    def test_real_data_beyond_limit_still_fatal(self, tmp_path):
+        """Even with the extent guard, real data beyond the limit is fatal."""
+        lg = self._run({'A1': 'v', 'A20': 'x'}, tmp_path, max_rows=5, max_cols=100)
+        assert lg.has_errors()
+
+    def test_within_limits_no_inflation_no_warning(self, tmp_path):
+        """When declared == used and both within limits, no warning is emitted."""
+        lg = self._run({'A1': 'v'}, tmp_path, max_rows=100, max_cols=100)
+        assert not lg.has_errors()
+        assert not lg.has_warnings()
+
 
 class TestNestingConflict:
     """A field cannot be both a value and the parent of another (e.g. 'a.b' and
