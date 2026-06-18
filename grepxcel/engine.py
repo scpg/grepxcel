@@ -1,7 +1,7 @@
 import openpyxl
 from openpyxl.utils import get_column_letter
 from openpyxl.utils.cell import coordinate_to_tuple
-from .models import Config, CellInstruction, TableInstruction, TemplateRow, SeekInstruction
+from .models import Config, CellInstruction, TableInstruction, TemplateRow, SeekInstruction, DirectionInstruction
 from .utils import is_empty, validate_type, _MAX_REGEX_INPUT_LEN
 from .pattern_parser import PatternParser, PatternError
 from .logger import Logger, LogRecord, EngineError, cell_ref
@@ -235,6 +235,7 @@ class SheetScanner:
     def __init__(self, ws, config: Config):
         self.ws = ws
         self.config = config
+        self.direction = config.read_direction
         self.consumed: set = set()
         self.scan_order = self._build_scan_order()
         self.scan_order_index: dict[tuple, int] = {pos: i for i, pos in enumerate(self.scan_order)}
@@ -242,15 +243,25 @@ class SheetScanner:
 
     def _build_scan_order(self) -> list:
         cells = []
-        if self.config.read_direction == 'LR':
+        if self.direction == 'LR':
             for r in range(1, self.ws.max_row + 1):
                 for c in range(1, self.ws.max_column + 1):
                     cells.append((r, c))
-        elif self.config.read_direction == 'TD':
+        elif self.direction == 'TD':
             for c in range(1, self.ws.max_column + 1):
                 for r in range(1, self.ws.max_row + 1):
                     cells.append((r, c))
         return cells
+
+    def set_direction(self, direction: str) -> None:
+        """Switch the scan direction and rebuild the scan order. The cursor
+        resets to the start; already-consumed cells (tracked by position) are
+        skipped, so scanning continues over the not-yet-read cells in the new
+        direction."""
+        self.direction = direction
+        self.scan_order = self._build_scan_order()
+        self.scan_order_index = {pos: i for i, pos in enumerate(self.scan_order)}
+        self.cursor = 0
 
     def cell_value(self, row: int, col: int):
         return self.ws.cell(row=row, column=col).value
@@ -489,6 +500,9 @@ class Engine:
                     table_index += 1
                 elif isinstance(instruction, SeekInstruction):
                     self._process_seek(instruction, scanner, logger)
+                elif isinstance(instruction, DirectionInstruction):
+                    scanner.set_direction(instruction.direction)
+                    logger.direction_changed(instruction.direction)
         except EngineError:
             pass  # already logged; return partial result
 

@@ -6,7 +6,7 @@ import openpyxl
 from openpyxl.utils import get_column_letter
 from openpyxl.utils.cell import coordinate_to_tuple
 
-from .models import Config, FieldDef, TemplateColumn, TemplateRow, CellInstruction, TableInstruction, SeekInstruction
+from .models import Config, FieldDef, TemplateColumn, TemplateRow, CellInstruction, TableInstruction, SeekInstruction, DirectionInstruction
 from .security import check_regex_safety, SecurityError
 
 _MAX_PATTERN_CELL_LEN = 1_000  # max characters in any pattern file cell value
@@ -31,7 +31,7 @@ _VALID_FIELD_TYPES = frozenset({
     'number', 'float', 'decimal',
     'currency', 'percentage',
     'boolean', 'bool',
-    'time', 'date', 'datetime', 'timestamp',
+    'time', 'duration', 'date', 'datetime', 'timestamp',
 })
 
 
@@ -82,52 +82,66 @@ class PatternParser:
         i = 0
         in_start = False
         last_abs_pos: tuple | None = None  # (row, col) of last cell:XY seen
+        # Scan direction in effect for abs-ref ordering checks; starts at the
+        # global config value and is updated by each dir: instruction.
+        current_direction: str | None = None
 
         while i < len(rows):
             row = self._pad(rows[i])
             col_a = row[0]
+            # Structural keywords are case-insensitive (cell:/CELL:/Cell: all
+            # work). Match on a lowercased view; field names and addresses are
+            # read from the original col_a so their case is preserved.
+            col_a_l = col_a.lower() if isinstance(col_a, str) else col_a
 
-            if col_a == 'END:':
+            if col_a_l == 'end:':
                 break
 
-            if col_a == 'START:':
+            if col_a_l == 'start:':
                 self._check_comment_zone(row, 1, i + 1, 'START:')   # B+ may be a # comment
                 in_start = True
                 i += 1
                 continue
 
             if not in_start:
-                if col_a == 'config:':
+                if col_a_l == 'config:':
                     self._apply_global_config(row, global_config)
                     self._check_comment_zone(row, 3, i + 1, 'config:')    # D+ comment
-                elif col_a in ('def:', 'var:'):
+                elif col_a_l in ('def:', 'var:'):
                     fd = self._parse_field(row, role='var', row_num=i + 1)
                     defs[fd.name] = fd
-                    self._check_comment_zone(row, 4, i + 1, col_a)        # E+ comment
-                elif col_a == 'lbl:':
+                    self._check_comment_zone(row, 4, i + 1, col_a_l)      # E+ comment
+                elif col_a_l == 'lbl:':
                     fd = self._parse_field(row, role='lbl', row_num=i + 1)
                     defs[fd.name] = fd
                     self._check_comment_zone(row, 4, i + 1, 'lbl:')       # E+ comment
-                elif col_a in ('doc:', 'info:'):
+                elif col_a_l in ('doc:', 'info:'):
                     pass  # inline documentation — ignored by engine
+                elif col_a is not None and str(col_a).strip() != '':
+                    raise PatternError(
+                        f"Unrecognised row {col_a!r} at pattern row {i + 1} "
+                        f"(before START:). Expected config:, var:, lbl:, def:, "
+                        f"doc:, info:, or START:."
+                    )
                 i += 1
                 continue
 
             # Inside START: section
-            if col_a and col_a.startswith('cell:'):
+            if col_a_l and col_a_l.startswith('cell:'):
                 raw = col_a.split(':', 1)[1]
                 field = str(row[1] or 'IGNORE')
                 self._check_comment_zone(row, 2, i + 1, 'cell:')      # C+ may be a # comment
-                if raw in ('1', 'next'):
-                    start_sequence.append(CellInstruction(multiplicity=raw, field=field))
+                if raw.lower() in ('1', 'next'):
+                    start_sequence.append(CellInstruction(multiplicity=raw.lower(), field=field))
                 elif _A1_RE.match(raw):
                     ref = raw.upper()
                     new_pos = coordinate_to_tuple(ref)
-                    if last_abs_pos is not None and not _coord_after(last_abs_pos, new_pos, global_config.read_direction):
+                    _dir = current_direction or global_config.read_direction
+                    if last_abs_pos is not None and not _coord_after(last_abs_pos, new_pos, _dir):
                         raise PatternError(
                             f"cell:{ref} at pattern row {i + 1} is before or equal to the "
                             f"previous absolute reference {_coord_str(last_abs_pos)} in "
-                            f"{global_config.read_direction} reading order — unreachable"
+                            f"{_dir} reading order — unreachable"
                         )
                     last_abs_pos = new_pos
                     start_sequence.append(CellInstruction(multiplicity='abs', field=field, target=ref))
@@ -138,7 +152,7 @@ class PatternParser:
                     )
                 i += 1
 
-            elif col_a and col_a.startswith('seek:'):
+            elif col_a_l and col_a_l.startswith('seek:'):
                 raw = col_a.split(':', 1)[1]
                 if not _A1_RE.match(raw):
                     raise PatternError(
@@ -154,7 +168,24 @@ class PatternParser:
                 start_sequence.append(SeekInstruction(target=ref))
                 i += 1
 
-            elif col_a and col_a.startswith('table:'):
+            elif col_a_l and col_a_l.startswith('dir:'):
+                raw = col_a.split(':', 1)[1].strip().upper()
+                if raw not in ('LR', 'TD'):
+                    raise PatternError(
+                        f"Invalid dir instruction 'dir:{col_a.split(':', 1)[1]}' at "
+                        f"pattern row {i + 1}. Use 'dir:LR' (left-to-right) or "
+                        f"'dir:TD' (top-down)."
+                    )
+                # Switching direction changes the meaning of "forward", so the
+                # abs-ref ordering constraint is reset (like seek:). Subsequent
+                # abs refs are checked in the new direction.
+                current_direction = raw
+                last_abs_pos = None
+                self._check_comment_zone(row, 1, i + 1, 'dir:')    # B+ may be a # comment
+                start_sequence.append(DirectionInstruction(direction=raw))
+                i += 1
+
+            elif col_a_l and col_a_l.startswith('table:'):
                 mult = col_a.split(':', 1)[1]
                 # table:<mult> must be '*' or a positive instance count.
                 if mult != '*' and not _POSINT_RE.match(mult):
@@ -186,8 +217,9 @@ class PatternParser:
                         i += 1
                         continue
 
-                    if sub_b == 'config:':
-                        key, val = sub[2], sub[3]
+                    if isinstance(sub_b, str) and sub_b.lower() == 'config:':
+                        key = str(sub[2]).lower() if sub[2] is not None else ''
+                        val = sub[3]
                         if key == 'read.direction' and val:
                             table_config.read_direction = str(val)
                         elif key == 'ignore.case' and val is not None:
@@ -206,6 +238,9 @@ class PatternParser:
                             row_mult = ''
                         else:
                             row_type, row_mult = sub_b_str.rsplit(':', 1)
+                            # Row-type keyword is case-insensitive (HEADER/header);
+                            # the multiplicity (* / n / {n,m}) keeps its case.
+                            row_type = row_type.upper()
 
                         # Reject typo'd row keywords (e.g. 'HEDER:1') — otherwise
                         # they would be silently dropped by the engine.
@@ -325,8 +360,19 @@ class PatternParser:
                     rows=template_rows,
                 ))
 
+            elif col_a_l in ('doc:', 'info:'):
+                i += 1   # inline comment inside START — ignored by engine
+
+            elif col_a is None or str(col_a).strip() == '':
+                i += 1   # blank row (incl. table template rows) — skip
+
             else:
-                i += 1
+                raise PatternError(
+                    f"Unrecognised instruction {col_a!r} at pattern row {i + 1} "
+                    f"inside START:. Expected cell:, seek:, dir:, table:, doc:, "
+                    f"or a blank row. (Keywords are case-insensitive — check for "
+                    f"a typo.)"
+                )
 
         self._check_nesting_conflicts(defs, start_sequence)
         return global_config, defs, start_sequence

@@ -566,3 +566,256 @@ class TestSeekInstruction:
         abs_cells = [s for s in seq if isinstance(s, CellInstruction) and s.multiplicity == 'abs']
         assert len(abs_cells) == 1
         assert abs_cells[0].target == 'B5'
+
+
+# ── case-insensitive keywords ─────────────────────────────────────────────────
+
+class TestCaseInsensitiveKeywords:
+    """Structural keywords are case-insensitive (CELL:, Cell:, cell: all work).
+    The keyword case must not matter; field names and addresses are unaffected."""
+
+    def test_uppercase_cell_keyword(self, tmp_path):
+        from grepxcel.models import CellInstruction
+        path = _write_pattern([
+            ['var:', 'totals.x', 'currency', '.*'],
+            ['START:'],
+            ['CELL:J59', 'totals.x'],
+            ['END:'],
+        ], tmp_path)
+        _, _, seq = PatternParser().parse(path)
+        abs_cells = [s for s in seq if isinstance(s, CellInstruction)]
+        assert len(abs_cells) == 1
+        assert abs_cells[0].target == 'J59'
+        assert abs_cells[0].field == 'totals.x'
+
+    def test_uppercase_cell_next(self, tmp_path):
+        from grepxcel.models import CellInstruction
+        path = _write_pattern([
+            ['var:', 'x', 'string', '.*'],
+            ['START:'],
+            ['CELL:NEXT', 'x'],
+            ['END:'],
+        ], tmp_path)
+        _, _, seq = PatternParser().parse(path)
+        cells = [s for s in seq if isinstance(s, CellInstruction)]
+        assert cells[0].multiplicity == 'next'   # normalised to lowercase
+
+    def test_mixed_case_seek(self, tmp_path):
+        from grepxcel.models import SeekInstruction
+        path = _write_pattern([
+            ['var:', 'x', 'string', '.*'],
+            ['START:'],
+            ['Seek:G5'],
+            ['cell:next', 'x'],
+            ['END:'],
+        ], tmp_path)
+        _, _, seq = PatternParser().parse(path)
+        assert any(isinstance(s, SeekInstruction) and s.target == 'G5' for s in seq)
+
+    def test_uppercase_dir(self, tmp_path):
+        from grepxcel.models import DirectionInstruction
+        path = _write_pattern([
+            ['var:', 'x', 'string', '.*'],
+            ['START:'],
+            ['DIR:TD'],
+            ['cell:next', 'x'],
+            ['END:'],
+        ], tmp_path)
+        _, _, seq = PatternParser().parse(path)
+        assert any(isinstance(s, DirectionInstruction) and s.direction == 'TD' for s in seq)
+
+    def test_uppercase_table_and_row_types(self, tmp_path):
+        from grepxcel.models import TableInstruction
+        path = _write_pattern([
+            ['lbl:', 'h', 'string', 'Name'],
+            ['var:', 'item.name', 'string', '.*'],
+            ['START:'],
+            ['TABLE:*'],
+            ['', 'HEADER:1', 'h'],
+            ['', 'data:*', 'item.name'],   # lowercase row type
+            ['END:'],
+        ], tmp_path)
+        _, _, seq = PatternParser().parse(path)
+        tables = [s for s in seq if isinstance(s, TableInstruction)]
+        assert len(tables) == 1
+        row_types = {r.row_type for r in tables[0].rows}
+        assert row_types == {'HEADER', 'DATA'}   # normalised to uppercase
+
+    def test_uppercase_section_keywords(self, tmp_path):
+        path = _write_pattern([
+            ['CONFIG:', 'read.direction', 'LR'],
+            ['VAR:', 'a', 'string', '.*'],
+            ['LBL:', 'b', 'string', 'Label'],
+            ['Start:'],
+            ['cell:next', 'a'],
+            ['End:'],
+        ], tmp_path)
+        cfg, defs, seq = PatternParser().parse(path)
+        assert 'a' in defs and 'b' in defs
+        assert len(seq) == 1
+
+    def test_field_names_keep_their_case(self, tmp_path):
+        """Only keywords are case-folded — field names stay exactly as written."""
+        path = _write_pattern([
+            ['var:', 'totalCost.projected', 'currency', '.*'],
+            ['START:'],
+            ['CELL:J59', 'totalCost.projected'],
+            ['END:'],
+        ], tmp_path)
+        _, defs, _ = PatternParser().parse(path)
+        assert 'totalCost.projected' in defs   # camelCase preserved
+
+
+# ── unknown instruction rows are not silently dropped ─────────────────────────
+
+class TestUnknownInstructionRow:
+    """A non-empty, unrecognised row inside START: is a fatal error — never
+    silently ignored (which would produce wrong/empty output)."""
+
+    def test_typo_instruction_raises(self, tmp_path):
+        path = _write_pattern([
+            ['var:', 'x', 'string', '.*'],
+            ['START:'],
+            ['celll:J5', 'x'],   # typo — extra l
+            ['END:'],
+        ], tmp_path)
+        with pytest.raises(PatternError, match='[Uu]nrecognis|[Uu]nrecogniz|[Uu]nknown'):
+            PatternParser().parse(path)
+
+    def test_misspelled_seek_raises(self, tmp_path):
+        path = _write_pattern([
+            ['var:', 'x', 'string', '.*'],
+            ['START:'],
+            ['sek:G5'],
+            ['cell:next', 'x'],
+            ['END:'],
+        ], tmp_path)
+        with pytest.raises(PatternError):
+            PatternParser().parse(path)
+
+    def test_doc_row_inside_start_is_allowed(self, tmp_path):
+        path = _write_pattern([
+            ['var:', 'x', 'string', '.*'],
+            ['START:'],
+            ['doc:', 'a separator comment'],
+            ['cell:next', 'x'],
+            ['DOC:', 'uppercase comment too'],
+            ['END:'],
+        ], tmp_path)
+        _, _, seq = PatternParser().parse(path)   # must not raise
+        from grepxcel.models import CellInstruction
+        assert any(isinstance(s, CellInstruction) for s in seq)
+
+    def test_blank_rows_inside_start_allowed(self, tmp_path):
+        path = _write_pattern([
+            ['var:', 'x', 'string', '.*'],
+            ['START:'],
+            [None, None],
+            ['cell:next', 'x'],
+            ['', ''],
+            ['END:'],
+        ], tmp_path)
+        _, _, seq = PatternParser().parse(path)   # must not raise
+        from grepxcel.models import CellInstruction
+        assert len([s for s in seq if isinstance(s, CellInstruction)]) == 1
+
+
+# ── dir: instruction ──────────────────────────────────────────────────────────
+
+class TestDirectionInstruction:
+    """Parser-level tests for the dir: scan-direction-switch instruction."""
+
+    def test_dir_lr_parses(self, tmp_path):
+        from grepxcel.models import DirectionInstruction
+        path = _write_pattern([
+            ['var:', 'x', 'string', '.*'],
+            ['START:'],
+            ['dir:LR'],
+            ['cell:next', 'x'],
+            ['END:'],
+        ], tmp_path)
+        _, _, seq = PatternParser().parse(path)
+        dirs = [s for s in seq if isinstance(s, DirectionInstruction)]
+        assert len(dirs) == 1
+        assert dirs[0].direction == 'LR'
+
+    def test_dir_td_parses(self, tmp_path):
+        from grepxcel.models import DirectionInstruction
+        path = _write_pattern([
+            ['var:', 'x', 'string', '.*'],
+            ['START:'],
+            ['dir:TD'],
+            ['cell:next', 'x'],
+            ['END:'],
+        ], tmp_path)
+        _, _, seq = PatternParser().parse(path)
+        dirs = [s for s in seq if isinstance(s, DirectionInstruction)]
+        assert dirs[0].direction == 'TD'
+
+    def test_dir_lowercase_is_uppercased(self, tmp_path):
+        from grepxcel.models import DirectionInstruction
+        path = _write_pattern([
+            ['var:', 'x', 'string', '.*'],
+            ['START:'],
+            ['dir:td'],
+            ['cell:next', 'x'],
+            ['END:'],
+        ], tmp_path)
+        _, _, seq = PatternParser().parse(path)
+        dirs = [s for s in seq if isinstance(s, DirectionInstruction)]
+        assert dirs[0].direction == 'TD'
+
+    def test_dir_invalid_value_raises(self, tmp_path):
+        path = _write_pattern([
+            ['var:', 'x', 'string', '.*'],
+            ['START:'],
+            ['dir:DIAGONAL'],
+            ['cell:next', 'x'],
+            ['END:'],
+        ], tmp_path)
+        with pytest.raises(PatternError, match='dir:'):
+            PatternParser().parse(path)
+
+    def test_dir_empty_value_raises(self, tmp_path):
+        path = _write_pattern([
+            ['var:', 'x', 'string', '.*'],
+            ['START:'],
+            ['dir:'],
+            ['cell:next', 'x'],
+            ['END:'],
+        ], tmp_path)
+        with pytest.raises(PatternError, match='dir:'):
+            PatternParser().parse(path)
+
+    def test_dir_resets_abs_ref_ordering(self, tmp_path):
+        """A dir: switch resets the abs-ref forward-order check (like seek:).
+        cell:K30 then dir:TD then cell:A1 must parse without error."""
+        from grepxcel.models import DirectionInstruction
+        path = _write_pattern([
+            ['var:', 'late',  'string', '.*'],
+            ['var:', 'early', 'string', '.*'],
+            ['START:'],
+            ['cell:K30', 'late'],
+            ['dir:TD'],
+            ['cell:A1', 'early'],
+            ['END:'],
+        ], tmp_path)
+        _, _, seq = PatternParser().parse(path)   # must not raise
+        assert any(isinstance(s, DirectionInstruction) for s in seq)
+
+    def test_dir_changes_abs_ordering_frame(self, tmp_path):
+        """After dir:TD, the abs-ref ordering is checked in TD order.
+        cell:A5 then cell:A10 (forward in TD) must be valid."""
+        path = _write_pattern([
+            ['var:', 'a', 'string', '.*'],
+            ['var:', 'b', 'string', '.*'],
+            ['START:'],
+            ['dir:TD'],
+            ['cell:A5', 'a'],
+            ['cell:A10', 'b'],
+            ['END:'],
+        ], tmp_path)
+        _, _, seq = PatternParser().parse(path)   # must not raise
+        from grepxcel.models import CellInstruction
+        abs_cells = [s for s in seq if isinstance(s, CellInstruction) and s.multiplicity == 'abs']
+        assert len(abs_cells) == 2

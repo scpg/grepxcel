@@ -7,9 +7,9 @@ web frontend rendering.
 
 Verbosity levels:
   0  QUIET   — no console output during processing
-  1  NORMAL  — summary + all validation issues with descriptions (default)
-  2  VERBOSE — + step-by-step: per-field trace (field ← cell = value ✓/✗),
-                tables matched
+  1  NORMAL  — summary + ISSUES recap (one line per problem cell) (default)
+  2  VERBOSE — + detailed per-cell warnings (Found/Expected/→) + per-field
+                trace (field ← cell = value ✓/✗), tables matched
   3  DEBUG   — + every anchor attempted and why it was accepted or rejected
 """
 
@@ -287,6 +287,13 @@ class Logger:
         self._write(VerbosityLevel.VERBOSE,
                     f'  [CELL]  {location:<12} IGNORE  →  {repr(value)}')
 
+    def direction_changed(self, direction: str):
+        rec = LogRecord(Severity.INFO, Category.ENGINE,
+                        f'Scan direction changed to {direction}')
+        self._records.append(rec)
+        self._write(VerbosityLevel.VERBOSE,
+                    f'  [DIR]   scan direction → {direction}')
+
     def table_group_start(self, table_index: int, direction: str):
         rec = LogRecord(Severity.INFO, Category.ENGINE,
                         f'Table group {table_index}: scanning (direction: {direction})')
@@ -453,11 +460,13 @@ class Logger:
     def commit_warnings(self, records: list[LogRecord]):
         """
         Commit a batch of warning records collected during a successful match.
-        Records are added to the log and printed if verbosity allows.
+        Records are always stored; the detailed per-cell block (Found/Expected/→)
+        only prints at VERBOSE (-v).  The summary ISSUES recap (one line each)
+        still prints at NORMAL so no information is lost.
         """
         for rec in records:
             self._records.append(rec)
-            self._write(VerbosityLevel.NORMAL,
+            self._write(VerbosityLevel.VERBOSE,
                         getattr(rec, '_formatted', rec.message))
 
     # --- Fatal errors (always shown) ----------------------------------------

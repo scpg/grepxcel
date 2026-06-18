@@ -126,6 +126,45 @@ def test_date_string_rejected():
     assert 'date' in reason
 
 
+# ─── validate_type: time (clock time and duration) ──────────────────────────
+
+def test_time_clock_time():
+    ok, _ = validate_type(datetime.time(9, 5), 'time', r'.*')
+    assert ok
+
+def test_time_timedelta_accepted():
+    """Excel duration cells ([h]:mm format) → timedelta; 'time' must accept them."""
+    ok, _ = validate_type(datetime.timedelta(hours=8), 'time', r'.*')
+    assert ok
+
+def test_time_timedelta_zero():
+    ok, _ = validate_type(datetime.timedelta(0), 'time', r'.*')
+    assert ok
+
+def test_time_string_rejected():
+    ok, reason = validate_type('08:00', 'time', r'.*')
+    assert not ok
+    assert 'time' in reason
+
+def test_time_int_rejected():
+    ok, reason = validate_type(480, 'time', r'.*')
+    assert not ok
+    assert 'time' in reason
+
+def test_duration_type_alias():
+    """'duration' is an explicit alias for timedelta-accepting time."""
+    ok, _ = validate_type(datetime.timedelta(hours=1, minutes=30), 'duration', r'.*')
+    assert ok
+
+def test_duration_clock_time_accepted():
+    ok, _ = validate_type(datetime.time(14, 30), 'duration', r'.*')
+    assert ok
+
+def test_duration_string_rejected():
+    ok, reason = validate_type('1:30:00', 'duration', r'.*')
+    assert not ok
+
+
 # ─── validate_type: percentage ───────────────────────────────────────────────
 
 def test_percentage_float():

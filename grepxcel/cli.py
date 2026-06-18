@@ -87,6 +87,7 @@ commands:
   draft              Use a local LLM to draft a starter pattern file
   docs               Write a pattern-format reference xlsx (pattern-reference.xlsx)
   lint               Inspect an Excel file for potential extraction issues
+  schema             Generate a JSON Schema from a pattern file
   doctor             Check the environment is ready (deps, keys, model, proxy/TLS)
 
 Run 'grepxcel <command> --help' for per-command options.
@@ -106,6 +107,7 @@ Run 'grepxcel <command> --help' for per-command options.
     _add_draft_subparser(sub)
     _add_docs_subparser(sub)
     _add_lint_subparser(sub)
+    _add_schema_subparser(sub)
     _add_doctor_subparser(sub)
     return p
 
@@ -150,6 +152,28 @@ examples:
     )
     p.add_argument('files', nargs='+', metavar='FILE',
                    help='Excel file(s) to inspect (.xlsx)')
+
+
+def _add_schema_subparser(sub) -> None:
+    p = sub.add_parser(
+        'schema',
+        help='Generate a JSON Schema from a pattern file',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Generates a JSON Schema (draft 2020-12) that describes the extraction
+output for the given pattern. Use it to validate extracted JSON with
+any standard JSON Schema validator.
+
+examples:
+  grepxcel schema pattern.xlsx
+  grepxcel schema pattern.xlsx -o schema.json
+  grepxcel schema pattern.csv
+        """,
+    )
+    p.add_argument('files', nargs='+', metavar='PATTERN',
+                   help='Pattern file(s) to generate schema for (.xlsx or .csv)')
+    p.add_argument('-o', '--output', metavar='FILE',
+                   help='Write schema to file (default: stdout)')
 
 
 def _add_doctor_subparser(sub) -> None:
@@ -535,6 +559,22 @@ def _run_validate(args) -> int:
     return run_validate(args.files, verbose=getattr(args, 'verbose', False))
 
 
+# ── schema handler ──────────────────────────────────────────────────────────
+
+def _run_schema(args) -> int:
+    from .schema import run_schema
+    if not args.output:
+        return run_schema(args.files)
+    out = open(args.output, 'w', encoding='utf-8')
+    try:
+        rc = run_schema(args.files, out=out)
+    finally:
+        out.close()
+    if rc == 0:
+        print(f'Schema written to: {args.output}', file=sys.stderr)
+    return rc
+
+
 # ── doctor handler ───────────────────────────────────────────────────────────
 
 def _run_doctor(args) -> int:
@@ -651,6 +691,9 @@ def main(argv=None):
 
     if args.command == 'validate-pattern':
         sys.exit(_run_validate(args))
+
+    if args.command == 'schema':
+        sys.exit(_run_schema(args))
 
     # extract
     all_ok = True

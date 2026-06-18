@@ -41,6 +41,7 @@ Between `START:` and `END:` you list the extraction sequence:
 - `cell:next fieldName` — read the next non-empty cell into a field (alias: `cell:1`)
 - `cell:B5 fieldName` — jump directly to an absolute cell (A1-notation reference)
 - `seek:G5` — reposition the cursor to G5 **without** reading it; the next `cell:next` starts from there
+- `dir:LR` / `dir:TD` — switch the scan direction partway through (left-to-right / top-down); affects subsequent `cell:next`
 - `table:*` — match all instances of a repeating mini-table block
 
 Dot notation in `var:` field names creates nested output: `po.number` → `{"po": {"number": …}}`.
@@ -161,6 +162,9 @@ Requires Python **3.11+**.
 
 # Inspect an Excel file before extraction (format, encryption, extent, merges)
 .venv/bin/grepxcel lint data.xlsx
+
+# Generate a JSON Schema describing the extraction output of a pattern
+.venv/bin/grepxcel schema pattern.xlsx -o schema.json
 
 # Use a local LLM to draft a starter pattern for an unseen Excel file
 .venv/bin/grepxcel draft data.xlsx -o draft-pattern.xlsx
@@ -411,6 +415,36 @@ It prints a `✓/⚠/✗/ℹ` checklist covering:
 - **Empty sheets** — nothing to extract
 - **Advisory notes** — known limitations not yet auto-detected (password
   protection, conditional formatting, pivot tables, VBA)
+
+### `grepxcel schema`
+
+Generate a [JSON Schema](https://json-schema.org/) (draft 2020-12) that describes
+the extraction output for a pattern. Use it to validate extracted JSON with any
+standard JSON Schema validator — handy when importing thousands of files that must
+all follow the same structure.
+
+```bash
+grepxcel schema pattern.xlsx               # print schema to stdout
+grepxcel schema pattern.xlsx -o schema.json
+grepxcel schema pattern.csv                # CSV patterns work too
+```
+
+The schema mirrors the nested output shape:
+- **Field types** map to JSON types (`currency`/`percentage` → `number`,
+  `date`/`datetime` → `string` with `format: date-time`, etc.)
+- **Dot-notation** fields (`po.number`) become nested objects
+- **Tables** become arrays of objects with `_source`/`header`/`data`/`footer`
+  sub-objects
+- All fields are **nullable** (`["string", "null"]`) since an empty cell extracts
+  as `null`
+
+Validate an extraction against it with any tool, e.g. Python's `jsonschema`:
+
+```bash
+grepxcel schema pattern.xlsx -o schema.json
+grepxcel extract -p pattern.xlsx data.xlsx -o out/
+python -m jsonschema -i out/data.json schema.json
+```
 
 ### `grepxcel doctor`
 

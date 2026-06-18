@@ -25,6 +25,7 @@ ROW_FILLS = {
     'marker':  PatternFill('solid', fgColor='E0E0E0'),  # grey (START/END)
     'cell':    PatternFill('solid', fgColor='F0E0FF'),  # lavender
     'seek':    PatternFill('solid', fgColor='F0E0FF'),  # lavender
+    'dir':     PatternFill('solid', fgColor='F0E0FF'),  # lavender (sequence control)
     'table':   PatternFill('solid', fgColor='E8D0FF'),  # purple
     'header':  PatternFill('solid', fgColor='D0E8FF'),  # blue (like lbl)
     'data':    PatternFill('solid', fgColor='D0FFD0'),  # green (like var)
@@ -60,12 +61,16 @@ def _classify_row(ws, row_num: int) -> str | None:
             return 'config'
 
         a_key = a.rstrip(':').lower()
-        if a_key in ('lbl', 'var', 'doc'):
-            return a_key
+        if a_key in ('lbl', 'var', 'def'):
+            return 'var' if a_key in ('var', 'def') else 'lbl'
+        if a_key in ('doc', 'info'):
+            return 'doc'
         if a_key.startswith('cell:') or a_key == 'cell':
             return 'cell'
         if a_key.startswith('seek:') or a_key == 'seek':
             return 'seek'
+        if a_key.startswith('dir:') or a_key == 'dir':
+            return 'dir'
 
     if col_a is None and col_b is not None:
         b_base = str(col_b).split(':')[0].strip().upper()

@@ -25,11 +25,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   runs inside WSL2. Model is auto-discovered unless `--server-model` is set.
   `grepxcel doctor` now probes the server and reports loaded models.
 
+- **`dir:` instruction** — new extraction-sequence instruction that switches the
+  scalar scan direction partway through a pattern: `dir:LR` (left-to-right) or
+  `dir:TD` (top-down). It reads no cell — it only changes the direction for
+  subsequent `cell:next` scanning, and resets the cursor so already-read cells are
+  skipped. Lets a single pattern read one region top-down and another
+  left-to-right without resorting to absolute addressing for everything.
+
 - **`seek:` instruction** — new extraction-sequence instruction that repositions the
   scanner cursor to a target cell (A1-notation) **without reading it**. Enables
   backward repositioning after reading scattered absolute cells, so the next
   `cell:next` starts from the seek position. Example: `seek:I4` followed by
   `cell:I4 | employee.name` is now valid even after reading a cell on a later row.
+
+- **`schema` command** — `grepxcel schema pattern.xlsx` generates a JSON Schema
+  (draft 2020-12) from a pattern file, describing the extraction output structure.
+  All field types, dot-notation nesting, and table arrays (with header/data/footer
+  sub-objects) are mapped to their JSON Schema equivalents. Fields are nullable
+  (`[type, "null"]`) since extraction can return `null` for empty cells. Use the
+  schema with any standard JSON Schema validator to verify extracted JSON.
+
+- **`duration` field type** — accepts both clock times (`datetime.time`) and
+  elapsed durations (`datetime.timedelta`). The existing `time` type also now
+  accepts `timedelta` values (permissive), so Excel `[h]:mm` duration cells no
+  longer fail when typed as `time`.
 
 - **Coloured pattern files** — generated `.xlsx` pattern files (from `draft`) are
   now colour-coded by row type for readability: `config:` orange, `lbl:` blue,
@@ -50,7 +69,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   styled-but-empty cells. Sheets with formatting beyond the data boundary
   now warn and proceed instead of being rejected.
 
+- **Quieter default output** — per-cell warning blocks (Found / Expected / →)
+  now require `-v`; the default shows only the extraction summary and a compact
+  one-line-per-issue recap. No information is lost — `-v` restores the full
+  detail alongside the per-field trace.
+
+- **`validate-pattern -v` improvements** — config settings print one per line
+  instead of all on one line; table extraction sequences display as a columnar
+  grid (one column-position per row, all row types side by side) instead of
+  bracket-delimited lists.
+
 ### Fixed
+
+- **Case-insensitive instruction keywords** — `CELL:`, `Cell:`, `cell:` (and the
+  same for `SEEK:`/`DIR:`/`TABLE:`/`CONFIG:`/`VAR:`/`LBL:`/`HEADER:`/`DATA:`/…) are
+  now all accepted. Previously only the lowercase form matched, so an uppercased
+  keyword was silently dropped, leaving its fields defined-but-unused. Field names
+  and cell addresses keep their original case.
+
+- **No more silently-ignored pattern rows** — a non-empty row inside `START:` (or
+  before it) that matches no known keyword is now a clear parse error instead of
+  being skipped. Catches typos like `cel:J5` or `tabel:*` that used to produce
+  wrong/empty output with no warning. `doc:`/`info:` comments and blank rows are
+  still allowed.
+
+- **Coloured pattern files: `dir:` rows** — the pattern colorizer now tints `dir:`
+  instruction rows (and recognises `def:`/`info:` aliases); previously they were
+  left uncoloured.
 
 - **`seek:` ordering reset** — `seek:X` followed immediately by `cell:X` no longer
   raises a "before or equal to previous reference" parse error. The absolute-ref

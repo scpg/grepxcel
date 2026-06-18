@@ -7,7 +7,7 @@ random cases and — if it finds a failure — shrinks the input to the minimal
 example that still triggers the bug.
 
 Targets:
-  infer_cell_type           — always returns one of 5 valid type strings
+  infer_cell_type           — always returns one of the valid type strings
   _type_from_number_format  — never crashes; returns None or a valid type
   is_empty                  — always returns bool; None is always True
   ExcelAnalyzer._split_into_sections  — structural invariants on the output
@@ -29,7 +29,8 @@ from grepxcel.utils import infer_cell_type, is_empty
 # Shared constants and strategies
 # ---------------------------------------------------------------------------
 
-_VALID_TYPES = frozenset({'string', 'integer', 'currency', 'percentage', 'date', 'datetime'})
+_VALID_TYPES = frozenset({'string', 'integer', 'currency', 'percentage',
+                          'date', 'datetime', 'time', 'duration'})
 
 # Values that openpyxl returns when reading an xlsx cell.
 _cell_value = st.one_of(

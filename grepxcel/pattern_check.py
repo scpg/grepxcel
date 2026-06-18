@@ -13,7 +13,7 @@ import sys
 from dataclasses import dataclass, field
 
 from .color import colorize_marks, should_color
-from .models import CellInstruction, TableInstruction, SeekInstruction
+from .models import CellInstruction, TableInstruction, SeekInstruction, DirectionInstruction
 from .pattern_parser import PatternError, PatternParser
 from .security import SecurityError
 
@@ -91,6 +91,35 @@ def check_pattern(path: str) -> CheckResult:
     return result
 
 
+def _render_table_grid(rows, out) -> None:
+    """Render table rows as a columnar grid: one column-position per line,
+    row types side by side so you can see what each position maps to."""
+    if not rows:
+        return
+    headers = []
+    for trow in rows:
+        if trow.row_type == 'SKIP_IF':
+            headers.append('SKIP_IF')
+        else:
+            headers.append(f'{trow.row_type}:{trow.multiplicity}')
+    n_cols = max(len(trow.columns) for trow in rows)
+    widths = []
+    for ri, trow in enumerate(rows):
+        w = len(headers[ri])
+        for ci in range(n_cols):
+            if ci < len(trow.columns):
+                w = max(w, len(trow.columns[ci].field))
+        widths.append(w)
+    parts = [f'{h:<{widths[i]}}' for i, h in enumerate(headers)]
+    print(f'        {"  ".join(parts)}', file=out)
+    for ci in range(n_cols):
+        parts = []
+        for ri, trow in enumerate(rows):
+            val = trow.columns[ci].field if ci < len(trow.columns) else ''
+            parts.append(f'{val:<{widths[ri]}}')
+        print(f'        {"  ".join(parts)}', file=out)
+
+
 def render_result(result: CheckResult, verbose: bool = False, out=None) -> None:
     """Print a human-readable report for one CheckResult."""
     out = out or sys.stderr
@@ -108,8 +137,10 @@ def render_result(result: CheckResult, verbose: bool = False, out=None) -> None:
 
     if verbose and result.defs is not None:
         cfg = result.config
-        print(f'\n   config: read.direction={cfg.read_direction} '
-              f'currency.sign={cfg.currency_sign} ignore.case={cfg.ignore_case}', file=out)
+        print('\n   config:', file=out)
+        print(f'     read.direction  {cfg.read_direction}', file=out)
+        print(f'     currency.sign   {cfg.currency_sign}', file=out)
+        print(f'     ignore.case     {cfg.ignore_case}', file=out)
         print('   fields:', file=out)
         for name, fd in result.defs.items():
             print(f'     {fd.role:<4} {name:<24} {fd.type:<10} /{fd.regex}/', file=out)
@@ -120,11 +151,11 @@ def render_result(result: CheckResult, verbose: bool = False, out=None) -> None:
                 print(f'     cell:{tgt:<6} -> {instr.field}', file=out)
             elif isinstance(instr, SeekInstruction):
                 print(f'     seek:{instr.target}', file=out)
+            elif isinstance(instr, DirectionInstruction):
+                print(f'     dir:{instr.direction}', file=out)
             elif isinstance(instr, TableInstruction):
                 print(f'     table:{instr.multiplicity}', file=out)
-                for trow in instr.rows:
-                    cols = ', '.join(c.field for c in trow.columns)
-                    print(f'        {trow.row_type}:{trow.multiplicity}  [{cols}]', file=out)
+                _render_table_grid(instr.rows, out)
 
 
 def run_validate(paths: list[str], verbose: bool = False, out=None) -> int:
