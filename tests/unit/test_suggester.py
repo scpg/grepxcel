@@ -363,6 +363,22 @@ class TestTypeFromNumberFormat:
     def test_currency_accounting(self):
         assert _type_from_number_format('#,##0.00') == 'currency'
 
+    def test_duration_elapsed_hours(self):
+        assert _type_from_number_format('[h]:mm') == 'duration'
+
+    def test_duration_elapsed_hours_seconds(self):
+        assert _type_from_number_format('[hh]:mm:ss') == 'duration'
+
+    def test_duration_elapsed_minutes(self):
+        assert _type_from_number_format('[mm]:ss') == 'duration'
+
+    def test_time_clock(self):
+        assert _type_from_number_format('h:mm') == 'time'
+
+    def test_time_clock_am_pm_locale(self):
+        # Real Excel clock format — contains [$...] locale tag, must NOT be currency.
+        assert _type_from_number_format('[$-409]h:mm\\ AM/PM;@') == 'time'
+
     def test_general_returns_none(self):
         assert _type_from_number_format('General') is None
 
@@ -566,6 +582,32 @@ class TestLLMBackendProtocol:
         assert 'grepxcel' in system_arg.lower()
         assert 'pattern' in system_arg.lower()
         assert 'analyse' in user_arg.lower() or 'analysis' in user_arg.lower()
+
+
+# ── System-prompt content coverage ───────────────────────────────────────────
+
+class TestSystemPromptCoverage:
+    """The system prompt must teach the LLM the current instruction set and types,
+    so drafted patterns use features that actually exist in the parser."""
+
+    def test_documents_dir_instruction(self):
+        from grepxcel.drafter import _SYSTEM_PROMPT
+        assert 'dir:LR' in _SYSTEM_PROMPT
+        assert 'dir:TD' in _SYSTEM_PROMPT
+
+    def test_documents_seek_instruction(self):
+        from grepxcel.drafter import _SYSTEM_PROMPT
+        assert 'seek:' in _SYSTEM_PROMPT
+
+    def test_documents_time_and_duration_types(self):
+        from grepxcel.drafter import _SYSTEM_PROMPT
+        assert 'time' in _SYSTEM_PROMPT
+        assert 'duration' in _SYSTEM_PROMPT
+
+    def test_does_not_teach_legacy_syntax(self):
+        from grepxcel.drafter import _SYSTEM_PROMPT
+        assert 'def:' not in _SYSTEM_PROMPT
+        assert 'cell:1 ' not in _SYSTEM_PROMPT
 
 
 # ── C2: ClaudeBackend ─────────────────────────────────────────────────────────

@@ -62,12 +62,12 @@ If the venv does not exist it prints a clear error with setup instructions and e
 
 ## Running the CLI
 
-The CLI is subcommand-based: `extract`, `validate-pattern`, `draft`, `docs`, `lint`, `doctor` (run `grepxcel <cmd> --help`).
+The CLI is subcommand-based: `extract`, `validate-pattern`, `draft`, `docs`, `lint`, `schema`, `doctor` (run `grepxcel <cmd> --help`).
 
 ```bash
 .venv/bin/grepxcel extract -p pattern.xlsx data.xlsx
-.venv/bin/grepxcel extract -p pattern.xlsx data.xlsx -v            # per-field trace: field ← B1 = value ✓/✗
-.venv/bin/grepxcel extract -p pattern.xlsx data.xlsx -vv           # debug: anchor probes
+.venv/bin/grepxcel extract -p pattern.xlsx data.xlsx -v            # detailed warnings + per-field trace
+.venv/bin/grepxcel extract -p pattern.xlsx data.xlsx -vv           # + debug: anchor probes
 .venv/bin/grepxcel extract -p pattern.xlsx data.xlsx -d            # same as -vv
 .venv/bin/grepxcel extract -p pattern.xlsx data.xlsx -o output/    # write JSON to a directory
 .venv/bin/grepxcel extract -p pattern.xlsx data.xlsx --sheet Sheet2
@@ -77,6 +77,8 @@ The CLI is subcommand-based: `extract`, `validate-pattern`, `draft`, `docs`, `li
 .venv/bin/grepxcel draft data.xlsx                                 # draft a starter pattern (local LLM)
 .venv/bin/grepxcel draft data.xlsx --ca-bundle corp-ca.pem         # behind a corporate TLS-inspection proxy
 .venv/bin/grepxcel lint data.xlsx                                   # inspect file before extraction
+.venv/bin/grepxcel schema pattern.xlsx                              # generate JSON Schema from pattern
+.venv/bin/grepxcel schema pattern.xlsx -o schema.json               # write schema to file
 .venv/bin/grepxcel docs                                            # write pattern-reference.xlsx
 .venv/bin/grepxcel doctor [extract|draft|all]                      # preflight: deps, keys, model, proxy/TLS
 ```
@@ -100,7 +102,7 @@ The CLI is subcommand-based: `extract`, `validate-pattern`, `draft`, `docs`, `li
 | `FILE...` (positional) | required | One or more data `.xlsx` files |
 | `-o, --output DIR` | — | Write JSON to directory (stdout if omitted) |
 | `-l, --log FILE` | — | Append structured log to file |
-| `-v` / `-vv` | off | Verbosity: per-field trace / anchor probes |
+| `-v` / `-vv` | off | Verbosity: detailed warnings + traces / anchor probes |
 | `-d, --debug` | off | Same as `-vv` |
 | `--sheet NAME_OR_INDEX` | active | Sheet name or 0-based index to process |
 | `--all-sheets` | off | Process every sheet; output keyed by sheet name |

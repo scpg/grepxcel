@@ -53,9 +53,15 @@ In your output, separate columns with ' | ' (space-pipe-space).
    Dot notation creates nested JSON: po.number → {"po": {"number": ...}}
    All var: field names in one table DATA row must share the same group prefix.
 
-   Types:  string  integer  currency  percentage  date  datetime
+   Types:  string  integer  number  currency  percentage  boolean
+           date  datetime  time  duration
+           - time     : a clock time (9:05 AM) — Excel h:mm cells
+           - duration : an elapsed time (8:00, can exceed 24h) — Excel [h]:mm cells.
+                        Use duration (or time) for timesheet hours, totals, etc.
    Regex:  Python re.fullmatch pattern.  Use .* to match anything.
-           Leave blank for date/datetime (type check only, no regex needed).
+           Leave the regex BLANK to accept any value of the declared type
+           (it defaults to .*). Especially natural for date/datetime/time/duration,
+           where the type check alone is usually enough.
 
    Examples:
      var: | po.number    | string     | PO-\\d{4,8}
@@ -63,6 +69,8 @@ In your output, separate columns with ' | ' (space-pipe-space).
      var: | line.qty     | integer    | \\d+
      var: | line.margin  | percentage |
      var: | inv.date     | date       |
+     var: | day.hours    | duration   |
+     var: | day.clock_in | time       |
 
    Important notes:
      - integers can be negative too — include a leading -? in the regex if needed.
@@ -92,6 +100,15 @@ In your output, separate columns with ' | ' (space-pipe-space).
    a new region after reading some scattered absolute cells. It does NOT read the
    target cell — it only sets the cursor position. Use it sparingly; prefer
    cell:next for the common sequential case and cell:B5 for isolated static cells.
+
+   To change the scan direction partway through — use dir:
+
+     dir:LR                 (scan left-to-right from here on)
+     dir:TD                 (scan top-down from here on)
+
+   dir: reads no cell; it only changes the direction for subsequent cell:next
+   steps and restarts scanning over the not-yet-read cells. Use it when one region
+   of the sheet reads naturally top-down and another reads left-to-right.
 
    For repeating tables:
      table:*                   (bare keyword, no pipe, starts a table block)
@@ -222,6 +239,13 @@ def _type_from_number_format(fmt: str) -> str | None:
     fmt_lower = fmt.lower()
     if 'y' in fmt_lower:                          # year token → date family
         return 'datetime' if ('h' in fmt_lower and ':' in fmt) else 'date'
+    # Elapsed-time brackets — [h]:mm, [hh]:mm:ss, [mm]:ss → duration.
+    # (Checked before currency: clock formats can carry a [$-409] locale tag.)
+    if any(tok in fmt_lower for tok in ('[h', '[m', '[s')):
+        return 'duration'
+    # Clock time — hours/seconds token with a colon, no date part.
+    if ':' in fmt and ('h' in fmt_lower or 's' in fmt_lower):
+        return 'time'
     if any(c in fmt for c in ('$', '€', '£', '¥', '₹')) or '[$' in fmt:
         return 'currency'
     if '#,##0.00' in fmt or ('0.00' in fmt and '#' in fmt):

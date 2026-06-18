@@ -92,6 +92,25 @@ class TestColorizePatternFile:
         wb = openpyxl.load_workbook(path)
         assert _any_fill_in_row(wb.active, 1)
 
+    def test_dir_row_colored(self, tmp_path):
+        path = _make_pattern(tmp_path, [
+            ['dir:TD'],
+            ['dir:LR'],
+        ])
+        colorize_pattern_file(path)
+        wb = openpyxl.load_workbook(path)
+        assert _any_fill_in_row(wb.active, 1)
+        assert _any_fill_in_row(wb.active, 2)
+
+    def test_uppercase_cell_keyword_colored(self, tmp_path):
+        """A CELL: row (uppercase keyword) must be colored like cell:."""
+        path = _make_pattern(tmp_path, [
+            ['CELL:J59', 'totals.x'],
+        ])
+        colorize_pattern_file(path)
+        wb = openpyxl.load_workbook(path)
+        assert _any_fill_in_row(wb.active, 1)
+
     def test_template_row_colored(self, tmp_path):
         """HEADER/DATA/FOOTER/SKIP_IF rows (column A blank, keyword in B)."""
         path = _make_pattern(tmp_path, [

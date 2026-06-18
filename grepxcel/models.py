@@ -48,3 +48,8 @@ class TableInstruction:
 @dataclass
 class SeekInstruction:
     target: str  # A1-notation cell address, e.g. 'G5' — cursor repositions here without reading
+
+
+@dataclass
+class DirectionInstruction:
+    direction: str  # 'LR' or 'TD' — switches the scalar scan direction from this point on

@@ -95,3 +95,57 @@ def test_verbose_shows_seek_instruction(tmp_path):
     run_validate([_write(rows, tmp_path)], verbose=True, out=buf)
     out = buf.getvalue()
     assert 'seek:G5' in out
+
+
+def test_verbose_table_columnar_format(tmp_path):
+    """Table rows render as a columnar grid, one column-position per line."""
+    rows = [
+        ['lbl:', 'h1', 'string', 'Name'],
+        ['lbl:', 'h2', 'string', 'Age'],
+        ['var:', 'name', 'string', '.*'],
+        ['var:', 'age', 'integer', r'\d+'],
+        ['START:'],
+        ['table:1'],
+        ['', 'HEADER:1', 'h1', 'h2'],
+        ['', 'DATA:*', 'name', 'age'],
+        ['END:'],
+    ]
+    buf = io.StringIO()
+    run_validate([_write(rows, tmp_path)], verbose=True, out=buf)
+    out = buf.getvalue()
+    lines = out.splitlines()
+    # Find the table block
+    table_idx = next(i for i, l in enumerate(lines) if 'table:1' in l)
+    # Next line should be the header row with row-type labels
+    header_line = lines[table_idx + 1]
+    assert 'HEADER:1' in header_line
+    assert 'DATA:*' in header_line
+    # Column positions follow, one per line
+    col1_line = lines[table_idx + 2]
+    assert 'h1' in col1_line and 'name' in col1_line
+    col2_line = lines[table_idx + 3]
+    assert 'h2' in col2_line and 'age' in col2_line
+
+
+def test_verbose_table_with_skip_if(tmp_path):
+    """SKIP_IF rows appear in the columnar table grid."""
+    rows = [
+        ['lbl:', 'h', 'string', 'Val'],
+        ['var:', 'v', 'string', '.*'],
+        ['START:'],
+        ['table:1'],
+        ['', 'HEADER:1', 'h'],
+        ['', 'SKIP_IF', 'EMPTY'],
+        ['', 'DATA:*', 'v'],
+        ['END:'],
+    ]
+    buf = io.StringIO()
+    run_validate([_write(rows, tmp_path)], verbose=True, out=buf)
+    out = buf.getvalue()
+    lines = out.splitlines()
+    table_idx = next(i for i, l in enumerate(lines) if 'table:1' in l)
+    header_line = lines[table_idx + 1]
+    assert 'SKIP_IF' in header_line
+    # The single column position should show all three row types
+    col_line = lines[table_idx + 2]
+    assert 'h' in col_line and 'EMPTY' in col_line and 'v' in col_line

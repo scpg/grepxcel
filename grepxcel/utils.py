@@ -110,10 +110,11 @@ def validate_type(value, field_type: str, regex: str, currency_sign: str = '€'
         ok = isinstance(value, bool)
         return ok, ('' if ok else f'{repr(value)} is not a boolean')
 
-    elif field_type == 'time':
-        # A time-only cell → openpyxl returns datetime.time. datetime.datetime is
-        # NOT a datetime.time, so a date/datetime cell is (correctly) rejected here.
-        ok = isinstance(value, datetime.time)
+    elif field_type in ('time', 'duration'):
+        # Clock-time cells → datetime.time; duration cells ([h]:mm) → timedelta.
+        # Both are accepted for 'time' and 'duration' because Excel uses [h]:mm
+        # for elapsed-time columns that users naturally mark as "time".
+        ok = isinstance(value, (datetime.time, datetime.timedelta))
         return ok, ('' if ok else f'{repr(value)} is not a time')
 
     elif field_type in ('date', 'datetime', 'timestamp'):
@@ -126,7 +127,8 @@ def validate_type(value, field_type: str, regex: str, currency_sign: str = '€'
 def infer_cell_type(values: list) -> str:
     """Return the most common grepxcel type for a list of openpyxl cell values."""
     counts: dict[str, int] = {
-        'datetime': 0, 'date': 0, 'currency': 0, 'integer': 0, 'string': 0,
+        'datetime': 0, 'date': 0, 'time': 0, 'currency': 0,
+        'integer': 0, 'string': 0,
     }
     for v in values:
         if v is None:
@@ -135,6 +137,8 @@ def infer_cell_type(values: list) -> str:
             counts['datetime'] += 1
         elif isinstance(v, datetime.date):
             counts['date'] += 1
+        elif isinstance(v, (datetime.time, datetime.timedelta)):
+            counts['time'] += 1
         elif isinstance(v, bool):
             counts['string'] += 1
         elif isinstance(v, float):
