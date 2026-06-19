@@ -131,3 +131,15 @@ def test_check_server_warn_when_no_models(monkeypatch):
     monkeypatch.setattr(doctor.urllib.request, 'urlopen', lambda *a, **k: resp)
     st = _statuses(doctor.check_server(url='http://localhost:1234/v1'))
     assert st['server'] == doctor.WARN
+
+
+def test_check_server_refuses_non_http_scheme(monkeypatch):
+    """A file:// (or other non-http) URL must be refused WITHOUT opening it —
+    otherwise GREPXCEL_SERVER_URL=file:///etc/passwd is a file-read primitive."""
+    def boom(*a, **k):
+        raise AssertionError('urlopen must not be called for a non-http(s) URL')
+    monkeypatch.setattr(doctor.urllib.request, 'urlopen', boom)
+    res = doctor.check_server(url='file:///etc/passwd')
+    # FAIL status and a message that explains the refusal
+    assert any(sev == doctor.FAIL for sev, _, _ in res)
+    assert any('http' in msg.lower() or 'refus' in msg.lower() for _, _, msg in res)

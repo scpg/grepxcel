@@ -694,6 +694,13 @@ class TestOpenAICompatBackend:
         b = OpenAICompatBackend(base_url='http://myhost:8080/v1')
         assert b._base_url == 'http://myhost:8080/v1'
 
+    def test_chat_refuses_non_http_base_url(self):
+        """A non-http(s) base_url (e.g. file://) must be refused before any
+        client/network call — guards against SSRF to internal endpoints."""
+        b = OpenAICompatBackend(base_url='file:///etc/passwd')
+        with pytest.raises(ValueError, match='http'):
+            b.chat('sys', 'user')
+
     def test_chat_returns_model_content(self):
         mock_openai = MagicMock()
         mock_completion = MagicMock()

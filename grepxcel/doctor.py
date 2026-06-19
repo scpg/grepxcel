@@ -127,7 +127,12 @@ def check_draft_cloud() -> list[Result]:
 def check_server(url: str = 'http://localhost:1234/v1') -> list[Result]:
     """Probe an OpenAI-compatible server at *url*/models."""
     import json
+    from .security import is_http_url
     res: list[Result] = []
+    # Never let urlopen handle file://, ftp://, data: etc. — a non-http(s)
+    # GREPXCEL_SERVER_URL would otherwise be a file-read / SSRF primitive.
+    if not is_http_url(url):
+        return [(FAIL, 'server', f'{url} — refusing to probe a non-http(s) URL')]
     models_url = url.rstrip('/') + '/models'
     try:
         resp = urllib.request.urlopen(
@@ -154,7 +159,8 @@ def tls_probe(url: str = 'https://huggingface.co', timeout: float = 6.0) -> Resu
     and certificate were fine), FAIL on a certificate-trust failure (the corp
     proxy case), WARN if simply unreachable (offline / blocked)."""
     # Only ever probe http(s) — never let urlopen handle file://, ftp://, etc.
-    if urllib.parse.urlparse(url).scheme not in ('http', 'https'):
+    from .security import is_http_url
+    if not is_http_url(url):
         return (FAIL, f'TLS handshake {url}', 'refusing to probe a non-http(s) URL')
     proxy_support.enable_corporate_tls(announce=False)
     try:

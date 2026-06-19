@@ -127,7 +127,9 @@ class Logger:
         self._summary_start = 0
         self._file = None
         if log_file:
-            self._file = open(log_file, 'w', encoding='utf-8')
+            # Append (never truncate) — the --log file is documented as appended,
+            # and a user pointing it at an existing file should not lose its data.
+            self._file = open(log_file, 'a', encoding='utf-8')
         # Colour the console copy only when stderr is an interactive terminal.
         self._color = should_color(sys.stderr)
 

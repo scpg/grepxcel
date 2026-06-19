@@ -79,6 +79,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   grid (one column-position per row, all row types side by side) instead of
   bracket-delimited lists.
 
+### Security
+
+- **ZIP-bomb guard now measures real decompressed size** — `_check_zip_safety`
+  previously summed the central-directory `file_size` field, which is
+  attacker-controlled metadata (a crafted `.xlsx` could declare 0-byte entries
+  while DEFLATE-expanding to gigabytes). It now stream-decompresses every member
+  in bounded chunks and counts the bytes actually emitted, aborting the moment the
+  running total crosses the `--max-uncompressed` cap — so a bomb is rejected after
+  reading at most one chunk past the limit.
+- **SSRF / file-read guards on server URLs** — `grepxcel doctor`'s server probe
+  and the `--server-url` (OpenAI-compatible) backend now refuse any non-`http(s)`
+  URL via a shared `is_http_url` check, so `file://…`, `ftp://…`, or a cloud
+  metadata IP can't be reached through a `GREPXCEL_SERVER_URL` / `--server-url`.
+- **Scoped `.env` discovery** — `.env` lookup stops at the project root (`.git` /
+  `pyproject.toml`) instead of walking to the filesystem root, so an unrelated
+  ancestor project's `.env` can no longer silently inject its API keys; a `.env`
+  loaded from an ancestor directory is now announced on stderr.
+- **`--log` appends instead of truncating** — the log file is opened in append
+  mode (matching its documented behaviour); pointing `--log` at an existing file
+  no longer silently destroys its contents.
+- **Clarified ZIP expansion-ratio constant** — `MAX_EXPANSION_RATIO = 50` now
+  names the actual enforced ceiling (was a confusing `DEFAULT_MAX_EXPANSION_RATIO
+  * 10`); the old name remains as an alias.
+- **Doc note** — recommend `GREPXCEL_VERIFY_MODEL=full` on shared/server
+  deployments where the model cache is writable by others.
+
 ### Fixed
 
 - **Case-insensitive instruction keywords** — `CELL:`, `Cell:`, `cell:` (and the

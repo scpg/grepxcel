@@ -1059,6 +1059,14 @@ class OpenAICompatBackend:
         return self._last_cost
 
     def chat(self, system: str, user: str) -> str:
+        from .security import is_http_url
+        # Refuse non-http(s) base URLs before constructing any client — stops
+        # SSRF to internal endpoints (e.g. file://… or the cloud metadata IP).
+        if not is_http_url(self._base_url):
+            raise ValueError(
+                f'refusing a non-http(s) server URL: {self._base_url!r}. '
+                f'Use an http:// or https:// --server-url.'
+            )
         try:
             from openai import OpenAI
         except ImportError:

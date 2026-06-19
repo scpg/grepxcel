@@ -17,6 +17,7 @@ Regex check (run at pattern-file parse time for every def: entry):
 
 import os
 import re
+import urllib.parse
 import zipfile
 
 # Python 3.11+ exposes the regex parser internals at re._parser / re._constants.
@@ -39,7 +40,27 @@ _READ_HEADER     = 4                         # bytes to read for magic check
 
 DEFAULT_MAX_FILE_MB         = 5              # compressed size on disk
 DEFAULT_MAX_UNCOMPRESSED_MB = 50             # total uncompressed content
-DEFAULT_MAX_EXPANSION_RATIO = 5              # uncompressed / compressed ceiling
+# Hard expansion-ratio ceiling, as a multiple of compressed size. Legitimate
+# office xlsx files compress ~10–20×; this 50× ceiling rejects ZIP bombs while
+# leaving headroom. (Named for the ceiling it enforces — see _check_zip_safety.)
+MAX_EXPANSION_RATIO         = 50             # uncompressed / compressed ceiling
+DEFAULT_MAX_EXPANSION_RATIO = MAX_EXPANSION_RATIO  # backward-compatible alias
+_ZIP_CHUNK                  = 1 << 16        # 64 KB streaming read size
+
+# --- URL scheme guard (SSRF) --------------------------------------------------
+
+def is_http_url(url: str) -> bool:
+    """True only for http:// and https:// URLs.
+
+    Used to refuse SSRF/file-read vectors: urllib and HTTP-client libraries will
+    happily open ``file://``, ``ftp://``, ``data:``, etc. Any URL we fetch from
+    user/env-controlled input must pass this first.
+    """
+    try:
+        return urllib.parse.urlparse(url).scheme in ('http', 'https')
+    except (ValueError, AttributeError):
+        return False
+
 
 # --- regex safety constants ---------------------------------------------------
 
@@ -251,30 +272,44 @@ def _check_file_size(path: str, max_mb: float) -> None:
 
 def _check_zip_safety(path: str, max_uncompressed_mb: float) -> None:
     """
-    Guard against ZIP bombs by checking both the absolute uncompressed size
-    and the expansion ratio relative to the file size on disk.
+    Guard against ZIP bombs by measuring the REAL decompressed size and the
+    expansion ratio relative to the file size on disk.
+
+    The central-directory ``file_size`` field is attacker-controlled metadata
+    (a crafted archive can declare 0 bytes while DEFLATE-expanding to gigabytes),
+    so we never trust it. Instead we stream-decompress every member in bounded
+    chunks and count the bytes actually emitted, aborting as soon as the running
+    total exceeds the cap — so a bomb is rejected after reading at most one chunk
+    past the limit, never the full payload.
     """
+    max_bytes = int(max_uncompressed_mb * 1024 * 1024)
+    total_uncompressed = 0
     try:
         with zipfile.ZipFile(path) as zf:
-            total_uncompressed = sum(e.file_size for e in zf.infolist())
+            for info in zf.infolist():
+                with zf.open(info) as member:
+                    while True:
+                        chunk = member.read(_ZIP_CHUNK)
+                        if not chunk:
+                            break
+                        total_uncompressed += len(chunk)
+                        if total_uncompressed > max_bytes:
+                            raise SecurityError(
+                                f'ZIP content decompresses to more than '
+                                f'{max_uncompressed_mb:.0f} MB, exceeding the '
+                                f'uncompressed limit. This may be a ZIP bomb or '
+                                f'an unusually large workbook.'
+                            )
     except zipfile.BadZipFile:
         raise SecurityError(
             f'{path!r} is not a valid ZIP archive. '
             f'The file may be corrupted.'
         )
 
-    uncompressed_mb = total_uncompressed / (1024 * 1024)
-    if uncompressed_mb > max_uncompressed_mb:
-        raise SecurityError(
-            f'ZIP content expands to {uncompressed_mb:.1f} MB, '
-            f'exceeding the {max_uncompressed_mb:.0f} MB uncompressed limit. '
-            f'This may be a ZIP bomb or an unusually large workbook.'
-        )
-
     compressed = os.path.getsize(path)
     if compressed > 0:
         ratio = total_uncompressed / compressed
-        if ratio > DEFAULT_MAX_EXPANSION_RATIO * 10:   # hard ceiling at 50×
+        if ratio > MAX_EXPANSION_RATIO:
             raise SecurityError(
                 f'ZIP expansion ratio is {ratio:.0f}:1, which is abnormally high. '
                 f'This file is likely a ZIP bomb.'

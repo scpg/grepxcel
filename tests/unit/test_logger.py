@@ -5,6 +5,18 @@ from grepxcel.logger import (
 )
 
 
+# ─── log file is appended, not truncated ─────────────────────────────────────
+
+def test_log_file_appends_not_truncates(tmp_path):
+    """--log must not silently truncate an existing file (it's documented as
+    'append')."""
+    log_path = tmp_path / 'run.log'
+    log_path.write_text('PRE-EXISTING CONTENT\n', encoding='utf-8')
+    lg = Logger(level=VerbosityLevel.NORMAL, log_file=str(log_path))
+    lg.close()
+    assert 'PRE-EXISTING CONTENT' in log_path.read_text(encoding='utf-8')
+
+
 # ─── cell reference helpers ──────────────────────────────────────────────────
 
 def test_col_letter_single():

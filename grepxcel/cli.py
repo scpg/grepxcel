@@ -594,15 +594,29 @@ def _load_dotenv() -> None:
     Real environment variables always win: existing keys are never overridden,
     and the file is only read (no execution). Quotes around values are stripped.
     """
-    directory = os.getcwd()
+    start = os.getcwd()
+    directory = start
+    env_path = None
     while True:
-        env_path = os.path.join(directory, '.env')
-        if os.path.isfile(env_path):
+        candidate = os.path.join(directory, '.env')
+        if os.path.isfile(candidate):
+            env_path = candidate
+            break
+        # Stop at the project root — never escape into an unrelated ancestor
+        # project's .env (which could inject another project's API keys).
+        if (os.path.isdir(os.path.join(directory, '.git'))
+                or os.path.isfile(os.path.join(directory, 'pyproject.toml'))):
             break
         parent = os.path.dirname(directory)
         if parent == directory:
-            return  # reached filesystem root without finding a .env
+            break  # reached filesystem root without finding a .env
         directory = parent
+    if env_path is None:
+        return
+    # Surface a .env loaded from an ancestor directory (not the cwd) — silent
+    # injection of credentials from elsewhere is exactly what we want to avoid.
+    if os.path.realpath(os.path.dirname(env_path)) != os.path.realpath(start):
+        print(f'grepxcel: loaded environment from {env_path}', file=sys.stderr)
     try:
         with open(env_path, encoding='utf-8') as fh:
             for line in fh:
