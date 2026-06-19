@@ -1124,6 +1124,15 @@ class PatternWriter:
         ws.title  = 'Pattern'
         row_num   = 1
 
+        # Stamp the pattern-format version so every generated pattern is explicit
+        # and forward-compatible (skip if the model already emitted one).
+        if 'pattern.version' not in llm_text.lower():
+            from .pattern_parser import CURRENT_PATTERN_VERSION
+            ws.cell(row=row_num, column=1, value='config:')
+            ws.cell(row=row_num, column=2, value='pattern.version')
+            ws.cell(row=row_num, column=3, value=str(CURRENT_PATTERN_VERSION))
+            row_num += 1
+
         for line in llm_text.splitlines():
             stripped = line.strip()
             if not stripped or stripped.startswith('```'):

@@ -123,6 +123,7 @@ class DocsGenerator:
 
         # ── CONFIG section ─────────────────────────────────────────────────────
         row(['doc:', '', '', '', 'Config rows set global options. Must appear before lbl:/var: rows.'], 'doc')
+        row(['config:', 'pattern.version', '1', '', 'Pattern-format version (optional; absent = 1). Engine errors if newer than it understands.'], 'config')
         row(['config:', 'read.direction', 'LR', '', 'LR = left-to-right scan (default). TD = top-to-bottom.'], 'config')
         row(['config:', 'currency.sign', '€', '', 'Symbol used when parsing currency values.'], 'config')
         row(['config:', 'ignore.case', 'no', '', 'yes = match all regexes case-insensitively. Default no.'], 'config')
