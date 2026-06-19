@@ -254,7 +254,19 @@ examples:
     p.add_argument(
         '-l', '--log',
         metavar='FILE',
-        help='Append structured log to FILE',
+        help='Append a log to FILE (text by default; NDJSON with --log-format json)',
+    )
+    p.add_argument(
+        '--log-format',
+        choices=['text', 'json'], default='text',
+        help='Log file format: text (human) or json (NDJSON, one record per line, '
+             'for SIEM/cloud ingestion). Default: text',
+    )
+    p.add_argument(
+        '--log-raw',
+        action='store_true',
+        help='Include raw extracted cell values in the log. Default: redacted, so '
+             'PII/business data is not written to a log shipped to a SIEM',
     )
     p.add_argument(
         '--max-cell-len',
@@ -474,7 +486,13 @@ def _process_file(pattern: str, data_file: str, args, stem: str = None) -> bool:
         print(f'  File: {data_file}', file=sys.stderr)
         print(f'{"─" * 62}', file=sys.stderr)
 
-    logger = Logger(level=level, log_file=args.log)
+    logger = Logger(
+        level=level,
+        log_file=args.log,
+        log_format=getattr(args, 'log_format', 'text'),
+        redact=not getattr(args, 'log_raw', False),
+        source=data_file,
+    )
     output_format = getattr(args, 'format', 'nested')
     all_sheets = getattr(args, 'all_sheets', False)
 

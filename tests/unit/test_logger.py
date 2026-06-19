@@ -1,8 +1,73 @@
+import json
+
 import pytest
 from grepxcel.logger import (
     Logger, LogRecord, EngineError, VerbosityLevel,
-    Severity, Category, col_letter, cell_ref,
+    Severity, Category, col_letter, cell_ref, LOG_SCHEMA_VERSION,
 )
+
+
+# ─── structured (NDJSON) logging + redaction + correlation ───────────────────
+
+def _json_log_lines(tmp_path, **kw):
+    """Write one validation warning to a json log and return the parsed lines."""
+    log_path = tmp_path / 'run.jsonl'
+    lg = Logger(level=VerbosityLevel.NORMAL, log_file=str(log_path),
+                log_format='json', source='data.xlsx', **kw)
+    rec = lg.warn_validation(10, 2, 'client.name', 'string', r'.+', 'Alice Wonderland')
+    lg.commit_warnings([rec])
+    lg.close()
+    return [json.loads(ln) for ln in
+            log_path.read_text(encoding='utf-8').splitlines() if ln.strip()]
+
+
+def test_json_log_emits_ndjson(tmp_path):
+    lines = _json_log_lines(tmp_path)
+    assert len(lines) == 1
+    rec = lines[0]
+    assert rec['severity'] == 'WARNING'
+    assert rec['field'] == 'client.name'
+
+
+def test_json_log_has_correlation_and_schema(tmp_path):
+    rec = _json_log_lines(tmp_path)[0]
+    assert rec['source'] == 'data.xlsx'
+    assert rec['schema_version'] == LOG_SCHEMA_VERSION
+    assert rec['level'] == 'WARNING'
+    assert rec['run_id']            # present + non-empty
+
+
+def test_json_log_redacts_cell_value_by_default(tmp_path):
+    rec = _json_log_lines(tmp_path)[0]
+    assert 'Alice Wonderland' not in json.dumps(rec)
+    assert rec['found'] == '<redacted>'
+
+
+def test_json_log_raw_includes_value(tmp_path):
+    rec = _json_log_lines(tmp_path, redact=False)[0]
+    assert 'Alice Wonderland' in rec['found']
+
+
+def test_run_id_is_stable_within_a_run(tmp_path):
+    lines = []
+    log_path = tmp_path / 'r.jsonl'
+    lg = Logger(level=VerbosityLevel.NORMAL, log_file=str(log_path),
+                log_format='json', source='d.xlsx')
+    lg.commit_warnings([lg.warn_validation(1, 1, 'a', 'string', '.+', 'x')])
+    lg.commit_warnings([lg.warn_validation(2, 1, 'b', 'string', '.+', 'y')])
+    lg.close()
+    ids = {json.loads(ln)['run_id']
+           for ln in log_path.read_text().splitlines() if ln.strip()}
+    assert len(ids) == 1            # same run_id across the run
+
+
+def test_text_log_unchanged_includes_values(tmp_path):
+    """Text mode still mirrors the console (values shown) — for human use."""
+    log_path = tmp_path / 'run.log'
+    lg = Logger(level=VerbosityLevel.NORMAL, log_file=str(log_path), source='d.xlsx')
+    lg.commit_warnings([lg.warn_validation(1, 1, 'a', 'string', '.+', 'SECRET')])
+    lg.close()
+    assert 'SECRET' in log_path.read_text(encoding='utf-8')
 
 
 # ─── log file is appended, not truncated ─────────────────────────────────────
