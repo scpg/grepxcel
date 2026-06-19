@@ -50,6 +50,13 @@ def check_extract() -> list[Result]:
         res.append((OK, f'Python {v.major}.{v.minor}', 'meets the >= 3.11 floor'))
     else:
         res.append((FAIL, f'Python {v.major}.{v.minor}', 'grepxcel requires Python >= 3.11'))
+    from .pattern_parser import (CURRENT_PATTERN_VERSION,
+                                 MIN_SUPPORTED_PATTERN_VERSION)
+    pv = (f'{CURRENT_PATTERN_VERSION}'
+          if MIN_SUPPORTED_PATTERN_VERSION == CURRENT_PATTERN_VERSION
+          else f'{MIN_SUPPORTED_PATTERN_VERSION}..{CURRENT_PATTERN_VERSION}')
+    res.append((OK, 'pattern.version',
+                f'understands {pv} (a pattern with no version is read as 1)'))
     for mod, why in (('openpyxl', 'reads .xlsx files'),
                      ('defusedxml', 'XXE protection (fail-closed)'),
                      ('regex', 'ReDoS-bounded matching')):

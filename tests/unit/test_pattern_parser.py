@@ -568,6 +568,33 @@ class TestSeekInstruction:
         assert abs_cells[0].target == 'B5'
 
 
+# ── pattern.version ───────────────────────────────────────────────────────────
+
+class TestPatternVersion:
+    _SEQ = [['var:', 'x', 'string', '.*'], ['START:'], ['cell:A1', 'x'], ['END:']]
+
+    def test_absent_defaults_to_1(self, tmp_path):
+        cfg, _, _ = PatternParser().parse(_write_pattern(self._SEQ, tmp_path))
+        assert cfg.pattern_version == 1
+        assert cfg.pattern_version_explicit is False
+
+    def test_explicit_version_parsed(self, tmp_path):
+        rows = [['config:', 'pattern.version', '1']] + self._SEQ
+        cfg, _, _ = PatternParser().parse(_write_pattern(rows, tmp_path))
+        assert cfg.pattern_version == 1
+        assert cfg.pattern_version_explicit is True
+
+    def test_version_too_new_raises(self, tmp_path):
+        rows = [['config:', 'pattern.version', '999']] + self._SEQ
+        with pytest.raises(PatternError, match='newer|upgrade|pattern.version'):
+            PatternParser().parse(_write_pattern(rows, tmp_path))
+
+    def test_invalid_version_raises(self, tmp_path):
+        rows = [['config:', 'pattern.version', 'abc']] + self._SEQ
+        with pytest.raises(PatternError, match='pattern.version'):
+            PatternParser().parse(_write_pattern(rows, tmp_path))
+
+
 # ── case-insensitive keywords ─────────────────────────────────────────────────
 
 class TestCaseInsensitiveKeywords:
