@@ -88,6 +88,7 @@ commands:
   docs               Write a pattern-format reference xlsx (pattern-reference.xlsx)
   lint               Inspect an Excel file for potential extraction issues
   schema             Generate a JSON Schema from a pattern file
+  generate-skill     Write an AI-agent skill doc (Claude / AGENTS.md)
   doctor             Check the environment is ready (deps, keys, model, proxy/TLS)
 
 Run 'grepxcel <command> --help' for per-command options.
@@ -108,6 +109,7 @@ Run 'grepxcel <command> --help' for per-command options.
     _add_docs_subparser(sub)
     _add_lint_subparser(sub)
     _add_schema_subparser(sub)
+    _add_skill_subparser(sub)
     _add_doctor_subparser(sub)
     return p
 
@@ -174,6 +176,28 @@ examples:
                    help='Pattern file(s) to generate schema for (.xlsx or .csv)')
     p.add_argument('-o', '--output', metavar='FILE',
                    help='Write schema to file (default: stdout)')
+
+
+def _add_skill_subparser(sub) -> None:
+    p = sub.add_parser(
+        'generate-skill',
+        help='Write an AI-agent skill doc (Claude / AGENTS.md)',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Writes a markdown 'skill' doc that teaches an AI agent how and when to use
+grepxcel. The command reference is introspected from the live CLI; the prose is
+curated. v1 targets: claude (SKILL.md) and agents-md (AGENTS.md).
+
+examples:
+  grepxcel generate-skill                       # Claude SKILL.md to stdout
+  grepxcel generate-skill -o SKILL.md
+  grepxcel generate-skill --target agents-md -o AGENTS.md
+        """,
+    )
+    p.add_argument('--target', choices=['claude', 'agents-md'], default='claude',
+                   help='Skill format to emit (default: claude)')
+    p.add_argument('-o', '--output', metavar='FILE',
+                   help='Write the skill doc to FILE (default: stdout)')
 
 
 def _add_doctor_subparser(sub) -> None:
@@ -591,6 +615,11 @@ def _run_validate(args) -> int:
 
 # ── schema handler ──────────────────────────────────────────────────────────
 
+def _run_skill(args) -> int:
+    from .skill import run_skill
+    return run_skill(args.target, getattr(args, 'output', None))
+
+
 def _run_schema(args) -> int:
     from .schema import run_schema
     if not args.output:
@@ -795,6 +824,9 @@ def main(argv=None):
 
     if args.command == 'schema':
         sys.exit(_run_schema(args))
+
+    if args.command == 'generate-skill':
+        sys.exit(_run_skill(args))
 
     # extract
     all_ok = True
