@@ -213,9 +213,40 @@ def check_proxy_tls(probe: bool = True) -> list[Result]:
     return res
 
 
+def check_env(strict_env: bool = False) -> list[Result]:
+    """Show how cloud-credential .env resolution will be decided, so the user
+    always knows which source is used before any cloud call."""
+    from .cli import _discover_project_env, _config_dir, _config_dir_env
+    res: list[Result] = []
+    cfg = _config_dir()
+    res.append((OK, 'config dir', cfg))
+    cfg_env = _config_dir_env()
+    if cfg_env:
+        res.append((OK, 'config .env', f'{cfg_env} (loaded as fallback)'))
+    else:
+        res.append((OK, 'config .env', f'none at {os.path.join(cfg, ".env")}'))
+
+    project_env, in_project = _discover_project_env(os.getcwd())
+    if project_env and in_project:
+        res.append((OK, 'project .env', project_env))
+    elif project_env and not in_project:
+        if strict_env:
+            res.append((FAIL, 'project .env',
+                        f'{project_env} — out-of-project, REFUSED (--strict-env)'))
+        else:
+            res.append((WARN, 'project .env',
+                        f'{project_env} — out-of-project (loaded; would be refused '
+                        f'with --strict-env)'))
+    else:
+        res.append((OK, 'project .env', 'none found'))
+    res.append((OK, 'strict-env', 'on' if strict_env else 'off'))
+    return res
+
+
 # ── runner ──────────────────────────────────────────────────────────────────
 
-def run_doctor(area: str = 'all', probe: bool = True, out=None) -> int:
+def run_doctor(area: str = 'all', probe: bool = True, out=None,
+               strict_env: bool = False) -> int:
     """Run the selected checks, print a checklist, return an exit code
     (0 = ready, 1 = a hard failure in the selected area)."""
     out = out or sys.stderr
@@ -226,6 +257,7 @@ def run_doctor(area: str = 'all', probe: bool = True, out=None) -> int:
     if area in ('extract', 'all'):
         sections.append(('extract — core', check_extract()))
     if area in ('draft', 'all'):
+        sections.append(('draft — credentials (.env)', check_env(strict_env)))
         sections.append(('draft — local model', check_draft_local()))
         sections.append(('draft — cloud backends', check_draft_cloud()))
         srv_url = os.environ.get('GREPXCEL_SERVER_URL', 'http://localhost:1234/v1')
