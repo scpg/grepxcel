@@ -35,6 +35,14 @@ _SAFE_LOG_KEYS = ('ts', 'level', 'category', 'event', 'cell', 'field',
                   'field_type', 'value_len', 'value_sha8',
                   'run_id', 'source', 'schema_version')
 
+_SAFE_SUMMARY_KEYS = ('ts', 'level', 'category', 'event',
+                      'run_id', 'source', 'schema_version',
+                      'scalars_defined', 'scalars_populated', 'scalars_empty',
+                      'empty_field_names',
+                      'tables_defined', 'table_instances',
+                      'warnings', 'errors', 'issues_by_event',
+                      'duration_ms')
+
 
 def _value_fingerprint(value) -> "tuple[int, str]":
     """Return (length, sha8) for a value — non-reversible, never the value."""
@@ -160,6 +168,7 @@ class Logger:
         self._log_format = log_format
         self._source = source
         self._run_id = run_id or uuid.uuid4().hex[:12]
+        self._start_time = datetime.now(timezone.utc)
         self._file = None
         if log_file:
             # Append (never truncate) — the --log file is documented as appended,
@@ -260,7 +269,8 @@ class Logger:
         self._summary_start = len(self._records)
 
     def summary(self, result: dict):
-        cells_count = len(result.get('cells', {}))
+        cells = result.get('cells', {})
+        cells_count = len(cells)
         tables = result.get('tables', [])
 
         by_group: dict[int, int] = {}
@@ -286,8 +296,6 @@ class Logger:
             f'  Errors            : {len(errors)}',
             '─' * 62,
         ]
-        # Consolidated recap of every problem cell, so failures are never lost
-        # in the scrollback of a long run — one clear line per issue.
         issues = warnings + errors
         if issues:
             lines.append('ISSUES (cell — reason):')
@@ -295,6 +303,45 @@ class Logger:
                 lines.append('  ' + self._issue_line(rec))
             lines.append('─' * 62)
         self._write(VerbosityLevel.NORMAL, '\n'.join(lines))
+
+        self._emit_summary_event(cells, by_group, warnings, errors)
+
+    def _emit_summary_event(self, cells: dict, by_group: dict,
+                            warnings: list, errors: list) -> None:
+        """Write a single 'summary' event to the JSON log with safe statistics."""
+        if not (self._file and self._log_format == 'json'):
+            return
+
+        empty_fields = [k for k, v in cells.items() if v is None or v == '']
+        issues_by_event: dict[str, int] = {}
+        for rec in warnings + errors:
+            ev = rec.event or 'unknown'
+            issues_by_event[ev] = issues_by_event.get(ev, 0) + 1
+
+        elapsed = (datetime.now(timezone.utc) - self._start_time)
+        duration_ms = int(elapsed.total_seconds() * 1000)
+
+        stats = {
+            'ts': datetime.now(timezone.utc).isoformat(),
+            'level': Severity.INFO,
+            'category': Category.ENGINE,
+            'event': 'summary',
+            'run_id': self._run_id,
+            'source': self._source,
+            'schema_version': LOG_SCHEMA_VERSION,
+            'scalars_defined': len(cells),
+            'scalars_populated': len(cells) - len(empty_fields),
+            'scalars_empty': len(empty_fields),
+            'empty_field_names': empty_fields,
+            'tables_defined': len(by_group),
+            'table_instances': sum(by_group.values()),
+            'warnings': len(warnings),
+            'errors': len(errors),
+            'issues_by_event': issues_by_event,
+            'duration_ms': duration_ms,
+        }
+        self._file.write(json.dumps(stats, default=str) + '\n')
+        self._file.flush()
 
     def _issue_line(self, rec: LogRecord) -> str:
         """One concise line summarising a single problem cell for the recap."""

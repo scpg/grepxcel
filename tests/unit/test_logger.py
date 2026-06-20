@@ -4,7 +4,7 @@ import pytest
 from grepxcel.logger import (
     Logger, LogRecord, EngineError, VerbosityLevel,
     Severity, Category, col_letter, cell_ref, LOG_SCHEMA_VERSION,
-    _SAFE_LOG_KEYS,
+    _SAFE_LOG_KEYS, _SAFE_SUMMARY_KEYS,
 )
 
 
@@ -414,18 +414,103 @@ def test_sentinel_no_cell_data_in_json_log(tmp_path):
 
 
 def test_json_record_keys_pinned_to_allow_list(tmp_path):
-    """Every key emitted by _record_json must be a member of _SAFE_LOG_KEYS."""
+    """Every key in every NDJSON record must belong to the appropriate allow-list:
+    _SAFE_LOG_KEYS for per-cell records, _SAFE_SUMMARY_KEYS for the summary event."""
     log_path = tmp_path / 'pin.jsonl'
     lg = Logger(level=VerbosityLevel.NORMAL, log_file=str(log_path),
                 log_format='json', source='x.xlsx')
     lg.commit_warnings([lg.warn_validation(1, 1, 'f', 'string', '.+', 'secret')])
     lg.commit_warnings([lg.warn_empty_field(2, 2, 'g', 'integer')])
     lg.commit_warnings([lg.warn_undefined_field(3, 3, 'h')])
+    lg.summary({'cells': {'f': 'secret', 'g': ''}, 'tables': []})
     lg.close()
 
     for line in log_path.read_text(encoding='utf-8').splitlines():
         if not line.strip():
             continue
         rec = json.loads(line)
-        extra = set(rec.keys()) - set(_SAFE_LOG_KEYS)
-        assert not extra, f'Key(s) {extra} not in allow-list: {_SAFE_LOG_KEYS}'
+        if rec.get('event') == 'summary':
+            allowed = set(_SAFE_SUMMARY_KEYS)
+        else:
+            allowed = set(_SAFE_LOG_KEYS)
+        extra = set(rec.keys()) - allowed
+        assert not extra, f'Key(s) {extra} not in allow-list for event={rec.get("event")}'
+
+
+# ─── #35 extraction statistics — safe summary event ──────────────────────────
+
+def test_summary_event_emitted_in_json_log(tmp_path):
+    """summary() must emit a 'summary' event with extraction statistics."""
+    log_path = tmp_path / 'stats.jsonl'
+    lg = Logger(level=VerbosityLevel.NORMAL, log_file=str(log_path),
+                log_format='json', source='data.xlsx')
+    lg.commit_warnings([lg.warn_validation(1, 1, 'name', 'string', '.+', 'x')])
+    lg.summary({'cells': {'name': 'x', 'email': 'y', 'phone': ''}, 'tables': []})
+    lg.close()
+
+    records = [json.loads(ln) for ln in
+               log_path.read_text(encoding='utf-8').splitlines() if ln.strip()]
+    summaries = [r for r in records if r.get('event') == 'summary']
+    assert len(summaries) == 1
+    s = summaries[0]
+    assert s['scalars_defined'] == 3
+    assert s['scalars_populated'] == 2
+    assert s['scalars_empty'] == 1
+    assert s['empty_field_names'] == ['phone']
+    assert s['tables_defined'] == 0
+    assert s['table_instances'] == 0
+    assert s['warnings'] == 1
+    assert s['errors'] == 0
+    assert s['issues_by_event'] == {'value_mismatch': 1}
+    assert isinstance(s['duration_ms'], int)
+    assert s['run_id']
+    assert s['source'] == 'data.xlsx'
+
+
+def test_summary_event_not_emitted_in_text_mode(tmp_path):
+    """In text log mode there is no summary JSON event."""
+    log_path = tmp_path / 'text.log'
+    lg = Logger(level=VerbosityLevel.NORMAL, log_file=str(log_path),
+                log_format='text', source='d.xlsx')
+    lg.summary({'cells': {'a': 1}, 'tables': []})
+    lg.close()
+    content = log_path.read_text(encoding='utf-8')
+    assert '"event"' not in content
+    assert 'summary' not in content.lower() or 'EXTRACTION SUMMARY' in content
+
+
+def test_summary_event_contains_no_cell_values(tmp_path):
+    """The summary event must not contain any extracted cell values."""
+    log_path = tmp_path / 'sentinel.jsonl'
+    lg = Logger(level=VerbosityLevel.NORMAL, log_file=str(log_path),
+                log_format='json', source='d.xlsx')
+    lg.summary({'cells': {'name': 'SUPERSECRET', 'code': 42}, 'tables': []})
+    lg.close()
+
+    records = [json.loads(ln) for ln in
+               log_path.read_text(encoding='utf-8').splitlines() if ln.strip()]
+    summaries = [r for r in records if r.get('event') == 'summary']
+    assert len(summaries) == 1
+    raw = json.dumps(summaries[0])
+    assert 'SUPERSECRET' not in raw
+    assert '42' not in raw or raw.count('42') == raw.count('"42"')  # not as a value
+
+
+def test_summary_with_tables(tmp_path):
+    """Summary event correctly counts table groups and instances."""
+    log_path = tmp_path / 'tbl.jsonl'
+    lg = Logger(level=VerbosityLevel.NORMAL, log_file=str(log_path),
+                log_format='json', source='d.xlsx')
+    tables = [
+        {'table_index': 0, 'data': [{'a': 1}]},
+        {'table_index': 0, 'data': [{'a': 2}]},
+        {'table_index': 1, 'data': [{'b': 3}]},
+    ]
+    lg.summary({'cells': {}, 'tables': tables})
+    lg.close()
+
+    records = [json.loads(ln) for ln in
+               log_path.read_text(encoding='utf-8').splitlines() if ln.strip()]
+    s = [r for r in records if r.get('event') == 'summary'][0]
+    assert s['tables_defined'] == 2
+    assert s['table_instances'] == 3
