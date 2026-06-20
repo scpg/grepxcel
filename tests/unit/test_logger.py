@@ -368,3 +368,64 @@ def test_trace_field_returns_line_without_emitting(capsys):
     line = lg.trace_field(4, 1, 'row.item', 'Laptop', ok=True)
     assert capsys.readouterr().err == ''     # building a trace does not print
     assert 'row.item' in line and 'S!A4' in line and '✓' in line
+
+
+# ─── #34 sentinel: prove no Excel cell data appears in structured logs ────────
+
+def test_sentinel_no_cell_data_in_json_log(tmp_path):
+    """End-to-end: extract fixture 01, write NDJSON log, assert none of the
+    extracted cell values appear anywhere in the log bytes."""
+    import grepxcel
+
+    fixture = 'tests/fixtures/01_simple_invoice'
+    pattern = f'{fixture}/pattern-from-draft.xlsx'
+    data = f'{fixture}/data.xlsx'
+    log_path = tmp_path / 'sentinel.jsonl'
+
+    lg = Logger(level=VerbosityLevel.VERBOSE, log_file=str(log_path),
+                log_format='json', source='data.xlsx')
+    result = grepxcel.extract(pattern, data, logger=lg)
+    lg.summary(result)
+    lg.close()
+
+    log_bytes = log_path.read_text(encoding='utf-8')
+
+    # Collect every scalar value the extraction produced.
+    sentinels = []
+    def _collect(obj):
+        if isinstance(obj, dict):
+            for v in obj.values():
+                _collect(v)
+        elif isinstance(obj, list):
+            for v in obj:
+                _collect(v)
+        elif obj is not None:
+            sentinels.append(str(obj))
+
+    _collect(result)
+    assert sentinels, 'fixture must produce at least some values'
+
+    for val in sentinels:
+        if len(val) < 3:
+            continue  # skip trivially short values (e.g. single digits)
+        assert val not in log_bytes, (
+            f'Extracted cell value leaked into structured log: {val!r}'
+        )
+
+
+def test_json_record_keys_pinned_to_allow_list(tmp_path):
+    """Every key emitted by _record_json must be a member of _SAFE_LOG_KEYS."""
+    log_path = tmp_path / 'pin.jsonl'
+    lg = Logger(level=VerbosityLevel.NORMAL, log_file=str(log_path),
+                log_format='json', source='x.xlsx')
+    lg.commit_warnings([lg.warn_validation(1, 1, 'f', 'string', '.+', 'secret')])
+    lg.commit_warnings([lg.warn_empty_field(2, 2, 'g', 'integer')])
+    lg.commit_warnings([lg.warn_undefined_field(3, 3, 'h')])
+    lg.close()
+
+    for line in log_path.read_text(encoding='utf-8').splitlines():
+        if not line.strip():
+            continue
+        rec = json.loads(line)
+        extra = set(rec.keys()) - set(_SAFE_LOG_KEYS)
+        assert not extra, f'Key(s) {extra} not in allow-list: {_SAFE_LOG_KEYS}'
