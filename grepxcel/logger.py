@@ -18,6 +18,7 @@ from dataclasses import dataclass, field as dc_field
 from datetime import datetime, timezone
 from enum import IntEnum
 from typing import Optional, NoReturn
+import hashlib
 import json
 import os
 import sys
@@ -25,9 +26,20 @@ import uuid
 
 # Bumped only when the structured-log JSON shape changes incompatibly.
 LOG_SCHEMA_VERSION = 1
-# Record fields that can carry extracted cell values (PII / business data).
-# Redacted by default in structured logs so they aren't shipped to a SIEM.
-_VALUE_FIELDS = ('found',)
+
+# Structured (JSON) log records are built from an ALLOW-LIST of safe keys only —
+# never free-form message/hint/expected/found — so no extracted Excel cell value
+# (PII or otherwise) can ever reach a log that might be shipped to a SIEM. A
+# non-reversible value fingerprint (length + short sha) aids diagnostics instead.
+_SAFE_LOG_KEYS = ('ts', 'level', 'category', 'event', 'cell', 'field',
+                  'field_type', 'value_len', 'value_sha8',
+                  'run_id', 'source', 'schema_version')
+
+
+def _value_fingerprint(value) -> "tuple[int, str]":
+    """Return (length, sha8) for a value — non-reversible, never the value."""
+    s = str(value)
+    return len(s), hashlib.sha256(s.encode('utf-8')).hexdigest()[:8]
 
 from .color import colorize_marks, should_color
 
@@ -72,6 +84,9 @@ class LogRecord:
     expected: str = ''      # what the pattern required
     found: str = ''         # what was actually in the cell
     hint: str = ''          # actionable suggestion for fixing
+    event: str = ''         # stable machine code for structured logs (allow-list)
+    value_len: "int | None" = None  # length of the offending value (no value itself)
+    value_sha8: str = ''    # first 8 hex of sha256(value) — non-reversible fingerprint
     timestamp: str = dc_field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
     def to_dict(self) -> dict:
@@ -128,7 +143,6 @@ class Logger:
         log_file: Optional[str] = None,
         sheet_name: str = 'Sheet1',
         log_format: str = 'text',
-        redact: bool = True,
         source: Optional[str] = None,
         run_id: Optional[str] = None,
     ):
@@ -140,10 +154,10 @@ class Logger:
         # --all-sheets mode (records accumulate across sheets for programmatic use).
         self._summary_start = 0
         # Structured-logging config. 'json' emits NDJSON (one record per line) to
-        # the log file so any SIEM/cloud agent can ingest it; redact (default on)
-        # strips extracted cell values so PII isn't shipped to a log pipeline.
+        # the log file so any SIEM/cloud agent can ingest it. Records are built
+        # from an allow-list (see _record_json) so they NEVER contain extracted
+        # cell values — there is intentionally no opt-out for that.
         self._log_format = log_format
-        self._redact = redact
         self._source = source
         self._run_id = run_id or uuid.uuid4().hex[:12]
         self._file = None
@@ -155,18 +169,28 @@ class Logger:
         self._color = should_color(sys.stderr)
 
     def _record_json(self, rec: LogRecord) -> dict:
-        """Build the structured-log dict for one record: the record fields plus
-        run/source correlation, a standard 'level', and a schema version. Cell
-        values are redacted unless raw logging was explicitly enabled."""
-        d = rec.to_dict()
-        if self._redact:
-            for f in _VALUE_FIELDS:
-                if d.get(f):
-                    d[f] = '<redacted>'
-        d['level'] = rec.severity          # already DEBUG/INFO/WARNING/ERROR
-        d['run_id'] = self._run_id
-        d['source'] = self._source
-        d['schema_version'] = LOG_SCHEMA_VERSION
+        """Build the structured-log dict from the ALLOW-LIST of safe keys only.
+
+        Free-form fields (message/hint/expected/found) are never included — they
+        can embed the extracted cell value — so no Excel data can reach the log.
+        A non-reversible value fingerprint (length + sha8) is included instead
+        when the offending cell had a value.
+        """
+        d = {
+            'ts': rec.timestamp,
+            'level': rec.severity,          # DEBUG/INFO/WARNING/ERROR
+            'category': rec.category,
+            'event': rec.event or rec.category.lower(),
+            'cell': rec.location,           # coordinate (e.g. 'Sheet1!B10'), not data
+            'field': rec.field,             # pattern-author field name, not data
+            'field_type': rec.field_type,
+            'run_id': self._run_id,
+            'source': self._source,
+            'schema_version': LOG_SCHEMA_VERSION,
+        }
+        if rec.value_len is not None:
+            d['value_len'] = rec.value_len
+            d['value_sha8'] = rec.value_sha8
         return d
 
     def _store(self, rec: LogRecord) -> None:
@@ -460,7 +484,10 @@ class Logger:
             expected=f'matches /{regex}/',
             found=found_repr,
             hint=hint,
+            event='value_mismatch',
         )
+        if value is not None:
+            rec.value_len, rec.value_sha8 = _value_fingerprint(value)
         lines = [
             f'\n  ⚠  {location}  [{field} / {field_type}]',
             f'     Found:    {found_repr}',
@@ -493,6 +520,7 @@ class Logger:
             expected=f'non-empty {field_type} value',
             found='empty cell',
             hint=hint,
+            event='empty_required',
         )
         lines = [
             f'\n  ⚠  {location}  [{field} / {field_type}]',
@@ -530,6 +558,7 @@ class Logger:
             location=location,
             field=field,
             hint=f'Add a def: row to the pattern file for field {field!r}.',
+            event='undefined_field',
         )
         lines = [
             f'\n  ⚠  {location}  [{field} / undefined]',

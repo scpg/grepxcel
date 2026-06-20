@@ -289,14 +289,8 @@ examples:
     p.add_argument(
         '--log-format',
         choices=['text', 'json'], default='text',
-        help='Log file format: text (human) or json (NDJSON, one record per line, '
-             'for SIEM/cloud ingestion). Default: text',
-    )
-    p.add_argument(
-        '--log-raw',
-        action='store_true',
-        help='Include raw extracted cell values in the log. Default: redacted, so '
-             'PII/business data is not written to a log shipped to a SIEM',
+        help='Log file format: text (human, shows values) or json (NDJSON for '
+             'SIEM/cloud — never contains extracted cell values). Default: text',
     )
     p.add_argument(
         '--max-cell-len',
@@ -526,7 +520,6 @@ def _process_file(pattern: str, data_file: str, args, stem: str = None) -> bool:
         level=level,
         log_file=args.log,
         log_format=getattr(args, 'log_format', 'text'),
-        redact=not getattr(args, 'log_raw', False),
         source=data_file,
     )
     output_format = getattr(args, 'format', 'nested')

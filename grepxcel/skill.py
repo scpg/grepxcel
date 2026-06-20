@@ -54,8 +54,8 @@ _GOTCHAS = """\
 - A pattern file is `.xlsx` **or** `.csv`. Keywords (`cell:`, `table:`, `var:`…)
   are case-insensitive; an unknown instruction is a hard error (not ignored).
 - Empty regex cell ⇒ accept any value of the declared type.
-- `--log-format json` writes NDJSON for SIEM/cloud ingestion; cell values are
-  **redacted by default** (use `--log-raw` to include them — mind PII/GDPR).
+- `--log-format json` writes NDJSON for SIEM/cloud ingestion; extracted cell
+  values are **never included** (allow-list construction, not redaction).
 - Cloud `draft` backends read keys from `.env` (project-local or
   `~/.config/grepxcel/.env`); `--strict-env` refuses a stray out-of-project `.env`.
 - Patterns may declare `config: | pattern.version | N`; absent ⇒ 1."""

@@ -4,6 +4,7 @@ import pytest
 from grepxcel.logger import (
     Logger, LogRecord, EngineError, VerbosityLevel,
     Severity, Category, col_letter, cell_ref, LOG_SCHEMA_VERSION,
+    _SAFE_LOG_KEYS,
 )
 
 
@@ -25,8 +26,12 @@ def test_json_log_emits_ndjson(tmp_path):
     lines = _json_log_lines(tmp_path)
     assert len(lines) == 1
     rec = lines[0]
-    assert rec['severity'] == 'WARNING'
+    assert rec['level'] == 'WARNING'
     assert rec['field'] == 'client.name'
+    assert 'found' not in rec
+    assert 'hint' not in rec
+    assert 'message' not in rec
+    assert 'expected' not in rec
 
 
 def test_json_log_has_correlation_and_schema(tmp_path):
@@ -37,15 +42,19 @@ def test_json_log_has_correlation_and_schema(tmp_path):
     assert rec['run_id']            # present + non-empty
 
 
-def test_json_log_redacts_cell_value_by_default(tmp_path):
+def test_json_log_contains_no_cell_values(tmp_path):
+    """Structured JSON logs never contain extracted cell values — by construction
+    (allow-list), not redaction.  A non-reversible fingerprint is included instead."""
     rec = _json_log_lines(tmp_path)[0]
-    assert 'Alice Wonderland' not in json.dumps(rec)
-    assert rec['found'] == '<redacted>'
-
-
-def test_json_log_raw_includes_value(tmp_path):
-    rec = _json_log_lines(tmp_path, redact=False)[0]
-    assert 'Alice Wonderland' in rec['found']
+    raw = json.dumps(rec)
+    assert 'Alice Wonderland' not in raw
+    assert 'found' not in rec
+    assert 'hint' not in rec
+    assert 'expected' not in rec
+    assert 'message' not in rec
+    assert rec['value_len'] == len('Alice Wonderland')
+    assert isinstance(rec['value_sha8'], str) and len(rec['value_sha8']) == 8
+    assert set(rec.keys()).issubset(set(_SAFE_LOG_KEYS))
 
 
 def test_run_id_is_stable_within_a_run(tmp_path):
@@ -129,7 +138,8 @@ def test_log_record_to_dict_keys():
     d = r.to_dict()
     assert set(d.keys()) == {'severity', 'category', 'message', 'location',
                               'field', 'field_type', 'expected', 'found',
-                              'hint', 'timestamp'}
+                              'hint', 'event', 'value_len', 'value_sha8',
+                              'timestamp'}
     assert d['location'] == 'A1'
     assert d['field'] == 'qty'
 
