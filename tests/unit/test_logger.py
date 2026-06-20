@@ -514,3 +514,35 @@ def test_summary_with_tables(tmp_path):
     s = [r for r in records if r.get('event') == 'summary'][0]
     assert s['tables_defined'] == 2
     assert s['table_instances'] == 3
+
+
+# ─── #36 build_meta — opt-in _meta block ─────────────────────────────────────
+
+def test_build_meta_returns_safe_dict(tmp_path):
+    """build_meta() returns a dict with run_id, source, stats, and safe issues."""
+    lg = Logger(level=VerbosityLevel.NORMAL, source='data.xlsx')
+    lg.commit_warnings([lg.warn_validation(1, 1, 'name', 'string', '.+', 'SECRET')])
+    lg.summary({'cells': {'name': 'SECRET', 'code': ''}, 'tables': []})
+
+    meta = lg.build_meta()
+    assert meta['run_id']
+    assert meta['source'] == 'data.xlsx'
+    assert meta['stats']['scalars_defined'] == 2
+    assert meta['stats']['scalars_empty'] == 1
+    assert meta['stats']['empty_field_names'] == ['code']
+    assert meta['stats']['warnings'] == 1
+    assert len(meta['issues']) == 1
+    raw = json.dumps(meta)
+    assert 'SECRET' not in raw
+
+
+def test_build_meta_issues_use_allow_list_keys():
+    """Issues in _meta must use the same allow-list keys as JSON log records."""
+    lg = Logger(level=VerbosityLevel.QUIET, source='x.xlsx')
+    lg.commit_warnings([lg.warn_validation(1, 1, 'f', 'string', '.+', 'val')])
+    lg.summary({'cells': {'f': 'val'}, 'tables': []})
+
+    meta = lg.build_meta()
+    for issue in meta['issues']:
+        extra = set(issue.keys()) - set(_SAFE_LOG_KEYS)
+        assert not extra, f'Issue key(s) {extra} not in _SAFE_LOG_KEYS'

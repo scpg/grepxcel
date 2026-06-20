@@ -314,6 +314,12 @@ examples:
         choices=['nested', 'legacy'], default='nested',
         help='Output format: nested (default) or legacy ({"cells":{}, "tables":[]})',
     )
+    p.add_argument(
+        '--meta',
+        action='store_true',
+        help='Add a _meta block to the JSON output (run_id, stats, issues) '
+             'for pipeline auto-verification',
+    )
     sheet_group = p.add_mutually_exclusive_group()
     sheet_group.add_argument(
         '--all-sheets',
@@ -555,6 +561,9 @@ def _process_file(pattern: str, data_file: str, args, stem: str = None) -> bool:
         return False
     finally:
         logger.close()
+
+    if getattr(args, 'meta', False):
+        result['_meta'] = logger.build_meta()
 
     if args.output:
         os.makedirs(args.output, exist_ok=True)

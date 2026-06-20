@@ -107,6 +107,7 @@ The CLI is subcommand-based: `extract`, `validate-pattern`, `draft`, `docs`, `li
 | `--sheet NAME_OR_INDEX` | active | Sheet name or 0-based index to process |
 | `--all-sheets` | off | Process every sheet; output keyed by sheet name |
 | `--format {nested,legacy}` | nested | Output shape |
+| `--meta` | off | Add `_meta` block (run_id, stats, issues) for pipeline auto-verification |
 | `--max-rows N` | 2048 | Max data-sheet rows (Excel max 1,048,576) |
 | `--max-columns N` | 1024 | Max data-sheet columns (Excel max 16,384) |
 | `--max-cell-len N` | 1000 | Max cell chars fed to regex (ReDoS guard) |

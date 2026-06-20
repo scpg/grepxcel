@@ -169,6 +169,7 @@ class Logger:
         self._source = source
         self._run_id = run_id or uuid.uuid4().hex[:12]
         self._start_time = datetime.now(timezone.utc)
+        self._last_stats: dict | None = None
         self._file = None
         if log_file:
             # Append (never truncate) — the --log file is documented as appended,
@@ -304,13 +305,25 @@ class Logger:
             lines.append('─' * 62)
         self._write(VerbosityLevel.NORMAL, '\n'.join(lines))
 
-        self._emit_summary_event(cells, by_group, warnings, errors)
+        self._last_stats = self.build_stats(result)
+        self._emit_summary_event(result)
 
-    def _emit_summary_event(self, cells: dict, by_group: dict,
-                            warnings: list, errors: list) -> None:
-        """Write a single 'summary' event to the JSON log with safe statistics."""
-        if not (self._file and self._log_format == 'json'):
-            return
+    def build_stats(self, result: dict) -> dict:
+        """Compute safe extraction statistics from the result dict.
+
+        Returns a dict suitable for the _meta block or the JSON log summary
+        event.  Contains counts and field names only — never cell values.
+        """
+        cells = result.get('cells', {})
+        tables = result.get('tables', [])
+        by_group: dict[int, int] = {}
+        for t in tables:
+            idx = t['table_index']
+            by_group[idx] = by_group.get(idx, 0) + 1
+
+        scoped = self._records[self._summary_start:]
+        warnings = [r for r in scoped if r.severity == Severity.WARNING]
+        errors = [r for r in scoped if r.severity == Severity.ERROR]
 
         empty_fields = [k for k, v in cells.items() if v is None or v == '']
         issues_by_event: dict[str, int] = {}
@@ -321,14 +334,7 @@ class Logger:
         elapsed = (datetime.now(timezone.utc) - self._start_time)
         duration_ms = int(elapsed.total_seconds() * 1000)
 
-        stats = {
-            'ts': datetime.now(timezone.utc).isoformat(),
-            'level': Severity.INFO,
-            'category': Category.ENGINE,
-            'event': 'summary',
-            'run_id': self._run_id,
-            'source': self._source,
-            'schema_version': LOG_SCHEMA_VERSION,
+        return {
             'scalars_defined': len(cells),
             'scalars_populated': len(cells) - len(empty_fields),
             'scalars_empty': len(empty_fields),
@@ -340,7 +346,41 @@ class Logger:
             'issues_by_event': issues_by_event,
             'duration_ms': duration_ms,
         }
-        self._file.write(json.dumps(stats, default=str) + '\n')
+
+    def build_meta(self) -> dict:
+        """Build the _meta block for opt-in JSON output (--meta).
+
+        Must be called after summary() so that _last_stats is populated.
+        """
+        scoped = self._records[self._summary_start:]
+        safe_issues = []
+        for rec in scoped:
+            if rec.severity in (Severity.WARNING, Severity.ERROR):
+                safe_issues.append(self._record_json(rec))
+        return {
+            'run_id': self._run_id,
+            'source': self._source,
+            'schema_version': LOG_SCHEMA_VERSION,
+            'stats': self._last_stats or {},
+            'issues': safe_issues,
+        }
+
+    def _emit_summary_event(self, result: dict) -> None:
+        """Write a single 'summary' event to the JSON log with safe statistics."""
+        if not (self._file and self._log_format == 'json'):
+            return
+
+        event = {
+            'ts': datetime.now(timezone.utc).isoformat(),
+            'level': Severity.INFO,
+            'category': Category.ENGINE,
+            'event': 'summary',
+            'run_id': self._run_id,
+            'source': self._source,
+            'schema_version': LOG_SCHEMA_VERSION,
+            **self.build_stats(result),
+        }
+        self._file.write(json.dumps(event, default=str) + '\n')
         self._file.flush()
 
     def _issue_line(self, rec: LogRecord) -> str:

@@ -226,3 +226,21 @@ class TestNullable:
         schema = generate_schema(path)
         prop = schema['properties']['val']
         assert 'null' in prop['type'] or prop.get('type') == ['string', 'null']
+
+
+# ─── _meta schema property ────────────────────────────────────────────────
+
+class TestMetaSchema:
+    def test_meta_property_present_and_optional(self, tmp_path):
+        path = _write([
+            ['var:', 'x', 'string', '.*'],
+            ['START:'], ['cell:A1', 'x'], ['END:'],
+        ], tmp_path)
+        schema = generate_schema(path)
+        assert '_meta' in schema['properties']
+        meta = schema['properties']['_meta']
+        assert meta['type'] == 'object'
+        assert 'run_id' in meta['properties']
+        assert 'stats' in meta['properties']
+        assert 'issues' in meta['properties']
+        assert '_meta' not in schema.get('required', [])
