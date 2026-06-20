@@ -81,16 +81,18 @@ jobs:
 
       - name: Extract release notes from CHANGELOG
         id: notes
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           # Pull the section for this version from CHANGELOG.md
-          version="${{ steps.version.outputs.version }}"
           notes=$(python3 -c "
-          import re, sys
+          import re, sys, os
           text = open('CHANGELOG.md').read()
-          pattern = rf'## \[{re.escape(sys.argv[1])}\].*?\n(.*?)(?=\n## |\Z)'
+          ver = os.environ['VERSION']
+          pattern = rf'## \[{re.escape(ver)}\].*?\n(.*?)(?=\n## |\Z)'
           m = re.search(pattern, text, re.DOTALL)
-          print(m.group(1).strip() if m else 'Release $version')
-          " "$version")
+          print(m.group(1).strip() if m else f'Release {ver}')
+          ")
           # Write to file to avoid shell escaping issues
           echo "$notes" > release_notes.md
 
@@ -102,8 +104,9 @@ jobs:
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           gh release create "$GITHUB_REF_NAME" \
-            --title "grepxcel ${{ steps.version.outputs.version }}" \
+            --title "grepxcel $VERSION" \
             --notes-file release_notes.md \
             dist/*

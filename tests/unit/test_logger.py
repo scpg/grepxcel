@@ -406,8 +406,8 @@ def test_sentinel_no_cell_data_in_json_log(tmp_path):
     assert sentinels, 'fixture must produce at least some values'
 
     for val in sentinels:
-        if len(val) < 3:
-            continue  # skip trivially short values (e.g. single digits)
+        if len(val) < 5:
+            continue  # skip short numerics that collide with timestamps/UUIDs
         assert val not in log_bytes, (
             f'Extracted cell value leaked into structured log: {val!r}'
         )
@@ -484,7 +484,7 @@ def test_summary_event_contains_no_cell_values(tmp_path):
     log_path = tmp_path / 'sentinel.jsonl'
     lg = Logger(level=VerbosityLevel.NORMAL, log_file=str(log_path),
                 log_format='json', source='d.xlsx')
-    lg.summary({'cells': {'name': 'SUPERSECRET', 'code': 42}, 'tables': []})
+    lg.summary({'cells': {'name': 'SUPERSECRET', 'code': 98765}, 'tables': []})
     lg.close()
 
     records = [json.loads(ln) for ln in
@@ -493,7 +493,7 @@ def test_summary_event_contains_no_cell_values(tmp_path):
     assert len(summaries) == 1
     raw = json.dumps(summaries[0])
     assert 'SUPERSECRET' not in raw
-    assert '42' not in raw or raw.count('42') == raw.count('"42"')  # not as a value
+    assert '98765' not in raw
 
 
 def test_summary_with_tables(tmp_path):
