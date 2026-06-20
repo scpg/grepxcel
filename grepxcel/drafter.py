@@ -1059,6 +1059,14 @@ class OpenAICompatBackend:
         return self._last_cost
 
     def chat(self, system: str, user: str) -> str:
+        from .security import is_http_url
+        # Refuse non-http(s) base URLs before constructing any client — stops
+        # SSRF to internal endpoints (e.g. file://… or the cloud metadata IP).
+        if not is_http_url(self._base_url):
+            raise ValueError(
+                f'refusing a non-http(s) server URL: {self._base_url!r}. '
+                f'Use an http:// or https:// --server-url.'
+            )
         try:
             from openai import OpenAI
         except ImportError:
@@ -1115,6 +1123,15 @@ class PatternWriter:
         ws = wb.active
         ws.title  = 'Pattern'
         row_num   = 1
+
+        # Stamp the pattern-format version so every generated pattern is explicit
+        # and forward-compatible (skip if the model already emitted one).
+        if 'pattern.version' not in llm_text.lower():
+            from .pattern_parser import CURRENT_PATTERN_VERSION
+            ws.cell(row=row_num, column=1, value='config:')
+            ws.cell(row=row_num, column=2, value='pattern.version')
+            ws.cell(row=row_num, column=3, value=str(CURRENT_PATTERN_VERSION))
+            row_num += 1
 
         for line in llm_text.splitlines():
             stripped = line.strip()

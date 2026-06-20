@@ -4,6 +4,8 @@ Direct tests for the security module's load-bearing guarantees:
   - the ReDoS detector is wired to the single re._parser import path
 """
 
+import zipfile
+
 import pytest
 
 from grepxcel.security import (
@@ -11,6 +13,7 @@ from grepxcel.security import (
     assert_xxe_protection,
     check_regex_safety,
     validate_file,
+    _check_zip_safety,
 )
 
 
@@ -65,3 +68,45 @@ def test_nested_unbounded_quantifier_rejected():
 def test_invalid_regex_rejected():
     with pytest.raises(SecurityError, match='Invalid regex'):
         check_regex_safety(r'(unclosed', 'bad')
+
+
+# ─── ZIP-bomb guard measures REAL decompressed size ──────────────────────────
+
+def _make_zip(path, name='big.xml', payload=b'A', repeat=1):
+    with zipfile.ZipFile(path, 'w', zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr(name, payload * repeat)
+
+
+def test_legit_small_zip_passes(tmp_path):
+    path = tmp_path / 'ok.xlsx'
+    _make_zip(path, payload=b'hello world\n', repeat=10)
+    _check_zip_safety(str(path), max_uncompressed_mb=50)   # must not raise
+
+
+def test_real_decompressed_size_over_cap_rejected(tmp_path):
+    """A highly compressible member whose real expansion exceeds the cap is
+    rejected even though the file on disk is tiny."""
+    path = tmp_path / 'big.xlsx'
+    _make_zip(path, payload=b'A', repeat=8 * 1024 * 1024)  # 8 MB → compresses tiny
+    with pytest.raises(SecurityError, match='ZIP|uncompressed|bomb'):
+        _check_zip_safety(str(path), max_uncompressed_mb=1)
+
+
+def test_falsified_metadata_cannot_bypass_guard(tmp_path, monkeypatch):
+    """The guard must count ACTUAL decompressed bytes, not the central-directory
+    file_size — so an entry that lies about its size (file_size=0) is still
+    caught by the real expansion."""
+    path = tmp_path / 'liar.xlsx'
+    _make_zip(path, payload=b'A', repeat=8 * 1024 * 1024)  # real 8 MB
+
+    real_infolist = zipfile.ZipFile.infolist
+
+    def lying_infolist(self):
+        infos = real_infolist(self)
+        for info in infos:
+            info.file_size = 0          # forge the declared uncompressed size
+        return infos
+
+    monkeypatch.setattr(zipfile.ZipFile, 'infolist', lying_infolist)
+    with pytest.raises(SecurityError, match='ZIP|uncompressed|bomb'):
+        _check_zip_safety(str(path), max_uncompressed_mb=1)

@@ -137,7 +137,10 @@ def render_result(result: CheckResult, verbose: bool = False, out=None) -> None:
 
     if verbose and result.defs is not None:
         cfg = result.config
+        ver = (f'{cfg.pattern_version}' if cfg.pattern_version_explicit
+               else f'{cfg.pattern_version} (defaulted — no pattern.version declared)')
         print('\n   config:', file=out)
+        print(f'     pattern.version {ver}', file=out)
         print(f'     read.direction  {cfg.read_direction}', file=out)
         print(f'     currency.sign   {cfg.currency_sign}', file=out)
         print(f'     ignore.case     {cfg.ignore_case}', file=out)

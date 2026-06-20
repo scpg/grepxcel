@@ -194,7 +194,46 @@ def generate_schema(pattern_path: str) -> dict:
             }
             props[group] = table_schema
 
+    props['_meta'] = _meta_schema()
     return root
+
+
+def _meta_schema() -> dict:
+    """JSON Schema for the optional _meta block added by --meta."""
+    return {
+        'type': 'object',
+        'description': 'Optional extraction metadata (present when --meta is used)',
+        'properties': {
+            'run_id': {'type': 'string'},
+            'source': {'type': ['string', 'null']},
+            'schema_version': {'type': 'integer'},
+            'stats': {
+                'type': 'object',
+                'properties': {
+                    'scalars_defined': {'type': 'integer'},
+                    'scalars_populated': {'type': 'integer'},
+                    'scalars_empty': {'type': 'integer'},
+                    'empty_field_names': {
+                        'type': 'array',
+                        'items': {'type': 'string'},
+                    },
+                    'tables_defined': {'type': 'integer'},
+                    'table_instances': {'type': 'integer'},
+                    'warnings': {'type': 'integer'},
+                    'errors': {'type': 'integer'},
+                    'issues_by_event': {
+                        'type': 'object',
+                        'additionalProperties': {'type': 'integer'},
+                    },
+                    'duration_ms': {'type': 'integer'},
+                },
+            },
+            'issues': {
+                'type': 'array',
+                'items': {'type': 'object'},
+            },
+        },
+    }
 
 
 def run_schema(paths: list[str], out=None) -> int:

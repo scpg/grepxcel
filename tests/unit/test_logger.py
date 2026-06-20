@@ -1,8 +1,94 @@
+import json
+
 import pytest
 from grepxcel.logger import (
     Logger, LogRecord, EngineError, VerbosityLevel,
-    Severity, Category, col_letter, cell_ref,
+    Severity, Category, col_letter, cell_ref, LOG_SCHEMA_VERSION,
+    _SAFE_LOG_KEYS, _SAFE_SUMMARY_KEYS,
 )
+
+
+# ─── structured (NDJSON) logging + redaction + correlation ───────────────────
+
+def _json_log_lines(tmp_path, **kw):
+    """Write one validation warning to a json log and return the parsed lines."""
+    log_path = tmp_path / 'run.jsonl'
+    lg = Logger(level=VerbosityLevel.NORMAL, log_file=str(log_path),
+                log_format='json', source='data.xlsx', **kw)
+    rec = lg.warn_validation(10, 2, 'client.name', 'string', r'.+', 'Alice Wonderland')
+    lg.commit_warnings([rec])
+    lg.close()
+    return [json.loads(ln) for ln in
+            log_path.read_text(encoding='utf-8').splitlines() if ln.strip()]
+
+
+def test_json_log_emits_ndjson(tmp_path):
+    lines = _json_log_lines(tmp_path)
+    assert len(lines) == 1
+    rec = lines[0]
+    assert rec['level'] == 'WARNING'
+    assert rec['field'] == 'client.name'
+    assert 'found' not in rec
+    assert 'hint' not in rec
+    assert 'message' not in rec
+    assert 'expected' not in rec
+
+
+def test_json_log_has_correlation_and_schema(tmp_path):
+    rec = _json_log_lines(tmp_path)[0]
+    assert rec['source'] == 'data.xlsx'
+    assert rec['schema_version'] == LOG_SCHEMA_VERSION
+    assert rec['level'] == 'WARNING'
+    assert rec['run_id']            # present + non-empty
+
+
+def test_json_log_contains_no_cell_values(tmp_path):
+    """Structured JSON logs never contain extracted cell values — by construction
+    (allow-list), not redaction.  A non-reversible fingerprint is included instead."""
+    rec = _json_log_lines(tmp_path)[0]
+    raw = json.dumps(rec)
+    assert 'Alice Wonderland' not in raw
+    assert 'found' not in rec
+    assert 'hint' not in rec
+    assert 'expected' not in rec
+    assert 'message' not in rec
+    assert rec['value_len'] == len('Alice Wonderland')
+    assert isinstance(rec['value_sha8'], str) and len(rec['value_sha8']) == 8
+    assert set(rec.keys()).issubset(set(_SAFE_LOG_KEYS))
+
+
+def test_run_id_is_stable_within_a_run(tmp_path):
+    lines = []
+    log_path = tmp_path / 'r.jsonl'
+    lg = Logger(level=VerbosityLevel.NORMAL, log_file=str(log_path),
+                log_format='json', source='d.xlsx')
+    lg.commit_warnings([lg.warn_validation(1, 1, 'a', 'string', '.+', 'x')])
+    lg.commit_warnings([lg.warn_validation(2, 1, 'b', 'string', '.+', 'y')])
+    lg.close()
+    ids = {json.loads(ln)['run_id']
+           for ln in log_path.read_text().splitlines() if ln.strip()}
+    assert len(ids) == 1            # same run_id across the run
+
+
+def test_text_log_unchanged_includes_values(tmp_path):
+    """Text mode still mirrors the console (values shown) — for human use."""
+    log_path = tmp_path / 'run.log'
+    lg = Logger(level=VerbosityLevel.NORMAL, log_file=str(log_path), source='d.xlsx')
+    lg.commit_warnings([lg.warn_validation(1, 1, 'a', 'string', '.+', 'SECRET')])
+    lg.close()
+    assert 'SECRET' in log_path.read_text(encoding='utf-8')
+
+
+# ─── log file is appended, not truncated ─────────────────────────────────────
+
+def test_log_file_appends_not_truncates(tmp_path):
+    """--log must not silently truncate an existing file (it's documented as
+    'append')."""
+    log_path = tmp_path / 'run.log'
+    log_path.write_text('PRE-EXISTING CONTENT\n', encoding='utf-8')
+    lg = Logger(level=VerbosityLevel.NORMAL, log_file=str(log_path))
+    lg.close()
+    assert 'PRE-EXISTING CONTENT' in log_path.read_text(encoding='utf-8')
 
 
 # ─── cell reference helpers ──────────────────────────────────────────────────
@@ -52,7 +138,8 @@ def test_log_record_to_dict_keys():
     d = r.to_dict()
     assert set(d.keys()) == {'severity', 'category', 'message', 'location',
                               'field', 'field_type', 'expected', 'found',
-                              'hint', 'timestamp'}
+                              'hint', 'event', 'value_len', 'value_sha8',
+                              'timestamp'}
     assert d['location'] == 'A1'
     assert d['field'] == 'qty'
 
@@ -281,3 +368,181 @@ def test_trace_field_returns_line_without_emitting(capsys):
     line = lg.trace_field(4, 1, 'row.item', 'Laptop', ok=True)
     assert capsys.readouterr().err == ''     # building a trace does not print
     assert 'row.item' in line and 'S!A4' in line and '✓' in line
+
+
+# ─── #34 sentinel: prove no Excel cell data appears in structured logs ────────
+
+def test_sentinel_no_cell_data_in_json_log(tmp_path):
+    """End-to-end: extract fixture 01, write NDJSON log, assert none of the
+    extracted cell values appear anywhere in the log bytes."""
+    import grepxcel
+
+    fixture = 'tests/fixtures/01_simple_invoice'
+    pattern = f'{fixture}/pattern-from-draft.xlsx'
+    data = f'{fixture}/data.xlsx'
+    log_path = tmp_path / 'sentinel.jsonl'
+
+    lg = Logger(level=VerbosityLevel.VERBOSE, log_file=str(log_path),
+                log_format='json', source='data.xlsx')
+    result = grepxcel.extract(pattern, data, logger=lg)
+    lg.summary(result)
+    lg.close()
+
+    log_bytes = log_path.read_text(encoding='utf-8')
+
+    # Collect every scalar value the extraction produced.
+    sentinels = []
+    def _collect(obj):
+        if isinstance(obj, dict):
+            for v in obj.values():
+                _collect(v)
+        elif isinstance(obj, list):
+            for v in obj:
+                _collect(v)
+        elif obj is not None:
+            sentinels.append(str(obj))
+
+    _collect(result)
+    assert sentinels, 'fixture must produce at least some values'
+
+    for val in sentinels:
+        if len(val) < 5:
+            continue  # skip short numerics that collide with timestamps/UUIDs
+        assert val not in log_bytes, (
+            f'Extracted cell value leaked into structured log: {val!r}'
+        )
+
+
+def test_json_record_keys_pinned_to_allow_list(tmp_path):
+    """Every key in every NDJSON record must belong to the appropriate allow-list:
+    _SAFE_LOG_KEYS for per-cell records, _SAFE_SUMMARY_KEYS for the summary event."""
+    log_path = tmp_path / 'pin.jsonl'
+    lg = Logger(level=VerbosityLevel.NORMAL, log_file=str(log_path),
+                log_format='json', source='x.xlsx')
+    lg.commit_warnings([lg.warn_validation(1, 1, 'f', 'string', '.+', 'secret')])
+    lg.commit_warnings([lg.warn_empty_field(2, 2, 'g', 'integer')])
+    lg.commit_warnings([lg.warn_undefined_field(3, 3, 'h')])
+    lg.summary({'cells': {'f': 'secret', 'g': ''}, 'tables': []})
+    lg.close()
+
+    for line in log_path.read_text(encoding='utf-8').splitlines():
+        if not line.strip():
+            continue
+        rec = json.loads(line)
+        if rec.get('event') == 'summary':
+            allowed = set(_SAFE_SUMMARY_KEYS)
+        else:
+            allowed = set(_SAFE_LOG_KEYS)
+        extra = set(rec.keys()) - allowed
+        assert not extra, f'Key(s) {extra} not in allow-list for event={rec.get("event")}'
+
+
+# ─── #35 extraction statistics — safe summary event ──────────────────────────
+
+def test_summary_event_emitted_in_json_log(tmp_path):
+    """summary() must emit a 'summary' event with extraction statistics."""
+    log_path = tmp_path / 'stats.jsonl'
+    lg = Logger(level=VerbosityLevel.NORMAL, log_file=str(log_path),
+                log_format='json', source='data.xlsx')
+    lg.commit_warnings([lg.warn_validation(1, 1, 'name', 'string', '.+', 'x')])
+    lg.summary({'cells': {'name': 'x', 'email': 'y', 'phone': ''}, 'tables': []})
+    lg.close()
+
+    records = [json.loads(ln) for ln in
+               log_path.read_text(encoding='utf-8').splitlines() if ln.strip()]
+    summaries = [r for r in records if r.get('event') == 'summary']
+    assert len(summaries) == 1
+    s = summaries[0]
+    assert s['scalars_defined'] == 3
+    assert s['scalars_populated'] == 2
+    assert s['scalars_empty'] == 1
+    assert s['empty_field_names'] == ['phone']
+    assert s['tables_defined'] == 0
+    assert s['table_instances'] == 0
+    assert s['warnings'] == 1
+    assert s['errors'] == 0
+    assert s['issues_by_event'] == {'value_mismatch': 1}
+    assert isinstance(s['duration_ms'], int)
+    assert s['run_id']
+    assert s['source'] == 'data.xlsx'
+
+
+def test_summary_event_not_emitted_in_text_mode(tmp_path):
+    """In text log mode there is no summary JSON event."""
+    log_path = tmp_path / 'text.log'
+    lg = Logger(level=VerbosityLevel.NORMAL, log_file=str(log_path),
+                log_format='text', source='d.xlsx')
+    lg.summary({'cells': {'a': 1}, 'tables': []})
+    lg.close()
+    content = log_path.read_text(encoding='utf-8')
+    assert '"event"' not in content
+    assert 'summary' not in content.lower() or 'EXTRACTION SUMMARY' in content
+
+
+def test_summary_event_contains_no_cell_values(tmp_path):
+    """The summary event must not contain any extracted cell values."""
+    log_path = tmp_path / 'sentinel.jsonl'
+    lg = Logger(level=VerbosityLevel.NORMAL, log_file=str(log_path),
+                log_format='json', source='d.xlsx')
+    lg.summary({'cells': {'name': 'SUPERSECRET', 'code': 98765}, 'tables': []})
+    lg.close()
+
+    records = [json.loads(ln) for ln in
+               log_path.read_text(encoding='utf-8').splitlines() if ln.strip()]
+    summaries = [r for r in records if r.get('event') == 'summary']
+    assert len(summaries) == 1
+    raw = json.dumps(summaries[0])
+    assert 'SUPERSECRET' not in raw
+    assert '98765' not in raw
+
+
+def test_summary_with_tables(tmp_path):
+    """Summary event correctly counts table groups and instances."""
+    log_path = tmp_path / 'tbl.jsonl'
+    lg = Logger(level=VerbosityLevel.NORMAL, log_file=str(log_path),
+                log_format='json', source='d.xlsx')
+    tables = [
+        {'table_index': 0, 'data': [{'a': 1}]},
+        {'table_index': 0, 'data': [{'a': 2}]},
+        {'table_index': 1, 'data': [{'b': 3}]},
+    ]
+    lg.summary({'cells': {}, 'tables': tables})
+    lg.close()
+
+    records = [json.loads(ln) for ln in
+               log_path.read_text(encoding='utf-8').splitlines() if ln.strip()]
+    s = [r for r in records if r.get('event') == 'summary'][0]
+    assert s['tables_defined'] == 2
+    assert s['table_instances'] == 3
+
+
+# ─── #36 build_meta — opt-in _meta block ─────────────────────────────────────
+
+def test_build_meta_returns_safe_dict(tmp_path):
+    """build_meta() returns a dict with run_id, source, stats, and safe issues."""
+    lg = Logger(level=VerbosityLevel.NORMAL, source='data.xlsx')
+    lg.commit_warnings([lg.warn_validation(1, 1, 'name', 'string', '.+', 'SECRET')])
+    lg.summary({'cells': {'name': 'SECRET', 'code': ''}, 'tables': []})
+
+    meta = lg.build_meta()
+    assert meta['run_id']
+    assert meta['source'] == 'data.xlsx'
+    assert meta['stats']['scalars_defined'] == 2
+    assert meta['stats']['scalars_empty'] == 1
+    assert meta['stats']['empty_field_names'] == ['code']
+    assert meta['stats']['warnings'] == 1
+    assert len(meta['issues']) == 1
+    raw = json.dumps(meta)
+    assert 'SECRET' not in raw
+
+
+def test_build_meta_issues_use_allow_list_keys():
+    """Issues in _meta must use the same allow-list keys as JSON log records."""
+    lg = Logger(level=VerbosityLevel.QUIET, source='x.xlsx')
+    lg.commit_warnings([lg.warn_validation(1, 1, 'f', 'string', '.+', 'val')])
+    lg.summary({'cells': {'f': 'val'}, 'tables': []})
+
+    meta = lg.build_meta()
+    for issue in meta['issues']:
+        extra = set(issue.keys()) - set(_SAFE_LOG_KEYS)
+        assert not extra, f'Issue key(s) {extra} not in _SAFE_LOG_KEYS'

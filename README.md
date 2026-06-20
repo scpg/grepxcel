@@ -240,6 +240,8 @@ Label fields (`lbl:`) are used only for positional anchoring and are never inclu
 | `--format` | `nested` | Output format: `nested` (default) or `legacy` |
 | `-o DIR` | — | Write JSON to directory (stdout if omitted) |
 | `-l FILE` | — | Append structured log to file |
+| `--log-format` | `text` | Log format: `text` (human) or `json` (NDJSON for SIEM/cloud) |
+| `--meta` | off | Add `_meta` block to JSON output (run_id, stats, issues) |
 | `-v` / `-vv` | off | Verbosity: per-field trace (`field ← B1 = value ✓/✗`) / anchor probes |
 | `-d` / `--debug` | off | Same as `-vv` |
 | `--max-rows N` | 2048 | Max data-sheet rows (raise up to Excel's 1,048,576; untested above default) |
@@ -478,6 +480,43 @@ local-model cache + disk space, and proxy/CA config with a live handshake — an
 
 ---
 
+## Logging model & data safety
+
+grepxcel's logging is designed so that **no extracted Excel cell value ever reaches
+a structured log record** — by construction, not by redaction.
+
+### How it works
+
+- **Console / text logs** (`--log-format text`, default) show the full diagnostic
+  detail (including cell values) on stderr — intended for a human operator sitting
+  at the terminal.
+- **Structured logs** (`--log-format json`) write one NDJSON record per event to
+  the `--log` file. Each record is built from an **allow-list of safe keys** only:
+  `ts`, `level`, `category`, `event`, `cell`, `field`, `field_type`, `value_len`,
+  `value_sha8`, `run_id`, `source`, `schema_version`. Free-form fields (`message`,
+  `hint`, `expected`, `found`) are never serialized.
+- A **non-reversible value fingerprint** (`value_len` + `value_sha8`, a truncated
+  SHA-256) is included for diagnostics without revealing the cell content.
+- An end-of-run **summary** event carries extraction statistics — counts and field
+  names only, never values.
+- There is **no opt-out** for the allow-list model; the text log remains human-only.
+
+### GDPR / PII considerations
+
+Because structured JSON logs never contain cell values, they can be shipped to a
+SIEM or cloud log aggregator without risk of leaking personal data that may be
+present in the Excel files being processed.
+
+The `--meta` flag adds a `_meta` block to the extracted JSON output with run_id,
+statistics, and safe issue records — suitable for pipeline auto-verification. This
+block also follows the allow-list model and never contains cell values.
+
+**Operators are responsible for** controlling access to the text-mode log files and
+the extracted JSON output, which do contain the actual data.
+
+---
+
+
 ## Project layout
 
 ```
@@ -502,7 +541,7 @@ output/          ← JSON extraction results         (gitignored)
 .venv/bin/pytest tests/ -q
 ```
 
-750+ unit and integration tests across 16 fixture scenarios — all green.
+1200+ unit and integration tests across 22 fixture scenarios — all green.
 
 ---
 

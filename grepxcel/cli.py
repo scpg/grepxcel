@@ -88,6 +88,7 @@ commands:
   docs               Write a pattern-format reference xlsx (pattern-reference.xlsx)
   lint               Inspect an Excel file for potential extraction issues
   schema             Generate a JSON Schema from a pattern file
+  generate-skill     Write an AI-agent skill doc (Claude / AGENTS.md)
   doctor             Check the environment is ready (deps, keys, model, proxy/TLS)
 
 Run 'grepxcel <command> --help' for per-command options.
@@ -108,6 +109,7 @@ Run 'grepxcel <command> --help' for per-command options.
     _add_docs_subparser(sub)
     _add_lint_subparser(sub)
     _add_schema_subparser(sub)
+    _add_skill_subparser(sub)
     _add_doctor_subparser(sub)
     return p
 
@@ -176,6 +178,28 @@ examples:
                    help='Write schema to file (default: stdout)')
 
 
+def _add_skill_subparser(sub) -> None:
+    p = sub.add_parser(
+        'generate-skill',
+        help='Write an AI-agent skill doc (Claude / AGENTS.md)',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Writes a markdown 'skill' doc that teaches an AI agent how and when to use
+grepxcel. The command reference is introspected from the live CLI; the prose is
+curated. v1 targets: claude (SKILL.md) and agents-md (AGENTS.md).
+
+examples:
+  grepxcel generate-skill                       # Claude SKILL.md to stdout
+  grepxcel generate-skill -o SKILL.md
+  grepxcel generate-skill --target agents-md -o AGENTS.md
+        """,
+    )
+    p.add_argument('--target', choices=['claude', 'agents-md'], default='claude',
+                   help='Skill format to emit (default: claude)')
+    p.add_argument('-o', '--output', metavar='FILE',
+                   help='Write the skill doc to FILE (default: stdout)')
+
+
 def _add_doctor_subparser(sub) -> None:
     p = sub.add_parser(
         'doctor',
@@ -201,6 +225,12 @@ Exits non-zero if the selected area has a blocking (✗) problem.
         '--no-probe',
         action='store_true',
         help='Skip the live TLS handshake probe (offline / faster)',
+    )
+    p.add_argument(
+        '--strict-env',
+        action='store_true',
+        help='Refuse a .env from outside the current project (also '
+             'GREPXCEL_STRICT_ENV); the per-user config-dir .env stays allowed',
     )
 
 
@@ -254,7 +284,13 @@ examples:
     p.add_argument(
         '-l', '--log',
         metavar='FILE',
-        help='Append structured log to FILE',
+        help='Append a log to FILE (text by default; NDJSON with --log-format json)',
+    )
+    p.add_argument(
+        '--log-format',
+        choices=['text', 'json'], default='text',
+        help='Log file format: text (human, shows values) or json (NDJSON for '
+             'SIEM/cloud — never contains extracted cell values). Default: text',
     )
     p.add_argument(
         '--max-cell-len',
@@ -277,6 +313,12 @@ examples:
         '--format',
         choices=['nested', 'legacy'], default='nested',
         help='Output format: nested (default) or legacy ({"cells":{}, "tables":[]})',
+    )
+    p.add_argument(
+        '--meta',
+        action='store_true',
+        help='Add a _meta block to the JSON output (run_id, stats, issues) '
+             'for pipeline auto-verification',
     )
     sheet_group = p.add_mutually_exclusive_group()
     sheet_group.add_argument(
@@ -448,6 +490,12 @@ def _draft_args(p: argparse.ArgumentParser) -> None:
              '/ REQUESTS_CA_BUNDLE / SSL_CERT_FILE. TLS verification stays on. '
              '(Experimental — not tested against a real intercept proxy.)',
     )
+    p.add_argument(
+        '--strict-env',
+        action='store_true',
+        help='Refuse a .env from outside the current project (also '
+             'GREPXCEL_STRICT_ENV); the per-user config-dir .env stays allowed.',
+    )
     _add_security_args(p)
     _add_sheet_arg(p)
 
@@ -474,7 +522,12 @@ def _process_file(pattern: str, data_file: str, args, stem: str = None) -> bool:
         print(f'  File: {data_file}', file=sys.stderr)
         print(f'{"─" * 62}', file=sys.stderr)
 
-    logger = Logger(level=level, log_file=args.log)
+    logger = Logger(
+        level=level,
+        log_file=args.log,
+        log_format=getattr(args, 'log_format', 'text'),
+        source=data_file,
+    )
     output_format = getattr(args, 'format', 'nested')
     all_sheets = getattr(args, 'all_sheets', False)
 
@@ -508,6 +561,9 @@ def _process_file(pattern: str, data_file: str, args, stem: str = None) -> bool:
         return False
     finally:
         logger.close()
+
+    if getattr(args, 'meta', False):
+        result['_meta'] = logger.build_meta()
 
     if args.output:
         os.makedirs(args.output, exist_ok=True)
@@ -561,6 +617,11 @@ def _run_validate(args) -> int:
 
 # ── schema handler ──────────────────────────────────────────────────────────
 
+def _run_skill(args) -> int:
+    from .skill import run_skill
+    return run_skill(args.target, getattr(args, 'output', None))
+
+
 def _run_schema(args) -> int:
     from .schema import run_schema
     if not args.output:
@@ -579,32 +640,61 @@ def _run_schema(args) -> int:
 
 def _run_doctor(args) -> int:
     from .doctor import run_doctor
-    _load_dotenv()  # reflect .env-provided keys / proxy / CA settings
+    _load_dotenv(strict=getattr(args, 'strict_env', False))  # reflect .env/keys
     return run_doctor(area=getattr(args, 'area', 'all'),
-                      probe=not getattr(args, 'no_probe', False))
+                      probe=not getattr(args, 'no_probe', False),
+                      strict_env=_strict_env_enabled(getattr(args, 'strict_env', False)))
 
 
 # ── draft handler ─────────────────────────────────────────────────────────────
 
-def _load_dotenv() -> None:
-    """Load KEY=VALUE pairs from a .env file (searched from the current
-    directory upward) into the environment, so cloud backends pick up
-    ANTHROPIC_API_KEY / GITHUB_TOKEN etc. without manual exporting.
+def _is_project_root(directory: str) -> bool:
+    """A directory that marks a project boundary (.git or pyproject.toml)."""
+    return (os.path.isdir(os.path.join(directory, '.git'))
+            or os.path.isfile(os.path.join(directory, 'pyproject.toml')))
 
-    Real environment variables always win: existing keys are never overridden,
-    and the file is only read (no execution). Quotes around values are stripped.
+
+def _discover_project_env(start: str):
+    """Walk cwd upward for a .env, stopping at the project root.
+
+    Returns (path_or_None, in_project). in_project is False only when the .env
+    was found in an ancestor that is NOT part of a recognised project (a loose /
+    global .env) — the case --strict-env refuses.
     """
-    directory = os.getcwd()
+    directory = start
     while True:
-        env_path = os.path.join(directory, '.env')
-        if os.path.isfile(env_path):
-            break
+        candidate = os.path.join(directory, '.env')
+        has_marker = _is_project_root(directory)
+        if os.path.isfile(candidate):
+            return candidate, (directory == start or has_marker)
+        if has_marker:
+            return None, True   # project root, no .env — never escape above it
         parent = os.path.dirname(directory)
         if parent == directory:
-            return  # reached filesystem root without finding a .env
+            return None, False  # filesystem root, no project
         directory = parent
+
+
+def _config_dir() -> str:
+    """Per-user config dir for grepxcel (XDG-correct via platformdirs)."""
     try:
-        with open(env_path, encoding='utf-8') as fh:
+        from platformdirs import user_config_dir
+        return user_config_dir('grepxcel')
+    except Exception:
+        return os.path.expanduser('~/.config/grepxcel')
+
+
+def _config_dir_env() -> "str | None":
+    """The sanctioned global .env at <config-dir>/.env, if it exists."""
+    p = os.path.join(_config_dir(), '.env')
+    return p if os.path.isfile(p) else None
+
+
+def _read_env_file(path: str) -> None:
+    """Load KEY=VALUE lines into the environment. Real env vars always win
+    (setdefault); the file is only read (no execution); quotes are stripped."""
+    try:
+        with open(path, encoding='utf-8') as fh:
             for line in fh:
                 line = line.strip()
                 if not line or line.startswith('#') or '=' not in line:
@@ -618,8 +708,50 @@ def _load_dotenv() -> None:
         pass
 
 
+def _strict_env_enabled(explicit: bool = False) -> bool:
+    """--strict-env flag OR GREPXCEL_STRICT_ENV truthy."""
+    if explicit:
+        return True
+    return os.environ.get('GREPXCEL_STRICT_ENV', '').strip().lower() in (
+        '1', 'true', 'yes', 'on', 'y')
+
+
+def _load_dotenv(strict: bool = False) -> None:
+    """Load .env credentials for cloud backends. Precedence (highest wins):
+    real environment variables > project .env (cwd→project root) >
+    ~/.config/grepxcel/.env (sanctioned global).
+
+    A .env found in an unrelated ancestor is announced on stderr; with
+    --strict-env / GREPXCEL_STRICT_ENV it is refused instead (the config-dir
+    .env is the sanctioned exception and is always allowed).
+    """
+    strict = _strict_env_enabled(strict)
+    start = os.getcwd()
+    project_env, in_project = _discover_project_env(start)
+
+    if project_env and not in_project:
+        if strict:
+            print(f'grepxcel: refusing out-of-project .env {project_env} '
+                  f'(--strict-env / GREPXCEL_STRICT_ENV). Put credentials in a '
+                  f'project .env or {os.path.join(_config_dir(), ".env")}.',
+                  file=sys.stderr)
+            sys.exit(2)
+        print(f'grepxcel: loaded environment from {project_env} '
+              f'(ancestor — not part of your project)', file=sys.stderr)
+    elif project_env and (os.path.realpath(os.path.dirname(project_env))
+                          != os.path.realpath(start)):
+        print(f'grepxcel: loaded environment from {project_env}', file=sys.stderr)
+
+    # Project .env first (its keys win via setdefault), then the config-dir .env.
+    if project_env:
+        _read_env_file(project_env)
+    config_env = _config_dir_env()
+    if config_env:
+        _read_env_file(config_env)
+
+
 def _run_draft(args) -> int:
-    _load_dotenv()  # let --backend claude/github find their keys without exporting
+    _load_dotenv(strict=getattr(args, 'strict_env', False))  # find cloud keys
     # Wire corporate-proxy / custom-CA TLS trust before any network call
     # (model download or cloud backend). Verification stays on.
     from .proxy_support import enable_corporate_tls
@@ -694,6 +826,9 @@ def main(argv=None):
 
     if args.command == 'schema':
         sys.exit(_run_schema(args))
+
+    if args.command == 'generate-skill':
+        sys.exit(_run_skill(args))
 
     # extract
     all_ok = True

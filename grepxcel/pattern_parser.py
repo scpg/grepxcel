@@ -18,6 +18,13 @@ _POSINT_RE = re.compile(r'^[1-9][0-9]*$')
 # Recognised template-row keywords inside a table: block.
 _VALID_TABLE_ROW_TYPES = frozenset({'HEADER', 'DATA', 'FOOTER', 'SPLITTER', 'SKIP_IF'})
 
+# Pattern-format/semantics version ("compatibility generation"). A single
+# monotonic integer that bumps ONLY on a backward-incompatible change; additive
+# changes never bump it. A pattern may declare `config: | pattern.version | N`;
+# absent ⇒ MIN (the original format). The engine understands MIN..CURRENT.
+CURRENT_PATTERN_VERSION = 1
+MIN_SUPPORTED_PATTERN_VERSION = 1
+
 
 _TRUTHY = frozenset({'1', 'true', 'yes', 'on', 'y'})
 _FALSY  = frozenset({'0', 'false', 'no', 'off', 'n', ''})
@@ -48,6 +55,39 @@ def _truthy(val) -> bool:
 
 class PatternError(Exception):
     """Raised when a pattern file contains a structural or ordering error."""
+
+
+def _parse_pattern_version(val) -> int:
+    """Coerce a `pattern.version` cell to a supported integer version.
+
+    Excel may store the value as int, float (1.0), or text ('1'). Rejects
+    non-integers, versions below the supported floor, and versions newer than
+    this engine understands (with an upgrade hint)."""
+    try:
+        if isinstance(val, bool):
+            raise ValueError
+        if isinstance(val, float):
+            if not val.is_integer():
+                raise ValueError
+            v = int(val)
+        else:
+            v = int(str(val).strip())
+    except (ValueError, TypeError):
+        raise PatternError(
+            f"Invalid pattern.version {val!r} — must be a whole number (e.g. 1)."
+        )
+    if v < MIN_SUPPORTED_PATTERN_VERSION:
+        raise PatternError(
+            f"pattern.version {v} is below the minimum supported "
+            f"({MIN_SUPPORTED_PATTERN_VERSION})."
+        )
+    if v > CURRENT_PATTERN_VERSION:
+        raise PatternError(
+            f"pattern.version {v} is newer than this grepxcel understands "
+            f"(supports up to {CURRENT_PATTERN_VERSION}). Upgrade grepxcel to use "
+            f"this pattern."
+        )
+    return v
 
 
 def _coord_after(prev: tuple, new: tuple, direction: str) -> bool:
@@ -589,6 +629,9 @@ class PatternParser:
             config.empty_aliases.append(str(val))
         elif key == 'ignore.case' and val is not None:
             config.ignore_case = _truthy(val)
+        elif key == 'pattern.version' and val is not None:
+            config.pattern_version = _parse_pattern_version(val)
+            config.pattern_version_explicit = True
 
     def _parse_field(self, row, role: str = 'var', row_num: int | None = None) -> FieldDef:
         where = f' at pattern row {row_num}' if row_num is not None else ''

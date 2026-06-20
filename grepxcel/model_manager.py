@@ -328,6 +328,9 @@ class ModelManager:
 
         # Case A — fast path. size+mtime unchanged AND no full-verify demand:
         # trust without hashing 4.7 GB. (size+mtime is a hint, never the proof.)
+        # NOTE: on shared/multi-user or server deployments where the cache dir is
+        # writable by others, set GREPXCEL_VERIFY_MODEL=full so the sha256 is
+        # re-checked every run — size+mtime can be forged by a local attacker.
         if unchanged and not _full_verify_enabled():
             if verbose:
                 print("Model integrity: unchanged since download.", file=sys.stderr)

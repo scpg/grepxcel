@@ -18,8 +18,36 @@ from dataclasses import dataclass, field as dc_field
 from datetime import datetime, timezone
 from enum import IntEnum
 from typing import Optional, NoReturn
+import hashlib
+import json
 import os
 import sys
+import uuid
+
+# Bumped only when the structured-log JSON shape changes incompatibly.
+LOG_SCHEMA_VERSION = 1
+
+# Structured (JSON) log records are built from an ALLOW-LIST of safe keys only —
+# never free-form message/hint/expected/found — so no extracted Excel cell value
+# (PII or otherwise) can ever reach a log that might be shipped to a SIEM. A
+# non-reversible value fingerprint (length + short sha) aids diagnostics instead.
+_SAFE_LOG_KEYS = ('ts', 'level', 'category', 'event', 'cell', 'field',
+                  'field_type', 'value_len', 'value_sha8',
+                  'run_id', 'source', 'schema_version')
+
+_SAFE_SUMMARY_KEYS = ('ts', 'level', 'category', 'event',
+                      'run_id', 'source', 'schema_version',
+                      'scalars_defined', 'scalars_populated', 'scalars_empty',
+                      'empty_field_names',
+                      'tables_defined', 'table_instances',
+                      'warnings', 'errors', 'issues_by_event',
+                      'duration_ms')
+
+
+def _value_fingerprint(value) -> "tuple[int, str]":
+    """Return (length, sha8) for a value — non-reversible, never the value."""
+    s = str(value)
+    return len(s), hashlib.sha256(s.encode('utf-8')).hexdigest()[:8]
 
 from .color import colorize_marks, should_color
 
@@ -64,10 +92,15 @@ class LogRecord:
     expected: str = ''      # what the pattern required
     found: str = ''         # what was actually in the cell
     hint: str = ''          # actionable suggestion for fixing
+    event: str = ''         # stable machine code for structured logs (allow-list)
+    value_len: "int | None" = None  # length of the offending value (no value itself)
+    value_sha8: str = ''    # first 8 hex of sha256(value) — non-reversible fingerprint
     timestamp: str = dc_field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
     def to_dict(self) -> dict:
-        return {k: v for k, v in self.__dict__.items()}
+        # Exclude private attrs (e.g. the _formatted console-render cache, which
+        # bakes in the raw cell value) — to_dict() is the structured data view.
+        return {k: v for k, v in self.__dict__.items() if not k.startswith('_')}
 
 
 # ---------------------------------------------------------------------------
@@ -117,6 +150,9 @@ class Logger:
         level: VerbosityLevel = VerbosityLevel.NORMAL,
         log_file: Optional[str] = None,
         sheet_name: str = 'Sheet1',
+        log_format: str = 'text',
+        source: Optional[str] = None,
+        run_id: Optional[str] = None,
     ):
         self.level = level
         self.sheet_name = sheet_name
@@ -125,11 +161,55 @@ class Logger:
         # summary()/the ISSUES recap report only *this* sheet's warnings in
         # --all-sheets mode (records accumulate across sheets for programmatic use).
         self._summary_start = 0
+        # Structured-logging config. 'json' emits NDJSON (one record per line) to
+        # the log file so any SIEM/cloud agent can ingest it. Records are built
+        # from an allow-list (see _record_json) so they NEVER contain extracted
+        # cell values — there is intentionally no opt-out for that.
+        self._log_format = log_format
+        self._source = source
+        self._run_id = run_id or uuid.uuid4().hex[:12]
+        self._start_time = datetime.now(timezone.utc)
+        self._last_stats: dict | None = None
         self._file = None
         if log_file:
-            self._file = open(log_file, 'w', encoding='utf-8')
+            # Append (never truncate) — the --log file is documented as appended,
+            # and a user pointing it at an existing file should not lose its data.
+            self._file = open(log_file, 'a', encoding='utf-8')
         # Colour the console copy only when stderr is an interactive terminal.
         self._color = should_color(sys.stderr)
+
+    def _record_json(self, rec: LogRecord) -> dict:
+        """Build the structured-log dict from the ALLOW-LIST of safe keys only.
+
+        Free-form fields (message/hint/expected/found) are never included — they
+        can embed the extracted cell value — so no Excel data can reach the log.
+        A non-reversible value fingerprint (length + sha8) is included instead
+        when the offending cell had a value.
+        """
+        d = {
+            'ts': rec.timestamp,
+            'level': rec.severity,          # DEBUG/INFO/WARNING/ERROR
+            'category': rec.category,
+            'event': rec.event or rec.category.lower(),
+            'cell': rec.location,           # coordinate (e.g. 'Sheet1!B10'), not data
+            'field': rec.field,             # pattern-author field name, not data
+            'field_type': rec.field_type,
+            'run_id': self._run_id,
+            'source': self._source,
+            'schema_version': LOG_SCHEMA_VERSION,
+        }
+        if rec.value_len is not None:
+            d['value_len'] = rec.value_len
+            d['value_sha8'] = rec.value_sha8
+        return d
+
+    def _store(self, rec: LogRecord) -> None:
+        """Record a LogRecord in memory and, in JSON mode, append it to the log
+        file as one NDJSON line."""
+        self._records.append(rec)
+        if self._file and self._log_format == 'json':
+            self._file.write(json.dumps(self._record_json(rec), default=str) + '\n')
+            self._file.flush()
 
     def close(self):
         if self._file:
@@ -190,7 +270,8 @@ class Logger:
         self._summary_start = len(self._records)
 
     def summary(self, result: dict):
-        cells_count = len(result.get('cells', {}))
+        cells = result.get('cells', {})
+        cells_count = len(cells)
         tables = result.get('tables', [])
 
         by_group: dict[int, int] = {}
@@ -216,8 +297,6 @@ class Logger:
             f'  Errors            : {len(errors)}',
             '─' * 62,
         ]
-        # Consolidated recap of every problem cell, so failures are never lost
-        # in the scrollback of a long run — one clear line per issue.
         issues = warnings + errors
         if issues:
             lines.append('ISSUES (cell — reason):')
@@ -225,6 +304,84 @@ class Logger:
                 lines.append('  ' + self._issue_line(rec))
             lines.append('─' * 62)
         self._write(VerbosityLevel.NORMAL, '\n'.join(lines))
+
+        self._last_stats = self.build_stats(result)
+        self._emit_summary_event(result)
+
+    def build_stats(self, result: dict) -> dict:
+        """Compute safe extraction statistics from the result dict.
+
+        Returns a dict suitable for the _meta block or the JSON log summary
+        event.  Contains counts and field names only — never cell values.
+        """
+        cells = result.get('cells', {})
+        tables = result.get('tables', [])
+        by_group: dict[int, int] = {}
+        for t in tables:
+            idx = t['table_index']
+            by_group[idx] = by_group.get(idx, 0) + 1
+
+        scoped = self._records[self._summary_start:]
+        warnings = [r for r in scoped if r.severity == Severity.WARNING]
+        errors = [r for r in scoped if r.severity == Severity.ERROR]
+
+        empty_fields = [k for k, v in cells.items() if v is None or v == '']
+        issues_by_event: dict[str, int] = {}
+        for rec in warnings + errors:
+            ev = rec.event or 'unknown'
+            issues_by_event[ev] = issues_by_event.get(ev, 0) + 1
+
+        elapsed = (datetime.now(timezone.utc) - self._start_time)
+        duration_ms = int(elapsed.total_seconds() * 1000)
+
+        return {
+            'scalars_defined': len(cells),
+            'scalars_populated': len(cells) - len(empty_fields),
+            'scalars_empty': len(empty_fields),
+            'empty_field_names': empty_fields,
+            'tables_defined': len(by_group),
+            'table_instances': sum(by_group.values()),
+            'warnings': len(warnings),
+            'errors': len(errors),
+            'issues_by_event': issues_by_event,
+            'duration_ms': duration_ms,
+        }
+
+    def build_meta(self) -> dict:
+        """Build the _meta block for opt-in JSON output (--meta).
+
+        Must be called after summary() so that _last_stats is populated.
+        """
+        scoped = self._records[self._summary_start:]
+        safe_issues = []
+        for rec in scoped:
+            if rec.severity in (Severity.WARNING, Severity.ERROR):
+                safe_issues.append(self._record_json(rec))
+        return {
+            'run_id': self._run_id,
+            'source': self._source,
+            'schema_version': LOG_SCHEMA_VERSION,
+            'stats': self._last_stats or {},
+            'issues': safe_issues,
+        }
+
+    def _emit_summary_event(self, result: dict) -> None:
+        """Write a single 'summary' event to the JSON log with safe statistics."""
+        if not (self._file and self._log_format == 'json'):
+            return
+
+        event = {
+            'ts': datetime.now(timezone.utc).isoformat(),
+            'level': Severity.INFO,
+            'category': Category.ENGINE,
+            'event': 'summary',
+            'run_id': self._run_id,
+            'source': self._source,
+            'schema_version': LOG_SCHEMA_VERSION,
+            **self.build_stats(result),
+        }
+        self._file.write(json.dumps(event, default=str) + '\n')
+        self._file.flush()
 
     def _issue_line(self, rec: LogRecord) -> str:
         """One concise line summarising a single problem cell for the recap."""
@@ -252,7 +409,7 @@ class Logger:
         rec = LogRecord(Severity.INFO, Category.EXTRACTION,
                         f'{field} = {repr(value)}',
                         location=location, field=field)
-        self._records.append(rec)
+        self._store(rec)
         self._write(VerbosityLevel.VERBOSE,
                     self._trace_line(field, location, value, ok, regex, kind='CELL'))
 
@@ -283,21 +440,21 @@ class Logger:
         location = cell_ref(row, col, self.sheet_name)
         rec = LogRecord(Severity.INFO, Category.ENGINE,
                         f'IGNORE: {repr(value)}', location=location)
-        self._records.append(rec)
+        self._store(rec)
         self._write(VerbosityLevel.VERBOSE,
                     f'  [CELL]  {location:<12} IGNORE  →  {repr(value)}')
 
     def direction_changed(self, direction: str):
         rec = LogRecord(Severity.INFO, Category.ENGINE,
                         f'Scan direction changed to {direction}')
-        self._records.append(rec)
+        self._store(rec)
         self._write(VerbosityLevel.VERBOSE,
                     f'  [DIR]   scan direction → {direction}')
 
     def table_group_start(self, table_index: int, direction: str):
         rec = LogRecord(Severity.INFO, Category.ENGINE,
                         f'Table group {table_index}: scanning (direction: {direction})')
-        self._records.append(rec)
+        self._store(rec)
         self._write(VerbosityLevel.VERBOSE,
                     f'\n  [TABLE {table_index}]  Scanning for mini-tables  '
                     f'(direction: {direction})')
@@ -306,7 +463,7 @@ class Logger:
         msg = (f'Table group {table_index}: {count} instance(s) found'
                if count else f'Table group {table_index}: no instances found')
         rec = LogRecord(Severity.INFO, Category.ENGINE, msg)
-        self._records.append(rec)
+        self._store(rec)
         text = (f'  [TABLE {table_index}]  {count} instance(s) extracted'
                 if count else f'  [TABLE {table_index}]  No instances found')
         self._write(VerbosityLevel.VERBOSE, text)
@@ -320,7 +477,7 @@ class Logger:
         rec = LogRecord(Severity.INFO, Category.EXTRACTION,
                         f'Mini-table matched at {anchor}, span {span}',
                         location=anchor)
-        self._records.append(rec)
+        self._store(rec)
         self._write(VerbosityLevel.VERBOSE,
                     f'    [MATCH]  instance {instance}  anchor {anchor}  '
                     f'span {span}')
@@ -332,7 +489,7 @@ class Logger:
         rec = LogRecord(Severity.DEBUG, Category.ENGINE,
                         f'Probing anchor {location}: {repr(value)}',
                         location=location)
-        self._records.append(rec)
+        self._store(rec)
         self._write(VerbosityLevel.DEBUG,
                     f'    [PROBE]  {location}: {repr(value)}')
 
@@ -340,21 +497,21 @@ class Logger:
         location = cell_ref(row, col, self.sheet_name)
         rec = LogRecord(Severity.DEBUG, Category.ENGINE,
                         f'Anchor rejected: {reason}', location=location)
-        self._records.append(rec)
+        self._store(rec)
         self._write(VerbosityLevel.DEBUG,
                     f'    [REJECT] {location}: {reason}')
 
     def data_row(self, row: int, col_count: int):
         rec = LogRecord(Severity.DEBUG, Category.ENGINE,
                         f'Data row {row}: {col_count} column(s)')
-        self._records.append(rec)
+        self._store(rec)
         self._write(VerbosityLevel.DEBUG,
                     f'      [DATA]  row {row}: {col_count} column(s)')
 
     def data_row_skipped(self, row: int):
         rec = LogRecord(Severity.DEBUG, Category.ENGINE,
                         f'Data row {row}: skipped (matches SKIP_IF)')
-        self._records.append(rec)
+        self._store(rec)
         self._write(VerbosityLevel.DEBUG,
                     f'      [SKIP]  row {row}: matches SKIP_IF — skipped')
 
@@ -388,7 +545,7 @@ class Logger:
         rec = LogRecord(Severity.DEBUG, Category.ENGINE,
                         f'Footer detected at {location}: {repr(value)}',
                         location=location)
-        self._records.append(rec)
+        self._store(rec)
         self._write(VerbosityLevel.DEBUG,
                     f'    [FOOTER] {location}: {repr(value)} — ending DATA section')
 
@@ -414,7 +571,10 @@ class Logger:
             expected=f'matches /{regex}/',
             found=found_repr,
             hint=hint,
+            event='value_mismatch',
         )
+        if value is not None:
+            rec.value_len, rec.value_sha8 = _value_fingerprint(value)
         lines = [
             f'\n  ⚠  {location}  [{field} / {field_type}]',
             f'     Found:    {found_repr}',
@@ -447,6 +607,7 @@ class Logger:
             expected=f'non-empty {field_type} value',
             found='empty cell',
             hint=hint,
+            event='empty_required',
         )
         lines = [
             f'\n  ⚠  {location}  [{field} / {field_type}]',
@@ -465,7 +626,7 @@ class Logger:
         still prints at NORMAL so no information is lost.
         """
         for rec in records:
-            self._records.append(rec)
+            self._store(rec)
             self._write(VerbosityLevel.VERBOSE,
                         getattr(rec, '_formatted', rec.message))
 
@@ -484,6 +645,7 @@ class Logger:
             location=location,
             field=field,
             hint=f'Add a def: row to the pattern file for field {field!r}.',
+            event='undefined_field',
         )
         lines = [
             f'\n  ⚠  {location}  [{field} / undefined]',
@@ -513,7 +675,7 @@ class Logger:
             expected=expected,
             found=found,
         )
-        self._records.append(rec)
+        self._store(rec)
 
         lines = [f'\n  ✗  FATAL ERROR: {message}']
         if location:
@@ -533,15 +695,17 @@ class Logger:
               min_level: VerbosityLevel = VerbosityLevel.NORMAL,
               prefix: str = ''):
         rec = LogRecord(severity=severity, category=category, message=message)
-        self._records.append(rec)
+        self._store(rec)
         text = f'[{prefix}] {message}' if prefix else message
         self._write(min_level, text)
 
     def _write(self, min_level: VerbosityLevel, text: str):
         if self.level >= min_level:
             print(colorize_marks(text, self._color), file=sys.stderr)
-        if self._file:
-            self._file.write(text + '\n')   # file log is always plain text
+        # In text mode the file mirrors the console. In json mode the file is
+        # NDJSON written per-record by _store(), so skip the human text here.
+        if self._file and self._log_format == 'text':
+            self._file.write(text + '\n')
             self._file.flush()
 
     def _hint_validation(self, field_type: str, regex: str, value) -> str:

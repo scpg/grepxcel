@@ -154,25 +154,44 @@ END:
         PatternWriter().write(self._SAMPLE_LLM_OUTPUT, out)
         assert Path(out).exists()
 
+    def test_stamps_pattern_version_first(self, tmp_path):
+        """Generated patterns get an explicit pattern.version stamped as row 1."""
+        out = str(tmp_path / 'out.xlsx')
+        PatternWriter().write(self._SAMPLE_LLM_OUTPUT, out)
+        ws = openpyxl.load_workbook(out).active
+        row1 = [ws.cell(row=1, column=c).value for c in range(1, 4)]
+        assert row1 == ['config:', 'pattern.version', '1']
+
     def test_roundtrip_config_row(self, tmp_path):
         out = str(tmp_path / 'out.xlsx')
         PatternWriter().write(self._SAMPLE_LLM_OUTPUT, out)
         wb = openpyxl.load_workbook(out)
         ws = wb.active
-        row1 = [ws.cell(row=1, column=c).value for c in range(1, 5)]
-        assert row1[0] == 'config:'
-        assert row1[1] == 'read.direction'
-        assert row1[2] == 'LR'
+        # read.direction is now row 2 (row 1 is the stamped pattern.version)
+        row2 = [ws.cell(row=2, column=c).value for c in range(1, 5)]
+        assert row2[0] == 'config:'
+        assert row2[1] == 'read.direction'
+        assert row2[2] == 'LR'
+
+    def test_no_duplicate_version_when_model_emits_one(self, tmp_path):
+        out = str(tmp_path / 'out.xlsx')
+        llm = 'config: | pattern.version | 1\n' + self._SAMPLE_LLM_OUTPUT
+        PatternWriter().write(llm, out)
+        ws = openpyxl.load_workbook(out).active
+        versions = [ws.cell(row=r, column=2).value for r in range(1, ws.max_row + 1)]
+        assert versions.count('pattern.version') == 1
 
     def test_roundtrip_def_row(self, tmp_path):
         out = str(tmp_path / 'out.xlsx')
         PatternWriter().write(self._SAMPLE_LLM_OUTPUT, out)
-        wb = openpyxl.load_workbook(out)
-        ws = wb.active
-        row2 = [ws.cell(row=2, column=c).value for c in range(1, 5)]
-        assert row2[0] == 'def:'
-        assert row2[1] == 'InvoiceNo'
-        assert row2[2] == 'string'
+        ws = openpyxl.load_workbook(out).active
+        for r in range(1, ws.max_row + 1):
+            if ws.cell(row=r, column=1).value == 'def:' and \
+               ws.cell(row=r, column=2).value == 'InvoiceNo':
+                assert ws.cell(row=r, column=3).value == 'string'
+                break
+        else:
+            pytest.fail('def: InvoiceNo row not found')
 
     def test_start_end_in_col_a(self, tmp_path):
         out = str(tmp_path / 'out.xlsx')
@@ -211,7 +230,8 @@ END:
         PatternWriter().write(llm_text, out)
         wb = openpyxl.load_workbook(out)
         ws = wb.active
-        assert ws.cell(row=1, column=1).value == 'table:*'
+        col_a = [ws.cell(row=r, column=1).value for r in range(1, ws.max_row + 1)]
+        assert 'table:*' in col_a
 
 
 # ── LlamaCppClient ────────────────────────────────────────────────────────────
@@ -693,6 +713,13 @@ class TestOpenAICompatBackend:
     def test_custom_base_url(self):
         b = OpenAICompatBackend(base_url='http://myhost:8080/v1')
         assert b._base_url == 'http://myhost:8080/v1'
+
+    def test_chat_refuses_non_http_base_url(self):
+        """A non-http(s) base_url (e.g. file://) must be refused before any
+        client/network call — guards against SSRF to internal endpoints."""
+        b = OpenAICompatBackend(base_url='file:///etc/passwd')
+        with pytest.raises(ValueError, match='http'):
+            b.chat('sys', 'user')
 
     def test_chat_returns_model_content(self):
         mock_openai = MagicMock()

@@ -7,6 +7,8 @@ class Config:
     currency_sign: str = '€'
     empty_aliases: list = field(default_factory=list)
     ignore_case: bool = False  # when True, all regex matching is case-insensitive
+    pattern_version: int = 1   # pattern-format/semantics generation (absent ⇒ 1)
+    pattern_version_explicit: bool = False  # True if the pattern declared it
 
 
 @dataclass

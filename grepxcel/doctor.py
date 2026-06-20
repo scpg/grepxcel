@@ -50,6 +50,13 @@ def check_extract() -> list[Result]:
         res.append((OK, f'Python {v.major}.{v.minor}', 'meets the >= 3.11 floor'))
     else:
         res.append((FAIL, f'Python {v.major}.{v.minor}', 'grepxcel requires Python >= 3.11'))
+    from .pattern_parser import (CURRENT_PATTERN_VERSION,
+                                 MIN_SUPPORTED_PATTERN_VERSION)
+    pv = (f'{CURRENT_PATTERN_VERSION}'
+          if MIN_SUPPORTED_PATTERN_VERSION == CURRENT_PATTERN_VERSION
+          else f'{MIN_SUPPORTED_PATTERN_VERSION}..{CURRENT_PATTERN_VERSION}')
+    res.append((OK, 'pattern.version',
+                f'understands {pv} (a pattern with no version is read as 1)'))
     for mod, why in (('openpyxl', 'reads .xlsx files'),
                      ('defusedxml', 'XXE protection (fail-closed)'),
                      ('regex', 'ReDoS-bounded matching')):
@@ -127,7 +134,12 @@ def check_draft_cloud() -> list[Result]:
 def check_server(url: str = 'http://localhost:1234/v1') -> list[Result]:
     """Probe an OpenAI-compatible server at *url*/models."""
     import json
+    from .security import is_http_url
     res: list[Result] = []
+    # Never let urlopen handle file://, ftp://, data: etc. — a non-http(s)
+    # GREPXCEL_SERVER_URL would otherwise be a file-read / SSRF primitive.
+    if not is_http_url(url):
+        return [(FAIL, 'server', f'{url} — refusing to probe a non-http(s) URL')]
     models_url = url.rstrip('/') + '/models'
     try:
         resp = urllib.request.urlopen(
@@ -154,7 +166,8 @@ def tls_probe(url: str = 'https://huggingface.co', timeout: float = 6.0) -> Resu
     and certificate were fine), FAIL on a certificate-trust failure (the corp
     proxy case), WARN if simply unreachable (offline / blocked)."""
     # Only ever probe http(s) — never let urlopen handle file://, ftp://, etc.
-    if urllib.parse.urlparse(url).scheme not in ('http', 'https'):
+    from .security import is_http_url
+    if not is_http_url(url):
         return (FAIL, f'TLS handshake {url}', 'refusing to probe a non-http(s) URL')
     proxy_support.enable_corporate_tls(announce=False)
     try:
@@ -200,9 +213,40 @@ def check_proxy_tls(probe: bool = True) -> list[Result]:
     return res
 
 
+def check_env(strict_env: bool = False) -> list[Result]:
+    """Show how cloud-credential .env resolution will be decided, so the user
+    always knows which source is used before any cloud call."""
+    from .cli import _discover_project_env, _config_dir, _config_dir_env
+    res: list[Result] = []
+    cfg = _config_dir()
+    res.append((OK, 'config dir', cfg))
+    cfg_env = _config_dir_env()
+    if cfg_env:
+        res.append((OK, 'config .env', f'{cfg_env} (loaded as fallback)'))
+    else:
+        res.append((OK, 'config .env', f'none at {os.path.join(cfg, ".env")}'))
+
+    project_env, in_project = _discover_project_env(os.getcwd())
+    if project_env and in_project:
+        res.append((OK, 'project .env', project_env))
+    elif project_env and not in_project:
+        if strict_env:
+            res.append((FAIL, 'project .env',
+                        f'{project_env} — out-of-project, REFUSED (--strict-env)'))
+        else:
+            res.append((WARN, 'project .env',
+                        f'{project_env} — out-of-project (loaded; would be refused '
+                        f'with --strict-env)'))
+    else:
+        res.append((OK, 'project .env', 'none found'))
+    res.append((OK, 'strict-env', 'on' if strict_env else 'off'))
+    return res
+
+
 # ── runner ──────────────────────────────────────────────────────────────────
 
-def run_doctor(area: str = 'all', probe: bool = True, out=None) -> int:
+def run_doctor(area: str = 'all', probe: bool = True, out=None,
+               strict_env: bool = False) -> int:
     """Run the selected checks, print a checklist, return an exit code
     (0 = ready, 1 = a hard failure in the selected area)."""
     out = out or sys.stderr
@@ -213,6 +257,7 @@ def run_doctor(area: str = 'all', probe: bool = True, out=None) -> int:
     if area in ('extract', 'all'):
         sections.append(('extract — core', check_extract()))
     if area in ('draft', 'all'):
+        sections.append(('draft — credentials (.env)', check_env(strict_env)))
         sections.append(('draft — local model', check_draft_local()))
         sections.append(('draft — cloud backends', check_draft_cloud()))
         srv_url = os.environ.get('GREPXCEL_SERVER_URL', 'http://localhost:1234/v1')
