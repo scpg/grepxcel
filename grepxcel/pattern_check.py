@@ -9,6 +9,7 @@ Works for .xlsx and .csv patterns alike (the parser reads both into one grid).
 """
 from __future__ import annotations
 
+import re
 import sys
 from dataclasses import dataclass, field
 
@@ -16,6 +17,9 @@ from .color import colorize_marks, should_color
 from .models import CellInstruction, TableInstruction, SeekInstruction, DirectionInstruction
 from .pattern_parser import PatternError, PatternParser
 from .security import SecurityError
+
+# Patterns that strongly suggest regex intent (backslash-escapes, lookahead)
+_REGEX_TELL = re.compile(r'\\[()[\]{}|+*.?^$]|[(][?]')
 
 _MARK_OK, _MARK_WARN, _MARK_FAIL = '✓', '⚠', '✗'
 
@@ -87,6 +91,20 @@ def check_pattern(path: str) -> CheckResult:
     for name in sorted(set(defs) - referenced):
         result.warnings.append(f"Field {name!r} is defined but never used.")
 
+    for name, fd in defs.items():
+        if fd.role != 'lbl':
+            continue
+        effective_mode = fd.lbl_match if fd.lbl_match is not None else config.lbl_match
+        if effective_mode != 'regexp' and _REGEX_TELL.search(fd.regex):
+            plain = re.sub(r'\\(.)', r'\1', fd.regex)
+            result.warnings.append(
+                f"lbl: field {name!r} pattern {fd.regex!r} looks like a regex "
+                f"but lbl.match mode is {effective_mode!r}. "
+                f"In literal/glob mode backslash-escapes are matched literally. "
+                f"Did you mean {plain!r}? "
+                f"Add lbl:regexp or set config: | lbl.match | regexp to use regex."
+            )
+
     result.valid = not result.errors
     return result
 
@@ -144,9 +162,11 @@ def render_result(result: CheckResult, verbose: bool = False, out=None) -> None:
         print(f'     read.direction  {cfg.read_direction}', file=out)
         print(f'     currency.sign   {cfg.currency_sign}', file=out)
         print(f'     ignore.case     {cfg.ignore_case}', file=out)
+        print(f'     lbl.match       {cfg.lbl_match}', file=out)
         print('   fields:', file=out)
         for name, fd in result.defs.items():
-            print(f'     {fd.role:<4} {name:<24} {fd.type:<10} /{fd.regex}/', file=out)
+            mode_tag = f' [{fd.lbl_match}]' if fd.lbl_match is not None else ''
+            print(f'     {fd.role:<4} {name:<24} {fd.type:<10} /{fd.regex}/{mode_tag}', file=out)
         print('   extraction sequence:', file=out)
         for instr in (result.sequence or []):
             if isinstance(instr, CellInstruction):
