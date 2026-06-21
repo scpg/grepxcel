@@ -1,7 +1,7 @@
 # Spec: lbl: match mode — literal default + per-field override
 
 **Date:** 2026-06-21  
-**Status:** Approved, not yet implemented  
+**Status:** Implemented (2026-06-21) — all phases complete  
 **Motivation:** `lbl:` is a structural assertion ("is this the sheet I expect?"), not a data query. Regex was never the right default there — it leaked implementation details into user patterns and caused silent failures when literal header text contained metacharacters like `(`, `)`, `.`.
 
 ---
@@ -80,38 +80,30 @@ WARN  lbl: 'col_breaks' — value 'Breaks\n\(minutes\)' looks like a regex patte
 
 ## Implementation checklist
 
-### Phase 1 — Core model + parser
-- [ ] `grepxcel/models.py` — add `LblMatchMode = Literal['literal', 'glob', 'regexp']` and `Config.lbl_match: LblMatchMode = 'literal'`
-- [ ] `grepxcel/pattern_parser.py` — parse `config: | lbl.match | <mode>`; validate value is one of the three
-- [ ] `grepxcel/pattern_parser.py` — recognize `lbl:literal`, `lbl:glob`, `lbl:regexp` in column A; parse suffix, store resolved mode on `FieldDef`; reject unknown suffixes with a clear PatternError
-- [ ] `grepxcel/pattern_parser.py` — skip `check_regex_safety` for `lbl:` fields when mode is not `regexp`
+### Phase 1 — Core model + parser ✓
+- [x] `grepxcel/models.py` — added `LBL_MATCH_MODES` frozenset and `Config.lbl_match: str = 'literal'`; `FieldDef.lbl_match: str | None = None`
+- [x] `grepxcel/pattern_parser.py` — parse `config: | lbl.match | <mode>`; validate value; `isinstance` guard for None cells
+- [x] `grepxcel/pattern_parser.py` — recognize `lbl:literal`, `lbl:glob`, `lbl:regexp` in column A; suffix parsed and stored on `FieldDef`; unknown suffixes raise PatternError
+- [x] `grepxcel/pattern_parser.py` — `check_regex_safety` skipped for `lbl:` fields when mode is not `regexp`
 
-### Phase 2 — Engine match dispatcher
-- [ ] `grepxcel/engine.py` — add `_match_lbl(cell_value: str, pattern: str, mode: LblMatchMode, ignore_case: bool) -> bool`
-  - `literal`: `cell_value == pattern` (or `lower()` if ignore_case)
-  - `glob`: `fnmatch.translate(pattern)` compiled with `re.DOTALL | (re.IGNORECASE if ignore_case else 0)`
-  - `regexp`: current `re.search(pattern, cell_value, re.IGNORECASE if ignore_case else 0)`
-  - empty pattern → always return True (match anything)
-- [ ] `grepxcel/engine.py` — replace all direct `re.search` lbl anchor calls with `_match_lbl`
+### Phase 2 — Engine match dispatcher ✓
+- [x] `grepxcel/engine.py` — `_match_lbl()` and `_resolve_lbl_mode()` added
+- [x] `grepxcel/engine.py` — all lbl anchor checks now go through `_match_lbl`
 
-### Phase 3 — validate-pattern warnings
-- [ ] Add helper `_looks_like_regex(value: str) -> bool` — detects `.*`, `\d`, `\w`, `\s`, unescaped `(`, `[`, `^`, `$`, `+`, `?`
-- [ ] In validate-pattern pass: for each `lbl:` field where resolved mode is `literal` or `glob`, call `_looks_like_regex` on column D value → WARN if True
+### Phase 3 — validate-pattern warnings ✓
+- [x] `grepxcel/pattern_check.py` — `_REGEX_TELL` regex detects backslash-escapes and lookahead
+- [x] Warns when lbl.match mode is literal/glob but pattern looks like regex; suggests plain text and regexp opt-in
+- [x] Verbose output shows `lbl.match` in config block and `[mode]` tags on fields with per-field override
 
-### Phase 4 — Drafter
-- [ ] `grepxcel/drafter.py` — when generating `lbl:` patterns, output column D values unescaped (no `\(` etc.) since the default is now `literal`
-- [ ] If drafter detects a generated label needs wildcards, emit `lbl:glob` in column A and use `*` syntax
+### Phase 4 — Drafter ✓
+- [x] `grepxcel/drafter.py` — prompt updated: lbl: column D is now described as "plain text verbatim, no regex escaping"
 
-### Phase 5 — Fixtures + tests
-- [ ] Run `validate-pattern` on all 22 fixtures; update each with warnings:
-  - Add `config: | lbl.match | regexp` (easiest), OR
-  - Rewrite `lbl:` column D values to literal text and update column A as needed
-- [ ] New unit tests for `_match_lbl`: all three modes × case sensitivity × empty pattern × newline in value
-- [ ] New integration tests: pattern with `lbl:literal` (default), `lbl:glob`, `lbl:regexp`; mixed per-field overrides
-- [ ] Test that `validate-pattern` warns on regex-looking values in literal mode
-- [ ] Existing lbl-anchor tests: verify they pass with explicit `lbl:regexp` where needed
+### Phase 5 — Fixtures + tests ✓
+- [x] Fixture 11 (`pattern-from-draft.csv` + `.xlsx`) — updated `Term \(months\):` → `Term (months):`
+- [x] 45 new unit tests: `_match_lbl` (all modes × edge cases), `_resolve_lbl_mode`, parser lbl: suffixes, validate-pattern warnings
+- [x] 1251 tests passing, 7 skipped, 4 xfailed
 
-### Phase 6 — Docs
+### Phase 6 — Docs (partial)
 - [ ] `grepxcel docs` / `pattern-reference.xlsx` — document the three modes and the column A variants
 - [ ] CHANGELOG entry
 

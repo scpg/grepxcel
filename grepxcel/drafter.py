@@ -41,10 +41,14 @@ In your output, separate columns with ' | ' (space-pipe-space).
    config: | ignore.case    | no          (yes = case-insensitive regex matching)
 
 2. Label definitions — anchor cells, NEVER written to output JSON:
-   lbl: | FieldName | type | regex
+   lbl: | FieldName | type | plain text
 
    Use lbl: for literal text that marks where a value lives (e.g. "Invoice No:",
-   column headers like "Product", "Qty").  These are matched for position only. They will allow you to confirm that the analysis and extraction of data is being done correctly and that the file being processed respects the structure that has been defined it should have.
+   column headers like "Product", "Qty").  These are matched as exact strings by default
+   (lbl.match = literal), so copy the cell text verbatim — NO regex escaping.
+   Parentheses, dots, brackets etc. are matched as-is. They will allow you to confirm
+   that the analysis and extraction of data is being done correctly and that the file
+   being processed respects the structure that has been defined it should have.
 
 3. Variable definitions — extracted to the output JSON:
    var: | field.name | type | regex
@@ -137,7 +141,7 @@ KEY-VALUE sections list lines shaped like:
     - LABEL 'Invoice No:'  →  VALUE 'AB123456' [string]
 
 Each LABEL → VALUE pair becomes THREE coordinated rows in your pattern:
-  1. lbl: | <label_name>     | string | <exact LABEL text>   ← defines the anchor
+  1. lbl: | <label_name>     | string | <exact LABEL text verbatim>   ← defines the anchor (no regex escaping)
   2. var: | <group>.<field>  | <type> | <regex>              ← defines the value
   3. inside START:/END:, two sequence steps that alternate:
         cell:next | <label_name>        (consume the label cell — never output)
@@ -152,7 +156,7 @@ TABLE sections list columns shaped like:
     - HEADER 'Datum' (→ lbl:)  →  DATA [datetime] (→ var:)  samples: ...
 
 For each column produce:
-  1. lbl: | <col_name>      | string | <exact HEADER text>   ← the column header anchor
+  1. lbl: | <col_name>      | string | <exact HEADER text verbatim>   ← the column header anchor (no regex escaping)
   2. var: | <group>.<field> | <type> | <regex>              ← the column's data
 Then build the table block:
     table:*

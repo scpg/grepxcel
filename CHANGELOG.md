@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **`lbl.match` mode** — `lbl:` fields now default to literal string matching
+  instead of full regex. Labels like `Term (months):` or `Breaks\n(minutes)`
+  work without regex escaping.
+  - Global config: `config: | lbl.match | literal` (default) / `glob` / `regexp`
+  - Per-field override: `lbl:literal`, `lbl:glob`, `lbl:regexp` in column A
+  - `glob` mode: shell wildcards (`*` = any text including newlines, `?` = one char)
+  - `regexp` mode: opt-in for the previous full Python `re.search` behaviour
+  - `validate-pattern` warns when a `lbl:` value looks like a regex but mode is
+    `literal` or `glob` (e.g. `\(`, `\.`, `(?`)
+  - Verbose `validate-pattern -v` now shows `lbl.match` in config and per-field
+    `[mode]` tags for explicit overrides
+
 ## [0.1.0] — YYYY-MM-DD
 
 Initial public release.
