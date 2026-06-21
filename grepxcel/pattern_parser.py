@@ -6,7 +6,7 @@ import openpyxl
 from openpyxl.utils import get_column_letter
 from openpyxl.utils.cell import coordinate_to_tuple
 
-from .models import Config, FieldDef, TemplateColumn, TemplateRow, CellInstruction, TableInstruction, SeekInstruction, DirectionInstruction
+from .models import Config, FieldDef, TemplateColumn, TemplateRow, CellInstruction, TableInstruction, SeekInstruction, DirectionInstruction, LBL_MATCH_MODES
 from .security import check_regex_safety, SecurityError
 
 _MAX_PATTERN_CELL_LEN = 1_000  # max characters in any pattern file cell value
@@ -151,10 +151,17 @@ class PatternParser:
                     fd = self._parse_field(row, role='var', row_num=i + 1)
                     defs[fd.name] = fd
                     self._check_comment_zone(row, 4, i + 1, col_a_l)      # E+ comment
-                elif col_a_l == 'lbl:':
-                    fd = self._parse_field(row, role='lbl', row_num=i + 1)
+                elif isinstance(col_a_l, str) and col_a_l.startswith('lbl:'):
+                    suffix = col_a_l[4:]  # '' | 'literal' | 'glob' | 'regexp'
+                    if suffix and suffix not in LBL_MATCH_MODES:
+                        raise PatternError(
+                            f"Unknown lbl: variant {col_a!r} at pattern row {i + 1}. "
+                            f"Use lbl: (global default), lbl:literal, lbl:glob, or lbl:regexp."
+                        )
+                    fd = self._parse_field(row, role='lbl', row_num=i + 1,
+                                           lbl_match_override=suffix if suffix else None)
                     defs[fd.name] = fd
-                    self._check_comment_zone(row, 4, i + 1, 'lbl:')       # E+ comment
+                    self._check_comment_zone(row, 4, i + 1, col_a_l)
                 elif col_a_l in ('doc:', 'info:'):
                     pass  # inline documentation — ignored by engine
                 elif col_a is not None and str(col_a).strip() != '':
@@ -239,6 +246,7 @@ class PatternParser:
                     currency_sign=global_config.currency_sign,
                     empty_aliases=list(global_config.empty_aliases),
                     ignore_case=global_config.ignore_case,
+                    lbl_match=global_config.lbl_match,
                 )
                 template_rows = []
                 i += 1
@@ -629,11 +637,20 @@ class PatternParser:
             config.empty_aliases.append(str(val))
         elif key == 'ignore.case' and val is not None:
             config.ignore_case = _truthy(val)
+        elif key == 'lbl.match' and val is not None:
+            mode = str(val).strip().lower()
+            if mode not in LBL_MATCH_MODES:
+                raise PatternError(
+                    f"Invalid lbl.match value {val!r}. Valid values: "
+                    f"{', '.join(sorted(LBL_MATCH_MODES))}."
+                )
+            config.lbl_match = mode
         elif key == 'pattern.version' and val is not None:
             config.pattern_version = _parse_pattern_version(val)
             config.pattern_version_explicit = True
 
-    def _parse_field(self, row, role: str = 'var', row_num: int | None = None) -> FieldDef:
+    def _parse_field(self, row, role: str = 'var', row_num: int | None = None,
+                     lbl_match_override: str | None = None) -> FieldDef:
         where = f' at pattern row {row_num}' if row_num is not None else ''
         name  = str(row[1]) if row[1] else ''
         if not name:
@@ -648,8 +665,12 @@ class PatternParser:
                 f"Valid types: {', '.join(sorted(_VALID_FIELD_TYPES))}."
             )
         regex = str(row[3]) if row[3] else '.*'
-        check_regex_safety(regex, field_name=name)
-        return FieldDef(name=name, type=type_, regex=regex, role=role)
+        # Skip regex safety check for lbl: fields in non-regexp modes — the
+        # pattern is treated as a literal string or glob, not compiled as a regex.
+        if role != 'lbl' or lbl_match_override not in ('literal', 'glob'):
+            check_regex_safety(regex, field_name=name)
+        return FieldDef(name=name, type=type_, regex=regex, role=role,
+                        lbl_match=lbl_match_override)
 
     # backward-compat alias
     def _parse_def(self, row) -> FieldDef:

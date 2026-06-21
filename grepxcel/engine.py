@@ -1,3 +1,6 @@
+import fnmatch
+import re
+
 import openpyxl
 from openpyxl.utils import get_column_letter
 from openpyxl.utils.cell import coordinate_to_tuple
@@ -6,6 +9,35 @@ from .utils import is_empty, validate_type, _MAX_REGEX_INPUT_LEN
 from .pattern_parser import PatternParser, PatternError
 from .logger import Logger, LogRecord, EngineError, cell_ref
 from .security import validate_file, validate_pattern_file, SecurityError, DEFAULT_MAX_UNCOMPRESSED_MB
+
+
+# ── lbl: matching ─────────────────────────────────────────────────────────────
+
+def _match_lbl(cell_value, pattern: str, mode: str, ignore_case: bool) -> bool:
+    """Match a cell value against a label pattern using the configured mode.
+
+    Empty pattern (blank column D) always matches — preserves the "relaxed
+    default" regardless of mode.  Modes:
+      literal — exact string equality (honours ignore_case)
+      glob    — shell wildcards (* = any text incl. newlines, ? = one char)
+      regexp  — full Python re.search (current / pre-1.0 behaviour)
+    """
+    if not pattern:
+        return True
+    text = str(cell_value) if cell_value is not None else ''
+    if mode == 'literal':
+        return (text.lower() == pattern.lower()) if ignore_case else (text == pattern)
+    if mode == 'glob':
+        flags = re.DOTALL | (re.IGNORECASE if ignore_case else 0)
+        return bool(re.match(fnmatch.translate(pattern), text, flags))
+    # regexp
+    flags = re.IGNORECASE if ignore_case else 0
+    return bool(re.search(pattern, text, flags))
+
+
+def _resolve_lbl_mode(fd, config) -> str:
+    """Return the effective lbl match mode for a FieldDef (per-field wins over global)."""
+    return fd.lbl_match if fd.lbl_match is not None else config.lbl_match
 
 
 # ── Data-sheet size limits ──────────────────────────────────────────────────────
@@ -583,8 +615,12 @@ class Engine:
         # Validate before tracing so the -v trace can show ✓/✗ per field.
         ok = None
         if value is not None:
-            ok, _ = validate_type(value, fd.type, fd.regex, config.currency_sign,
-                                  self._max_cell_len, config.ignore_case)
+            if fd.role == 'lbl':
+                ok = _match_lbl(value, fd.regex, _resolve_lbl_mode(fd, config),
+                                config.ignore_case)
+            else:
+                ok, _ = validate_type(value, fd.type, fd.regex, config.currency_sign,
+                                      self._max_cell_len, config.ignore_case)
 
         logger.cell_processed(row, col, instr.field, value, ok=ok, regex=fd.regex)
 
@@ -867,8 +903,12 @@ class Engine:
                     )
                     trace_ok = False
                 else:
-                    ok, _ = validate_type(val, fd.type, fd.regex, config.currency_sign,
-                                          self._max_cell_len, config.ignore_case)
+                    if fd.role == 'lbl':
+                        ok = _match_lbl(val, fd.regex, _resolve_lbl_mode(fd, config),
+                                        config.ignore_case)
+                    else:
+                        ok, _ = validate_type(val, fd.type, fd.regex, config.currency_sign,
+                                              self._max_cell_len, config.ignore_case)
                     if not ok:
                         if strict:
                             return {}, False  # HEADER/FOOTER: wrong value = no match
@@ -948,8 +988,12 @@ class Engine:
                 continue
             if is_empty(val, config.empty_aliases):
                 return False
-            ok, _ = validate_type(val, fd.type, fd.regex, config.currency_sign,
-                                  self._max_cell_len, config.ignore_case)
+            if fd.role == 'lbl':
+                ok = _match_lbl(val, fd.regex, _resolve_lbl_mode(fd, config),
+                                config.ignore_case)
+            else:
+                ok, _ = validate_type(val, fd.type, fd.regex, config.currency_sign,
+                                      self._max_cell_len, config.ignore_case)
             if not ok:
                 return False
 
