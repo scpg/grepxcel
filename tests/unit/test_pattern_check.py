@@ -149,3 +149,75 @@ def test_verbose_table_with_skip_if(tmp_path):
     # The single column position should show all three row types
     col_line = lines[table_idx + 2]
     assert 'h' in col_line and 'EMPTY' in col_line and 'v' in col_line
+
+
+# ── lbl.match warnings ────────────────────────────────────────────────────────
+
+def _lbl_pattern(rows, tmp_path):
+    """Write rows and return check_pattern result."""
+    return check_pattern(_write(rows, tmp_path))
+
+
+def _lbl_base(lbl_pattern, lbl_col_a='lbl:'):
+    return [
+        [lbl_col_a, 'h', 'string', lbl_pattern],
+        ['var:', 'v', 'string', '.*'],
+        ['START:'],
+        ['cell:1', 'h'],
+        ['cell:1', 'v'],
+        ['END:'],
+    ]
+
+
+def test_regex_escaped_paren_warns_in_literal_mode(tmp_path):
+    r = _lbl_pattern(_lbl_base(r'Term \(months\):'), tmp_path)
+    assert r.valid
+    assert any('looks like a regex' in w for w in r.warnings)
+
+
+def test_regex_escaped_dot_warns_in_literal_mode(tmp_path):
+    r = _lbl_pattern(_lbl_base(r'Version\.2'), tmp_path)
+    assert r.valid
+    assert any('looks like a regex' in w for w in r.warnings)
+
+
+def test_lookahead_warns_in_literal_mode(tmp_path):
+    r = _lbl_pattern(_lbl_base(r'(?:Amount)'), tmp_path)
+    assert r.valid
+    assert any('looks like a regex' in w for w in r.warnings)
+
+
+def test_plain_literal_no_warning(tmp_path):
+    r = _lbl_pattern(_lbl_base('Term (months):'), tmp_path)
+    assert r.valid
+    assert not any('looks like a regex' in w for w in r.warnings)
+
+
+def test_regexp_override_suppresses_warning(tmp_path):
+    r = _lbl_pattern(_lbl_base(r'Term \(months\):', 'lbl:regexp'), tmp_path)
+    assert r.valid
+    assert not any('looks like a regex' in w for w in r.warnings)
+
+
+def test_global_regexp_mode_suppresses_warning(tmp_path):
+    rows = [
+        ['config:', 'lbl.match', 'regexp'],
+        ['lbl:', 'h', 'string', r'Term \(months\):'],
+        ['var:', 'v', 'string', '.*'],
+        ['START:'], ['cell:1', 'h'], ['cell:1', 'v'], ['END:'],
+    ]
+    r = _lbl_pattern(rows, tmp_path)
+    assert r.valid
+    assert not any('looks like a regex' in w for w in r.warnings)
+
+
+def test_verbose_shows_lbl_match_config(tmp_path):
+    buf = io.StringIO()
+    run_validate([_write(_lbl_base('Name'), tmp_path)], verbose=True, out=buf)
+    assert 'lbl.match' in buf.getvalue()
+
+
+def test_verbose_shows_per_field_mode_tag(tmp_path):
+    buf = io.StringIO()
+    run_validate([_write(_lbl_base('Hello *', 'lbl:glob'), tmp_path)], verbose=True, out=buf)
+    assert '[glob]' in buf.getvalue()

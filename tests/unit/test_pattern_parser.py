@@ -846,3 +846,76 @@ class TestDirectionInstruction:
         from grepxcel.models import CellInstruction
         abs_cells = [s for s in seq if isinstance(s, CellInstruction) and s.multiplicity == 'abs']
         assert len(abs_cells) == 2
+
+
+# ── lbl.match mode ───────────────────────────────────────────────────────────
+
+class TestLblMatchMode:
+    def _parse(self, rows, tmp_path):
+        return PatternParser().parse(_write_pattern(rows, tmp_path))
+
+    def _base(self, lbl_pattern, lbl_suffix='lbl:'):
+        return [
+            [lbl_suffix, 'h', 'string', lbl_pattern],
+            ['var:', 'v', 'string', '.*'],
+            ['START:'],
+            ['cell:1', 'h'],
+            ['cell:1', 'v'],
+            ['END:'],
+        ]
+
+    def test_default_lbl_match_is_literal(self, tmp_path):
+        cfg, _, _ = self._parse(self._base('Hello'), tmp_path)
+        assert cfg.lbl_match == 'literal'
+
+    def test_lbl_field_has_no_override_by_default(self, tmp_path):
+        _, defs, _ = self._parse(self._base('Hello'), tmp_path)
+        assert defs['h'].lbl_match is None
+
+    def test_lbl_literal_suffix_sets_override(self, tmp_path):
+        _, defs, _ = self._parse(self._base('Hello', 'lbl:literal'), tmp_path)
+        assert defs['h'].lbl_match == 'literal'
+
+    def test_lbl_glob_suffix_sets_override(self, tmp_path):
+        _, defs, _ = self._parse(self._base('Hello *', 'lbl:glob'), tmp_path)
+        assert defs['h'].lbl_match == 'glob'
+
+    def test_lbl_regexp_suffix_sets_override(self, tmp_path):
+        _, defs, _ = self._parse(self._base(r'Hello \w+', 'lbl:regexp'), tmp_path)
+        assert defs['h'].lbl_match == 'regexp'
+
+    def test_lbl_unknown_suffix_raises(self, tmp_path):
+        with pytest.raises(PatternError, match='Unknown lbl: variant'):
+            self._parse(self._base('Hello', 'lbl:fuzzy'), tmp_path)
+
+    def test_config_lbl_match_sets_global(self, tmp_path):
+        rows = [
+            ['config:', 'lbl.match', 'glob'],
+            ['lbl:', 'h', 'string', 'Hello *'],
+            ['var:', 'v', 'string', '.*'],
+            ['START:'], ['cell:1', 'h'], ['cell:1', 'v'], ['END:'],
+        ]
+        cfg, _, _ = self._parse(rows, tmp_path)
+        assert cfg.lbl_match == 'glob'
+
+    def test_config_lbl_match_invalid_raises(self, tmp_path):
+        rows = [
+            ['config:', 'lbl.match', 'exact'],
+            ['var:', 'v', 'string', '.*'],
+            ['START:'], ['cell:1', 'v'], ['END:'],
+        ]
+        with pytest.raises(PatternError, match='Invalid lbl.match'):
+            self._parse(rows, tmp_path)
+
+    def test_literal_mode_skips_regex_safety_check(self, tmp_path):
+        """Metacharacter-heavy label patterns are accepted without error in literal mode."""
+        self._parse(self._base('Term (months):', 'lbl:literal'), tmp_path)  # no raise
+
+    def test_glob_mode_skips_regex_safety_check(self, tmp_path):
+        """Glob patterns with * are accepted without regex safety check."""
+        self._parse(self._base('Invoice *', 'lbl:glob'), tmp_path)  # no raise
+
+    def test_regexp_mode_enforces_regex_safety(self, tmp_path):
+        """In regexp mode the ReDoS guard still applies."""
+        with pytest.raises((PatternError, Exception), match='[Rr]e[Dd]o[Ss]|catastrophic|backtrack'):
+            self._parse(self._base(r'(a+)+$', 'lbl:regexp'), tmp_path)

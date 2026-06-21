@@ -1,23 +1,31 @@
 # grepxcel
 
-> **Treat Excel as a reliable data source — with the DevOps discipline of observability, fail-fast, and proper logging.**
->
-> Pattern-based data extraction for Excel — define what to look for, run, get structured JSON.
->
-> *The philosophy behind it: [docs/MINDSET.md](docs/MINDSET.md).*
+Extract structured data from Excel files — reliably, without writing custom code for every template.
+
+If you have ever written Python to parse an Excel file from a supplier, a client, or another department — and had it silently produce wrong output the moment they moved a column or renamed a header — grepxcel is built for exactly trying to easily get around this kind of problem.
+
+You describe the layout of the file once in a **pattern file** (an `.xlsx` workbook or a plain `.csv`). The engine reads any conforming data file and extracts cells and tables into clean, hierarchical JSON. When a file does not match the pattern, grepxcel fails loudly with a clear error — it is never silently wrong.
+
+Think of it as *[grep](https://en.wikipedia.org/wiki/Grep) for [Excel](https://en.wikipedia.org/wiki/Microsoft_Excel)*: a repeatable extraction layer you define once and run on any number of files.
 
 ![CI](https://github.com/scpg/grepxcel/actions/workflows/ci.yml/badge.svg)
 
-If grepxcel saves you time, you can support it ☕
-<a href="https://buymeacoffee.com/scpg.dev" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" height="32" width="135"></a>
+---
+
+## Common use cases
+
+- **Supplier invoices and price lists** — each supplier sends Excel files in their own format. Define a pattern once per template, extract data from every new file automatically.
+- **Timesheets and HR reports** — team leads use slightly different layouts. grepxcel anchors on cell labels, not row numbers, so minor layout drift does not break extraction.
+- **Data pipelines ingesting Excel** — replace brittle `openpyxl` or `pandas` parsing code that breaks when a column shifts. The pattern file lives in git; extraction is deterministic and testable.
+- **Research and clinical data** — field workers submit data in Excel templates. Any file that deviates from the expected structure is rejected immediately, before it can corrupt your dataset.
+
+*The engineering philosophy behind grepxcel: [docs/MINDSET.md](docs/MINDSET.md).*
 
 ---
 
 ## What it does
 
 You describe the layout of your Excel sheet in a **pattern file** — either an Excel workbook (`.xlsx`) or a plain `.csv` (handy for hand-editing and git diffs). The engine reads any matching data file and extracts cells and tables into clean, hierarchical JSON — no coding required to define new patterns.
-
-Think of it as *grep for Excel*.
 
 ---
 

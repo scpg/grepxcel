@@ -1,14 +1,18 @@
 from dataclasses import dataclass, field
 
+# Valid values for lbl: match mode (global config and per-field override).
+LBL_MATCH_MODES = frozenset({'literal', 'glob', 'regexp'})
+
 
 @dataclass
 class Config:
     read_direction: str = 'LR'
     currency_sign: str = '€'
     empty_aliases: list = field(default_factory=list)
-    ignore_case: bool = False  # when True, all regex matching is case-insensitive
+    ignore_case: bool = False  # when True, all regex/literal/glob matching is case-insensitive
     pattern_version: int = 1   # pattern-format/semantics generation (absent ⇒ 1)
     pattern_version_explicit: bool = False  # True if the pattern declared it
+    lbl_match: str = 'literal'  # how lbl: patterns are matched: literal | glob | regexp
 
 
 @dataclass
@@ -16,7 +20,8 @@ class FieldDef:
     name: str
     type: str        # string | integer | currency | date | datetime | timestamp
     regex: str
-    role: str = 'var'  # 'var' (extract → output) or 'lbl' (anchor only, never output)
+    role: str = 'var'          # 'var' (extract → output) or 'lbl' (anchor only, never output)
+    lbl_match: str | None = None  # per-field override; None = use Config.lbl_match
 
 
 @dataclass
