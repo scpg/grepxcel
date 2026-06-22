@@ -11,9 +11,7 @@ import pytest
 from grepxcel.examples_generator import EXAMPLES, generate_examples
 
 
-GREPXCEL = os.path.join(
-    os.path.dirname(sys.executable), 'grepxcel',
-)
+GREPXCEL = [sys.executable, '-m', 'grepxcel']
 
 FIXTURES_DIR = pathlib.Path(__file__).resolve().parent.parent / 'fixtures'
 
@@ -106,7 +104,7 @@ class TestExtractionWorks:
             pattern = str(d / 'pattern.xlsx')
             data = str(d / 'data.xlsx')
             result = subprocess.run(
-                [GREPXCEL, 'extract', '-p', pattern, data],
+                [*GREPXCEL,'extract', '-p', pattern, data],
                 capture_output=True, text=True, timeout=30,
             )
             assert result.returncode == 0, (
@@ -123,7 +121,7 @@ class TestCLISubcommand:
     def test_generate_examples_creates_directory(self, tmp_path):
         out = tmp_path / 'grepxcel-examples'
         result = subprocess.run(
-            [GREPXCEL, 'generate-examples', '-o', str(out)],
+            [*GREPXCEL,'generate-examples', '-o', str(out)],
             capture_output=True, text=True, timeout=30,
         )
         assert result.returncode == 0
@@ -134,7 +132,7 @@ class TestCLISubcommand:
     def test_generate_examples_default_output(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         result = subprocess.run(
-            [GREPXCEL, 'generate-examples'],
+            [*GREPXCEL,'generate-examples'],
             capture_output=True, text=True, timeout=30,
             cwd=str(tmp_path),
         )
@@ -144,7 +142,7 @@ class TestCLISubcommand:
 
     def test_help_text(self):
         result = subprocess.run(
-            [GREPXCEL, 'generate-examples', '--help'],
+            [*GREPXCEL,'generate-examples', '--help'],
             capture_output=True, text=True, timeout=10,
         )
         assert result.returncode == 0
