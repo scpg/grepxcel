@@ -73,3 +73,6 @@ version = {attr = "grepxcel.__version__"}
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["grepxcel*"]
+
+[tool.setuptools.package-data]
+"grepxcel.examples" = ["*/*.xlsx"]

@@ -89,6 +89,7 @@ commands:
   lint               Inspect an Excel file for potential extraction issues
   schema             Generate a JSON Schema from a pattern file
   generate-skill     Write an AI-agent skill doc (Claude / AGENTS.md)
+  generate-examples  Create ready-to-run example files in a local directory
   doctor             Check the environment is ready (deps, keys, model, proxy/TLS)
 
 Run 'grepxcel <command> --help' for per-command options.
@@ -110,6 +111,7 @@ Run 'grepxcel <command> --help' for per-command options.
     _add_lint_subparser(sub)
     _add_schema_subparser(sub)
     _add_skill_subparser(sub)
+    _add_examples_subparser(sub)
     _add_doctor_subparser(sub)
     return p
 
@@ -198,6 +200,29 @@ examples:
                    help='Skill format to emit (default: claude)')
     p.add_argument('-o', '--output', metavar='FILE',
                    help='Write the skill doc to FILE (default: stdout)')
+
+
+def _add_examples_subparser(sub) -> None:
+    p = sub.add_parser(
+        'generate-examples',
+        help='Create ready-to-run example files in a local directory',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Copies 4 bundled examples (pattern + data xlsx) into a local directory so
+you can immediately try grepxcel without needing your own Excel files.
+Each example includes a README.txt with the exact commands to run.
+
+examples:
+  grepxcel generate-examples                         # → ./grepxcel-examples/
+  grepxcel generate-examples -o my-examples
+        """,
+    )
+    p.add_argument(
+        '-o', '--output',
+        metavar='DIR',
+        default='grepxcel-examples',
+        help='Directory to create (default: ./grepxcel-examples/)',
+    )
 
 
 def _add_doctor_subparser(sub) -> None:
@@ -622,6 +647,15 @@ def _run_skill(args) -> int:
     return run_skill(args.target, getattr(args, 'output', None))
 
 
+def _run_examples(args) -> int:
+    from .examples_generator import generate_examples
+    try:
+        generate_examples(args.output)
+        return 0
+    except SystemExit as e:
+        return e.code if isinstance(e.code, int) else 1
+
+
 def _run_schema(args) -> int:
     from .schema import run_schema
     if not args.output:
@@ -829,6 +863,9 @@ def main(argv=None):
 
     if args.command == 'generate-skill':
         sys.exit(_run_skill(args))
+
+    if args.command == 'generate-examples':
+        sys.exit(_run_examples(args))
 
     # extract
     all_ok = True

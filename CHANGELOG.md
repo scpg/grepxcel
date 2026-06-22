@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`generate-examples` command** — creates 4 ready-to-run example sets
+  (pattern + data xlsx + README) in a local directory so new users can try
+  grepxcel immediately without needing their own Excel files.
 - **`lbl.match` mode** — `lbl:` fields now default to literal string matching
   instead of full regex. Labels like `Term (months):` or `Breaks\n(minutes)`
   work without regex escaping.

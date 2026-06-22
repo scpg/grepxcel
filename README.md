@@ -146,6 +146,18 @@ what to install (and points you at the cloud option as an alternative).
 
 Requires Python **3.11+**.
 
+### Try it — bundled examples
+
+Don't have your own Excel files yet? Generate ready-to-run examples:
+
+```bash
+.venv/bin/grepxcel generate-examples          # creates ./grepxcel-examples/
+cd grepxcel-examples/01_simple_invoice
+.venv/bin/grepxcel extract -p pattern.xlsx data.xlsx
+```
+
+Each example includes a pattern, a data file, and a README with commands to try.
+
 ### CLI usage
 
 ```bash
@@ -283,6 +295,17 @@ grepxcel validate-pattern a.xlsx b.csv         # validate several at once
 | Flag | Default | Purpose |
 |---|---|---|
 | `-o FILE` | `pattern-reference.xlsx` | Output path for the reference file |
+
+### `grepxcel generate-examples`
+
+Creates 4 ready-to-run example sets (pattern + data + README) in a local directory.
+
+| Flag | Default | Purpose |
+|---|---|---|
+| `-o DIR` | `./grepxcel-examples/` | Directory to create |
+
+Examples included: simple invoice (KV), product catalog (table), expense report
+(KV + table + footer), loan schedule (KV header + amortization table).
 
 ### `grepxcel draft`
 
