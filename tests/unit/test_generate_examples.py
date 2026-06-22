@@ -2,6 +2,7 @@
 
 import json
 import os
+import pathlib
 import subprocess
 import sys
 
@@ -13,6 +14,8 @@ from grepxcel.examples_generator import EXAMPLES, generate_examples
 GREPXCEL = os.path.join(
     os.path.dirname(sys.executable), 'grepxcel',
 )
+
+FIXTURES_DIR = pathlib.Path(__file__).resolve().parent.parent / 'fixtures'
 
 
 class TestExamplesMetadata:
@@ -146,3 +149,29 @@ class TestCLISubcommand:
         )
         assert result.returncode == 0
         assert 'example' in result.stdout.lower()
+
+
+class TestBundledExamplesMatchFixtures:
+    """Catch drift: bundled examples must stay in sync with source fixtures."""
+
+    @pytest.mark.parametrize('ex', EXAMPLES, ids=[e['name'] for e in EXAMPLES])
+    def test_data_xlsx_matches_fixture(self, ex):
+        fixture_data = FIXTURES_DIR / ex['source_fixture'] / 'data.xlsx'
+        bundled_data = pathlib.Path(ex['data'])
+        assert fixture_data.read_bytes() == bundled_data.read_bytes(), (
+            f"Bundled {ex['name']}/data.xlsx differs from "
+            f"tests/fixtures/{ex['source_fixture']}/data.xlsx — "
+            f"copy the updated fixture into grepxcel/examples/{ex['name']}/"
+        )
+
+    @pytest.mark.parametrize('ex', EXAMPLES, ids=[e['name'] for e in EXAMPLES])
+    def test_pattern_xlsx_matches_fixture(self, ex):
+        fixture_pattern = (
+            FIXTURES_DIR / ex['source_fixture'] / 'pattern-from-draft.xlsx'
+        )
+        bundled_pattern = pathlib.Path(ex['pattern'])
+        assert fixture_pattern.read_bytes() == bundled_pattern.read_bytes(), (
+            f"Bundled {ex['name']}/pattern.xlsx differs from "
+            f"tests/fixtures/{ex['source_fixture']}/pattern-from-draft.xlsx — "
+            f"copy the updated fixture into grepxcel/examples/{ex['name']}/"
+        )

@@ -10,24 +10,28 @@ _EXAMPLES_PACKAGE = 'grepxcel.examples'
 EXAMPLES = [
     {
         'name': '01_simple_invoice',
+        'source_fixture': '01_simple_invoice',
         'description': 'Key-value extraction (cell:next) — 8 scalar fields',
         'pattern': '',
         'data': '',
     },
     {
         'name': '02_product_catalog',
+        'source_fixture': '02_product_catalog',
         'description': 'Table extraction (HEADER/DATA) — 4-column repeating table',
         'pattern': '',
         'data': '',
     },
     {
         'name': '03_expense_report',
+        'source_fixture': '05_expense_report',
         'description': 'Key-value + table + footer — 18 fields with Subtotal',
         'pattern': '',
         'data': '',
     },
     {
         'name': '04_loan_schedule',
+        'source_fixture': '11_loan_schedule',
         'description': 'Key-value header + amortization table — 24 fields',
         'pattern': '',
         'data': '',
