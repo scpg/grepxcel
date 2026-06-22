@@ -90,6 +90,8 @@ commands:
   schema             Generate a JSON Schema from a pattern file
   generate-skill     Write an AI-agent skill doc (Claude / AGENTS.md)
   generate-examples  Create ready-to-run example files in a local directory
+  mcp                Start the MCP server (stdio transport)
+  mcp-config         Print the MCP server config for your AI agent
   doctor             Check the environment is ready (deps, keys, model, proxy/TLS)
 
 Run 'grepxcel <command> --help' for per-command options.
@@ -112,6 +114,8 @@ Run 'grepxcel <command> --help' for per-command options.
     _add_schema_subparser(sub)
     _add_skill_subparser(sub)
     _add_examples_subparser(sub)
+    _add_mcp_subparser(sub)
+    _add_mcp_config_subparser(sub)
     _add_doctor_subparser(sub)
     return p
 
@@ -222,6 +226,48 @@ examples:
         metavar='DIR',
         default='grepxcel-examples',
         help='Directory to create (default: ./grepxcel-examples/)',
+    )
+
+
+def _add_mcp_subparser(sub) -> None:
+    sub.add_parser(
+        'mcp',
+        help='Start the MCP server (stdio transport)',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Starts grepxcel as a Model Context Protocol (MCP) server using stdio
+transport. AI agents (Claude Code, Claude Desktop, Cursor, etc.) can
+call grepxcel tools directly: extract, validate-pattern, lint, schema,
+docs, doctor, and generate-examples.
+
+Requires: pip install 'grepxcel[mcp]'
+
+To see the config to add to your AI agent, run:
+  grepxcel mcp-config
+        """,
+    )
+
+
+def _add_mcp_config_subparser(sub) -> None:
+    p = sub.add_parser(
+        'mcp-config',
+        help='Print the MCP server config for your AI agent',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Detects how grepxcel is installed and prints the JSON config block
+to add to your AI agent's MCP configuration file.
+
+examples:
+  grepxcel mcp-config                          # Claude Code (default)
+  grepxcel mcp-config --target claude-desktop
+  grepxcel mcp-config --target cursor
+        """,
+    )
+    p.add_argument(
+        '--target',
+        choices=['claude-code', 'claude-desktop', 'cursor'],
+        default='claude-code',
+        help='Config format for your AI agent (default: claude-code)',
     )
 
 
@@ -656,6 +702,17 @@ def _run_examples(args) -> int:
         return e.code if isinstance(e.code, int) else 1
 
 
+def _run_mcp(args) -> int:
+    from .mcp_server import run_server
+    run_server()
+    return 0
+
+
+def _run_mcp_config(args) -> int:
+    from .mcp_config import run_mcp_config
+    return run_mcp_config(target=getattr(args, 'target', 'claude-code'))
+
+
 def _run_schema(args) -> int:
     from .schema import run_schema
     if not args.output:
@@ -866,6 +923,12 @@ def main(argv=None):
 
     if args.command == 'generate-examples':
         sys.exit(_run_examples(args))
+
+    if args.command == 'mcp':
+        sys.exit(_run_mcp(args))
+
+    if args.command == 'mcp-config':
+        sys.exit(_run_mcp_config(args))
 
     # extract
     all_ok = True

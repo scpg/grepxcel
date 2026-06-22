@@ -61,7 +61,7 @@ If the venv does not exist it prints a clear error with setup instructions and e
 
 ## Running the CLI
 
-The CLI is subcommand-based: `extract`, `validate-pattern`, `draft`, `docs`, `lint`, `schema`, `generate-examples`, `doctor` (run `grepxcel <cmd> --help`).
+The CLI is subcommand-based: `extract`, `validate-pattern`, `draft`, `docs`, `lint`, `schema`, `generate-examples`, `mcp`, `mcp-config`, `doctor` (run `grepxcel <cmd> --help`).
 
 ```bash
 .venv/bin/grepxcel extract -p pattern.xlsx data.xlsx
@@ -81,6 +81,9 @@ The CLI is subcommand-based: `extract`, `validate-pattern`, `draft`, `docs`, `li
 .venv/bin/grepxcel docs                                            # write pattern-reference.xlsx
 .venv/bin/grepxcel generate-examples                               # create ready-to-run example files
 .venv/bin/grepxcel generate-examples -o my-examples                # custom output directory
+.venv/bin/grepxcel mcp                                             # start MCP server (stdio)
+.venv/bin/grepxcel mcp-config                                      # print MCP config for Claude Code
+.venv/bin/grepxcel mcp-config --target claude-desktop              # print config for Claude Desktop
 .venv/bin/grepxcel doctor [extract|draft|all]                      # preflight: deps, keys, model, proxy/TLS
 ```
 
