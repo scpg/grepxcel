@@ -3,15 +3,14 @@
 import json
 import os
 import pathlib
-import subprocess
 import sys
 
 import pytest
 
+import grepxcel
+from grepxcel.cli import main as cli_main
 from grepxcel.examples_generator import EXAMPLES, generate_examples
 
-
-GREPXCEL = [sys.executable, '-m', 'grepxcel']
 
 FIXTURES_DIR = pathlib.Path(__file__).resolve().parent.parent / 'fixtures'
 
@@ -103,50 +102,37 @@ class TestExtractionWorks:
                 continue
             pattern = str(d / 'pattern.xlsx')
             data = str(d / 'data.xlsx')
-            result = subprocess.run(
-                [*GREPXCEL,'extract', '-p', pattern, data],
-                capture_output=True, text=True, timeout=30,
-            )
-            assert result.returncode == 0, (
-                f"{d.name} extraction failed:\n{result.stderr}"
-            )
-            parsed = json.loads(result.stdout)
-            assert isinstance(parsed, dict)
-            assert len(parsed) > 0, f"{d.name} produced empty output"
+            result = grepxcel.extract(pattern, data)
+            assert isinstance(result, dict)
+            assert len(result) > 0, f"{d.name} produced empty output"
 
 
 class TestCLISubcommand:
-    """The generate-examples subcommand works end-to-end."""
+    """The generate-examples subcommand works via cli.main()."""
 
     def test_generate_examples_creates_directory(self, tmp_path):
         out = tmp_path / 'grepxcel-examples'
-        result = subprocess.run(
-            [*GREPXCEL,'generate-examples', '-o', str(out)],
-            capture_output=True, text=True, timeout=30,
-        )
-        assert result.returncode == 0
+        with pytest.raises(SystemExit) as exc_info:
+            cli_main(['generate-examples', '-o', str(out)])
+        assert exc_info.value.code == 0
         assert out.is_dir()
         subdirs = [d for d in out.iterdir() if d.is_dir()]
         assert len(subdirs) == 4
 
     def test_generate_examples_default_output(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
-        result = subprocess.run(
-            [*GREPXCEL,'generate-examples'],
-            capture_output=True, text=True, timeout=30,
-            cwd=str(tmp_path),
-        )
-        assert result.returncode == 0
+        with pytest.raises(SystemExit) as exc_info:
+            cli_main(['generate-examples'])
+        assert exc_info.value.code == 0
         default_dir = tmp_path / 'grepxcel-examples'
         assert default_dir.is_dir()
 
-    def test_help_text(self):
-        result = subprocess.run(
-            [*GREPXCEL,'generate-examples', '--help'],
-            capture_output=True, text=True, timeout=10,
-        )
-        assert result.returncode == 0
-        assert 'example' in result.stdout.lower()
+    def test_help_text(self, capsys):
+        with pytest.raises(SystemExit) as exc_info:
+            cli_main(['generate-examples', '--help'])
+        assert exc_info.value.code == 0
+        captured = capsys.readouterr()
+        assert 'example' in captured.out.lower()
 
 
 class TestBundledExamplesMatchFixtures:
