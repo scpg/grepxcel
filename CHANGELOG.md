@@ -17,6 +17,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **`sbom` command** — generates a CycloneDX 1.6 Software Bill of Materials
+  listing grepxcel and every transitive dependency with PURLs, SPDX license
+  identifiers, and SHA-256 hashes from pip's RECORD files. Uses only stdlib
+  (`importlib.metadata`) — no external tool required. Output is accepted by
+  Dependency-Track, Grype, and other SBOM consumers. The SBOM is also
+  attached as a release artifact on GitHub Releases.
 - **`generate-examples` command** — creates 4 ready-to-run example sets
   (pattern + data xlsx + README) in a local directory so new users can try
   grepxcel immediately without needing their own Excel files.

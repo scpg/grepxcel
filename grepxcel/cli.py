@@ -114,6 +114,7 @@ Run 'grepxcel <command> --help' for per-command options.
     _add_schema_subparser(sub)
     _add_skill_subparser(sub)
     _add_examples_subparser(sub)
+    _add_sbom_subparser(sub)
     _add_mcp_subparser(sub)
     _add_mcp_config_subparser(sub)
     _add_doctor_subparser(sub)
@@ -226,6 +227,30 @@ examples:
         metavar='DIR',
         default='grepxcel-examples',
         help='Directory to create (default: ./grepxcel-examples/)',
+    )
+
+
+def _add_sbom_subparser(sub) -> None:
+    p = sub.add_parser(
+        'sbom',
+        help='Generate a CycloneDX 1.6 SBOM for this installation',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Generate a CycloneDX 1.6 Software Bill of Materials (SBOM) listing grepxcel
+and every transitive dependency with PURLs, licenses, and hashes.
+
+Uses only stdlib — no external tool required. The output is valid CycloneDX
+JSON accepted by Dependency-Track, Grype, and other SBOM consumers.
+
+examples:
+  grepxcel sbom                        # print to stdout
+  grepxcel sbom -o sbom.cdx.json       # write to file
+        """,
+    )
+    p.add_argument(
+        '-o', '--output',
+        metavar='FILE',
+        help='Write SBOM to file (default: stdout)',
     )
 
 
@@ -713,6 +738,11 @@ def _run_mcp_config(args) -> int:
     return run_mcp_config(target=getattr(args, 'target', 'claude-code'))
 
 
+def _run_sbom(args) -> int:
+    from .sbom import run_sbom
+    return run_sbom(output=getattr(args, 'output', None))
+
+
 def _run_schema(args) -> int:
     from .schema import run_schema
     if not args.output:
@@ -929,6 +959,9 @@ def main(argv=None):
 
     if args.command == 'mcp-config':
         sys.exit(_run_mcp_config(args))
+
+    if args.command == 'sbom':
+        sys.exit(_run_sbom(args))
 
     # extract
     all_ok = True
