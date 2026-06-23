@@ -7,26 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Changed
+## [0.1.0] — 2026-06-24
 
-- **structlog integration** — NDJSON file output now uses a structlog processor
-  chain (allow-list filter → JSONRenderer) instead of manual dict building +
-  `json.dumps`. The output format is unchanged; this is an internal refactor
-  that makes the structured-log pipeline extensible for future output targets
-  (OTLP, Datadog, etc.). `structlog>=24.1` is now a core dependency.
+Initial public release.
 
-### Security
+### Features
 
-- **MCP path sandboxing** — all MCP server tools now validate that file paths
-  resolve within the server's working directory. Absolute paths pointing
-  elsewhere, `..` traversal, and symlink escapes are rejected with a clear
-  error. Prevents an AI agent (or a prompt-injected one) from reading or
-  writing files outside the intended project directory.
-
-### Added
-
+- **Pattern-based extraction** — define a pattern file (`.xlsx` or `.csv`) once,
+  extract structured JSON from any similarly-laid-out `.xlsx` file.
 - **Batch directory extraction** — `grepxcel extract -p pat.xlsx data_dir/`
-  now expands directories to their `.xlsx` files automatically. Add `-r` /
+  expands directories to their `.xlsx` files automatically. Add `-r` /
   `--recursive` to recurse into subdirectories. Excel temp files (`~$*.xlsx`)
   are skipped. Empty directories produce a clear error message.
 - **`sbom` command** — generates a CycloneDX 1.6 Software Bill of Materials
@@ -55,15 +45,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     `literal` or `glob` (e.g. `\(`, `\.`, `(?`)
   - Verbose `validate-pattern -v` now shows `lbl.match` in config and per-field
     `[mode]` tags for explicit overrides
-
-## [0.1.0] — YYYY-MM-DD
-
-Initial public release.
-
-### Features
-
-- **Pattern-based extraction** — define a pattern file (`.xlsx` or `.csv`) once,
-  extract structured JSON from any similarly-laid-out `.xlsx` file.
 - **Cell addressing**
   - `cell:B5`       -> absolute
   - `cell:next`     -> sequential, next non empty in direction order
@@ -107,8 +88,21 @@ Initial public release.
 - **`generate-skill`** — emits a skill doc (`--target claude` or `agents-md`)
   for AI-agent integration.
 
+### Changed
+
+- **structlog integration** — NDJSON file output now uses a structlog processor
+  chain (allow-list filter → JSONRenderer) instead of manual dict building +
+  `json.dumps`. The output format is unchanged; this is an internal refactor
+  that makes the structured-log pipeline extensible for future output targets
+  (OTLP, Datadog, etc.). `structlog>=24.1` is now a core dependency.
+
 ### Security
 
+- **MCP path sandboxing** — all MCP server tools validate that file paths
+  resolve within the server's working directory. Absolute paths pointing
+  elsewhere, `..` traversal, and symlink escapes are rejected with a clear
+  error. Prevents an AI agent (or a prompt-injected one) from reading or
+  writing files outside the intended project directory.
 - Fail-closed XXE protection (defusedxml asserted at import).
 - ZIP-bomb guard measures real decompressed size (stream, not metadata).
 - AST-based ReDoS detection + hard per-match regex timeout.
