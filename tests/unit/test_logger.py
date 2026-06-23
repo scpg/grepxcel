@@ -5,6 +5,7 @@ from grepxcel.logger import (
     Logger, LogRecord, EngineError, VerbosityLevel,
     Severity, Category, col_letter, cell_ref, LOG_SCHEMA_VERSION,
     _SAFE_LOG_KEYS, _SAFE_SUMMARY_KEYS,
+    allow_list_filter, render_json,
 )
 
 
@@ -546,3 +547,101 @@ def test_build_meta_issues_use_allow_list_keys():
     for issue in meta['issues']:
         extra = set(issue.keys()) - set(_SAFE_LOG_KEYS)
         assert not extra, f'Issue key(s) {extra} not in _SAFE_LOG_KEYS'
+
+
+# ─── structlog processor chain ──────────────────────────────────────────────
+
+def test_allow_list_filter_strips_unsafe_keys():
+    """allow_list_filter removes keys not in _SAFE_LOG_KEYS."""
+    event = {
+        'ts': '2026-01-01T00:00:00', 'level': 'WARNING',
+        'category': 'VALIDATION', 'event': 'value_mismatch',
+        'cell': 'B10', 'field': 'name', 'field_type': 'string',
+        'run_id': 'abc', 'source': 'x.xlsx', 'schema_version': 1,
+        'message': 'SHOULD BE STRIPPED',
+        'found': 'SECRET VALUE',
+        'hint': 'ALSO STRIPPED',
+    }
+    filtered = allow_list_filter(None, None, event)
+    assert 'message' not in filtered
+    assert 'found' not in filtered
+    assert 'hint' not in filtered
+    assert filtered['field'] == 'name'
+    assert set(filtered.keys()).issubset(set(_SAFE_LOG_KEYS))
+
+
+def test_allow_list_filter_uses_summary_keys_for_summary():
+    """Summary events use _SAFE_SUMMARY_KEYS, not _SAFE_LOG_KEYS."""
+    event = {
+        'ts': '2026-01-01T00:00:00', 'level': 'INFO',
+        'category': 'ENGINE', 'event': 'summary',
+        'run_id': 'abc', 'source': 'x.xlsx', 'schema_version': 1,
+        'scalars_defined': 5, 'scalars_populated': 3,
+        'scalars_empty': 2, 'empty_field_names': ['a'],
+        'tables_defined': 1, 'table_instances': 2,
+        'warnings': 0, 'errors': 0,
+        'issues_by_event': {}, 'duration_ms': 42,
+        'extra_junk': 'STRIPPED',
+    }
+    filtered = allow_list_filter(None, None, event)
+    assert 'extra_junk' not in filtered
+    assert filtered['scalars_defined'] == 5
+    assert set(filtered.keys()).issubset(set(_SAFE_SUMMARY_KEYS))
+
+
+def test_render_json_returns_valid_json_string():
+    """render_json returns a JSON string (not a dict)."""
+    event = {
+        'ts': '2026-01-01T00:00:00', 'level': 'INFO',
+        'category': 'ENGINE', 'event': 'engine',
+        'cell': '', 'field': '', 'field_type': '',
+        'run_id': 'r1', 'source': 's.xlsx', 'schema_version': 1,
+    }
+    result = render_json(event)
+    assert isinstance(result, str)
+    parsed = json.loads(result)
+    assert parsed['run_id'] == 'r1'
+
+
+def test_render_json_strips_unsafe_keys():
+    """render_json applies the allow-list filter before serializing."""
+    event = {
+        'ts': '2026-01-01T00:00:00', 'level': 'WARNING',
+        'category': 'VALIDATION', 'event': 'value_mismatch',
+        'cell': 'A1', 'field': 'f', 'field_type': 'string',
+        'run_id': 'r', 'source': 's', 'schema_version': 1,
+        'message': 'LEAKED', 'found': 'SECRET',
+    }
+    result = render_json(event)
+    assert 'LEAKED' not in result
+    assert 'SECRET' not in result
+    parsed = json.loads(result)
+    assert 'message' not in parsed
+    assert 'found' not in parsed
+
+
+def test_render_json_handles_datetime_via_default():
+    """structlog's JSONRenderer uses default=str for non-serializable types."""
+    import datetime
+    event = {
+        'ts': datetime.datetime(2026, 1, 1, tzinfo=datetime.timezone.utc),
+        'level': 'INFO', 'category': 'ENGINE', 'event': 'test',
+        'cell': '', 'field': '', 'field_type': '',
+        'run_id': 'r', 'source': 's', 'schema_version': 1,
+    }
+    result = render_json(event)
+    parsed = json.loads(result)
+    assert '2026' in parsed['ts']
+
+
+def test_bound_context_injected_into_json_records(tmp_path):
+    """Logger's _bound_context (run_id, source, schema_version) appears in JSON output."""
+    log_path = tmp_path / 'ctx.jsonl'
+    lg = Logger(level=VerbosityLevel.NORMAL, log_file=str(log_path),
+                log_format='json', source='ctx.xlsx', run_id='TESTRUN42')
+    lg.commit_warnings([lg.warn_validation(1, 1, 'f', 'string', '.+', 'x')])
+    lg.close()
+    rec = json.loads(log_path.read_text(encoding='utf-8').splitlines()[0])
+    assert rec['run_id'] == 'TESTRUN42'
+    assert rec['source'] == 'ctx.xlsx'
+    assert rec['schema_version'] == LOG_SCHEMA_VERSION

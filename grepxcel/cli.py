@@ -89,6 +89,9 @@ commands:
   lint               Inspect an Excel file for potential extraction issues
   schema             Generate a JSON Schema from a pattern file
   generate-skill     Write an AI-agent skill doc (Claude / AGENTS.md)
+  generate-examples  Create ready-to-run example files in a local directory
+  mcp                Start the MCP server (stdio transport)
+  mcp-config         Print the MCP server config for your AI agent
   doctor             Check the environment is ready (deps, keys, model, proxy/TLS)
 
 Run 'grepxcel <command> --help' for per-command options.
@@ -110,6 +113,10 @@ Run 'grepxcel <command> --help' for per-command options.
     _add_lint_subparser(sub)
     _add_schema_subparser(sub)
     _add_skill_subparser(sub)
+    _add_examples_subparser(sub)
+    _add_sbom_subparser(sub)
+    _add_mcp_subparser(sub)
+    _add_mcp_config_subparser(sub)
     _add_doctor_subparser(sub)
     return p
 
@@ -200,6 +207,95 @@ examples:
                    help='Write the skill doc to FILE (default: stdout)')
 
 
+def _add_examples_subparser(sub) -> None:
+    p = sub.add_parser(
+        'generate-examples',
+        help='Create ready-to-run example files in a local directory',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Copies 4 bundled examples (pattern + data xlsx) into a local directory so
+you can immediately try grepxcel without needing your own Excel files.
+Each example includes a README.txt with the exact commands to run.
+
+examples:
+  grepxcel generate-examples                         # → ./grepxcel-examples/
+  grepxcel generate-examples -o my-examples
+        """,
+    )
+    p.add_argument(
+        '-o', '--output',
+        metavar='DIR',
+        default='grepxcel-examples',
+        help='Directory to create (default: ./grepxcel-examples/)',
+    )
+
+
+def _add_sbom_subparser(sub) -> None:
+    p = sub.add_parser(
+        'sbom',
+        help='Generate a CycloneDX 1.6 SBOM for this installation',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Generate a CycloneDX 1.6 Software Bill of Materials (SBOM) listing grepxcel
+and every transitive dependency with PURLs, licenses, and hashes.
+
+Uses only stdlib — no external tool required. The output is valid CycloneDX
+JSON accepted by Dependency-Track, Grype, and other SBOM consumers.
+
+examples:
+  grepxcel sbom                        # print to stdout
+  grepxcel sbom -o sbom.cdx.json       # write to file
+        """,
+    )
+    p.add_argument(
+        '-o', '--output',
+        metavar='FILE',
+        help='Write SBOM to file (default: stdout)',
+    )
+
+
+def _add_mcp_subparser(sub) -> None:
+    sub.add_parser(
+        'mcp',
+        help='Start the MCP server (stdio transport)',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Starts grepxcel as a Model Context Protocol (MCP) server using stdio
+transport. AI agents (Claude Code, Claude Desktop, Cursor, etc.) can
+call grepxcel tools directly: extract, validate-pattern, lint, schema,
+docs, doctor, and generate-examples.
+
+Requires: pip install 'grepxcel[mcp]'
+
+To see the config to add to your AI agent, run:
+  grepxcel mcp-config
+        """,
+    )
+
+
+def _add_mcp_config_subparser(sub) -> None:
+    p = sub.add_parser(
+        'mcp-config',
+        help='Print the MCP server config for your AI agent',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Detects how grepxcel is installed and prints the JSON config block
+to add to your AI agent's MCP configuration file.
+
+examples:
+  grepxcel mcp-config                          # Claude Code (default)
+  grepxcel mcp-config --target claude-desktop
+  grepxcel mcp-config --target cursor
+        """,
+    )
+    p.add_argument(
+        '--target',
+        choices=['claude-code', 'claude-desktop', 'cursor'],
+        default='claude-code',
+        help='Config format for your AI agent (default: claude-code)',
+    )
+
+
 def _add_doctor_subparser(sub) -> None:
     p = sub.add_parser(
         'doctor',
@@ -263,8 +359,18 @@ examples:
     p.add_argument(
         'files',
         nargs='+',
-        metavar='FILE',
-        help='One or more data Excel files to process',
+        metavar='FILE_OR_DIR',
+        help='Data Excel files or directories to process (.xlsx)',
+    )
+    p.add_argument(
+        '-r', '--recursive',
+        action='store_true',
+        help='Recurse into subdirectories when a directory is given',
+    )
+    p.add_argument(
+        '--max-files',
+        type=int, default=_DEFAULT_MAX_FILES, metavar='N',
+        help=f'Safety cap on total files to process (default: {_DEFAULT_MAX_FILES})',
     )
     p.add_argument(
         '-v', '--verbose',
@@ -578,6 +684,70 @@ def _process_file(pattern: str, data_file: str, args, stem: str = None) -> bool:
     return not (logger.has_errors() or logger.has_warnings())
 
 
+_DEFAULT_MAX_FILES = 10_000
+
+
+def _expand_files(paths: list[str], recursive: bool = False,
+                  max_files: int = _DEFAULT_MAX_FILES) -> list[str]:
+    """Expand directories in *paths* to their .xlsx files.
+
+    Raises ``SystemExit`` if more than *max_files* are collected (safety cap
+    against accidentally recursing into a huge tree).  Symlinks (files and
+    directories) are skipped with a warning on stderr.
+    """
+    result = []
+    symlinks_found = []
+
+    def _check_cap():
+        if len(result) > max_files:
+            print(
+                f'  Exceeded {max_files} files — aborting. '
+                f'Use --max-files to raise the limit.',
+                file=sys.stderr,
+            )
+            raise SystemExit(1)
+
+    def _collect(dirpath, filenames):
+        for fn in sorted(filenames):
+            full = os.path.join(dirpath, fn)
+            if os.path.islink(full):
+                symlinks_found.append(full)
+                continue
+            if fn.lower().endswith('.xlsx') and not fn.startswith('~$'):
+                result.append(full)
+                _check_cap()
+
+    for p in paths:
+        if os.path.islink(p):
+            symlinks_found.append(p)
+            continue
+        if os.path.isdir(p):
+            if recursive:
+                for dirpath, dirs, filenames in os.walk(p):
+                    # warn about symlinked subdirectories
+                    for d in dirs:
+                        dp = os.path.join(dirpath, d)
+                        if os.path.islink(dp):
+                            symlinks_found.append(dp)
+                    _collect(dirpath, filenames)
+            else:
+                _collect(p, os.listdir(p))
+        else:
+            result.append(p)
+
+    if symlinks_found:
+        print(f'  ⚠  Skipped {len(symlinks_found)} symlink(s) '
+              f'(not followed for safety):',
+              file=sys.stderr)
+        for s in symlinks_found[:5]:
+            print(f'       {s} → {os.readlink(s)}', file=sys.stderr)
+        if len(symlinks_found) > 5:
+            print(f'       … and {len(symlinks_found) - 5} more',
+                  file=sys.stderr)
+
+    return result
+
+
 def _output_stem(data_file: str, all_files: list[str]) -> str:
     """
     Build a collision-safe output filename stem.
@@ -620,6 +790,31 @@ def _run_validate(args) -> int:
 def _run_skill(args) -> int:
     from .skill import run_skill
     return run_skill(args.target, getattr(args, 'output', None))
+
+
+def _run_examples(args) -> int:
+    from .examples_generator import generate_examples
+    try:
+        generate_examples(args.output)
+        return 0
+    except SystemExit as e:
+        return e.code if isinstance(e.code, int) else 1
+
+
+def _run_mcp(args) -> int:
+    from .mcp_server import run_server
+    run_server()
+    return 0
+
+
+def _run_mcp_config(args) -> int:
+    from .mcp_config import run_mcp_config
+    return run_mcp_config(target=getattr(args, 'target', 'claude-code'))
+
+
+def _run_sbom(args) -> int:
+    from .sbom import run_sbom
+    return run_sbom(output=getattr(args, 'output', None))
 
 
 def _run_schema(args) -> int:
@@ -830,11 +1025,44 @@ def main(argv=None):
     if args.command == 'generate-skill':
         sys.exit(_run_skill(args))
 
-    # extract
+    if args.command == 'generate-examples':
+        sys.exit(_run_examples(args))
+
+    if args.command == 'mcp':
+        sys.exit(_run_mcp(args))
+
+    if args.command == 'mcp-config':
+        sys.exit(_run_mcp_config(args))
+
+    if args.command == 'sbom':
+        sys.exit(_run_sbom(args))
+
+    # ── Security parameter validation ────────────────────────────────────────
+    parser = _build_parser()
+    if hasattr(args, 'max_size') and args.max_size <= 0:
+        parser.error('--max-size must be greater than 0')
+    if hasattr(args, 'max_uncompressed') and args.max_uncompressed <= 0:
+        parser.error('--max-uncompressed must be greater than 0')
+    if hasattr(args, 'max_cell_len') and args.max_cell_len < 1:
+        parser.error('--max-cell-len must be at least 1')
+    if hasattr(args, 'max_rows') and args.max_rows < 1:
+        parser.error('--max-rows must be at least 1')
+    if hasattr(args, 'max_columns') and args.max_columns < 1:
+        parser.error('--max-columns must be at least 1')
+
+    # extract — expand directories to .xlsx files
+    expanded = _expand_files(args.files,
+                             recursive=getattr(args, 'recursive', False),
+                             max_files=getattr(args, 'max_files',
+                                               _DEFAULT_MAX_FILES))
+    if not expanded:
+        print('  No .xlsx files found in the specified paths.', file=sys.stderr)
+        sys.exit(1)
+
     all_ok = True
-    for data_file in args.files:
+    for data_file in expanded:
         ok = _process_file(args.pattern, data_file, args,
-                           stem=_output_stem(data_file, args.files))
+                           stem=_output_stem(data_file, expanded))
         all_ok = all_ok and ok
 
     sys.exit(0 if all_ok else 1)

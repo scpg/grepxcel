@@ -46,12 +46,24 @@ _LEVEL1_FIXTURES: list[str] = [
     and os.path.exists(os.path.join(_FIXTURES_DIR, name, 'data.xlsx'))
 ]
 
-# Level 2: fixtures with a real committed pattern csv
-_LEVEL2_FIXTURES: list[str] = [
-    name for name in _ALL_FIXTURE_NAMES
-    if find_pattern_csv(os.path.join(_FIXTURES_DIR, name)) is not None
-    and os.path.exists(os.path.join(_FIXTURES_DIR, name, 'data.xlsx'))
-]
+# Level 2: fixtures with a real committed pattern csv whose tier matches the xlsx.
+# If the xlsx is pattern-manual.xlsx, we only compare against pattern-manual.csv
+# (not pattern-from-draft.csv) — they are different patterns with different fields.
+def _level2_fixtures():
+    result = []
+    for name in _ALL_FIXTURE_NAMES:
+        folder = os.path.join(_FIXTURES_DIR, name)
+        xlsx = find_pattern_xlsx(folder)
+        csv = find_pattern_csv(folder)
+        if not xlsx or not csv or not os.path.exists(os.path.join(folder, 'data.xlsx')):
+            continue
+        xlsx_base = os.path.basename(xlsx).replace('.xlsx', '')
+        csv_base = os.path.basename(csv).replace('.csv', '')
+        if xlsx_base == csv_base:
+            result.append(name)
+    return result
+
+_LEVEL2_FIXTURES: list[str] = _level2_fixtures()
 
 # Fixtures whose reference pattern targets a non-active sheet.
 _SHEET_OVERRIDES: dict[str, str] = {

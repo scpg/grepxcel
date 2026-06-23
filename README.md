@@ -136,6 +136,7 @@ python -m venv .venv
 | Extract data / generate the docs reference | `pip install grepxcel` *(core — nothing extra)* |
 | Draft patterns with the **local** model (offline) | `pip install 'grepxcel[suggest]'` |
 | Draft patterns with a **cloud** model (Claude) | `pip install 'grepxcel[draft-cloud]'` |
+| Use as an **MCP server** for AI agents | `pip install 'grepxcel[mcp]'` |
 
 The `extract` and `docs` commands work with the core install alone. The `draft`
 command is optional; if its dependencies are missing, grepxcel tells you exactly
@@ -145,6 +146,18 @@ what to install (and points you at the cloud option as an alternative).
 > `.venv\Scripts\pip install -e .` and `.venv\Scripts\grepxcel ...`.
 
 Requires Python **3.11+**.
+
+### Try it — bundled examples
+
+Don't have your own Excel files yet? Generate ready-to-run examples:
+
+```bash
+.venv/bin/grepxcel generate-examples          # creates ./grepxcel-examples/
+cd grepxcel-examples/01_simple_invoice
+.venv/bin/grepxcel extract -p pattern.xlsx data.xlsx
+```
+
+Each example includes a pattern, a data file, and a README with commands to try.
 
 ### CLI usage
 
@@ -283,6 +296,17 @@ grepxcel validate-pattern a.xlsx b.csv         # validate several at once
 | Flag | Default | Purpose |
 |---|---|---|
 | `-o FILE` | `pattern-reference.xlsx` | Output path for the reference file |
+
+### `grepxcel generate-examples`
+
+Creates 4 ready-to-run example sets (pattern + data + README) in a local directory.
+
+| Flag | Default | Purpose |
+|---|---|---|
+| `-o DIR` | `./grepxcel-examples/` | Directory to create |
+
+Examples included: simple invoice (KV), product catalog (table), expense report
+(KV + table + footer), loan schedule (KV header + amortization table).
 
 ### `grepxcel draft`
 
@@ -474,6 +498,24 @@ local-model cache + disk space, and proxy/CA config with a live handshake — an
 |---|---|
 | `area` | `extract`, `draft`, or `all` (default `all`) |
 | `--no-probe` | Skip the live TLS handshake (offline / faster) |
+
+### `grepxcel mcp`
+
+Starts grepxcel as a [Model Context Protocol](https://modelcontextprotocol.io)
+(MCP) server so AI agents can call grepxcel tools directly.
+
+```bash
+pip install 'grepxcel[mcp]'       # install the MCP dependency
+grepxcel mcp-config               # print the config for your AI agent
+grepxcel mcp                      # start the server (stdio transport)
+```
+
+**Exposed tools:** `extract`, `validate_pattern`, `lint`, `schema`, `docs`,
+`doctor`, `generate_examples`.
+
+| Flag | Default | Purpose |
+|---|---|---|
+| `--target` (mcp-config) | `claude-code` | Config format: `claude-code`, `claude-desktop`, `cursor` |
 
 ---
 

@@ -269,7 +269,12 @@ class PatternParser:
                         key = str(sub[2]).lower() if sub[2] is not None else ''
                         val = sub[3]
                         if key == 'read.direction' and val:
-                            table_config.read_direction = str(val)
+                            direction = str(val).strip().upper()
+                            if direction not in ('LR', 'TD'):
+                                raise PatternError(
+                                    f"Invalid read.direction '{val}' in table config. "
+                                    f"Valid values: LR (left-to-right), TD (top-down)")
+                            table_config.read_direction = direction
                         elif key == 'ignore.case' and val is not None:
                             table_config.ignore_case = _truthy(val)
                         i += 1
@@ -630,7 +635,12 @@ class PatternParser:
     def _apply_global_config(self, row, config: Config):
         key, val = row[1], row[2]
         if key == 'read.direction' and val:
-            config.read_direction = str(val)
+            direction = str(val).strip().upper()
+            if direction not in ('LR', 'TD'):
+                raise PatternError(
+                    f"Invalid read.direction '{val}'. "
+                    f"Valid values: LR (left-to-right), TD (top-down)")
+            config.read_direction = direction
         elif key == 'currency.sign' and val:
             config.currency_sign = str(val)
         elif key == 'empty.aliases' and val:

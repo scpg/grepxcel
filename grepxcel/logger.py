@@ -24,6 +24,8 @@ import os
 import sys
 import uuid
 
+import structlog
+
 # Bumped only when the structured-log JSON shape changes incompatibly.
 LOG_SCHEMA_VERSION = 1
 
@@ -48,6 +50,45 @@ def _value_fingerprint(value) -> "tuple[int, str]":
     """Return (length, sha8) for a value — non-reversible, never the value."""
     s = str(value)
     return len(s), hashlib.sha256(s.encode('utf-8')).hexdigest()[:8]
+
+
+# ---------------------------------------------------------------------------
+# structlog processors — reusable pipeline stages for JSON output
+# ---------------------------------------------------------------------------
+
+def allow_list_filter(logger, method_name, event_dict):
+    """Strip any keys not in the appropriate allow-list.
+
+    Summary events get _SAFE_SUMMARY_KEYS; all others get _SAFE_LOG_KEYS.
+    This is the structured-log safety boundary: no extracted cell value can
+    pass through because the allow-lists contain only safe coordinate/metadata
+    keys.
+    """
+    if event_dict.get('event') == 'summary':
+        allowed = set(_SAFE_SUMMARY_KEYS)
+    else:
+        allowed = set(_SAFE_LOG_KEYS)
+    return {k: v for k, v in event_dict.items() if k in allowed}
+
+
+def _make_json_chain():
+    """Build the structlog processor chain for NDJSON output."""
+    return [
+        allow_list_filter,
+        structlog.processors.JSONRenderer(default=str),
+    ]
+
+
+_JSON_CHAIN = _make_json_chain()
+
+
+def render_json(event_dict: dict) -> str:
+    """Run the JSON processor chain on an event dict, return an NDJSON line."""
+    d = event_dict
+    for proc in _JSON_CHAIN:
+        d = proc(None, None, d)
+    return d
+
 
 from .color import colorize_marks, should_color
 
@@ -169,6 +210,11 @@ class Logger:
         self._source = source
         self._run_id = run_id or uuid.uuid4().hex[:12]
         self._start_time = datetime.now(timezone.utc)
+        self._bound_context = {
+            'run_id': self._run_id,
+            'source': self._source,
+            'schema_version': LOG_SCHEMA_VERSION,
+        }
         self._last_stats: dict | None = None
         self._file = None
         if log_file:
@@ -178,25 +224,24 @@ class Logger:
         # Colour the console copy only when stderr is an interactive terminal.
         self._color = should_color(sys.stderr)
 
-    def _record_json(self, rec: LogRecord) -> dict:
-        """Build the structured-log dict from the ALLOW-LIST of safe keys only.
+    def _record_event_dict(self, rec: LogRecord) -> dict:
+        """Build the raw event dict from a LogRecord.
 
-        Free-form fields (message/hint/expected/found) are never included — they
-        can embed the extracted cell value — so no Excel data can reach the log.
-        A non-reversible value fingerprint (length + sha8) is included instead
-        when the offending cell had a value.
+        Contains all safe coordinate/metadata keys plus the bound context
+        (run_id, source, schema_version). The structlog processor chain
+        (allow_list_filter → JSONRenderer) enforces that only allow-listed
+        keys reach the output — free-form fields (message/hint/expected/found)
+        are never included, so no extracted cell value can reach the log.
         """
         d = {
             'ts': rec.timestamp,
-            'level': rec.severity,          # DEBUG/INFO/WARNING/ERROR
+            'level': rec.severity,
             'category': rec.category,
             'event': rec.event or rec.category.lower(),
-            'cell': rec.location,           # coordinate (e.g. 'Sheet1!B10'), not data
-            'field': rec.field,             # pattern-author field name, not data
+            'cell': rec.location,
+            'field': rec.field,
             'field_type': rec.field_type,
-            'run_id': self._run_id,
-            'source': self._source,
-            'schema_version': LOG_SCHEMA_VERSION,
+            **self._bound_context,
         }
         if rec.value_len is not None:
             d['value_len'] = rec.value_len
@@ -205,10 +250,11 @@ class Logger:
 
     def _store(self, rec: LogRecord) -> None:
         """Record a LogRecord in memory and, in JSON mode, append it to the log
-        file as one NDJSON line."""
+        file as one NDJSON line via the structlog processor chain."""
         self._records.append(rec)
         if self._file and self._log_format == 'json':
-            self._file.write(json.dumps(self._record_json(rec), default=str) + '\n')
+            line = render_json(self._record_event_dict(rec))
+            self._file.write(line + '\n')
             self._file.flush()
 
     def close(self):
@@ -356,7 +402,9 @@ class Logger:
         safe_issues = []
         for rec in scoped:
             if rec.severity in (Severity.WARNING, Severity.ERROR):
-                safe_issues.append(self._record_json(rec))
+                safe_issues.append(
+                    allow_list_filter(None, None, self._record_event_dict(rec))
+                )
         return {
             'run_id': self._run_id,
             'source': self._source,
@@ -375,12 +423,11 @@ class Logger:
             'level': Severity.INFO,
             'category': Category.ENGINE,
             'event': 'summary',
-            'run_id': self._run_id,
-            'source': self._source,
-            'schema_version': LOG_SCHEMA_VERSION,
+            **self._bound_context,
             **self.build_stats(result),
         }
-        self._file.write(json.dumps(event, default=str) + '\n')
+        line = render_json(event)
+        self._file.write(line + '\n')
         self._file.flush()
 
     def _issue_line(self, rec: LogRecord) -> str:

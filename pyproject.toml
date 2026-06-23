@@ -31,6 +31,7 @@ dependencies = [
     # `regex` (not stdlib `re`) for its hard per-match timeout= — our runtime
     # ReDoS guarantee. Floor is well past the old OSS-Fuzz memory-safety fixes.
     "regex>=2024.11.6",
+    "structlog>=24.1",
 ]
 
 [project.optional-dependencies]
@@ -51,6 +52,9 @@ draft-cloud = [
     # for a future release. Declared here so enabling it later is a one-liner.
     "google-genai>=0.3",
     "truststore>=0.9",   # corporate-proxy CA trust — see note in [suggest]
+]
+mcp = [
+    "mcp>=1.23,<2",
 ]
 dev = [
     "pytest>=8.0",
@@ -73,3 +77,6 @@ version = {attr = "grepxcel.__version__"}
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["grepxcel*"]
+
+[tool.setuptools.package-data]
+"grepxcel.examples" = ["*/*.xlsx"]

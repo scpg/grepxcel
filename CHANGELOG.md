@@ -7,8 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **structlog integration** — NDJSON file output now uses a structlog processor
+  chain (allow-list filter → JSONRenderer) instead of manual dict building +
+  `json.dumps`. The output format is unchanged; this is an internal refactor
+  that makes the structured-log pipeline extensible for future output targets
+  (OTLP, Datadog, etc.). `structlog>=24.1` is now a core dependency.
+
+### Security
+
+- **MCP path sandboxing** — all MCP server tools now validate that file paths
+  resolve within the server's working directory. Absolute paths pointing
+  elsewhere, `..` traversal, and symlink escapes are rejected with a clear
+  error. Prevents an AI agent (or a prompt-injected one) from reading or
+  writing files outside the intended project directory.
+
 ### Added
 
+- **Batch directory extraction** — `grepxcel extract -p pat.xlsx data_dir/`
+  now expands directories to their `.xlsx` files automatically. Add `-r` /
+  `--recursive` to recurse into subdirectories. Excel temp files (`~$*.xlsx`)
+  are skipped. Empty directories produce a clear error message.
+- **`sbom` command** — generates a CycloneDX 1.6 Software Bill of Materials
+  listing grepxcel and every transitive dependency with PURLs, SPDX license
+  identifiers, and SHA-256 hashes from pip's RECORD files. Uses only stdlib
+  (`importlib.metadata`) — no external tool required. Output is accepted by
+  Dependency-Track, Grype, and other SBOM consumers. The SBOM is also
+  attached as a release artifact on GitHub Releases.
+- **`generate-examples` command** — creates 4 ready-to-run example sets
+  (pattern + data xlsx + README) in a local directory so new users can try
+  grepxcel immediately without needing their own Excel files.
+- **MCP server** (`grepxcel mcp`) — expose grepxcel as a Model Context Protocol
+  server so AI agents can call extract, validate-pattern, lint, schema, docs,
+  doctor, and generate-examples directly. Stdio transport. Install with
+  `pip install 'grepxcel[mcp]'`.
+- **`mcp-config` command** — prints the MCP server config block for your AI agent
+  (Claude Code, Claude Desktop, Cursor). Detects the installed command path.
 - **`lbl.match` mode** — `lbl:` fields now default to literal string matching
   instead of full regex. Labels like `Term (months):` or `Breaks\n(minutes)`
   work without regex escaping.
