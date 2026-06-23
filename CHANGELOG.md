@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **structlog integration** — NDJSON file output now uses a structlog processor
+  chain (allow-list filter → JSONRenderer) instead of manual dict building +
+  `json.dumps`. The output format is unchanged; this is an internal refactor
+  that makes the structured-log pipeline extensible for future output targets
+  (OTLP, Datadog, etc.). `structlog>=24.1` is now a core dependency.
+
 ### Added
 
 - **`generate-examples` command** — creates 4 ready-to-run example sets

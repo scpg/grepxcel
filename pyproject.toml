@@ -31,6 +31,7 @@ dependencies = [
     # `regex` (not stdlib `re`) for its hard per-match timeout= — our runtime
     # ReDoS guarantee. Floor is well past the old OSS-Fuzz memory-safety fixes.
     "regex>=2024.11.6",
+    "structlog>=24.1",
 ]
 
 [project.optional-dependencies]
