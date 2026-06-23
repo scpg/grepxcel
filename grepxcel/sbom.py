@@ -66,6 +66,28 @@ def _get_license(dist: metadata.Distribution) -> str:
     return ''
 
 
+def _pyproject_deps() -> list[str]:
+    """Fallback: read core dependencies from pyproject.toml when the package
+    is not pip-installed (e.g. CI runs that install only requirements.txt)."""
+    try:
+        import tomllib  # Python 3.11+
+    except ImportError:  # pragma: no cover
+        return []
+    pyproject = Path(__file__).resolve().parent.parent / 'pyproject.toml'
+    if not pyproject.is_file():
+        return []
+    try:
+        data = tomllib.loads(pyproject.read_text(encoding='utf-8'))
+        return data.get('project', {}).get('dependencies', [])
+    except Exception:
+        return []
+
+
+def _parse_dep_name(req: str) -> str:
+    """Extract the bare package name from a PEP 508 requirement string."""
+    return req.split()[0].split('>')[0].split('<')[0].split('=')[0].split('!')[0].split('[')[0].split(';')[0]
+
+
 def _collect_deps(root: str) -> set[str]:
     """Recursively collect all transitive dependency names for a package."""
     visited: set[str] = set()
@@ -79,13 +101,18 @@ def _collect_deps(root: str) -> set[str]:
         try:
             dist = metadata.distribution(name)
         except metadata.PackageNotFoundError:
+            # Root package not pip-installed — fall back to pyproject.toml
+            # so the SBOM still lists dependencies in dev/CI environments.
+            if normalised == root.lower().replace('-', '_').replace('.', '_'):
+                for req in _pyproject_deps():
+                    if '; extra ==' not in req:
+                        queue.append(_parse_dep_name(req))
             continue
         reqs = dist.requires or []
         for req in reqs:
             if '; extra ==' in req or '; extra ==' in req.replace('"', "'"):
                 continue
-            dep_name = req.split()[0].split('>')[0].split('<')[0].split('=')[0].split('!')[0].split('[')[0].split(';')[0]
-            queue.append(dep_name)
+            queue.append(_parse_dep_name(req))
     return visited
 
 

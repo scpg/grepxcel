@@ -1,11 +1,12 @@
 import fnmatch
 import re
 
+import regex as _re
 import openpyxl
 from openpyxl.utils import get_column_letter
 from openpyxl.utils.cell import coordinate_to_tuple
 from .models import Config, CellInstruction, TableInstruction, TemplateRow, SeekInstruction, DirectionInstruction
-from .utils import is_empty, validate_type, _MAX_REGEX_INPUT_LEN
+from .utils import is_empty, validate_type, _MAX_REGEX_INPUT_LEN, _regex_timeout
 from .pattern_parser import PatternParser, PatternError
 from .logger import Logger, LogRecord, EngineError, cell_ref
 from .security import validate_file, validate_pattern_file, SecurityError, DEFAULT_MAX_UNCOMPRESSED_MB
@@ -30,9 +31,13 @@ def _match_lbl(cell_value, pattern: str, mode: str, ignore_case: bool) -> bool:
     if mode == 'glob':
         flags = re.DOTALL | (re.IGNORECASE if ignore_case else 0)
         return bool(re.match(fnmatch.translate(pattern), text, flags))
-    # regexp
-    flags = re.IGNORECASE if ignore_case else 0
-    return bool(re.search(pattern, text, flags))
+    # regexp — same ReDoS defenses as var: fields (cell-length cap + timeout)
+    flags = _re.IGNORECASE if ignore_case else 0
+    text_capped = text[:_MAX_REGEX_INPUT_LEN]
+    try:
+        return bool(_re.search(pattern, text_capped, flags, timeout=_regex_timeout()))
+    except TimeoutError:
+        return False
 
 
 def _resolve_lbl_mode(fd, config) -> str:

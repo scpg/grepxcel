@@ -963,6 +963,19 @@ def main(argv=None):
     if args.command == 'sbom':
         sys.exit(_run_sbom(args))
 
+    # ── Security parameter validation ────────────────────────────────────────
+    parser = _build_parser()
+    if hasattr(args, 'max_size') and args.max_size <= 0:
+        parser.error('--max-size must be greater than 0')
+    if hasattr(args, 'max_uncompressed') and args.max_uncompressed <= 0:
+        parser.error('--max-uncompressed must be greater than 0')
+    if hasattr(args, 'max_cell_len') and args.max_cell_len < 1:
+        parser.error('--max-cell-len must be at least 1')
+    if hasattr(args, 'max_rows') and args.max_rows < 1:
+        parser.error('--max-rows must be at least 1')
+    if hasattr(args, 'max_columns') and args.max_columns < 1:
+        parser.error('--max-columns must be at least 1')
+
     # extract
     all_ok = True
     for data_file in args.files:
