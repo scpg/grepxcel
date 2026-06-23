@@ -9,13 +9,60 @@ import pytest
 
 mcp_sdk = pytest.importorskip("mcp", reason="mcp SDK not installed")
 
-from grepxcel.mcp_server import create_server, _json_default
+from grepxcel.mcp_server import (
+    PathSandboxError, _safe_path, create_server, _json_default,
+)
 
 FIXTURES = os.path.join(os.path.dirname(__file__), '..', 'fixtures')
 
 
 def _fixture(name, filename):
     return os.path.join(FIXTURES, name, filename)
+
+
+class TestPathSandbox:
+    """Path sandboxing rejects escapes and allows safe paths."""
+
+    def test_relative_path_within_sandbox(self, tmp_path):
+        (tmp_path / 'data.xlsx').touch()
+        result = _safe_path('data.xlsx', str(tmp_path))
+        assert result == str(tmp_path / 'data.xlsx')
+
+    def test_nested_relative_path(self, tmp_path):
+        sub = tmp_path / 'sub'
+        sub.mkdir()
+        (sub / 'file.xlsx').touch()
+        result = _safe_path('sub/file.xlsx', str(tmp_path))
+        assert result == str(sub / 'file.xlsx')
+
+    def test_dotdot_traversal_rejected(self, tmp_path):
+        with pytest.raises(PathSandboxError, match='outside the sandbox'):
+            _safe_path('../../../etc/passwd', str(tmp_path))
+
+    def test_absolute_path_outside_rejected(self, tmp_path):
+        with pytest.raises(PathSandboxError, match='outside the sandbox'):
+            _safe_path('/etc/passwd', str(tmp_path))
+
+    def test_absolute_path_inside_allowed(self, tmp_path):
+        target = tmp_path / 'ok.xlsx'
+        target.touch()
+        result = _safe_path(str(target), str(tmp_path))
+        assert result == str(target)
+
+    def test_symlink_escape_rejected(self, tmp_path):
+        link = tmp_path / 'sneaky'
+        link.symlink_to('/tmp')
+        with pytest.raises(PathSandboxError, match='outside the sandbox'):
+            _safe_path('sneaky/secret.txt', str(tmp_path))
+
+    def test_double_dotdot_after_subdir(self, tmp_path):
+        (tmp_path / 'a').mkdir()
+        with pytest.raises(PathSandboxError, match='outside the sandbox'):
+            _safe_path('a/../../escape', str(tmp_path))
+
+    def test_sandbox_root_itself_allowed(self, tmp_path):
+        result = _safe_path('.', str(tmp_path))
+        assert result == os.path.realpath(str(tmp_path))
 
 
 class TestCreateServer:
@@ -36,6 +83,10 @@ class TestCreateServer:
             'docs', 'doctor', 'generate_examples',
         }
         assert expected.issubset(tool_names)
+
+    def test_custom_sandbox_root(self, tmp_path):
+        server = create_server(sandbox_root=str(tmp_path))
+        assert server is not None
 
 
 class TestExtractTool:
@@ -85,12 +136,17 @@ class TestExtractTool:
         parsed = json.loads(result)
         assert isinstance(parsed, dict)
 
-    def test_extract_missing_file_returns_empty(self):
-        server = create_server()
+    def test_extract_path_traversal_rejected(self, tmp_path):
+        server = create_server(sandbox_root=str(tmp_path))
         fn = server._tool_manager._tools['extract'].fn
-        result = fn(pattern='/nonexistent/pattern.xlsx', data='/nonexistent/data.xlsx')
-        parsed = json.loads(result)
-        assert isinstance(parsed, dict)
+        with pytest.raises(PathSandboxError):
+            fn(pattern='../../../etc/passwd', data='data.xlsx')
+
+    def test_extract_absolute_escape_rejected(self, tmp_path):
+        server = create_server(sandbox_root=str(tmp_path))
+        fn = server._tool_manager._tools['extract'].fn
+        with pytest.raises(PathSandboxError):
+            fn(pattern='/etc/passwd', data='/etc/shadow')
 
 
 class TestValidatePatternTool:
@@ -113,11 +169,17 @@ class TestValidatePatternTool:
         )
         assert 'fields:' in result or 'VALID' in result
 
-    def test_invalid_file_returns_error(self):
-        server = create_server()
+    def test_invalid_file_returns_error(self, tmp_path):
+        server = create_server(sandbox_root=str(tmp_path))
         fn = server._tool_manager._tools['validate_pattern'].fn
-        result = fn(pattern='/nonexistent/pattern.xlsx')
+        result = fn(pattern='nonexistent.xlsx')
         assert 'failed' in result.lower() or 'error' in result.lower() or 'not' in result.lower()
+
+    def test_validate_path_traversal_rejected(self, tmp_path):
+        server = create_server(sandbox_root=str(tmp_path))
+        fn = server._tool_manager._tools['validate_pattern'].fn
+        with pytest.raises(PathSandboxError):
+            fn(pattern='../../secret.csv')
 
 
 class TestLintTool:
@@ -134,6 +196,12 @@ class TestLintTool:
         fn = server._tool_manager._tools['lint'].fn
         result = fn(file=_fixture('02_product_catalog', 'data.xlsx'))
         assert isinstance(result, str)
+
+    def test_lint_path_traversal_rejected(self, tmp_path):
+        server = create_server(sandbox_root=str(tmp_path))
+        fn = server._tool_manager._tools['lint'].fn
+        with pytest.raises(PathSandboxError):
+            fn(file='/etc/passwd')
 
 
 class TestSchemaTool:
@@ -158,22 +226,36 @@ class TestSchemaTool:
         parsed = json.loads(result)
         assert 'properties' in parsed
 
+    def test_schema_path_traversal_rejected(self, tmp_path):
+        server = create_server(sandbox_root=str(tmp_path))
+        fn = server._tool_manager._tools['schema'].fn
+        with pytest.raises(PathSandboxError):
+            fn(pattern='../../../etc/passwd')
+
 
 class TestDocsTool:
     """The docs MCP tool."""
 
     def test_docs_creates_file(self, tmp_path):
-        server = create_server()
+        server = create_server(sandbox_root=str(tmp_path))
         fn = server._tool_manager._tools['docs'].fn
-        result = fn(output_dir=str(tmp_path))
+        out = tmp_path / 'docs-out'
+        out.mkdir()
+        result = fn(output_dir=str(out))
         assert 'pattern-reference.xlsx' in result
-        assert (tmp_path / 'pattern-reference.xlsx').is_file()
+        assert (out / 'pattern-reference.xlsx').is_file()
 
-    def test_docs_default_temp_dir(self):
-        server = create_server()
+    def test_docs_default_temp_dir(self, tmp_path):
+        server = create_server(sandbox_root=str(tmp_path))
         fn = server._tool_manager._tools['docs'].fn
         result = fn()
         assert 'pattern-reference.xlsx' in result
+
+    def test_docs_path_traversal_rejected(self, tmp_path):
+        server = create_server(sandbox_root=str(tmp_path))
+        fn = server._tool_manager._tools['docs'].fn
+        with pytest.raises(PathSandboxError):
+            fn(output_dir='/tmp/evil')
 
 
 class TestDoctorTool:
@@ -197,7 +279,7 @@ class TestGenerateExamplesTool:
     """The generate_examples MCP tool."""
 
     def test_creates_examples(self, tmp_path):
-        server = create_server()
+        server = create_server(sandbox_root=str(tmp_path))
         fn = server._tool_manager._tools['generate_examples'].fn
         out = str(tmp_path / 'examples')
         result = fn(output_dir=out)
@@ -205,8 +287,14 @@ class TestGenerateExamplesTool:
         subdirs = [d for d in (tmp_path / 'examples').iterdir() if d.is_dir()]
         assert len(subdirs) == 4
 
+    def test_generate_examples_path_traversal_rejected(self, tmp_path):
+        server = create_server(sandbox_root=str(tmp_path))
+        fn = server._tool_manager._tools['generate_examples'].fn
+        with pytest.raises(PathSandboxError):
+            fn(output_dir='/tmp/evil-examples')
+
     def test_extraction_works_on_generated_examples(self, tmp_path):
-        server = create_server()
+        server = create_server(sandbox_root=str(tmp_path))
         gen_fn = server._tool_manager._tools['generate_examples'].fn
         extract_fn = server._tool_manager._tools['extract'].fn
 

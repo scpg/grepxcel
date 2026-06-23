@@ -71,6 +71,8 @@ The CLI is subcommand-based: `extract`, `validate-pattern`, `draft`, `docs`, `li
 .venv/bin/grepxcel extract -p pattern.xlsx data.xlsx -o output/    # write JSON to a directory
 .venv/bin/grepxcel extract -p pattern.xlsx data.xlsx --sheet Sheet2
 .venv/bin/grepxcel extract -p pattern.xlsx jan.xlsx feb.xlsx       # multiple data files
+.venv/bin/grepxcel extract -p pattern.xlsx data_dir/              # all .xlsx in a directory
+.venv/bin/grepxcel extract -p pattern.xlsx data_dir/ -r           # recursive into subdirs
 .venv/bin/grepxcel validate-pattern pattern.xlsx                   # check a pattern is valid (no extraction)
 .venv/bin/grepxcel validate-pattern pattern.csv -v                # + parsed fields & extraction steps
 .venv/bin/grepxcel draft data.xlsx                                 # draft a starter pattern (local LLM)
@@ -105,7 +107,8 @@ The CLI is subcommand-based: `extract`, `validate-pattern`, `draft`, `docs`, `li
 | Flag | Default | Purpose |
 |---|---|---|
 | `-p, --pattern FILE` | required | Pattern file (`.xlsx` or `.csv`) |
-| `FILE...` (positional) | required | One or more data `.xlsx` files |
+| `FILE_OR_DIR...` (positional) | required | Data `.xlsx` files or directories |
+| `-r, --recursive` | off | Recurse into subdirectories when a directory is given |
 | `-o, --output DIR` | — | Write JSON to directory (stdout if omitted) |
 | `-l, --log FILE` | — | Append structured log to file |
 | `-v` / `-vv` | off | Verbosity: detailed warnings + traces / anchor probes |

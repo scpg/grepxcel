@@ -15,8 +15,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   that makes the structured-log pipeline extensible for future output targets
   (OTLP, Datadog, etc.). `structlog>=24.1` is now a core dependency.
 
+### Security
+
+- **MCP path sandboxing** — all MCP server tools now validate that file paths
+  resolve within the server's working directory. Absolute paths pointing
+  elsewhere, `..` traversal, and symlink escapes are rejected with a clear
+  error. Prevents an AI agent (or a prompt-injected one) from reading or
+  writing files outside the intended project directory.
+
 ### Added
 
+- **Batch directory extraction** — `grepxcel extract -p pat.xlsx data_dir/`
+  now expands directories to their `.xlsx` files automatically. Add `-r` /
+  `--recursive` to recurse into subdirectories. Excel temp files (`~$*.xlsx`)
+  are skipped. Empty directories produce a clear error message.
 - **`sbom` command** — generates a CycloneDX 1.6 Software Bill of Materials
   listing grepxcel and every transitive dependency with PURLs, SPDX license
   identifiers, and SHA-256 hashes from pip's RECORD files. Uses only stdlib

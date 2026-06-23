@@ -359,8 +359,18 @@ examples:
     p.add_argument(
         'files',
         nargs='+',
-        metavar='FILE',
-        help='One or more data Excel files to process',
+        metavar='FILE_OR_DIR',
+        help='Data Excel files or directories to process (.xlsx)',
+    )
+    p.add_argument(
+        '-r', '--recursive',
+        action='store_true',
+        help='Recurse into subdirectories when a directory is given',
+    )
+    p.add_argument(
+        '--max-files',
+        type=int, default=_DEFAULT_MAX_FILES, metavar='N',
+        help=f'Safety cap on total files to process (default: {_DEFAULT_MAX_FILES})',
     )
     p.add_argument(
         '-v', '--verbose',
@@ -674,6 +684,70 @@ def _process_file(pattern: str, data_file: str, args, stem: str = None) -> bool:
     return not (logger.has_errors() or logger.has_warnings())
 
 
+_DEFAULT_MAX_FILES = 10_000
+
+
+def _expand_files(paths: list[str], recursive: bool = False,
+                  max_files: int = _DEFAULT_MAX_FILES) -> list[str]:
+    """Expand directories in *paths* to their .xlsx files.
+
+    Raises ``SystemExit`` if more than *max_files* are collected (safety cap
+    against accidentally recursing into a huge tree).  Symlinks (files and
+    directories) are skipped with a warning on stderr.
+    """
+    result = []
+    symlinks_found = []
+
+    def _check_cap():
+        if len(result) > max_files:
+            print(
+                f'  Exceeded {max_files} files — aborting. '
+                f'Use --max-files to raise the limit.',
+                file=sys.stderr,
+            )
+            raise SystemExit(1)
+
+    def _collect(dirpath, filenames):
+        for fn in sorted(filenames):
+            full = os.path.join(dirpath, fn)
+            if os.path.islink(full):
+                symlinks_found.append(full)
+                continue
+            if fn.lower().endswith('.xlsx') and not fn.startswith('~$'):
+                result.append(full)
+                _check_cap()
+
+    for p in paths:
+        if os.path.islink(p):
+            symlinks_found.append(p)
+            continue
+        if os.path.isdir(p):
+            if recursive:
+                for dirpath, dirs, filenames in os.walk(p):
+                    # warn about symlinked subdirectories
+                    for d in dirs:
+                        dp = os.path.join(dirpath, d)
+                        if os.path.islink(dp):
+                            symlinks_found.append(dp)
+                    _collect(dirpath, filenames)
+            else:
+                _collect(p, os.listdir(p))
+        else:
+            result.append(p)
+
+    if symlinks_found:
+        print(f'  ⚠  Skipped {len(symlinks_found)} symlink(s) '
+              f'(not followed for safety):',
+              file=sys.stderr)
+        for s in symlinks_found[:5]:
+            print(f'       {s} → {os.readlink(s)}', file=sys.stderr)
+        if len(symlinks_found) > 5:
+            print(f'       … and {len(symlinks_found) - 5} more',
+                  file=sys.stderr)
+
+    return result
+
+
 def _output_stem(data_file: str, all_files: list[str]) -> str:
     """
     Build a collision-safe output filename stem.
@@ -976,11 +1050,19 @@ def main(argv=None):
     if hasattr(args, 'max_columns') and args.max_columns < 1:
         parser.error('--max-columns must be at least 1')
 
-    # extract
+    # extract — expand directories to .xlsx files
+    expanded = _expand_files(args.files,
+                             recursive=getattr(args, 'recursive', False),
+                             max_files=getattr(args, 'max_files',
+                                               _DEFAULT_MAX_FILES))
+    if not expanded:
+        print('  No .xlsx files found in the specified paths.', file=sys.stderr)
+        sys.exit(1)
+
     all_ok = True
-    for data_file in args.files:
+    for data_file in expanded:
         ok = _process_file(args.pattern, data_file, args,
-                           stem=_output_stem(data_file, args.files))
+                           stem=_output_stem(data_file, expanded))
         all_ok = all_ok and ok
 
     sys.exit(0 if all_ok else 1)
