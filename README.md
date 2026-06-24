@@ -243,4 +243,4 @@ always appreciated.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT — see [LICENSE](https://github.com/scpg/grepxcel/blob/main/LICENSE).
