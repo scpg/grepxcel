@@ -16,7 +16,7 @@ You get Excel files from suppliers, clients, or other departments. Every templat
 
 ## The solution
 
-Describe the layout once in a **pattern file**. Run `grepxcel extract`. Get clean, structured JSON — every time. When a file doesn't match the pattern, grepxcel tells you exactly what went wrong. It is never silently wrong.
+Describe the layout once in a **pattern file**. Run `grepxcel extract`. Get clean, structured JSON. When a file doesn't match the pattern, grepxcel flags exactly what went wrong — it is designed to fail loudly rather than produce silent errors, so automated pipelines can catch problems early.
 
 ```
 pattern.xlsx  +  data.xlsx  →  { "po": { "number": "PO-2026" }, "line": [ {…} ] }
@@ -128,7 +128,7 @@ END:
 
 Dot notation creates nested output: `inv.number` → `{"inv": {"number": …}}`.
 
-> **Full reference:** [docs/pattern-file.md](docs/pattern-file.md) covers every
+> **Full reference:** [docs/pattern-file.md](https://github.com/scpg/grepxcel/blob/main/docs/pattern-file.md) covers every
 > instruction, type, and config option in detail.
 
 ---
@@ -224,12 +224,12 @@ Fields with dot notation are grouped into nested objects. Tables produce arrays.
 
 | Topic | Where to look |
 |---|---|
-| Pattern file reference (all instructions, types, config) | [docs/pattern-file.md](docs/pattern-file.md) |
-| Engineering philosophy and design principles | [docs/MINDSET.md](docs/MINDSET.md) |
-| Draft command evaluation (model quality, benchmarks) | [docs/EVALUATION.md](docs/EVALUATION.md) |
-| CLI flags and options (full reference) | [docs/cli-reference.md](docs/cli-reference.md) |
-| Security model and vulnerability reporting | [SECURITY.md](SECURITY.md) |
-| Contributing guidelines | [CONTRIBUTING.md](CONTRIBUTING.md) |
+| Pattern file reference (all instructions, types, config) | [docs/pattern-file.md](https://github.com/scpg/grepxcel/blob/main/docs/pattern-file.md) |
+| Engineering philosophy and design principles | [docs/MINDSET.md](https://github.com/scpg/grepxcel/blob/main/docs/MINDSET.md) |
+| Draft command evaluation (model quality, benchmarks) | [docs/EVALUATION.md](https://github.com/scpg/grepxcel/blob/main/docs/EVALUATION.md) |
+| CLI flags and options (full reference) | [docs/cli-reference.md](https://github.com/scpg/grepxcel/blob/main/docs/cli-reference.md) |
+| Security model and vulnerability reporting | [SECURITY.md](https://github.com/scpg/grepxcel/blob/main/SECURITY.md) |
+| Contributing guidelines | [CONTRIBUTING.md](https://github.com/scpg/grepxcel/blob/main/CONTRIBUTING.md) |
 
 ---
 
