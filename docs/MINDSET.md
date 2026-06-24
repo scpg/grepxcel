@@ -32,7 +32,7 @@ for the people who can do that than mediocre for everyone. That focus is a featu
 
 ---
 
-## The core principle: deterministic, or honestly broken — never silently wrong
+## The core principle: deterministic, or honestly broken
 
 This is the heart of the tool.
 
@@ -40,14 +40,16 @@ An LLM can read a messy spreadsheet today, and that is useful — but at ~80% ac
 it "needs to be rechecked," and rechecking does not scale to thousands of files.
 At that volume nobody wants 80% *silent* accuracy. They want:
 
-- **100%** reproducible results on the files that conform to the pattern, and
+- **reproducible** results on the files that conform to the pattern, and
 - a **loud, specific flag** on the files that don't — *which file, which cell, which
   anchor, and why* — so a human reviews only the small fraction that actually deviated.
 
 A validated pattern gives exactly that. Same file + same pattern → same JSON, every
-time. And when reality stops matching the pattern, it **fails loudly** instead of
-guessing confidently. *Correct, or honestly broken — never silently wrong.* That
-property is the whole point.
+time. And when reality stops matching the pattern, grepxcel **fails loudly** instead of
+guessing confidently. *Correct, or honestly broken — that's the goal.* Silent errors
+are the worst outcome, so every mismatch grepxcel can detect is surfaced loudly. The
+quality of extraction depends heavily on the pattern — a well-written pattern catches
+more problems; a loose one may let unexpected values through.
 
 This is why the AI-assisted `draft` command is a **bootstrap**, not the runtime: use
 the LLM to get from a messy file to a *candidate* pattern in minutes, then a human
@@ -85,7 +87,7 @@ that aren't done yet:
 - **Schema contracts** — validate the extracted JSON against the *consuming* system's
   expected schema, turning extraction into a producer/consumer contract test.
 - **Lineage** — every output record can say which pattern version produced it.
-- **A reject bin** — non-conforming files routed for human review, never silently dropped.
+- **A reject bin** — non-conforming files routed for human review rather than silently dropped.
 
 ---
 

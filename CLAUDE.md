@@ -61,7 +61,7 @@ If the venv does not exist it prints a clear error with setup instructions and e
 
 ## Running the CLI
 
-The CLI is subcommand-based: `extract`, `validate-pattern`, `draft`, `docs`, `lint`, `schema`, `generate-examples`, `sbom`, `mcp`, `mcp-config`, `doctor` (run `grepxcel <cmd> --help`).
+The CLI is subcommand-based: `extract`, `validate-pattern`, `draft`, `docs`, `lint`, `schema`, `generate-examples`, `sbom`, `mcp`, `mcp-config`, `doctor`, `quickstart` (run `grepxcel <cmd> --help`).
 
 ```bash
 .venv/bin/grepxcel extract -p pattern.xlsx data.xlsx
@@ -73,6 +73,7 @@ The CLI is subcommand-based: `extract`, `validate-pattern`, `draft`, `docs`, `li
 .venv/bin/grepxcel extract -p pattern.xlsx jan.xlsx feb.xlsx       # multiple data files
 .venv/bin/grepxcel extract -p pattern.xlsx data_dir/              # all .xlsx in a directory
 .venv/bin/grepxcel extract -p pattern.xlsx data_dir/ -r           # recursive into subdirs
+.venv/bin/grepxcel extract -p pattern.xlsx data.xlsx --strict     # exit 2 on any missing field
 .venv/bin/grepxcel validate-pattern pattern.xlsx                   # check a pattern is valid (no extraction)
 .venv/bin/grepxcel validate-pattern pattern.csv -v                # + parsed fields & extraction steps
 .venv/bin/grepxcel draft data.xlsx                                 # draft a starter pattern (local LLM)
@@ -89,6 +90,7 @@ The CLI is subcommand-based: `extract`, `validate-pattern`, `draft`, `docs`, `li
 .venv/bin/grepxcel mcp-config                                      # print MCP config for Claude Code
 .venv/bin/grepxcel mcp-config --target claude-desktop              # print config for Claude Desktop
 .venv/bin/grepxcel doctor [extract|draft|all]                      # preflight: deps, keys, model, proxy/TLS
+.venv/bin/grepxcel quickstart                                      # guided tutorial in the terminal
 ```
 
 > The pattern file may be `.xlsx` **or** `.csv`. `suggest` is a hidden
@@ -116,6 +118,7 @@ The CLI is subcommand-based: `extract`, `validate-pattern`, `draft`, `docs`, `li
 | `--sheet NAME_OR_INDEX` | active | Sheet name or 0-based index to process |
 | `--all-sheets` | off | Process every sheet; output keyed by sheet name |
 | `--format {nested,legacy}` | nested | Output shape |
+| `--strict` | off | Exit 2 if any field has issues (missing, mismatched); lists affected fields |
 | `--meta` | off | Add `_meta` block (run_id, stats, issues) for pipeline auto-verification |
 | `--max-rows N` | 2048 | Max data-sheet rows (Excel max 1,048,576) |
 | `--max-columns N` | 1024 | Max data-sheet columns (Excel max 16,384) |

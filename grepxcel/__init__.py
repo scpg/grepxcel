@@ -1,7 +1,7 @@
 from .engine import Engine
 from .logger import Logger, VerbosityLevel
 
-__version__ = '0.1.0'
+__version__ = '0.1.1'
 
 
 def extract(pattern, data, *, sheet=None, all_sheets=False,

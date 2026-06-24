@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1] — 2026-06-24
+
+### Features
+
+- **`--strict` mode** — `grepxcel extract --strict` exits with code 2 if any
+  field has extraction issues (validation mismatch, missing anchor, empty value).
+  Lists the affected field names on stderr. Use in pipelines to catch incomplete
+  extractions that would otherwise exit 0 or 1 silently.
+- **`quickstart` command** — `grepxcel quickstart` prints a guided tutorial in
+  your terminal: what grepxcel does, how to create your first pattern, and how
+  to run your first extraction. No files created or modified.
+
+### Documentation
+
+- **README rewritten** — shorter, friendlier, focused on non-technical users.
+  Full CLI reference moved to `docs/cli-reference.md`.
+- **`docs/cli-reference.md`** — comprehensive reference for all CLI commands,
+  flags, backends, and logging model (moved from README).
+- Removed absolute correctness claims ("never silently wrong") — replaced with
+  honest language about the tool's design intent and pattern-dependent quality.
+- All README links now absolute GitHub URLs so they resolve on PyPI.
+
 ## [0.1.0] — 2026-06-24
 
 Initial public release.
@@ -113,5 +135,6 @@ Initial public release.
 - Structured JSON logs never contain extracted cell values (allow-list
   construction, not redaction).
 
-[Unreleased]: https://github.com/scpg/grepxcel/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/scpg/grepxcel/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/scpg/grepxcel/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/scpg/grepxcel/releases/tag/v0.1.0

@@ -1,6 +1,6 @@
 # Pattern File Reference
 
-A pattern file is an `.xlsx` workbook that tells grepxcel what to look for and extract from a data file. Think of it as a schema: it describes the layout, field names, types, and validation rules.
+A pattern file is an **`.xlsx` workbook** or a **`.csv` text file** that tells grepxcel what to look for and extract from a data file. Think of it as a schema: it describes the layout, field names, types, and validation rules. Both formats are read into the same internal grid and behave identically.
 
 ---
 
@@ -37,11 +37,14 @@ Each row uses **columns A, B, C, D, …** as fields. Column A is always the row-
 
 Optional. Placed before `START:`. Each `config:` row sets one global option.
 
-| Column A  | Column B           | Column C         | Notes                        |
-|-----------|--------------------|------------------|------------------------------|
-| `config:` | `read.direction`   | `LR` or `TD`     | Default: `LR`                |
-| `config:` | `currency.sign`    | e.g. `€` or `$`  | Default: `€`                 |
-| `config:` | `empty.aliases`    | e.g. `N/A`       | Repeat the row for each alias|
+| Column A  | Column B           | Column C                          | Notes                        |
+|-----------|--------------------|-----------------------------------|------------------------------|
+| `config:` | `read.direction`   | `LR` or `TD`                      | Default: `LR`                |
+| `config:` | `currency.sign`    | e.g. `€` or `$`                   | Default: `€`                 |
+| `config:` | `empty.aliases`    | e.g. `N/A`                        | Repeat the row for each alias|
+| `config:` | `ignore.case`      | `true` or `false`                  | Default: `false`             |
+| `config:` | `lbl.match`        | `literal`, `glob`, or `regexp`     | Default: `literal`           |
+| `config:` | `pattern.version`  | integer (e.g. `1`)                 | Default: `1`                 |
 
 **`read.direction`** controls how the data sheet is scanned for `cell:` instructions:
 
@@ -52,6 +55,18 @@ Optional. Placed before `START:`. Each `config:` row sets one global option.
 
 **`empty.aliases`** lists strings that should be treated as empty cells (e.g. `N/A`, `-`, `—`). Add one alias per row.
 
+**`ignore.case`** makes all regex matching case-insensitive (applies to both `lbl:` and `var:` fields).
+
+**`lbl.match`** controls how `lbl:` field values are matched against data cells:
+
+- `literal` (default) — exact string match. Labels like `Term (months):` or `Invoice No.` work without escaping.
+- `glob` — shell-style wildcards: `*` matches any text (including newlines), `?` matches one character.
+- `regexp` — full Python `re.search` behaviour (the pre-v0.1.0 default).
+
+Per-field overrides are also supported: write `lbl:literal`, `lbl:glob`, or `lbl:regexp` in column A instead of plain `lbl:`.
+
+**`pattern.version`** declares a forward-compatibility version. Currently only version `1` is defined; absent defaults to `1`. Future versions may add new syntax.
+
 ---
 
 ## Field definition rows: `lbl:`, `var:`, `doc:`
@@ -61,21 +76,25 @@ referenced in the `START:` section, or documents the pattern.
 
 | Column A | Column B      | Column C   | Column D              | Role |
 |----------|---------------|------------|-----------------------|------|
-| `lbl:`   | `FieldName`   | type       | regex                 | **Anchor** — matched for position only; **never written to output JSON** |
+| `lbl:`   | `FieldName`   | type       | match pattern         | **Anchor** — matched for position only; **never written to output JSON** |
 | `var:`   | `field.name`  | type       | regex                 | **Variable** — extracted and written to output JSON |
 | `doc:`   | (free text)   |            |                       | **Comment** — ignored by the engine |
 | `def:`   | `FieldName`   | type       | regex                 | Backward-compatible alias for `var:` |
 
 - **`lbl:`** — use for literal text that marks *where* a value lives: labels like
   `Invoice No:` or column headers like `Product`, `Qty`. Matched but stripped
-  from output.
+  from output. Column D is matched according to the `lbl.match` config:
+  - **`literal`** (default) — exact string match. Write the label text as-is.
+  - **`glob`** — shell wildcards (`*`, `?`).
+  - **`regexp`** — full Python `re.search`.
+  - Per-field override: use `lbl:literal`, `lbl:glob`, or `lbl:regexp` in column A.
 - **`var:`** — use for every value you want to capture. **Dot notation creates
   nested JSON**: `po.number` → `{"po": {"number": …}}`. In a table, the group
   prefix (`line` in `line.qty`) becomes the output array key.
 - **FieldName** — a unique plain-text identifier.
-- **regex** — a Python `re.fullmatch` pattern applied to the string
-  representation of the cell value. Use `.*` to accept anything. Nested
-  unbounded quantifiers (e.g. `(a+)+`) are rejected as unsafe (ReDoS guard).
+- **regex** (for `var:` / `def:`) — a Python `re.fullmatch` pattern applied to
+  the string representation of the cell value. Use `.*` to accept anything.
+  Nested unbounded quantifiers (e.g. `(a+)+`) are rejected as unsafe (ReDoS guard).
 
 ### Supported types
 
@@ -89,6 +108,7 @@ referenced in the `START:` section, or documents the pattern.
 | `percentage` | Any number (int or float). Excel stores a percentage as a fraction, e.g. 62.5% → `0.625` | `str(numeric_value)` |
 | `boolean` / `bool` | Excel `TRUE`/`FALSE`                    | n/a (type check only)  |
 | `time`       | Excel **time-only** cells (no date part)      | n/a (type check only)  |
+| `duration`   | Excel `[h]:mm` durations (timesheets, elapsed time) | n/a (type check only) |
 | `date`       | Excel date cells                              | n/a (type check only)  |
 | `datetime`   | Excel datetime cells                          | n/a (type check only)  |
 | `timestamp`  | Same as `datetime`                            | n/a (type check only)  |
@@ -97,9 +117,11 @@ referenced in the `START:` section, or documents the pattern.
 `currency`/`percentage` (any numeric cell) but carry no money/percentage intent —
 use them for plain decimals such as quantities or measurements. `percentage`
 validates identically to `currency`; it exists to document intent. For
-`boolean`/`time`/`date`/`datetime`/`timestamp`, the regex column is ignored.
-`time` matches **time-only** cells (e.g. `14:30`); a cell that also has a date is
-a `datetime`, not a `time`.
+`boolean`/`time`/`duration`/`date`/`datetime`/`timestamp`, the regex column is
+ignored. `time` matches **time-only** cells (e.g. `14:30`); a cell that also has
+a date is a `datetime`, not a `time`. `duration` matches Excel `[h]:mm` formatted
+cells (e.g. `8:30` meaning 8 hours 30 minutes) — useful for timesheets and
+elapsed-time columns.
 
 > An unknown type name (e.g. a typo like `currncy`) is rejected when the pattern
 > file is parsed, so a mistyped type fails fast instead of silently mis-validating.
@@ -225,6 +247,38 @@ consumed cells are still skipped by subsequent `cell:next` instructions.
 
 `seek:` is not valid inside a table block. Annotate it with a `doc:` row above
 if you want to explain why the reposition is needed.
+
+---
+
+## dir: instruction
+
+Switch the scan direction partway through extraction. This affects all subsequent
+`cell:next` instructions (until another `dir:` changes it again).
+
+| Column A   | Meaning |
+|------------|---------|
+| `dir:LR`   | Switch to left-to-right, top-to-bottom (row by row) |
+| `dir:TD`   | Switch to top-to-bottom, left-to-right (column by column) |
+
+**When to use it:** when a data sheet has a header region that reads left-to-right
+but a body that reads top-to-bottom (or vice versa). Instead of using absolute
+`cell:` references for every field, switch direction inline and continue with
+`cell:next`.
+
+```
+config:    read.direction   LR           ← start reading row-by-row
+lbl:       header_label     string       Name:
+var:       name             string       .*
+
+START:
+cell:next  header_label
+cell:next  name
+dir:TD                                   ← switch to column-by-column
+cell:next  first_column_value
+```
+
+`dir:` is not valid inside a table block. The table's own `config: read.direction`
+controls direction within the table.
 
 ---
 

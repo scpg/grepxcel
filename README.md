@@ -1,235 +1,206 @@
 # grepxcel
 
-Extract structured data from Excel files — reliably, without writing custom code for every template.
+**Stop writing custom Python for every Excel template.** Define the layout once, extract clean JSON from any file that follows it.
 
-If you have ever written Python to parse an Excel file from a supplier, a client, or another department — and had it silently produce wrong output the moment they moved a column or renamed a header — grepxcel is built for exactly trying to easily get around this kind of problem.
-
-You describe the layout of the file once in a **pattern file** (an `.xlsx` workbook or a plain `.csv`). The engine reads any conforming data file and extracts cells and tables into clean, hierarchical JSON. When a file does not match the pattern, grepxcel fails loudly with a clear error — it is never silently wrong.
-
-Think of it as *[grep](https://en.wikipedia.org/wiki/Grep) for [Excel](https://en.wikipedia.org/wiki/Microsoft_Excel)*: a repeatable extraction layer you define once and run on any number of files.
+```
+pip install grepxcel
+```
 
 ![CI](https://github.com/scpg/grepxcel/actions/workflows/ci.yml/badge.svg)
 
 ---
 
-## Common use cases
+## The problem
 
-- **Supplier invoices and price lists** — each supplier sends Excel files in their own format. Define a pattern once per template, extract data from every new file automatically.
-- **Timesheets and HR reports** — team leads use slightly different layouts. grepxcel anchors on cell labels, not row numbers, so minor layout drift does not break extraction.
-- **Data pipelines ingesting Excel** — replace brittle `openpyxl` or `pandas` parsing code that breaks when a column shifts. The pattern file lives in git; extraction is deterministic and testable.
-- **Research and clinical data** — field workers submit data in Excel templates. Any file that deviates from the expected structure is rejected immediately, before it can corrupt your dataset.
+You get Excel files from suppliers, clients, or other departments. Every template is different. You write Python to parse each one — and it silently breaks the moment someone moves a column or renames a header.
 
-*The engineering philosophy behind grepxcel: [docs/MINDSET.md](docs/MINDSET.md).*
+## The solution
 
----
-
-## What it does
-
-You describe the layout of your Excel sheet in a **pattern file** — either an Excel workbook (`.xlsx`) or a plain `.csv` (handy for hand-editing and git diffs). The engine reads any matching data file and extracts cells and tables into clean, hierarchical JSON — no coding required to define new patterns.
-
----
-
-## How it works
+Describe the layout once in a **pattern file**. Run `grepxcel extract`. Get clean, structured JSON. When a file doesn't match the pattern, grepxcel flags exactly what went wrong — it is designed to fail loudly rather than produce silent errors, so automated pipelines can catch problems early.
 
 ```
 pattern.xlsx  +  data.xlsx  →  { "po": { "number": "PO-2026" }, "line": [ {…} ] }
 ```
 
-The pattern file has four row types:
+---
 
-| Row type | Purpose |
+## See it in action (2 minutes)
+
+**1. Generate example files:**
+
+```bash
+grepxcel generate-examples
+cd grepxcel-examples/01_simple_invoice
+```
+
+**2. Look at what you have** — a pattern file and a data file:
+
+```
+pattern.xlsx:  "Here is what the invoice looks like"
+data.xlsx:     "Here is an actual invoice"
+```
+
+**3. Extract:**
+
+```bash
+grepxcel extract -p pattern.xlsx data.xlsx
+```
+
+**4. Get clean JSON:**
+
+```json
+{
+  "inv":    { "number": "AB123456", "date": "2026-03-15" },
+  "client": { "name": "Alice Wonderland", "email": "alice@wonderland.example" },
+  "amount": { "net": 120, "vat": 24, "gross": 144 }
+}
+```
+
+That's it. Same pattern works on next month's invoice, and the one after that.
+
+---
+
+## Who is this for?
+
+- **Data teams** drowning in Excel reports from different sources
+- **Finance and accounting** — extract invoices, timesheets, price lists automatically
+- **ETL pipelines** — replace brittle `openpyxl` scripts that break when a column shifts
+- **Research and clinical data** — reject files that deviate from the expected structure before they corrupt your dataset
+
+You don't need to be a programmer to use grepxcel. You do need to be comfortable editing a simple spreadsheet to create your first pattern.
+
+---
+
+## Install
+
+```bash
+pip install grepxcel
+```
+
+That's all you need to extract data. Optional extras add more capabilities:
+
+| You want to… | Install |
 |---|---|
-| `config:` | Global settings: read direction, currency symbol, empty-cell aliases, case-insensitive matching (`ignore.case`) |
-| `lbl:` | Anchor label — matched for position, **never written to output JSON** |
-| `var:` | Data field — extracted and written to output JSON |
-| `doc:` | Comment / documentation row — ignored by the engine |
+| Extract data from Excel files | `pip install grepxcel` |
+| Auto-draft patterns with a local AI model | `pip install 'grepxcel[suggest]'` |
+| Auto-draft patterns with a cloud model | `pip install 'grepxcel[draft-cloud]'` |
+| Use grepxcel as an MCP server for AI agents | `pip install 'grepxcel[mcp]'` |
 
-Between `START:` and `END:` you list the extraction sequence:
+Requires Python **3.11+**. Works on Linux, macOS, and Windows.
 
-- `cell:next fieldName` — read the next non-empty cell into a field (alias: `cell:1`)
-- `cell:B5 fieldName` — jump directly to an absolute cell (A1-notation reference)
-- `seek:G5` — reposition the cursor to G5 **without** reading it; the next `cell:next` starts from there
-- `dir:LR` / `dir:TD` — switch the scan direction partway through (left-to-right / top-down); affects subsequent `cell:next`
-- `table:*` — match all instances of a repeating mini-table block
-
-Dot notation in `var:` field names creates nested output: `po.number` → `{"po": {"number": …}}`.
-
-### Pattern file formats
-
-A pattern can be authored as **`.xlsx`** or **`.csv`** — both are read into the
-same internal grid, so they behave identically. CSV is convenient for
-hand-editing and produces clean git diffs. When writing CSV:
-
-- One pattern row per CSV line; column A is the keyword (`config:`, `lbl:`, `var:`, `cell:…`).
-- Table-template rows start with an **empty first field** (blank column A), e.g. `,HEADER:1,col_a,col_b`.
-- **Quote any regex containing a comma**, e.g. `var,line.qty,integer,"\d{1,3}"`.
-- Plain text only — formulas (a leading `=`) are rejected, exactly as in `.xlsx`.
-
----
-
-## Writing the match pattern (regex) — the simple version
-
-The last column of a `lbl:` or `var:` row is a **regex**: a little pattern that
-describes *what the cell should look like*. You don't need to know regex to start —
-here's everything most people need.
-
-**Two rules to remember:**
-
-1. **The whole cell must match.** If your pattern is `\d{4}` (four digits), the cell
-   `2026` matches but `2026-05` does **not** (the `-05` is left over). You don't add
-   `^` or `$` anchors — grepxcel does that for you.
-2. **Leave it blank to accept anything.** No pattern in the last column = "any value
-   is fine". For `date`/`datetime` fields, always leave it blank (the type is checked,
-   not the text).
-
-**The building blocks you'll actually use:**
-
-| You want to match… | Write this | Matches |
-|---|---|---|
-| Any value at all | *(leave blank)* or `.*` | anything |
-| A whole number | `\d+` | `7`, `2026`, `100` |
-| Exactly 4 digits | `\d{4}` | `2026` (not `26`) |
-| Between 1 and 3 digits | `\d{1,3}` | `5`, `42`, `999` |
-| Letters only | `[A-Za-z]+` | `Acme` |
-| A code like `PO-2026` | `PO-\d+` | `PO-1`, `PO-2026` |
-| One of a few words | `paid\|unpaid\|pending` | `paid` |
-| A price like `19.99` | `\d+\.\d{2}` | `19.99` |
-
-Cheat-sheet: `\d` = a digit, `[A-Z]` = one capital letter, `+` = "one or more",
-`{4}` = "exactly four", `{1,3}` = "between one and three", `.` = any character,
-`.*` = "anything", `|` = "or".
-
-**Tips for beginners:**
-
-- **Start loose, then tighten.** Begin with a blank pattern (accept anything), run
-  `extract`, see what comes out, then add a pattern only where you need to be strict.
-- **Use `[A-Z]+`, not `([A-Z])+`.** Both look similar, but the bracket form is faster
-  and the parentheses-with-a-`+` form is rejected by grepxcel as unsafe (it can make
-  matching hang). The tool will tell you if you hit this.
-- **Case doesn't matter?** Add one config row at the top of the pattern file:
-  `config: | ignore.case | yes`. Then `PAID`, `Paid`, and `paid` all match the same
-  pattern. (Default is case-sensitive.)
-- **CSV pattern files:** if your pattern contains a comma (like `\d{1,3}`), wrap it in
-  quotes — `"\d{1,3}"` — so the comma isn't read as a new column.
-
-> Under the hood these are standard [Python `re`](https://docs.python.org/3/library/re.html)
-> patterns, so anything from that syntax works if you already know regex.
-
----
-
-## Quick start
-
-### Install
+<details>
+<summary>Installing from source (for contributors)</summary>
 
 ```bash
 git clone https://github.com/scpg/grepxcel.git
 cd grepxcel
 python -m venv .venv
-.venv/bin/pip install -e .                            # core (extract + docs)
-.venv/bin/python3 scripts/install_llm_deps.py         # optional: local draft (auto-detects GPU)
+.venv/bin/pip install -e .
 ```
 
-**What you actually need** — grepxcel ships in layers, so you only install what you use:
+Windows (PowerShell): use `.venv\Scripts\` instead of `.venv/bin/`.
 
-| You want to… | Install |
+</details>
+
+---
+
+## How patterns work
+
+A pattern file is a simple spreadsheet (`.xlsx` or `.csv`) with four types of rows:
+
+| Row type | What it does |
 |---|---|
-| Extract data / generate the docs reference | `pip install grepxcel` *(core — nothing extra)* |
-| Draft patterns with the **local** model (offline) | `pip install 'grepxcel[suggest]'` |
-| Draft patterns with a **cloud** model (Claude) | `pip install 'grepxcel[draft-cloud]'` |
-| Use as an **MCP server** for AI agents | `pip install 'grepxcel[mcp]'` |
+| **Settings** (`config:`) | How to read the file — scan direction, currency symbol, case sensitivity |
+| **Landmarks** (`lbl:`) | Text you use to find your place — "Invoice Number", "Total" |
+| **Fields** (`var:`) | Values you want to extract — the invoice number, the date, the amount |
+| **Notes** (`doc:`) | Your own comments — ignored by the engine |
 
-The `extract` and `docs` commands work with the core install alone. The `draft`
-command is optional; if its dependencies are missing, grepxcel tells you exactly
-what to install (and points you at the cloud option as an alternative).
+Between `START:` and `END:` you tell grepxcel the order to read cells:
 
-> **Windows (PowerShell):** use `.venv\Scripts\` instead of `.venv/bin/`, e.g.
-> `.venv\Scripts\pip install -e .` and `.venv\Scripts\grepxcel ...`.
-
-Requires Python **3.11+**.
-
-### Try it — bundled examples
-
-Don't have your own Excel files yet? Generate ready-to-run examples:
-
-```bash
-.venv/bin/grepxcel generate-examples          # creates ./grepxcel-examples/
-cd grepxcel-examples/01_simple_invoice
-.venv/bin/grepxcel extract -p pattern.xlsx data.xlsx
+```
+START:
+  cell:1  IGNORE           ← skip this cell (it's a label)
+  cell:1  inv.number       ← read the next cell into "inv.number"
+  cell:1  IGNORE
+  cell:1  inv.date
+END:
 ```
 
-Each example includes a pattern, a data file, and a README with commands to try.
+Dot notation creates nested output: `inv.number` → `{"inv": {"number": …}}`.
 
-### CLI usage
+> **Full reference:** [docs/pattern-file.md](https://github.com/scpg/grepxcel/blob/main/docs/pattern-file.md) covers every
+> instruction, type, and config option in detail.
+
+---
+
+## Describing what cells look like
+
+Each field can have a **match pattern** that describes what the cell value should look like. You don't need to know regular expressions — here's what most people need:
+
+| You want to match… | Write this | Example |
+|---|---|---|
+| Anything at all | *(leave blank)* | any value |
+| A whole number | `\d+` | `7`, `2026` |
+| Exactly 4 digits | `\d{4}` | `2026` |
+| A code like `PO-2026` | `PO-\d+` | `PO-1`, `PO-999` |
+| One of a few words | `paid\|unpaid` | `paid` |
+| A price like `19.99` | `\d+\.\d{2}` | `19.99` |
+
+**Tips:** Start loose (blank = accept anything), run `extract`, see what comes out, then tighten. Add `config: | ignore.case | yes` to match regardless of capitalization.
+
+> **Under the hood** these are standard Python regular expressions. If you
+> already know regex, anything from the
+> [Python `re` syntax](https://docs.python.org/3/library/re.html) works.
+
+---
+
+## CLI commands
 
 ```bash
-# Extract data from an Excel file using a pattern
-.venv/bin/grepxcel extract -p pattern.xlsx data.xlsx
+# Extract data
+grepxcel extract -p pattern.xlsx data.xlsx
+grepxcel extract -p pattern.xlsx data.xlsx -o output/     # write to a directory
+grepxcel extract -p pattern.xlsx data.xlsx --strict        # fail on any missing field
+grepxcel extract -p pattern.xlsx data_dir/ -r              # process a whole directory
 
-# Write output to a directory instead of stdout
-.venv/bin/grepxcel extract -p pattern.xlsx data.xlsx -o output/
+# Tools
+grepxcel generate-examples                     # create example files to try
+grepxcel validate-pattern pattern.xlsx         # check a pattern without extracting
+grepxcel lint data.xlsx                        # inspect a file before extraction
+grepxcel schema pattern.xlsx -o schema.json    # generate JSON Schema for validation
+grepxcel draft data.xlsx                       # AI-draft a starter pattern
+grepxcel docs                                  # generate the pattern reference file
+grepxcel quickstart                            # guided tutorial in your terminal
+grepxcel doctor                                # check your environment is ready
 
-# Process a specific sheet, or every sheet at once
-.venv/bin/grepxcel extract -p pattern.xlsx data.xlsx --sheet 2025
-.venv/bin/grepxcel extract -p pattern.xlsx data.xlsx --all-sheets
-
-# Verbose mode (step-by-step match log)
-.venv/bin/grepxcel extract -p pattern.xlsx data.xlsx -v
-
-# Legacy flat output format ({"cells":{}, "tables":[]})
-.venv/bin/grepxcel extract -p pattern.xlsx data.xlsx --format legacy
-
-# Generate a colour-coded pattern reference file
-.venv/bin/grepxcel docs -o pattern-reference.xlsx
-
-# Inspect an Excel file before extraction (format, encryption, extent, merges)
-.venv/bin/grepxcel lint data.xlsx
-
-# Generate a JSON Schema describing the extraction output of a pattern
-.venv/bin/grepxcel schema pattern.xlsx -o schema.json
-
-# Use a local LLM to draft a starter pattern for an unseen Excel file
-.venv/bin/grepxcel draft data.xlsx -o draft-pattern.xlsx
+# For AI agents
+grepxcel mcp                                   # start MCP server
+grepxcel mcp-config                            # print config for Claude / Cursor
 ```
 
-### Python API
+Run `grepxcel <command> --help` for all options.
 
-The one-call entry point is `grepxcel.extract()`:
+---
+
+## Python API
 
 ```python
 import grepxcel
 
 result = grepxcel.extract("pattern.xlsx", "data.xlsx")
 
-# Fields are grouped by dot-notation prefix
 print(result["po"]["number"])        # "PO-2026"
 print(result["vendor"]["name"])      # "Acme Supplies"
 
-# Tables are arrays of instance objects
 for row in result["line"][0]["data"]:
     print(row["item"], row["qty"])
-
-# Options: a specific sheet, every sheet, or the legacy output shape
-result  = grepxcel.extract("pattern.xlsx", "data.xlsx", sheet="Q1")
-by_sheet = grepxcel.extract("pattern.xlsx", "data.xlsx", all_sheets=True)
-```
-
-`extract()` is silent by default. For progress/warnings, or to reuse one engine
-across many calls, use the underlying `Engine` directly:
-
-```python
-from grepxcel import Engine, Logger, VerbosityLevel
-
-logger = Logger(level=VerbosityLevel.NORMAL)
-result = Engine().process("pattern.xlsx", "data.xlsx", logger=logger)
 ```
 
 ---
 
 ## Output format
 
-Fields defined with dot notation (`po.number`, `po.date`) are grouped into nested objects.
-Tables always produce an array of instance objects, each containing `data`, and optionally
-`header` and `footer` sections.
+Fields with dot notation are grouped into nested objects. Tables produce arrays.
 
 ```json
 {
@@ -247,379 +218,29 @@ Tables always produce an array of instance objects, each containing `data`, and 
 }
 ```
 
-Label fields (`lbl:`) are used only for positional anchoring and are never included in output.
-
 ---
 
-## CLI reference
+## Learn more
 
-### `grepxcel extract`
-
-| Flag | Default | Purpose |
-|---|---|---|
-| `-p FILE` | required | Pattern file — `.xlsx` or `.csv` |
-| `--format` | `nested` | Output format: `nested` (default) or `legacy` |
-| `-o DIR` | — | Write JSON to directory (stdout if omitted) |
-| `-l FILE` | — | Append structured log to file |
-| `--log-format` | `text` | Log format: `text` (human) or `json` (NDJSON for SIEM/cloud) |
-| `--meta` | off | Add `_meta` block to JSON output (run_id, stats, issues) |
-| `-v` / `-vv` | off | Verbosity: per-field trace (`field ← B1 = value ✓/✗`) / anchor probes |
-| `-d` / `--debug` | off | Same as `-vv` |
-| `--max-rows N` | 2048 | Max data-sheet rows (raise up to Excel's 1,048,576; untested above default) |
-| `--max-columns N` | 1024 | Max data-sheet columns (raise up to Excel's 16,384; untested above default) |
-| `--max-size MB` | 5 | Compressed file size limit |
-| `--max-uncompressed MB` | 50 | Uncompressed ZIP content limit (ZIP bomb guard) |
-| `--max-cell-len N` | 1000 | Max cell chars fed to regex (ReDoS guard) |
-| `--sheet NAME_OR_INDEX` | active | Sheet name or 0-based index to process |
-| `--all-sheets` | off | Process every sheet; output is a dict keyed by sheet name (mutually exclusive with `--sheet`) |
-
-### `grepxcel validate-pattern`
-
-Check that a pattern file (`.xlsx` or `.csv`) is valid to use — **without** running
-an extraction. It applies the same rules extraction does (structure, field types,
-multiplicities, regex safety, comments) and additionally flags an empty extraction
-sequence and references to undefined fields. **Exits non-zero** if any file is invalid.
-
-```bash
-grepxcel validate-pattern pattern.xlsx
-grepxcel validate-pattern pattern.csv -v       # + parsed config, fields, and steps
-grepxcel validate-pattern a.xlsx b.csv         # validate several at once
-```
-
-| Flag | Purpose |
+| Topic | Where to look |
 |---|---|
-| `FILE...` | One or more pattern files to validate |
-| `-v`, `--verbose` | Print the parsed config, fields, and extraction sequence |
-
-### `grepxcel docs`
-
-| Flag | Default | Purpose |
-|---|---|---|
-| `-o FILE` | `pattern-reference.xlsx` | Output path for the reference file |
-
-### `grepxcel generate-examples`
-
-Creates 4 ready-to-run example sets (pattern + data + README) in a local directory.
-
-| Flag | Default | Purpose |
-|---|---|---|
-| `-o DIR` | `./grepxcel-examples/` | Directory to create |
-
-Examples included: simple invoice (KV), product catalog (table), expense report
-(KV + table + footer), loan schedule (KV header + amortization table).
-
-### `grepxcel draft`
-
-Drafts a starter pattern file for an unseen Excel file using an LLM. The output is
-a *starting point* — review and refine the generated regexes before use.
-`grepxcel suggest` is a backward-compatible alias for this command.
-
-> Curious which model to use, and how good `draft` actually is? See
-> [docs/EVALUATION.md](docs/EVALUATION.md) for the methodology, model
-> comparisons (local vs cloud), and honest notes on where it succeeds and fails.
-
-| Flag | Default | Purpose |
-|---|---|---|
-| `-o FILE` | `draft_pattern.xlsx` | Write draft pattern to this path |
-| `-v` | off | Print the Excel analysis sent to the model + update status |
-| `--dry-run` | off | Print the analysis that would be sent to the model, then exit (no inference) |
-| `--backend local\|claude\|github\|server\|gemini` | `local` | Inference backend (see below) |
-| `--sheet NAME_OR_INDEX` | active | Sheet to analyse |
-| `--max-size MB` | 5 | Compressed file size limit |
-| `--max-uncompressed MB` | 50 | Uncompressed ZIP content limit (ZIP bomb guard) |
-
-#### Backends
-
-| Backend | Install | Notes |
-|---|---|---|
-| `local` *(default)* | `python3 scripts/install_llm_deps.py` | Runs Gemma-4-E4B (GGUF) in-process. **No data leaves your machine.** Model is pinned to a revision and downloaded once (~5 GB); set `GREPXCEL_MODEL_AUTOUPDATE=1` to track upstream, `GREPXCEL_MODEL_DIR` to relocate the cache. |
-| `github` | `pip install -e '.[draft-cloud]'` | **GitHub Models** — free with a GitHub subscription (quota-limited, no per-token charge), and the **highest-quality option** in our eval. Requires `GITHUB_TOKEN` (fine-grained, `Models: read`). Pick a model with `--github-model`, e.g. `openai/gpt-4.1`, `openai/gpt-4o`, `meta/llama-3.3-70b-instruct`. Per-draft token usage + remaining quota are printed. |
-| `claude` | `pip install -e '.[draft-cloud]'` | Anthropic API. Requires `ANTHROPIC_API_KEY`. Prints a one-line privacy notice and per-call token cost (~$0.003–0.04/draft). |
-| `server` | `pip install openai` | Any **OpenAI-compatible server** (LM Studio, Ollama, vLLM, text-generation-inference). Default URL: `http://localhost:1234/v1` (override with `--server-url` or `GREPXCEL_SERVER_URL`). Model is auto-discovered unless `--server-model` is set. Data stays local. |
-| `gemini` | — | **Planned for a future release** — not yet available. Selecting it prints a notice and exits. |
-
-Backends read keys from a `.env` file in the project (or any parent) directory,
-so you don't have to export them. Real environment variables take precedence.
-On draft quality (execution-based eval, all fixtures): the free **`github`**
-models (`openai/gpt-4.1`, `openai/gpt-4o`, `meta/llama-3.3-70b-instruct`) lead by
-a wide margin, ahead of the `local` model — see
-[docs/EVALUATION.md](docs/EVALUATION.md).
-
-> **Faster first download (`local` backend):** the model is fetched once from
-> HuggingFace. Anonymous downloads work but are rate-limited and can be slow or
-> stall on the ~5 GB file. For a faster, more reliable first run, set a free
-> [HuggingFace token](https://huggingface.co/settings/tokens) (read scope):
-> `HF_TOKEN=hf_... grepxcel draft data.xlsx`. It's optional and one-time — the
-> model is cached afterwards. If a download stalls, grepxcel prints this tip too.
-
-> **Privacy:** the `claude` cloud backend sends only the *structure description*
-> of your sheet (column types, sample values, labels) — never the raw file. The
-> `local` backend sends nothing over the network during inference.
-
-```bash
-grepxcel draft data.xlsx                       # local model (default)
-grepxcel draft data.xlsx --dry-run             # inspect the analysis, no inference
-ANTHROPIC_API_KEY=sk-... grepxcel draft data.xlsx --backend claude
-grepxcel draft data.xlsx --backend server      # LM Studio / Ollama on localhost:1234
-grepxcel draft data.xlsx --backend server --server-url http://host:8080/v1
-```
-
-#### Model cache & offline / alternative downloads
-
-The local model is stored once in the platform-appropriate per-user cache
-(resolved with [`platformdirs`](https://pypi.org/project/platformdirs/), the same
-convention pip uses):
-
-| OS | Default cache |
-|---|---|
-| Linux | `$XDG_CACHE_HOME/grepxcel/models/` (default `~/.cache/grepxcel/models/`) |
-| macOS | `~/Library/Caches/grepxcel/models/` |
-| Windows | `%LOCALAPPDATA%\grepxcel\Cache\models\` |
-
-Override the location with `GREPXCEL_MODEL_DIR` (handy for Docker volumes or a
-shared model dir) — it takes precedence over the defaults above.
-
-If the HuggingFace download is slow or blocked, you don't have to let grepxcel
-fetch it — **grepxcel only downloads when the file isn't already in the cache**,
-so you can supply it yourself from any source:
-
-```bash
-mkdir -p ~/.cache/grepxcel/models            # or your $GREPXCEL_MODEL_DIR
-# download the GGUF anywhere (HF website, a mirror, ModelScope, …), then place it
-# with this EXACT name so grepxcel finds it and skips the download:
-mv gemma-4-E4B-it-Q4_K_M.gguf  ~/.cache/grepxcel/models/
-grepxcel draft data.xlsx                     # uses the local file — no download
-```
-
-Other options:
-
-- **Mirror:** `huggingface_hub` honors `HF_ENDPOINT`, e.g.
-  `HF_ENDPOINT=https://hf-mirror.com grepxcel draft data.xlsx` (third-party mirror).
-- **Token:** `HF_TOKEN=hf_...` removes the anonymous rate limit (fastest fix).
-
-> The normal HuggingFace download is **hash-verified** against the pinned
-> revision. A **manually-placed file is also trusted automatically when its
-> sha256 matches the pinned build** (grepxcel ships the known-good hash, so the
-> trust is portable across machines). A file that doesn't match a known-good
-> hash and has no recorded fingerprint is used on trust with a warning — make
-> sure such a source is trustworthy, or pass `--allow-unverified-model` to
-> silence the warning.
-
-#### Behind a corporate proxy / TLS inspection (experimental)
-
-Corporate networks often route HTTPS through an inspection proxy (NetSkope,
-Zscaler, …) that re-signs traffic with a **company CA** Python doesn't trust by
-default — so the model download and the cloud backends fail with
-`CERTIFICATE_VERIFY_FAILED`. grepxcel can trust that CA (TLS verification stays
-on — it is never disabled):
-
-- **Best:** have IT install the corporate root CA in your OS trust store, then
-  `pip install truststore` (it ships with the `suggest` / `draft-cloud` extras).
-  grepxcel then uses the OS store automatically — no env vars needed.
-- **Or** point grepxcel at the CA `.pem` file:
-  ```bash
-  grepxcel draft data.xlsx --ca-bundle /path/to/corporate-ca.pem
-  # or: export GREPXCEL_CA_BUNDLE=/path/to/corporate-ca.pem
-  #     (REQUESTS_CA_BUNDLE / SSL_CERT_FILE are also honored)
-  ```
-- If your network requires a proxy, set `HTTPS_PROXY` / `NO_PROXY` as usual
-  (both `requests` and `httpx` read them automatically).
-- Run `grepxcel doctor` to verify the setup — it does a live TLS handshake.
-
-> ⚠️ This support has **not been tested against a real intercept proxy**;
-> grepxcel prints a one-time notice when proxy/CA settings are in effect.
-
-### `grepxcel lint`
-
-Inspect an Excel data file before extraction — catches issues that would cause
-extraction to fail or produce unexpected results.
-
-```bash
-grepxcel lint data.xlsx
-grepxcel lint jan.xlsx feb.xlsx        # lint several files
-```
-
-It prints a `✓/⚠/✗/ℹ` checklist covering:
-- **File format** — extension, ZIP integrity, encryption/IRM detection
-- **Microsoft Information Protection (MIP)** — detects OLE Compound Documents
-  (encrypted by sensitivity labels) and explains how to obtain an extractable copy
-- **Sheet dimensions** — declared vs real used extent (detects styling inflation)
-- **Merged cells** — listed with a note on how grepxcel handles them
-- **Formula cells** — warns about potentially stale cached values
-- **Empty sheets** — nothing to extract
-- **Advisory notes** — known limitations not yet auto-detected (password
-  protection, conditional formatting, pivot tables, VBA)
-
-### `grepxcel schema`
-
-Generate a [JSON Schema](https://json-schema.org/) (draft 2020-12) that describes
-the extraction output for a pattern. Use it to validate extracted JSON with any
-standard JSON Schema validator — handy when importing thousands of files that must
-all follow the same structure.
-
-```bash
-grepxcel schema pattern.xlsx               # print schema to stdout
-grepxcel schema pattern.xlsx -o schema.json
-grepxcel schema pattern.csv                # CSV patterns work too
-```
-
-The schema mirrors the nested output shape:
-- **Field types** map to JSON types (`currency`/`percentage` → `number`,
-  `date`/`datetime` → `string` with `format: date-time`, etc.)
-- **Dot-notation** fields (`po.number`) become nested objects
-- **Tables** become arrays of objects with `_source`/`header`/`data`/`footer`
-  sub-objects
-- All fields are **nullable** (`["string", "null"]`) since an empty cell extracts
-  as `null`
-
-Validate an extraction against it with any tool, e.g. Python's `jsonschema`:
-
-```bash
-grepxcel schema pattern.xlsx -o schema.json
-grepxcel extract -p pattern.xlsx data.xlsx -o out/
-python -m jsonschema -i out/data.json schema.json
-```
-
-### `grepxcel doctor`
-
-Preflight check that tells you exactly what's needed to run the tool.
-
-```bash
-grepxcel doctor            # everything: extract + draft + proxy/TLS
-grepxcel doctor extract    # only what extract needs (offline)
-grepxcel doctor draft      # only what draft needs (deps, keys, model, proxy/TLS)
-```
-
-It prints a `✓/⚠/✗` checklist — Python version, dependencies, API keys, the
-local-model cache + disk space, and proxy/CA config with a live handshake — and
-**exits non-zero** if the selected area has a blocking (`✗`) problem.
-
-| Flag | Purpose |
-|---|---|
-| `area` | `extract`, `draft`, or `all` (default `all`) |
-| `--no-probe` | Skip the live TLS handshake (offline / faster) |
-
-### `grepxcel mcp`
-
-Starts grepxcel as a [Model Context Protocol](https://modelcontextprotocol.io)
-(MCP) server so AI agents can call grepxcel tools directly.
-
-```bash
-pip install 'grepxcel[mcp]'       # install the MCP dependency
-grepxcel mcp-config               # print the config for your AI agent
-grepxcel mcp                      # start the server (stdio transport)
-```
-
-**Exposed tools:** `extract`, `validate_pattern`, `lint`, `schema`, `docs`,
-`doctor`, `generate_examples`.
-
-| Flag | Default | Purpose |
-|---|---|---|
-| `--target` (mcp-config) | `claude-code` | Config format: `claude-code`, `claude-desktop`, `cursor` |
-
----
-
-## Verbosity levels
-
-| Level | What you see |
-|---|---|
-| `QUIET` | Nothing — records still collected in memory |
-| `NORMAL` | Summary + all validation warnings with hints *(default)* |
-| `VERBOSE` | + every cell and table match step by step |
-| `DEBUG` | + every anchor probe and rejection reason |
-
----
-
-## Logging model & data safety
-
-grepxcel's logging is designed so that **no extracted Excel cell value ever reaches
-a structured log record** — by construction, not by redaction.
-
-### How it works
-
-- **Console / text logs** (`--log-format text`, default) show the full diagnostic
-  detail (including cell values) on stderr — intended for a human operator sitting
-  at the terminal.
-- **Structured logs** (`--log-format json`) write one NDJSON record per event to
-  the `--log` file. Each record is built from an **allow-list of safe keys** only:
-  `ts`, `level`, `category`, `event`, `cell`, `field`, `field_type`, `value_len`,
-  `value_sha8`, `run_id`, `source`, `schema_version`. Free-form fields (`message`,
-  `hint`, `expected`, `found`) are never serialized.
-- A **non-reversible value fingerprint** (`value_len` + `value_sha8`, a truncated
-  SHA-256) is included for diagnostics without revealing the cell content.
-- An end-of-run **summary** event carries extraction statistics — counts and field
-  names only, never values.
-- There is **no opt-out** for the allow-list model; the text log remains human-only.
-
-### GDPR / PII considerations
-
-Because structured JSON logs never contain cell values, they can be shipped to a
-SIEM or cloud log aggregator without risk of leaking personal data that may be
-present in the Excel files being processed.
-
-The `--meta` flag adds a `_meta` block to the extracted JSON output with run_id,
-statistics, and safe issue records — suitable for pipeline auto-verification. This
-block also follows the allow-list model and never contains cell values.
-
-**Operators are responsible for** controlling access to the text-mode log files and
-the extracted JSON output, which do contain the actual data.
-
----
-
-
-## Project layout
-
-```
-grepxcel/        ← importable Python package (engine, parser, models, security, cli, drafter)
-scripts/         ← reusable utility scripts for contributors
-tests/
-  fixtures/      ← pattern + data xlsx pairs (one folder per scenario)
-  unit/          ← pytest unit tests
-  integration/   ← pytest integration tests
-docs/            ← additional documentation
-tmp.local/       ← throwaway scripts, never synced  (gitignored)
-samples.local/   ← local-only Excel files, never synced  (gitignored)
-logs/            ← log file output                 (gitignored)
-output/          ← JSON extraction results         (gitignored)
-```
-
----
-
-## Running the tests
-
-```bash
-.venv/bin/pytest tests/ -q
-```
-
-1200+ unit and integration tests across 22 fixture scenarios — all green.
-
----
-
-## Requirements
-
-- Python 3.11+
-- `openpyxl >= 3.1`
-- `defusedxml >= 0.7`
-- `llama-cpp-python >= 0.2.90` and `huggingface_hub >= 0.23` — only for `grepxcel draft`
+| Pattern file reference (all instructions, types, config) | [docs/pattern-file.md](https://github.com/scpg/grepxcel/blob/main/docs/pattern-file.md) |
+| Engineering philosophy and design principles | [docs/MINDSET.md](https://github.com/scpg/grepxcel/blob/main/docs/MINDSET.md) |
+| Draft command evaluation (model quality, benchmarks) | [docs/EVALUATION.md](https://github.com/scpg/grepxcel/blob/main/docs/EVALUATION.md) |
+| CLI flags and options (full reference) | [docs/cli-reference.md](https://github.com/scpg/grepxcel/blob/main/docs/cli-reference.md) |
+| Security model and vulnerability reporting | [SECURITY.md](https://github.com/scpg/grepxcel/blob/main/SECURITY.md) |
+| Contributing guidelines | [CONTRIBUTING.md](https://github.com/scpg/grepxcel/blob/main/CONTRIBUTING.md) |
 
 ---
 
 ## Support
 
 grepxcel is free and open source. If it saves you time and you'd like to say thanks,
-you can [buy me a coffee](https://buymeacoffee.com/scpg.dev) ☕ — entirely optional and
+you can [buy me a coffee](https://buymeacoffee.com/scpg.dev) — entirely optional and
 always appreciated.
 
 <a href="https://buymeacoffee.com/scpg.dev" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" height="41" width="174"></a>
 
-## Contributing
-
-See [CONTRIBUTING.md](CONTRIBUTING.md). All PRs target the `dev` branch.
-
-## Security
-
-See [SECURITY.md](SECURITY.md) for how to report vulnerabilities privately.
-
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT — see [LICENSE](https://github.com/scpg/grepxcel/blob/main/LICENSE).
