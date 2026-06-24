@@ -2,7 +2,7 @@
 
 Extract structured data from Excel files — reliably, without writing custom code for every template.
 
-If you have ever written Python to parse an Excel file from a supplier, a client, or another department — and had it silently produce wrong output the moment they moved a column or renamed a header — grepxcel is built for exactly trying to easily get around this kind of problem.
+If you have ever written Python to parse an Excel file from a supplier, a client, or another department — and had it silently produce wrong output the moment they moved a column or renamed a header — grepxcel solves that problem.
 
 You describe the layout of the file once in a **pattern file** (an `.xlsx` workbook or a plain `.csv`). The engine reads any conforming data file and extracts cells and tables into clean, hierarchical JSON. When a file does not match the pattern, grepxcel fails loudly with a clear error — it is never silently wrong.
 
@@ -189,6 +189,12 @@ Each example includes a pattern, a data file, and a README with commands to try.
 
 # Use a local LLM to draft a starter pattern for an unseen Excel file
 .venv/bin/grepxcel draft data.xlsx -o draft-pattern.xlsx
+
+# Generate a CycloneDX 1.6 SBOM (Software Bill of Materials)
+.venv/bin/grepxcel sbom -o sbom.cdx.json
+
+# Emit a skill document for AI agent integration
+.venv/bin/grepxcel generate-skill --target claude
 ```
 
 ### Python API

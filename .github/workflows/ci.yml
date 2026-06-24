@@ -63,6 +63,55 @@ jobs:
           grepxcel docs -o /tmp/pattern-reference.xlsx
           test -f /tmp/pattern-reference.xlsx
 
+  package-extras:
+    # Verify optional extras install cleanly and their entry points load.
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        extra: [mcp, draft-cloud]
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install package with [${{ matrix.extra }}]
+        run: pip install '.[${{ matrix.extra }}]'
+
+      - name: Smoke-test extra
+        run: |
+          grepxcel --help
+          if [ "${{ matrix.extra }}" = "mcp" ]; then
+            grepxcel mcp-config
+          fi
+
+  cross-platform:
+    # Smoke-test on macOS and Windows to catch path-separator bugs,
+    # symlink differences, and platform-specific edge cases.
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Run tests
+        run: pytest tests/ -q
+
   docs-reference:
     # Verifies that docs/pattern-reference.xlsx can be regenerated and is current.
     # The file must be updated locally and included in the PR diff — branch
