@@ -53,6 +53,15 @@ def _add_security_args(p: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_strict_arg(p: argparse.ArgumentParser) -> None:
+    p.add_argument(
+        '--strict',
+        action='store_true',
+        help='Exit with code 2 if any defined field is missing (null) in the '
+             'output. Use in pipelines to catch incomplete extractions.',
+    )
+
+
 def _add_sheet_arg(p: argparse.ArgumentParser) -> None:
     p.add_argument(
         '--sheet',
@@ -93,6 +102,7 @@ commands:
   mcp                Start the MCP server (stdio transport)
   mcp-config         Print the MCP server config for your AI agent
   doctor             Check the environment is ready (deps, keys, model, proxy/TLS)
+  quickstart         Guided tutorial — learn grepxcel in your terminal
 
 Run 'grepxcel <command> --help' for per-command options.
         """,
@@ -118,6 +128,7 @@ Run 'grepxcel <command> --help' for per-command options.
     _add_mcp_subparser(sub)
     _add_mcp_config_subparser(sub)
     _add_doctor_subparser(sub)
+    _add_quickstart_subparser(sub)
     return p
 
 
@@ -330,6 +341,22 @@ Exits non-zero if the selected area has a blocking (✗) problem.
     )
 
 
+def _add_quickstart_subparser(sub) -> None:
+    sub.add_parser(
+        'quickstart',
+        help='Guided tutorial — learn grepxcel in your terminal',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Prints a step-by-step guide covering what grepxcel does, how to create
+your first pattern, and how to run your first extraction. No files are
+created or modified.
+
+examples:
+  grepxcel quickstart
+        """,
+    )
+
+
 def _add_extract_subparser(sub) -> None:
     p = sub.add_parser(
         'extract',
@@ -437,6 +464,7 @@ examples:
         metavar='NAME_OR_INDEX',
         help='Sheet to use: name (e.g. Sheet2) or 0-based index (default: active sheet)',
     )
+    _add_strict_arg(p)
     _add_security_args(p)
 
 
@@ -616,10 +644,12 @@ def _resolve_level(args) -> VerbosityLevel:
     return VerbosityLevel.NORMAL
 
 
-def _process_file(pattern: str, data_file: str, args, stem: str = None) -> bool:
+def _process_file(pattern: str, data_file: str, args,
+                  stem: str = None) -> tuple[bool, list[str]]:
     """
     Run the engine on one data file.
-    Returns True if the file had no errors or warnings, False otherwise.
+    Returns (ok, issue_fields) where ok is True if no errors/warnings occurred
+    and issue_fields is a list of field names that had issues (for --strict).
     """
     level = _resolve_level(args)
 
@@ -664,7 +694,7 @@ def _process_file(pattern: str, data_file: str, args, stem: str = None) -> bool:
         print(colorize_marks(
             f'\n  ✗  Unexpected error processing {data_file}: {exc}',
             should_color(sys.stderr)), file=sys.stderr)
-        return False
+        return False, []
     finally:
         logger.close()
 
@@ -681,7 +711,16 @@ def _process_file(pattern: str, data_file: str, args, stem: str = None) -> bool:
         json.dump(result, sys.stdout, indent=2, default=_json_default)
         sys.stdout.write('\n')
 
-    return not (logger.has_errors() or logger.has_warnings())
+    ok = not (logger.has_errors() or logger.has_warnings())
+    issue_fields: list[str] = []
+    if not ok:
+        for rec in logger.issues():
+            if rec.field:
+                issue_fields.append(rec.field)
+    stats = logger.last_stats
+    if stats:
+        issue_fields.extend(stats.get('empty_field_names', []))
+    return ok, issue_fields
 
 
 _DEFAULT_MAX_FILES = 10_000
@@ -1004,6 +1043,10 @@ def main(argv=None):
 
     args = _build_parser().parse_args(argv)
 
+    if args.command == 'quickstart':
+        from .quickstart import run_quickstart
+        sys.exit(run_quickstart())
+
     if args.command == 'draft':
         sys.exit(_run_draft(args))
 
@@ -1060,9 +1103,26 @@ def main(argv=None):
         sys.exit(1)
 
     all_ok = True
+    strict = getattr(args, 'strict', False)
+    strict_failures: list[tuple[str, list[str]]] = []
+
     for data_file in expanded:
-        ok = _process_file(args.pattern, data_file, args,
-                           stem=_output_stem(data_file, expanded))
+        ok, empty_fields = _process_file(args.pattern, data_file, args,
+                                         stem=_output_stem(data_file, expanded))
         all_ok = all_ok and ok
+        if strict and empty_fields:
+            strict_failures.append((data_file, empty_fields))
+
+    if strict_failures:
+        color = should_color(sys.stderr)
+        print(colorize_marks(
+            '\n  ✗  --strict: missing fields detected',
+            color), file=sys.stderr)
+        for data_file, fields in strict_failures:
+            if len(expanded) > 1:
+                print(f'  {data_file}:', file=sys.stderr)
+            for field in fields:
+                print(f'    • {field}', file=sys.stderr)
+        sys.exit(2)
 
     sys.exit(0 if all_ok else 1)

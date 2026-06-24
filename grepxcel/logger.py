@@ -288,6 +288,10 @@ class Logger:
     def has_warnings(self) -> bool:
         return any(r.severity == Severity.WARNING for r in self._records)
 
+    @property
+    def last_stats(self) -> dict | None:
+        return self._last_stats
+
     # --- Engine lifecycle ---------------------------------------------------
 
     def engine_start(self, pattern_file: str, data_file: str):

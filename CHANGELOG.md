@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Features
+
+- **`--strict` mode** — `grepxcel extract --strict` exits with code 2 if any
+  field has extraction issues (validation mismatch, missing anchor, empty value).
+  Lists the affected field names on stderr. Use in pipelines to catch incomplete
+  extractions that would otherwise exit 0 or 1 silently.
+- **`quickstart` command** — `grepxcel quickstart` prints a guided tutorial in
+  your terminal: what grepxcel does, how to create your first pattern, and how
+  to run your first extraction. No files created or modified.
+
+### Documentation
+
+- **README rewritten** — shorter, friendlier, focused on non-technical users.
+  Full CLI reference moved to `docs/cli-reference.md`.
+- **`docs/cli-reference.md`** — comprehensive reference for all CLI commands,
+  flags, backends, and logging model (moved from README).
+
 ## [0.1.0] — 2026-06-24
 
 Initial public release.
