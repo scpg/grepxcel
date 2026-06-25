@@ -203,6 +203,15 @@ class TestCliXlsx:
         xlsx_files = list(tmp_path.glob('*.xlsx'))
         assert len(xlsx_files) == 1
 
+    def test_xlsx_stem_matches_source_filename(self, tmp_path):
+        """Output xlsx filename uses the source data file stem (data.xlsx → data.xlsx)."""
+        rc, _ = _run_cli('extract', '-p', _INVOICE_PAT, _INVOICE_DATA,
+                         '--format', 'xlsx', '-o', str(tmp_path))
+        assert rc == 0
+        xlsx_files = list(tmp_path.glob('*.xlsx'))
+        assert len(xlsx_files) == 1
+        assert xlsx_files[0].name == 'data.xlsx'
+
     def test_output_is_valid_workbook(self, tmp_path):
         _run_cli('extract', '-p', _INVOICE_PAT, _INVOICE_DATA,
                  '--format', 'xlsx', '-o', str(tmp_path))
