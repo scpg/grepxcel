@@ -21,7 +21,7 @@ import openpyxl
 from .model_manager import MODEL_CHAT_FORMAT, ModelManager
 from .pattern_parser import PatternError, PatternParser
 from .security import SecurityError, validate_file
-from .utils import infer_cell_type, is_empty
+from .utils import infer_cell_type, is_empty, sanitize_for_prompt
 
 
 # ── Prompts ───────────────────────────────────────────────────────────────────
@@ -396,7 +396,7 @@ class ExcelAnalyzer:
                 non_empty_second = [v for v in sec_rows[1] if not is_empty(v)]
                 if len(non_empty_second) >= 2:
                     combined_label = (
-                        f'{label}, title: {non_empty_first[0]!r}'
+                        f"{label}, title: '{sanitize_for_prompt(non_empty_first[0])}'"
                         if label else None
                     )
                     lines += self._describe_table_section(
@@ -505,12 +505,14 @@ class ExcelAnalyzer:
             )
             vals    = [r[col_idx] for r in data_rows
                        if col_idx < len(r) and not is_empty(r[col_idx])]
-            samples = [repr(v) for v in vals[:self._DISPLAY_SAMPLES]]
+            samples = [sanitize_for_prompt(repr(v), max_len=80)
+                       for v in vals[:self._DISPLAY_SAMPLES]]
+            safe_header = sanitize_for_prompt(header)
             if vals:
-                line = (f"  - HEADER '{header}' (→ lbl:)  →  "
+                line = (f"  - HEADER '{safe_header}' (→ lbl:)  →  "
                         f"DATA [{col_type}] (→ var:)  samples: {', '.join(samples)}")
             else:
-                line = (f"  - HEADER '{header}' (→ lbl:)  →  "
+                line = (f"  - HEADER '{safe_header}' (→ lbl:)  →  "
                         f"DATA (empty — use IGNORE in the DATA: row)")
             if fmt:
                 line += f'  (format: {fmt})'
@@ -553,12 +555,15 @@ class ExcelAnalyzer:
                     is_fml   = (global_row, val_ci + 1) in formula_cells
                     fml_note = '  [formula]' if is_fml else ''
                     lines.append(
-                        f"  - LABEL '{lbl_val}'  →  VALUE {repr(val_val)} "
+                        f"  - LABEL '{sanitize_for_prompt(lbl_val)}'  →  "
+                        f"VALUE {sanitize_for_prompt(repr(val_val), max_len=80)} "
                         f"[{val_type}]{fml_note}"
                     )
                     i += 2
                 else:
-                    lines.append(f"  - LABEL '{lbl_val}'  →  (no value beside it)")
+                    lines.append(
+                        f"  - LABEL '{sanitize_for_prompt(lbl_val)}'  "
+                        f"→  (no value beside it)")
                     i += 1
                 count += 1
                 if count >= 50:

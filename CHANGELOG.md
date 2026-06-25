@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Features
+
+- **`extract_df()`** — DataFrame API returning one frame per table key plus a
+  `_scalars` frame. Works with pandas or polars (`pip install 'grepxcel[pandas]'`
+  / `'grepxcel[polars]'`), auto-detected at runtime. Per-table `header`/`footer`
+  fields (e.g. subtotals) are exposed as `{key}__header` / `{key}__footer` frames.
+- **`--format csv`** — flat CSV output for single-table patterns. Table data rows
+  become CSV rows; scalars are denormalized as repeated columns. Refused (exit 2)
+  for multi-table patterns.
+- **`--format xlsx`** — colored Excel report for human review: scalar fields, then
+  each table top-down with headers, alternating data rows, and footers. Requires
+  `-o`; never overwrites a source file.
+
+### Security
+
+- **Formula/CSV injection neutralization** (CWE-1236) — cell values written to
+  `--format csv` / `xlsx` that begin with `=`, `+`, `-`, `@`, tab, or carriage
+  return are emitted as literal text, so an untrusted source file cannot inject an
+  executable formula into the output a human opens.
+- **Drafter prompt hardening** — cell values embedded in the `draft` analyser's
+  LLM prompt are collapsed to a single line, stripped of control characters, and
+  length-bounded, resisting prompt injection from malicious spreadsheet content.
+
+### Changed
+
+- `--format csv` / `xlsx` reject `--all-sheets` (exit 2) — a flat file cannot
+  represent multiple sheets; use `--sheet` or `--format nested`.
+- Internal: consolidated the nested-dict flattener into `utils.flatten_nested`.
+
 ## [0.1.1] — 2026-06-24
 
 ### Features

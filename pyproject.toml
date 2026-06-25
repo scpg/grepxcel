@@ -53,6 +53,12 @@ draft-cloud = [
     "google-genai>=0.3",
     "truststore>=0.9",   # corporate-proxy CA trust — see note in [suggest]
 ]
+pandas = [
+    "pandas>=2.0",
+]
+polars = [
+    "polars>=1.0",
+]
 mcp = [
     "mcp>=1.23,<2",
 ]
