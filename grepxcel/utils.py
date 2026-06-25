@@ -31,6 +31,62 @@ def _regex_timeout() -> float:
     return 0.25
 
 
+# Leading characters that spreadsheet apps (Excel, LibreOffice, Sheets) interpret
+# as the start of a formula. A cell value extracted from an untrusted source file
+# that begins with one of these is a CSV/formula-injection vector (CWE-1236) when
+# written back into a CSV or XLSX a human will open. We neutralise by prefixing a
+# single quote, the OWASP-recommended mitigation, which forces text interpretation.
+_FORMULA_LEAD_CHARS = ('=', '+', '-', '@', '\t', '\r')
+
+
+def neutralize_formula(value):
+    """Defuse formula/CSV injection in a value bound for a CSV or XLSX cell.
+
+    String values that begin with a formula-trigger character are prefixed with a
+    single quote so spreadsheet apps treat them as literal text instead of an
+    executable formula. Non-string values (numbers, dates, bools, None) cannot be
+    formulas and pass through unchanged.
+    """
+    if isinstance(value, str) and value.startswith(_FORMULA_LEAD_CHARS):
+        return "'" + value
+    return value
+
+
+def flatten_nested(obj: dict, prefix: str = '') -> list:
+    """Flatten a nested dict into ordered ``(dotted.key, value)`` pairs.
+
+    Order is preserved depth-first. Non-dict leaves terminate a branch::
+
+        flatten_nested({'a': {'b': 1}, 'c': 2}) -> [('a.b', 1), ('c', 2)]
+    """
+    items: list = []
+    for k, v in obj.items():
+        key = f'{prefix}.{k}' if prefix else k
+        if isinstance(v, dict):
+            items.extend(flatten_nested(v, key))
+        else:
+            items.append((key, v))
+    return items
+
+
+def sanitize_for_prompt(value, max_len: int = 200) -> str:
+    """Make an untrusted cell value safe to embed in an LLM prompt.
+
+    Spreadsheet cells fed to the ``draft`` analyser come from untrusted files. A
+    cell containing newlines plus fake instructions ("\\nSYSTEM: ignore all
+    prior…") is a prompt-injection vector. This collapses every run of
+    whitespace (including newlines and tabs) to a single space, strips remaining
+    non-printable control characters, and truncates to *max_len* so a cell can
+    neither break onto its own line nor bloat the prompt.
+    """
+    s = str(value) if value is not None else ''
+    s = _re.sub(r'\s+', ' ', s).strip()
+    s = ''.join(ch for ch in s if ch.isprintable())
+    if len(s) > max_len:
+        s = s[:max_len] + '…'
+    return s
+
+
 def is_empty(value, empty_aliases=None) -> bool:
     """Return True if a cell value should be treated as empty."""
     if value is None:

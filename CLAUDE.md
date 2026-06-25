@@ -117,7 +117,7 @@ The CLI is subcommand-based: `extract`, `validate-pattern`, `draft`, `docs`, `li
 | `-d, --debug` | off | Same as `-vv` |
 | `--sheet NAME_OR_INDEX` | active | Sheet name or 0-based index to process |
 | `--all-sheets` | off | Process every sheet; output keyed by sheet name |
-| `--format {nested,legacy}` | nested | Output shape |
+| `--format {nested,legacy,csv,xlsx}` | nested | Output shape (csv: single-table only; xlsx: colored report, requires -o) |
 | `--strict` | off | Exit 2 if any field has issues (missing, mismatched); lists affected fields |
 | `--meta` | off | Add `_meta` block (run_id, stats, issues) for pipeline auto-verification |
 | `--max-rows N` | 2048 | Max data-sheet rows (Excel max 1,048,576) |

@@ -82,6 +82,8 @@ That's all you need to extract data. Optional extras add more capabilities:
 | You want to… | Install |
 |---|---|
 | Extract data from Excel files | `pip install grepxcel` |
+| Get results as pandas DataFrames | `pip install 'grepxcel[pandas]'` |
+| Get results as polars DataFrames | `pip install 'grepxcel[polars]'` |
 | Auto-draft patterns with a local AI model | `pip install 'grepxcel[suggest]'` |
 | Auto-draft patterns with a cloud model | `pip install 'grepxcel[draft-cloud]'` |
 | Use grepxcel as an MCP server for AI agents | `pip install 'grepxcel[mcp]'` |
@@ -159,7 +161,9 @@ Each field can have a **match pattern** that describes what the cell value shoul
 ```bash
 # Extract data
 grepxcel extract -p pattern.xlsx data.xlsx
-grepxcel extract -p pattern.xlsx data.xlsx -o output/     # write to a directory
+grepxcel extract -p pattern.xlsx data.xlsx -o output/     # write JSON to a directory
+grepxcel extract -p pattern.xlsx data.xlsx --format csv -o output/   # CSV (single-table)
+grepxcel extract -p pattern.xlsx data.xlsx --format xlsx -o output/  # colored Excel report
 grepxcel extract -p pattern.xlsx data.xlsx --strict        # fail on any missing field
 grepxcel extract -p pattern.xlsx data_dir/ -r              # process a whole directory
 
@@ -187,13 +191,14 @@ Run `grepxcel <command> --help` for all options.
 ```python
 import grepxcel
 
+# Get a dict (always available)
 result = grepxcel.extract("pattern.xlsx", "data.xlsx")
-
 print(result["po"]["number"])        # "PO-2026"
-print(result["vendor"]["name"])      # "Acme Supplies"
 
-for row in result["line"][0]["data"]:
-    print(row["item"], row["qty"])
+# Get DataFrames (pip install 'grepxcel[pandas]' or 'grepxcel[polars]')
+frames = grepxcel.extract_df("pattern.xlsx", "data.xlsx")
+frames["line"]                       # pandas or polars DataFrame of all table rows
+frames["_scalars"]                   # one-row DataFrame of scalar fields
 ```
 
 ---

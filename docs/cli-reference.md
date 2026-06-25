@@ -20,6 +20,8 @@ grepxcel extract -p pattern.xlsx data.xlsx --sheet Sheet2
 grepxcel extract -p pattern.xlsx data.xlsx --all-sheets
 grepxcel extract -p pattern.xlsx data.xlsx -v
 grepxcel extract -p pattern.xlsx data.xlsx --format legacy
+grepxcel extract -p pattern.xlsx data.xlsx --format csv -o out/
+grepxcel extract -p pattern.xlsx data.xlsx --format xlsx -o out/
 grepxcel extract -p pattern.xlsx data.xlsx --meta
 grepxcel extract -p pattern.xlsx data.xlsx --log logs/run.log
 grepxcel extract -p pattern.xlsx data.xlsx --log run.log --log-format json
@@ -36,7 +38,7 @@ grepxcel extract -p pattern.xlsx data.xlsx --log run.log --log-format json
 | `-d, --debug` | off | Same as `-vv` |
 | `-l, --log FILE` | — | Append structured log to file |
 | `--log-format` | `text` | Log format: `text` (human-readable) or `json` (NDJSON for SIEM/cloud — never contains cell values) |
-| `--format {nested,legacy}` | nested | Output shape |
+| `--format {nested,legacy,csv,xlsx}` | nested | Output shape — see [Output formats](#output-formats) |
 | `--meta` | off | Add `_meta` block (run_id, stats, issues) for pipeline auto-verification |
 | `--sheet NAME_OR_INDEX` | active | Sheet name or 0-based index to process |
 | `--all-sheets` | off | Process every sheet; output keyed by sheet name |
@@ -53,7 +55,31 @@ grepxcel extract -p pattern.xlsx data.xlsx --log run.log --log-format json
 |---|---|
 | 0 | Extraction succeeded, all fields valid |
 | 1 | Extraction completed with warnings or errors |
-| 2 | `--strict` mode: one or more fields had issues |
+| 2 | `--strict`: fields had issues · or an output-format guard rejected the request (see below) |
+
+### Output formats
+
+`--format` controls the shape of the extracted output:
+
+| Value | Output | Notes |
+|---|---|---|
+| `nested` (default) | JSON, dot-notation grouped into nested objects; tables as arrays | stdout or `-o` directory |
+| `legacy` | JSON `{"cells": {}, "tables": []}` (flat internal shape) | stdout or `-o` directory |
+| `csv` | Flat CSV: one row per table data row; scalars denormalized as repeated columns | **single-table patterns only** |
+| `xlsx` | Colored Excel report for human review (scalars, then each table top-down) | **requires `-o`** |
+
+**`csv` rules**
+- Refused (exit 2) when the pattern has more than one `table:` block — a flat CSV can't represent multiple tables. Use `nested`.
+- Only table `data` rows are exported; per-table `header`/`footer` fields (e.g. subtotals) are omitted. Use `nested` or `grepxcel.extract_df()` to reach them.
+- The `_meta` block (`--meta`) is excluded from CSV columns.
+
+**`xlsx` rules**
+- Requires `-o DIR` (binary Excel can't go to stdout).
+- Never overwrites a source file: if the computed output path equals an input path, grepxcel exits 2. Use a separate `-o` directory.
+
+**Both `csv` and `xlsx`**
+- Do not support `--all-sheets` (a flat file can't hold multiple sheets) — exit 2. Use `--sheet` or `--format nested`.
+- Every cell value is neutralized against formula/CSV injection (CWE-1236): a value extracted from an untrusted file that begins with `=`, `+`, `-`, `@`, tab, or carriage-return is written as literal text, not an executable formula.
 
 ### Verbosity levels
 

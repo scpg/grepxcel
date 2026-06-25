@@ -444,8 +444,9 @@ examples:
     )
     p.add_argument(
         '--format',
-        choices=['nested', 'legacy'], default='nested',
-        help='Output format: nested (default) or legacy ({"cells":{}, "tables":[]})',
+        choices=['nested', 'legacy', 'csv', 'xlsx'], default='nested',
+        help='Output format: nested (default), legacy, csv (single-table only), '
+             'or xlsx (colored Excel report, requires -o)',
     )
     p.add_argument(
         '--meta',
@@ -665,7 +666,11 @@ def _process_file(pattern: str, data_file: str, args,
         source=data_file,
     )
     output_format = getattr(args, 'format', 'nested')
+    is_csv = output_format == 'csv'
+    is_xlsx = output_format == 'xlsx'
     all_sheets = getattr(args, 'all_sheets', False)
+
+    engine_format = 'nested' if (is_csv or is_xlsx) else output_format
 
     try:
         engine = Engine()
@@ -677,7 +682,7 @@ def _process_file(pattern: str, data_file: str, args,
                 max_cell_len=args.max_cell_len,
                 max_rows=args.max_rows,
                 max_cols=args.max_columns,
-                output_format=output_format,
+                output_format=engine_format,
             )
         else:
             result = engine.process(
@@ -688,7 +693,7 @@ def _process_file(pattern: str, data_file: str, args,
                 max_rows=args.max_rows,
                 max_cols=args.max_columns,
                 sheet=_resolve_sheet(args),
-                output_format=output_format,
+                output_format=engine_format,
             )
     except Exception as exc:
         print(colorize_marks(
@@ -701,7 +706,24 @@ def _process_file(pattern: str, data_file: str, args,
     if getattr(args, 'meta', False):
         result['_meta'] = logger.build_meta()
 
-    if args.output:
+    if is_xlsx:
+        from .xlsx_writer import nested_to_xlsx
+        os.makedirs(args.output, exist_ok=True)
+        out_path = os.path.join(args.output, f'{stem}.xlsx')
+        nested_to_xlsx(result, out_path)
+        print(f'\n  Excel report written to: {out_path}', file=sys.stderr)
+    elif is_csv:
+        from .csv_writer import nested_to_csv
+        csv_text = nested_to_csv(result)
+        if args.output:
+            os.makedirs(args.output, exist_ok=True)
+            out_path = os.path.join(args.output, f'{stem}.csv')
+            with open(out_path, 'w', encoding='utf-8', newline='') as f:
+                f.write(csv_text)
+            print(f'\n  CSV written to: {out_path}', file=sys.stderr)
+        else:
+            sys.stdout.write(csv_text)
+    elif args.output:
         os.makedirs(args.output, exist_ok=True)
         out_path = os.path.join(args.output, f'{stem}.json')
         with open(out_path, 'w', encoding='utf-8') as f:
@@ -1101,6 +1123,47 @@ def main(argv=None):
     if not expanded:
         print('  No .xlsx files found in the specified paths.', file=sys.stderr)
         sys.exit(1)
+
+    fmt = getattr(args, 'format', 'nested')
+
+    if fmt in ('csv', 'xlsx') and getattr(args, 'all_sheets', False):
+        print(colorize_marks(
+            f'\n  ✗  --format {fmt} does not support --all-sheets '
+            f'(a flat {fmt} cannot represent multiple sheets). '
+            f'Use --sheet to pick one sheet, or --format nested for all sheets.',
+            should_color(sys.stderr)), file=sys.stderr)
+        sys.exit(2)
+
+    if fmt == 'csv':
+        from .csv_writer import count_table_instructions
+        n_tables = count_table_instructions(args.pattern)
+        if n_tables > 1:
+            print(colorize_marks(
+                f'\n  ✗  --format csv requires at most one table: block, '
+                f'but this pattern has {n_tables}. '
+                f'Use --format nested (JSON) for multi-table patterns.',
+                should_color(sys.stderr)), file=sys.stderr)
+            sys.exit(2)
+
+    if fmt == 'xlsx':
+        if not args.output:
+            print(colorize_marks(
+                '\n  ✗  --format xlsx requires -o / --output (cannot write '
+                'binary Excel to stdout).',
+                should_color(sys.stderr)), file=sys.stderr)
+            sys.exit(2)
+        out_dir = os.path.abspath(args.output)
+        for data_file in expanded:
+            out_path = os.path.join(
+                out_dir,
+                os.path.splitext(os.path.basename(data_file))[0] + '.xlsx',
+            )
+            if os.path.abspath(data_file) == os.path.abspath(out_path):
+                print(colorize_marks(
+                    f'\n  ✗  --format xlsx would overwrite the source file '
+                    f'{data_file}. Use a different -o directory.',
+                    should_color(sys.stderr)), file=sys.stderr)
+                sys.exit(2)
 
     all_ok = True
     strict = getattr(args, 'strict', False)
