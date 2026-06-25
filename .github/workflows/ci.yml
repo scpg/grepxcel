@@ -89,6 +89,31 @@ jobs:
             grepxcel mcp-config
           fi
 
+  test-dataframe:
+    # The main `test` job installs neither pandas nor polars, so the extract_df()
+    # DataFrame tests skip there. This lane installs each optional backend on its
+    # own — exactly as a real user would (they install one, not both) — so those
+    # tests actually run in CI instead of being silently skipped.
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        backend: [pandas, polars]
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install package with [${{ matrix.backend }}] + test deps
+        run: pip install '.[${{ matrix.backend }}]' -r requirements-dev.txt
+
+      - name: Run DataFrame tests
+        run: pytest tests/unit/test_extract_df.py tests/unit/test_output_quality.py -q
+
   cross-platform:
     # Smoke-test on macOS and Windows to catch path-separator bugs,
     # symlink differences, and platform-specific edge cases.
