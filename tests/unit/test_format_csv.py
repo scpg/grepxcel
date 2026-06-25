@@ -275,3 +275,38 @@ class TestOutputFile:
         content = csv_files[0].read_text(encoding='utf-8')
         rows = list(csv.DictReader(io.StringIO(content)))
         assert len(rows) >= 3
+
+    def test_csv_stem_matches_source_filename(self, tmp_path):
+        """Output CSV filename uses the source data file stem (data.xlsx → data.csv)."""
+        rc, _ = _run_cli('extract', '-p', _CATALOG_PAT, _CATALOG_DATA,
+                         '--format', 'csv', '-o', str(tmp_path))
+        assert rc == 0
+        csv_files = list(tmp_path.glob('*.csv'))
+        assert len(csv_files) == 1
+        assert csv_files[0].name == 'data.csv'
+
+    def test_csv_stdout_when_no_output_dir(self):
+        """Without -o, CSV goes to stdout (pipe-friendly)."""
+        rc, out = _run_cli('extract', '-p', _CATALOG_PAT, _CATALOG_DATA,
+                           '--format', 'csv')
+        assert rc == 0
+        assert ',' in out
+        reader = csv.DictReader(io.StringIO(out))
+        rows = list(reader)
+        assert len(rows) >= 3
+
+    def test_csv_multi_file_writes_one_csv_per_source(self, tmp_path):
+        """Multiple data files each produce a separate .csv in the output directory."""
+        import shutil
+        shutil.copy(_CATALOG_DATA, tmp_path / 'jan.xlsx')
+        shutil.copy(_CATALOG_DATA, tmp_path / 'feb.xlsx')
+        out = tmp_path / 'out'
+        rc, _ = _run_cli('extract', '-p', _CATALOG_PAT,
+                         str(tmp_path / 'jan.xlsx'),
+                         str(tmp_path / 'feb.xlsx'),
+                         '--format', 'csv', '-o', str(out))
+        assert rc == 0
+        csv_files = sorted(out.glob('*.csv'))
+        assert len(csv_files) == 2
+        names = {f.name for f in csv_files}
+        assert names == {'jan.csv', 'feb.csv'}
