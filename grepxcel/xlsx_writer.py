@@ -117,6 +117,10 @@ def nested_to_xlsx(result: dict, output_path: str) -> None:
         ws.cell(row=row, column=3).font = _FONT_LABEL   # field name bold
         row += 1
 
+    # ── blank separator between scalar and table sections ────────────────────
+    if scalars and tables:
+        row += 1
+
     # ── table rows ────────────────────────────────────────────────────────
     for tbl_key, instances in tables.items():
         data_cols = table_cols[tbl_key]   # ['tbl.col1', 'tbl.col2', …]

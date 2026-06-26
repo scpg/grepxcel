@@ -98,9 +98,11 @@ class TestNestedToXlsx:
         assert ws.cell(row=1, column=1).value == 'var:'
         assert ws.cell(row=1, column=3).value == 'vendor.name'
         assert ws.cell(row=1, column=4).value == 'Acme'
-        # Row 2: table HEADER row
-        assert ws.cell(row=2, column=1).value == 'table:'
-        assert ws.cell(row=2, column=3).value == 'HEADER'
+        # Row 2: blank separator between scalars and tables
+        assert ws.cell(row=2, column=1).value is None
+        # Row 3: table HEADER row
+        assert ws.cell(row=3, column=1).value == 'table:'
+        assert ws.cell(row=3, column=3).value == 'HEADER'
 
     def test_source_excluded(self, tmp_path):
         data = {
