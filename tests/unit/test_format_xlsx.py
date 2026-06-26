@@ -47,10 +47,14 @@ class TestNestedToXlsx:
         assert out.exists()
         wb = openpyxl.load_workbook(str(out))
         ws = wb.active
-        assert ws.cell(row=1, column=1).value == 'Scalar Fields'
-        assert ws.cell(row=2, column=1).value == 'inv.number'
-        assert ws.cell(row=2, column=2).value == 'AB123'
-        assert ws.cell(row=3, column=1).value == 'inv.date'
+        # Row 1: var: | 1 | inv.number | AB123
+        assert ws.cell(row=1, column=1).value == 'var:'
+        assert ws.cell(row=1, column=2).value == 1
+        assert ws.cell(row=1, column=3).value == 'inv.number'
+        assert ws.cell(row=1, column=4).value == 'AB123'
+        # Row 2: var: | 2 | inv.date | 2026-01-01
+        assert ws.cell(row=2, column=1).value == 'var:'
+        assert ws.cell(row=2, column=3).value == 'inv.date'
 
     def test_table_only(self, tmp_path):
         data = {
@@ -65,11 +69,17 @@ class TestNestedToXlsx:
         nested_to_xlsx(data, str(out))
         wb = openpyxl.load_workbook(str(out))
         ws = wb.active
-        assert ws.cell(row=1, column=1).value == 'Table: items'
-        assert ws.cell(row=2, column=1).value == 'name'
-        assert ws.cell(row=2, column=2).value == 'qty'
-        assert ws.cell(row=3, column=1).value == 'A'
-        assert ws.cell(row=4, column=1).value == 'B'
+        # Row 1: table: | 1 | HEADER | items.name | items.qty
+        assert ws.cell(row=1, column=1).value == 'table:'
+        assert ws.cell(row=1, column=2).value == 1
+        assert ws.cell(row=1, column=3).value == 'HEADER'
+        assert ws.cell(row=1, column=4).value == 'items.name'
+        assert ws.cell(row=1, column=5).value == 'items.qty'
+        # Row 2: None | None | DATA | A | 1
+        assert ws.cell(row=2, column=3).value == 'DATA'
+        assert ws.cell(row=2, column=4).value == 'A'
+        # Row 3: None | None | DATA | B | 2
+        assert ws.cell(row=3, column=4).value == 'B'
 
     def test_mixed_scalar_and_table(self, tmp_path):
         data = {
@@ -84,11 +94,15 @@ class TestNestedToXlsx:
         nested_to_xlsx(data, str(out))
         wb = openpyxl.load_workbook(str(out))
         ws = wb.active
-        assert ws.cell(row=1, column=1).value == 'Scalar Fields'
-        assert ws.cell(row=2, column=1).value == 'vendor.name'
-        assert ws.cell(row=2, column=2).value == 'Acme'
+        # Row 1: var: | 1 | vendor.name | Acme (padded to total_width)
+        assert ws.cell(row=1, column=1).value == 'var:'
+        assert ws.cell(row=1, column=3).value == 'vendor.name'
+        assert ws.cell(row=1, column=4).value == 'Acme'
+        # Row 2: table HEADER row
+        assert ws.cell(row=2, column=1).value == 'table:'
+        assert ws.cell(row=2, column=3).value == 'HEADER'
 
-    def test_source_shown(self, tmp_path):
+    def test_source_excluded(self, tmp_path):
         data = {
             'items': [
                 {
@@ -101,8 +115,10 @@ class TestNestedToXlsx:
         nested_to_xlsx(data, str(out))
         wb = openpyxl.load_workbook(str(out))
         ws = wb.active
-        values = [ws.cell(row=r, column=1).value for r in range(1, 10)]
-        assert any(v and 'Sheet1' in str(v) for v in values)
+        all_values = []
+        for row in ws.iter_rows(values_only=True):
+            all_values.extend(str(v) for v in row if v is not None)
+        assert not any('Sheet1' in v for v in all_values)
 
     def test_footer_shown(self, tmp_path):
         data = {
@@ -117,24 +133,13 @@ class TestNestedToXlsx:
         nested_to_xlsx(data, str(out))
         wb = openpyxl.load_workbook(str(out))
         ws = wb.active
-        values = [ws.cell(row=r, column=1).value for r in range(1, 10)]
-        assert any(v and 'Total' in str(v) for v in values)
-
-    def test_header_shown(self, tmp_path):
-        data = {
-            'items': [
-                {
-                    'header': {'category': 'Electronics'},
-                    'data': [{'name': 'Laptop'}],
-                },
-            ],
-        }
-        out = tmp_path / 'out.xlsx'
-        nested_to_xlsx(data, str(out))
-        wb = openpyxl.load_workbook(str(out))
-        ws = wb.active
-        values = [ws.cell(row=r, column=1).value for r in range(1, 10)]
-        assert any(v and 'Electronics' in str(v) for v in values)
+        all_values = []
+        for row in ws.iter_rows(values_only=True):
+            all_values.extend(v for v in row if v is not None)
+        # FOOTER marker present, label skipped, amount value present
+        assert 'FOOTER' in all_values
+        assert 100 in all_values
+        assert 'Total' not in all_values  # label is excluded
 
     def test_coloring_applied(self, tmp_path):
         data = {'inv': {'number': 'AB123'}}

@@ -77,7 +77,7 @@ class TestCsvInjection:
         data = {'items': [{'data': [{'name': '=cmd|calc'}]}]}
         out = nested_to_csv(data)
         rows = list(csv.DictReader(io.StringIO(out)))
-        assert rows[0]['name'].startswith("'=")
+        assert rows[0]['items.name'].startswith("'=")
 
 
 # ── injection neutralized in xlsx output ─────────────────────────────────────
@@ -89,7 +89,8 @@ class TestXlsxInjection:
         nested_to_xlsx(data, str(out))
         wb = openpyxl.load_workbook(str(out))
         ws = wb.active
-        cell = ws.cell(row=2, column=2)
+        # New format: row 1 = (var:, 1, risk.payload, <value>) — value is in col 4
+        cell = ws.cell(row=1, column=4)
         assert cell.data_type != 'f'
 
     def test_table_cell_not_formula(self, tmp_path):
