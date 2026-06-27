@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Features
+
+- **`wizard` command** — `grepxcel wizard data.xlsx` walks the spreadsheet
+  cell by cell and asks whether each value is a label, variable, or skip.
+  Produces a ready-to-run `.csv` pattern file without requiring knowledge of
+  the pattern syntax. Supports `--sheet` and `-o` to control which sheet is
+  walked and where the pattern is written.
+- **Improved `_propose_type` heuristic** — the wizard's automatic cell-type
+  suggestion now uses structural rules instead of a character-length threshold:
+  colon-suffix → label; `@` / `://` → `var:string`; alphanumeric codes (e.g.
+  `ELC001`) → `var:string`; multi-word strings → `var:string`; single-word
+  pure-alpha → label, overridden to `var:string` when the left neighbour ends
+  with `:` (e.g. `"Department:" → "Engineering"`).
+
 ## [0.2.0] — 2026-06-25
 
 ### Features
