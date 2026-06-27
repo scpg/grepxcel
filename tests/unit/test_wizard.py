@@ -5,6 +5,7 @@ import datetime
 import io
 import os
 
+import openpyxl
 import pytest
 
 from grepxcel.wizard import (
@@ -28,17 +29,71 @@ class TestProposeType:
     def test_blank_string_is_skip(self):
         assert _propose_type('   ') == 'skip'
 
-    def test_short_string_is_label(self):
-        assert _propose_type('Invoice Number') == 'label'
+    # ── Colon suffix → label (scalar label convention) ──────────────────────
 
-    def test_exactly_40_chars_is_label(self):
-        assert _propose_type('A' * 40) == 'label'
+    def test_colon_suffix_is_label(self):
+        assert _propose_type('Invoice No:') == 'label'
 
-    def test_41_chars_is_var_string(self):
-        assert _propose_type('A' * 41) == 'var:string'
+    def test_colon_suffix_multiword_is_label(self):
+        assert _propose_type('Account Holder:') == 'label'
 
-    def test_long_string_is_var_string(self):
+    # ── Single-word pure alpha → label (column header default) ─────────────
+
+    def test_single_word_alpha_is_label(self):
+        assert _propose_type('Description') == 'label'
+
+    def test_single_word_alpha_short_is_label(self):
+        assert _propose_type('SKU') == 'label'
+
+    # ── Alpha+digit code → var:string ────────────────────────────────────────
+
+    def test_alpha_digit_code_is_var_string(self):
+        assert _propose_type('AB123456') == 'var:string'
+
+    def test_alpha_digit_mixed_code_is_var_string(self):
+        assert _propose_type('ELC001') == 'var:string'
+
+    # ── Email → var:string ────────────────────────────────────────────────────
+
+    def test_email_is_var_string(self):
+        assert _propose_type('alice@wonderland.example') == 'var:string'
+
+    # ── Multi-word pure alpha → var:string (name, description, title) ────────
+
+    def test_multi_word_pure_alpha_is_var_string(self):
+        assert _propose_type('Alice Wonderland') == 'var:string'
+
+    def test_multi_word_title_no_colon_is_var_string(self):
+        assert _propose_type('Invoice Number') == 'var:string'
+
+    def test_long_description_is_var_string(self):
         assert _propose_type('This is a very long description that exceeds forty chars') == 'var:string'
+
+    # ── Multi-word with digit → var:string (period text, range) ─────────────
+
+    def test_multi_word_with_digit_is_var_string(self):
+        assert _propose_type('Q1 2026') == 'var:string'
+
+    def test_multi_word_month_year_is_var_string(self):
+        assert _propose_type('January 2026') == 'var:string'
+
+    # ── Left-neighbour context: single-word value after a colon-label ────────
+
+    def test_single_word_after_colon_label_neighbour_is_var_string(self):
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws['A1'] = 'Department:'
+        ws['B1'] = 'Engineering'
+        assert _propose_type('Engineering', ws=ws, row=1, col=2) == 'var:string'
+
+    def test_single_word_without_colon_neighbour_stays_label(self):
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws['A1'] = 'Product'   # no colon → neighbour heuristic does NOT fire
+        ws['B1'] = 'SKU'
+        assert _propose_type('SKU', ws=ws, row=1, col=2) == 'label'
+
+    # ── Numeric types ────────────────────────────────────────────────────────
 
     def test_integer_is_var_integer(self):
         assert _propose_type(42) == 'var:integer'

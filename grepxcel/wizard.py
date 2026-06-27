@@ -79,14 +79,65 @@ def _cell_ref(row: int, col: int) -> str:
     return f'{_col_label(col)}{row}'
 
 
-def _propose_type(value: Any) -> str:
-    """Propose a wizard action for a single cell value."""
+def _classify_string(s: str, ws=None, row: int = None, col: int = None) -> str:
+    """Classify a string cell as a wizard proposal using structural signals.
+
+    Rules derived from analysis of 22 real-world fixture files:
+
+    1. Colon suffix  → label  (scalar label convention in all fixtures)
+    2. Contains @    → var:string  (email)
+    3. Contains ://  → var:string  (URL)
+    4. Single word, alpha+digit mixed → var:string  (codes: AB123456, ELC001)
+    5. Single word, pure alpha → label by default; but if the left-neighbour cell
+       in the same row ends with ':', this cell is a value — override to var:string
+       (e.g. "Department:" → "Engineering": left neighbour heuristic fires)
+    6. Multi-word with a digit in any word → var:string  (period text: "Q1 2026")
+    7. Multi-word, pure alpha → var:string  (proper names, descriptions, titles).
+       Multi-word column headers are virtually always handled by the T sub-flow;
+       they will not reach this rule in practice.
+    """
+    if s.endswith(':') or s.endswith('：'):
+        return 'label'
+    if '@' in s:
+        return 'var:string'
+    if '://' in s or s.lower().startswith('www.'):
+        return 'var:string'
+
+    words = s.split()
+
+    if len(words) == 1:
+        has_alpha = any(c.isalpha() for c in s)
+        has_digit = any(c.isdigit() for c in s)
+        if has_alpha and has_digit:
+            return 'var:string'
+        if has_alpha:
+            # Left-neighbour check: if the cell immediately to the left ends with ':'
+            # the current cell is its value, not a column header.
+            if ws is not None and row is not None and col is not None and col > 1:
+                left = ws.cell(row=row, column=col - 1).value
+                if isinstance(left, str) and left.strip().endswith(':'):
+                    return 'var:string'
+            return 'label'
+
+    if any(any(c.isdigit() for c in w) for w in words):
+        return 'var:string'
+
+    # Multi-word, pure alpha → data value (name, description, section title).
+    return 'var:string'
+
+
+def _propose_type(value: Any, ws=None, row: int = None, col: int = None) -> str:
+    """Propose a wizard action for a single cell value.
+
+    Pass ``ws``, ``row``, ``col`` from the live worksheet to enable the
+    left-neighbour heuristic for single-word pure-alpha strings.
+    """
     if value is None:
         return 'skip'
     if isinstance(value, str):
         if not value.strip():
             return 'skip'
-        return 'label' if len(value) <= 40 else 'var:string'
+        return _classify_string(value.strip(), ws, row, col)
     if isinstance(value, bool):
         return 'var:string'
     if isinstance(value, datetime.datetime):
@@ -162,7 +213,7 @@ def _run_cell_walk(ws, state: WizardState) -> None:
         cell = ws.cell(row=row, column=col)
         value = cell.value
         ref = _cell_ref(row, col)
-        proposal = _propose_type(value)
+        proposal = _propose_type(value, ws=ws, row=row, col=col)
 
         # Silently advance past empty/blank cells — the engine handles them natively.
         # Emitting a cell:1 instruction for an empty cell would consume the next
@@ -291,7 +342,9 @@ def _run_table_subflow(ws, state: WizardState,
 
         # Propose type from the first data row
         data_val = ws.cell(row=start_row + 1, column=col).value
-        type_proposal = _var_type_from_proposal(_propose_type(data_val))
+        type_proposal = _var_type_from_proposal(
+            _propose_type(data_val, ws=ws, row=start_row + 1, col=col)
+        )
         var_type = _ask('    Type', type_proposal) or type_proposal
         var_match = _ask('    Match pattern', '.*') or '.*'
 
