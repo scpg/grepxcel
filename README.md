@@ -6,8 +6,6 @@
 pip install grepxcel
 ```
 
-![CI](https://github.com/scpg/grepxcel/actions/workflows/ci.yml/badge.svg)
-
 ---
 
 ## The problem

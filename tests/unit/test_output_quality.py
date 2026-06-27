@@ -28,7 +28,8 @@ class TestUnicode:
         out = tmp_path / 'u.xlsx'
         nested_to_xlsx(data, str(out))
         wb = openpyxl.load_workbook(str(out))
-        assert wb.active.cell(row=2, column=2).value == 'Müller 日本語 😀'
+        # New format: row 1 = (var:, 1, c.name, <value>) — value is in col 4
+        assert wb.active.cell(row=1, column=4).value == 'Müller 日本語 😀'
 
 
 # ── None / empty values ──────────────────────────────────────────────────────
@@ -38,7 +39,7 @@ class TestNoneValues:
         data = {'items': [{'data': [{'a': 1, 'b': None}]}]}
         out = nested_to_csv(data)
         rows = list(csv.DictReader(io.StringIO(out)))
-        assert rows[0]['b'] == ''
+        assert rows[0]['items.b'] == ''
 
     def test_xlsx_none_becomes_empty(self, tmp_path):
         data = {'items': [{'data': [{'a': 1, 'b': None}]}]}

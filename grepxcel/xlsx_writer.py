@@ -1,9 +1,11 @@
-"""Write extraction results as a colored Excel report for human review.
+"""Write extraction results as a structured Excel report for human review.
 
-Layout (top-down):
-  1. Scalar fields — one row per field: path | extracted value
-  2. Blank separator
-  3. Each table key — header row (bold), data rows (alternating), footer if present
+Layout:
+  - Scalar fields: one ``var:`` row per field (col A=``var:``, B=seq#, C=name, D=value)
+  - Tables: one ``table:`` header row per instance (``HEADER``), followed by ``DATA``
+    rows, an optional ``FOOTER`` row (values right-aligned in data columns, ``label``
+    key excluded), and a blank row between instances.
+  - Column names are fully qualified: ``table_key.field`` (e.g. ``txn.date``).
 """
 
 from __future__ import annotations
@@ -20,25 +22,28 @@ from .utils import flatten_nested, neutralize_formula
 
 # ── color palette ────────────────────────────────────────────────────────────
 
-_FILL_SECTION_HEADER = PatternFill('solid', fgColor='2F5496')
-_FILL_SCALAR_ROW = PatternFill('solid', fgColor='D6E4F0')
+_FILL_SCALAR = PatternFill('solid', fgColor='D6E4F0')
 _FILL_TABLE_HEADER = PatternFill('solid', fgColor='4472C4')
 _FILL_TABLE_ROW_EVEN = PatternFill('solid', fgColor='D9E2F3')
 _FILL_TABLE_ROW_ODD = PatternFill('solid', fgColor='FFFFFF')
 _FILL_TABLE_FOOTER = PatternFill('solid', fgColor='E2EFDA')
-_FILL_SOURCE = PatternFill('solid', fgColor='F2F2F2')
+_FILL_NONE = PatternFill(fill_type=None)
 
-_FONT_SECTION_HEADER = Font(bold=True, color='FFFFFF', size=11)
+_FONT_LABEL = Font(bold=True, size=10)
 _FONT_TABLE_HEADER = Font(bold=True, color='FFFFFF', size=10)
-_FONT_FIELD_PATH = Font(bold=True, size=10)
 _FONT_VALUE = Font(size=10)
 _FONT_FOOTER = Font(italic=True, size=10)
-_FONT_SOURCE = Font(color='808080', size=9)
 
 _ALIGN_LEFT = Alignment(horizontal='left', vertical='top', wrap_text=True)
 
 
-def _apply_row_style(ws, row: int, ncols: int, fill, font):
+def _write_row(ws, row: int, total_width: int, values: list) -> None:
+    for col_idx in range(1, total_width + 1):
+        val = values[col_idx - 1] if col_idx <= len(values) else None
+        ws.cell(row=row, column=col_idx, value=val)
+
+
+def _apply_row_style(ws, row: int, ncols: int, fill, font) -> None:
     for col in range(1, ncols + 1):
         cell = ws.cell(row=row, column=col)
         cell.fill = fill
@@ -46,7 +51,7 @@ def _apply_row_style(ws, row: int, ncols: int, fill, font):
         cell.alignment = _ALIGN_LEFT
 
 
-def _auto_width(ws, min_width: int = 10, max_width: int = 50):
+def _auto_width(ws, min_width: int = 10, max_width: int = 50) -> None:
     for col_cells in ws.columns:
         col_letter = get_column_letter(col_cells[0].column)
         width = min_width
@@ -57,12 +62,18 @@ def _auto_width(ws, min_width: int = 10, max_width: int = 50):
 
 
 def nested_to_xlsx(result: dict, output_path: str) -> None:
-    """Write a nested extraction result as a colored Excel workbook."""
+    """Write a nested extraction result as a structured Excel workbook.
+
+    Format uses prefix columns (A=type, B=index, C=role) so every row is
+    machine-readable and visually scannable:
+      var:   rows  — scalar field name + value
+      table: rows  — HEADER (column names), DATA (values), FOOTER (right-aligned)
+    """
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.title = 'Extraction'
 
-    row = 1
+    # ── separate scalars and tables ───────────────────────────────────────
     scalars: list[tuple[str, Any]] = []
     tables: dict[str, list] = {}
 
@@ -76,112 +87,78 @@ def nested_to_xlsx(result: dict, output_path: str) -> None:
         else:
             scalars.append((key, value))
 
-    # ── section: scalars ─────────────────────────────────────────────────
-    if scalars:
-        ws.cell(row=row, column=1, value='Scalar Fields')
-        ws.cell(row=row, column=2, value='Value')
-        _apply_row_style(ws, row, 2, _FILL_SECTION_HEADER, _FONT_SECTION_HEADER)
-        row += 1
-
-        for field_path, value in scalars:
-            ws.cell(row=row, column=1, value=field_path)
-            ws.cell(row=row, column=1).font = _FONT_FIELD_PATH
-            ws.cell(row=row, column=1).fill = _FILL_SCALAR_ROW
-            ws.cell(row=row, column=1).alignment = _ALIGN_LEFT
-
-            ws.cell(row=row, column=2, value=_safe_value(value))
-            ws.cell(row=row, column=2).font = _FONT_VALUE
-            ws.cell(row=row, column=2).fill = _FILL_SCALAR_ROW
-            ws.cell(row=row, column=2).alignment = _ALIGN_LEFT
-            row += 1
-
-        row += 1  # blank separator
-
-    # ── section: tables ──────────────────────────────────────────────────
-    for table_key, instances in tables.items():
-        all_data_cols: list[str] = []
+    # ── collect qualified column names per table ──────────────────────────
+    # e.g. table key 'txn', field 'date' → 'txn.date'
+    table_cols: dict[str, list[str]] = {}
+    for tbl_key, instances in tables.items():
+        cols: list[str] = []
         seen: set[str] = set()
         for inst in instances:
             for data_row in inst.get('data', []):
-                for k in data_row:
-                    if k not in seen:
-                        seen.add(k)
-                        all_data_cols.append(k)
+                for field in data_row:
+                    qname = f'{tbl_key}.{field}'
+                    if qname not in seen:
+                        seen.add(qname)
+                        cols.append(qname)
+        table_cols[tbl_key] = cols
 
-        header_cols: list[str] = []
-        hseen: set[str] = set()
-        for inst in instances:
-            if inst.get('header'):
-                for k, v in flatten_nested(inst['header']):
-                    if k not in hseen:
-                        hseen.add(k)
-                        header_cols.append(k)
+    # ── compute sheet width ───────────────────────────────────────────────
+    # 3 prefix columns + max data columns across all tables (min 1)
+    max_data_cols = max((len(cols) for cols in table_cols.values()), default=1)
+    total_width = 3 + max_data_cols
 
-        footer_cols: list[str] = []
-        fseen: set[str] = set()
-        for inst in instances:
-            if inst.get('footer'):
-                for k, v in flatten_nested(inst['footer']):
-                    if k not in fseen:
-                        fseen.add(k)
-                        footer_cols.append(k)
+    row = 1
 
-        ncols = max(len(all_data_cols), 2)
-
-        # table title
-        ws.cell(row=row, column=1, value=f'Table: {table_key}')
-        _apply_row_style(ws, row, ncols, _FILL_SECTION_HEADER, _FONT_SECTION_HEADER)
+    # ── scalar rows ───────────────────────────────────────────────────────
+    for seq_num, (field_path, value) in enumerate(scalars, 1):
+        _write_row(ws, row, total_width, ['var:', seq_num, field_path, _safe_value(value)])
+        _apply_row_style(ws, row, total_width, _FILL_SCALAR, _FONT_VALUE)
+        ws.cell(row=row, column=1).font = _FONT_LABEL   # 'var:' bold
+        ws.cell(row=row, column=3).font = _FONT_LABEL   # field name bold
         row += 1
 
+    # ── blank separator between scalar and table sections ────────────────────
+    if scalars and tables:
+        row += 1
+
+    # ── table rows ────────────────────────────────────────────────────────
+    for tbl_key, instances in tables.items():
+        data_cols = table_cols[tbl_key]   # ['tbl.col1', 'tbl.col2', …]
+
         for inst_idx, inst in enumerate(instances):
-            # source reference
-            source = inst.get('_source')
-            if source:
-                src_text = f"[{source.get('sheet', '?')} {source.get('ref', '')}]"
-                ws.cell(row=row, column=1, value=src_text)
-                _apply_row_style(ws, row, ncols, _FILL_SOURCE, _FONT_SOURCE)
-                row += 1
+            inst_num = inst_idx + 1
 
-            # instance header (from pattern HEADER: rows)
-            if inst.get('header'):
-                flat_h = flatten_nested(inst['header'])
-                for col_idx, (k, v) in enumerate(flat_h, 1):
-                    ws.cell(row=row, column=col_idx, value=f'{k}: {_safe_value(v)}')
-                _apply_row_style(ws, row, max(len(flat_h), ncols),
-                                 _FILL_TABLE_FOOTER, _FONT_FOOTER)
-                row += 1
+            # HEADER row
+            _write_row(ws, row, total_width, ['table:', inst_num, 'HEADER'] + data_cols)
+            _apply_row_style(ws, row, total_width, _FILL_TABLE_HEADER, _FONT_TABLE_HEADER)
+            row += 1
 
-            # column headers
-            if all_data_cols:
-                for col_idx, col_name in enumerate(all_data_cols, 1):
-                    ws.cell(row=row, column=col_idx, value=col_name)
-                _apply_row_style(ws, row, len(all_data_cols),
-                                 _FILL_TABLE_HEADER, _FONT_TABLE_HEADER)
-                row += 1
-
-            # data rows
+            # DATA rows
             for data_idx, data_row in enumerate(inst.get('data', [])):
+                fields = [
+                    _safe_value(data_row.get(col.split('.', 1)[-1]))
+                    for col in data_cols
+                ]
+                _write_row(ws, row, total_width, [None, None, 'DATA'] + fields)
                 fill = _FILL_TABLE_ROW_EVEN if data_idx % 2 == 0 else _FILL_TABLE_ROW_ODD
-                for col_idx, col_name in enumerate(all_data_cols, 1):
-                    ws.cell(row=row, column=col_idx,
-                            value=_safe_value(data_row.get(col_name)))
-                _apply_row_style(ws, row, len(all_data_cols), fill, _FONT_VALUE)
+                _apply_row_style(ws, row, total_width, fill, _FONT_VALUE)
+                ws.cell(row=row, column=3).font = _FONT_LABEL  # 'DATA' label bold
                 row += 1
 
-            # footer
+            # FOOTER row — skip 'label', right-align remaining values
             if inst.get('footer'):
-                flat_f = flatten_nested(inst['footer'])
-                for col_idx, (k, v) in enumerate(flat_f, 1):
-                    ws.cell(row=row, column=col_idx, value=f'{k}: {_safe_value(v)}')
-                _apply_row_style(ws, row, max(len(flat_f), ncols),
-                                 _FILL_TABLE_FOOTER, _FONT_FOOTER)
+                footer = inst['footer']
+                footer_vals = [_safe_value(v) for k, v in footer.items() if k != 'label']
+                n_empty = len(data_cols) - len(footer_vals)
+                footer_data = [None] * n_empty + footer_vals
+                _write_row(ws, row, total_width, [None, None, 'FOOTER'] + footer_data)
+                _apply_row_style(ws, row, total_width, _FILL_TABLE_FOOTER, _FONT_FOOTER)
+                ws.cell(row=row, column=3).font = _FONT_LABEL  # 'FOOTER' label bold
                 row += 1
 
-            # separator between instances
+            # Blank row between instances (not after the last one)
             if inst_idx < len(instances) - 1:
                 row += 1
-
-        row += 1  # blank row before next table
 
     _auto_width(ws)
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
@@ -189,14 +166,11 @@ def nested_to_xlsx(result: dict, output_path: str) -> None:
 
 
 def _safe_value(v):
-    """Convert a value to something Excel can display.
-
-    Strings that would be parsed as formulas are neutralised so an extracted
-    value from an untrusted file is never written as an executable formula
-    (CWE-1236).
-    """
+    """Convert a value for Excel output; neutralize formula injection (CWE-1236)."""
     if v is None:
-        return ''
+        return None
     if isinstance(v, (dict, list)):
         v = str(v)
-    return neutralize_formula(v)
+    if isinstance(v, str):
+        return neutralize_formula(v)
+    return v

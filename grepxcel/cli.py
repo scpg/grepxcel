@@ -94,6 +94,7 @@ commands:
   extract            Extract data from Excel files using a pattern file
   validate-pattern   Check a pattern file is valid to use (no extraction)
   draft              Use a local LLM to draft a starter pattern file
+  wizard             Interactively build a pattern file cell by cell
   docs               Write a pattern-format reference xlsx (pattern-reference.xlsx)
   lint               Inspect an Excel file for potential extraction issues
   schema             Generate a JSON Schema from a pattern file
@@ -119,6 +120,7 @@ Run 'grepxcel <command> --help' for per-command options.
     _add_extract_subparser(sub)
     _add_validate_subparser(sub)
     _add_draft_subparser(sub)
+    _add_wizard_subparser(sub)
     _add_docs_subparser(sub)
     _add_lint_subparser(sub)
     _add_schema_subparser(sub)
@@ -339,6 +341,30 @@ Exits non-zero if the selected area has a blocking (✗) problem.
         help='Refuse a .env from outside the current project (also '
              'GREPXCEL_STRICT_ENV); the per-user config-dir .env stays allowed',
     )
+
+
+def _add_wizard_subparser(sub) -> None:
+    p = sub.add_parser(
+        'wizard',
+        help='Interactively build a pattern file cell by cell',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Walks you through your Excel file cell by cell and writes a valid CSV pattern.
+No LLM required. Ideal when you want full manual control or have no internet
+access.
+
+examples:
+  grepxcel wizard data.xlsx
+  grepxcel wizard data.xlsx --sheet Sheet2
+  grepxcel wizard data.xlsx -o my-pattern.csv
+        """,
+    )
+    p.add_argument('file', metavar='FILE', help='Excel data file to inspect')
+    p.add_argument('--sheet', metavar='NAME_OR_INDEX',
+                   help='Sheet to use (default: active sheet)')
+    p.add_argument('-o', '--output', metavar='FILE',
+                   help='Write the pattern CSV to FILE '
+                        '(default: pattern-<stem>.csv next to the data file)')
 
 
 def _add_quickstart_subparser(sub) -> None:
@@ -1068,6 +1094,14 @@ def main(argv=None):
     if args.command == 'quickstart':
         from .quickstart import run_quickstart
         sys.exit(run_quickstart())
+
+    if args.command == 'wizard':
+        from .wizard import run_wizard
+        sys.exit(run_wizard(
+            data_file=args.file,
+            sheet=getattr(args, 'sheet', None),
+            output=getattr(args, 'output', None),
+        ))
 
     if args.command == 'draft':
         sys.exit(_run_draft(args))

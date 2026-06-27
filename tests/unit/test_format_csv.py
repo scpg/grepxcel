@@ -63,8 +63,8 @@ class TestNestedToCsv:
         reader = csv.DictReader(io.StringIO(out))
         rows = list(reader)
         assert len(rows) == 2
-        assert rows[0]['name'] == 'A'
-        assert rows[1]['qty'] == '2'
+        assert rows[0]['items.name'] == 'A'
+        assert rows[1]['items.qty'] == '2'
 
     def test_mixed_scalar_and_table(self):
         data = {
@@ -81,8 +81,8 @@ class TestNestedToCsv:
         rows = list(reader)
         assert len(rows) == 2
         assert all(r['vendor.name'] == 'Acme' for r in rows)
-        assert rows[0]['item'] == 'Pen'
-        assert rows[1]['item'] == 'Ink'
+        assert rows[0]['items.item'] == 'Pen'
+        assert rows[1]['items.item'] == 'Ink'
 
     def test_source_excluded(self):
         data = {

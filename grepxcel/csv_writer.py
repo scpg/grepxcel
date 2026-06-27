@@ -48,7 +48,8 @@ def nested_to_csv(result: dict) -> str:
                 if not isinstance(instance, dict):
                     continue
                 for data_row in instance.get('data', []):
-                    table_rows.append(data_row)
+                    # Qualify field names with the table key (e.g. txn.date)
+                    table_rows.append({f'{key}.{k}': v for k, v in data_row.items()})
         elif isinstance(value, dict):
             scalars.update(dict(flatten_nested(value, key)))
         else:
