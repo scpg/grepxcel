@@ -282,7 +282,7 @@ if _TEXTUAL_OK:
             self._ws_col = 1
             self._is_template = False
             self._cells: list[tuple[int, int]] = []
-            self._ready = False
+            self._initialized = False
 
         def compose(self) -> ComposeResult:
             yield Header(show_clock=False)
@@ -315,7 +315,7 @@ if _TEXTUAL_OK:
                 self._ws_row, self._ws_col = r, c
                 self._move_cursor(r, c)
 
-            self._ready = True
+            self._initialized = True
             self._refresh_panel()
 
         # ── DataTable helpers ─────────────────────────────────────────────────
@@ -362,7 +362,7 @@ if _TEXTUAL_OK:
                 pass
 
         def on_data_table_cursor_moved(self, event: DataTable.CursorMoved) -> None:
-            if not self._ready:
+            if not self._initialized:
                 return
             dt_col = event.cursor_column
             if dt_col == 0:
