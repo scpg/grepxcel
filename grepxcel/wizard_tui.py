@@ -53,28 +53,31 @@ from .wizard import (
 # ── Style constants ────────────────────────────────────────────────────────────
 
 _STYLE: dict[str, str] = {
-    'L': 'bold green',
-    'C': 'bold blue',
-    'V': 'bold yellow',
-    'T': 'bold magenta',
-    'I': 'dim',
+    'L':      'bold green',
+    'C':      'bold blue',
+    'V':      'bold yellow',
+    'T':      'bold magenta',
+    'T-HEAD': 'magenta',          # non-anchor column header cells
+    'I':      'dim',
     'PENDING': 'bold black on dark_goldenrod',
 }
 
 _CHOICE_COLOR = {
-    'L': 'green',
-    'C': 'blue',
-    'V': 'yellow',
-    'T': 'magenta',
-    'I': 'dim',
+    'L':      'green',
+    'C':      'blue',
+    'V':      'yellow',
+    'T':      'magenta',
+    'T-HEAD': 'magenta',
+    'I':      'dim',
 }
 
 _CHOICE_NAME = {
-    'L': 'Label',
-    'C': 'Header',
-    'V': 'Value',
-    'T': 'Table',
-    'I': 'Ignore',
+    'L':      'Label',
+    'C':      'Header',
+    'V':      'Value',
+    'T':      'Table anchor',
+    'T-HEAD': 'Table column',
+    'I':      'Ignore',
 }
 
 _SEP = '─' * 42   # visual divider for panel zones
@@ -116,6 +119,7 @@ def _build_state_from_choices(
     the client submits the final classification list.
     """
     state = WizardState(direction=direction, sheet_name=sheet_name)
+    seen_t_anchors: set[str] = set()
     for r, c in cells:
         ref  = _cell_ref(r, c)
         meta = choices.get(ref)
@@ -134,8 +138,29 @@ def _build_state_from_choices(
             state.var_defs.append((name, meta.get('ftype', 'string'), meta.get('match', '.*')))
             state.body_rows.append(['cell:1', name])
         elif choice == 'T':
-            state.body_rows.append([f'table:{name}'])
-            state.body_rows.append(['', f'DATA:{meta.get("mode", "*")}'])
+            # Each table is emitted once from its anchor cell; T-HEAD cells are skipped.
+            if ref in seen_t_anchors:
+                continue
+            seen_t_anchors.add(ref)
+            mult      = meta.get('mult', '*')
+            cols      = meta.get('columns', [])
+            lbl_names = []
+            var_names = []
+            for col in cols:
+                lbl_name   = col.get('lbl_name', 'IGNORE')
+                var_name   = col.get('var_name', 'IGNORE')
+                var_type   = col.get('var_type', 'string')
+                var_match  = col.get('var_match', '.*')
+                cell_val   = col.get('cell_value', '')
+                state.lbl_defs.append((lbl_name, 'string', cell_val))
+                state.var_defs.append((var_name, var_type, var_match))
+                lbl_names.append(lbl_name)
+                var_names.append(var_name)
+            state.body_rows.append([f'table:{mult}'])
+            state.body_rows.append(['', 'HEADER:1'] + lbl_names)
+            state.body_rows.append(['', 'DATA:*'] + var_names)
+        elif choice == 'T-HEAD':
+            pass  # handled by the anchor cell above
         elif choice == 'I':
             state.body_rows.append(['cell:1', 'IGNORE'])
     return state
@@ -472,6 +497,117 @@ if _TEXTUAL_OK:
 
     # ── Main application ───────────────────────────────────────────────────────
 
+    class _TableSetupModal(ModalScreen):
+        """Table definition — step 1: name, header-row range, multiplicity.
+
+        Dismissed with {'name', 'range_str', 'mult'} or None on cancel.
+        The range_str is validated here (must parse to a single row).
+        """
+        DEFAULT_CSS = """
+        _TableSetupModal              { align: center middle; }
+        _TableSetupModal > #dialog    { background: $surface; border: thick $primary;
+                                        width: 76; height: auto; padding: 1 3; }
+        _TableSetupModal Label.title  { text-style: bold; color: $accent; margin-bottom: 1; }
+        _TableSetupModal Label.sect   { text-style: bold; margin-top: 1; }
+        _TableSetupModal Label.desc   { color: $text-muted; margin-bottom: 1; }
+        _TableSetupModal Label.err    { color: $error; margin-top: 1; }
+        _TableSetupModal Label.hint   { color: $text-muted; margin-top: 1; }
+        _TableSetupModal Input        { margin-bottom: 1; }
+        """
+
+        def __init__(self, default_name: str, default_range: str) -> None:
+            super().__init__()
+            self._default_name  = default_name
+            self._default_range = default_range
+
+        def compose(self) -> ComposeResult:
+            with Vertical(id='dialog'):
+                yield Label('[bold magenta]Table[/bold magenta] — repeating row block',
+                            classes='title')
+                yield Label('Table name', classes='sect')
+                yield Label('Short identifier used in the output JSON key', classes='desc')
+                yield Input(value=self._default_name, id='name')
+                yield Label('Header row range', classes='sect')
+                yield Label('Cells containing the column labels  (e.g. B11:F11)',
+                            classes='desc')
+                yield Input(value=self._default_range, id='range',
+                            placeholder='e.g. B11:F11')
+                yield Label('Multiplicity', classes='sect')
+                yield Label(
+                    '*=any instances  ·  1=exactly one  ·  {n,m}=bounded range',
+                    classes='desc')
+                yield Input(value='*', id='mult', placeholder='*')
+                yield Label(id='errmsg', classes='err')
+                yield Label('ENTER = next field  •  ESC = cancel', classes='hint')
+
+        def on_mount(self) -> None:
+            self.query_one('#name', Input).focus()
+
+        def on_input_submitted(self, event: Input.Submitted) -> None:
+            inputs = list(self.query(Input))
+            try:
+                idx = inputs.index(event.input)
+            except ValueError:
+                idx = len(inputs) - 1
+            if idx < len(inputs) - 1:
+                inputs[idx + 1].focus()
+            else:
+                self._validate_and_submit()
+
+        def _validate_and_submit(self) -> None:
+            name       = self.query_one('#name',  Input).value.strip()
+            range_str  = self.query_one('#range', Input).value.strip().upper()
+            mult_raw   = self.query_one('#mult',  Input).value.strip() or '*'
+            errlbl     = self.query_one('#errmsg', Label)
+            if not name:
+                errlbl.update('Table name cannot be empty.')
+                self.query_one('#name', Input).focus()
+                return
+            parts = range_str.split(':')
+            if len(parts) != 2:
+                errlbl.update('Range must be like B11:F11 (two cell refs separated by :)')
+                self.query_one('#range', Input).focus()
+                return
+            start = _parse_cell_ref(parts[0].strip())
+            end   = _parse_cell_ref(parts[1].strip())
+            if not start or not end:
+                errlbl.update('Could not parse the range — use the format B11:F11.')
+                self.query_one('#range', Input).focus()
+                return
+            if start[0] != end[0]:
+                errlbl.update(
+                    'The header range must be a single row  '
+                    '(same row number on both sides).'
+                )
+                self.query_one('#range', Input).focus()
+                return
+            if start[1] > end[1]:
+                errlbl.update('Start column must be ≤ end column.')
+                self.query_one('#range', Input).focus()
+                return
+            # Normalise multiplicity
+            if mult_raw == '1':
+                mult = '1'
+            elif mult_raw == '*':
+                mult = '*'
+            elif mult_raw.startswith('{') and mult_raw.endswith('}'):
+                mult = mult_raw
+            elif '..' in mult_raw:
+                a, b = mult_raw.split('..', 1)
+                mult = f'{{{a.strip()},{b.strip()}}}'
+            elif mult_raw.isdigit():
+                mult = mult_raw
+            else:
+                mult = '*'
+            errlbl.update('')
+            self.dismiss({'name': name, 'range_str': range_str,
+                          'mult': mult, 'start': start, 'end': end})
+
+        def on_key(self, event) -> None:
+            if event.key == 'escape':
+                self.dismiss(None)
+
+
     class _Panel(Static):
         """Scrollable right-hand classification panel."""
 
@@ -690,25 +826,62 @@ if _TEXTUAL_OK:
             else:
                 prop_line = f'[dim]{proposal}[/dim]'
 
+            # Build status line — special handling for table cells
             if meta:
-                ch    = meta['choice']
-                cname = _CHOICE_NAME.get(ch, ch)
-                ccol  = _CHOICE_COLOR.get(ch, 'white')
-                status = f'[bold {ccol}]✓ {cname}[/bold {ccol}]'
-                if 'name' in meta:
-                    status += f'  [dim]{meta["name"]}[/dim]'
+                ch   = meta['choice']
+                ccol = _CHOICE_COLOR.get(ch, 'white')
+                if ch == 'T':
+                    tname  = meta.get('name', '')
+                    trng   = meta.get('range', ref)
+                    ncols  = len(meta.get('columns', []))
+                    mult   = meta.get('mult', '*')
+                    status = (f'[bold magenta]✓ Table anchor[/bold magenta]'
+                              f'  [dim]{tname}[/dim]')
+                    extra  = [
+                        f'  Range:  [magenta]{trng}[/magenta]'
+                        f'  ({ncols} col{"s" if ncols != 1 else ""}, mult={mult})',
+                        '  [dim]R = remove whole table[/dim]',
+                    ]
+                elif ch == 'T-HEAD':
+                    anchor_ref  = meta.get('anchor', '')
+                    anchor_meta = self._choices.get(anchor_ref, {})
+                    tname  = anchor_meta.get('name', '')
+                    trng   = anchor_meta.get('range', anchor_ref)
+                    # Find column index for this ref
+                    col_idx = next(
+                        (i for i, c in enumerate(anchor_meta.get('columns', []))
+                         if c.get('ref') == ref),
+                        -1
+                    )
+                    col_name = ''
+                    if col_idx >= 0:
+                        col_name = anchor_meta['columns'][col_idx].get('var_name', '')
+                    status = (f'[magenta]✓ Table column[/magenta]'
+                              f'  [dim]{tname}.{col_name}[/dim]')
+                    extra  = [
+                        f'  Table:  [magenta]{tname}[/magenta]  range {trng}',
+                        '  [dim]R = remove whole table[/dim]',
+                    ]
+                else:
+                    cname  = _CHOICE_NAME.get(ch, ch)
+                    status = f'[bold {ccol}]✓ {cname}[/bold {ccol}]'
+                    if 'name' in meta:
+                        status += f'  [dim]{meta["name"]}[/dim]'
+                    extra = []
             elif prior:
                 pname  = _CHOICE_NAME.get(prior, prior)
                 status = f'[magenta]↺ prev: {pname}[/magenta]'
+                extra  = []
             else:
                 status = '[dim]not classified[/dim]'
+                extra  = []
 
             lines: list[str] = [
                 f'[bold cyan]─ {ref} {"─" * (40 - len(ref))}[/bold cyan]',
                 f'  {val_line}',
                 f'  Proposal:  {prop_line}',
                 f'  Status:    {status}',
-            ]
+            ] + extra
             if self._last_label_base and not meta:
                 lines += [
                     f'  [dim magenta]← label: {self._last_label_base}_label[/dim magenta]',
@@ -723,9 +896,9 @@ if _TEXTUAL_OK:
                 '  [bold green]L[/bold green]  Label  — text anchors a value',
                 '  [bold blue]C[/bold blue]  Header — section title only',
                 '  [bold yellow]V[/bold yellow]  Value  — extract this cell',
-                '  [bold magenta]T[/bold magenta]  Table  — repeating row block',
+                '  [bold magenta]T[/bold magenta]  Table  — define range + column names',
                 '  [dim]I[/dim]  Ignore — skip',
-                '  [bold]R[/bold]  Remove — undo this cell only',
+                '  [bold]R[/bold]  Remove classification',
                 '',
             ]
 
@@ -775,6 +948,67 @@ if _TEXTUAL_OK:
                 lines.append(f'  [dim]Undo depth: {len(self._undo_stack)}[/dim]')
 
             self.query_one('#panel', _Panel).update('\n'.join(lines))
+
+        # ── Table helpers ─────────────────────────────────────────────────────
+
+        def _detect_table_end_col(self, ws_row: int, ws_col: int) -> int:
+            """Return the last col in ws_row that has a value, starting from ws_col."""
+            end = ws_col
+            for c in range(ws_col, self._max_col + 1):
+                if self._ws.cell(row=ws_row, column=c).value is not None:
+                    end = c
+                else:
+                    break
+            return end
+
+        def _extract_table_columns(self,
+                                   start_row: int, start_col: int,
+                                   end_col: int) -> list[dict]:
+            """Return column spec list from the header row range."""
+            cols = []
+            for c in range(start_col, end_col + 1):
+                val  = self._ws.cell(row=start_row, column=c).value
+                ref  = _cell_ref(start_row, c)
+                slug = _slugify(str(val)) if val is not None else f'col{c}'
+                cols.append({
+                    'ref':        ref,
+                    'row':        start_row,
+                    'col':        c,
+                    'cell_value': str(val) if val is not None else '',
+                    'lbl_name':   f'col_{slug}_label',
+                    'var_name':   slug,
+                    'var_type':   'string',
+                    'var_match':  '.*',
+                })
+            return cols
+
+        def _commit_table(self, anchor_ref: str, name: str, mult: str,
+                          range_str: str, cols: list[dict]) -> None:
+            """Write T + T-HEAD entries to _choices and restyle all cells."""
+            anchor_meta = {
+                'choice':  'T',
+                'name':    name,
+                'mult':    mult,
+                'range':   range_str,
+                'columns': cols,
+            }
+            self._choices[anchor_ref] = anchor_meta
+            parsed = _parse_cell_ref(anchor_ref)
+            if parsed:
+                self._restyle_cell(parsed[0], parsed[1])
+            for col in cols[1:]:
+                self._choices[col['ref']] = {'choice': 'T-HEAD', 'anchor': anchor_ref}
+                self._restyle_cell(col['row'], col['col'])
+
+        def _remove_table(self, anchor_ref: str, meta: dict) -> None:
+            """Remove the anchor + all T-HEAD cells for a table."""
+            refs_to_clear = [anchor_ref]
+            refs_to_clear += [col['ref'] for col in meta.get('columns', [])[1:]]
+            for ref in refs_to_clear:
+                self._choices.pop(ref, None)
+                p = _parse_cell_ref(ref)
+                if p:
+                    self._restyle_cell(p[0], p[1])
 
         # ── Highlights ────────────────────────────────────────────────────────
 
@@ -1028,37 +1262,76 @@ if _TEXTUAL_OK:
             )
 
         async def action_act_T(self) -> None:
-            ref   = _cell_ref(self._ws_row, self._ws_col)
-            value = self._ws.cell(row=self._ws_row, column=self._ws_col).value
-            slug  = _slugify(str(value)) if value is not None else 'table'
+            """Two-step table definition: (1) name/range/mult → (2) column names."""
+            cur_ref  = _cell_ref(self._ws_row, self._ws_col)
+            cur_val  = self._ws.cell(row=self._ws_row, column=self._ws_col).value
+            slug     = _slugify(str(cur_val)) if cur_val is not None else 'table'
+            end_col  = self._detect_table_end_col(self._ws_row, self._ws_col)
+            auto_rng = (f'{_cell_ref(self._ws_row, self._ws_col)}'
+                        f':{_cell_ref(self._ws_row, end_col)}')
 
-            def _done(result: list[str] | None) -> None:
+            def _on_setup(setup: dict | None) -> None:
+                """Called after Step 1 (setup modal)."""
                 self._clear_highlights()
-                if result is None:
-                    self._log('TABLE-X', f'{ref}  cancelled')
+                if setup is None:
+                    self._log('TABLE-X', f'{cur_ref}  cancelled at setup')
                     return
-                name, mode = result[0], result[1]
-                old  = self._choices.get(ref, {}).get('choice')
-                self._push_undo(ref)
-                self._last_label_base = None
-                self._commit(ref, {'choice': 'T', 'name': name, 'mode': mode})
-                reclassify = f'  (was {old})' if old else ''
-                self._log('TABLE', f'{ref}  →  {name}  DATA:{mode}{reclassify}')
-                self._refresh_panel()
-                self.notify(
-                    f'Table "[bold]{name}[/bold]" started (DATA:{mode}).  '
-                    'Mark each column header with [bold]V[/bold].',
-                    timeout=5,
+                start_row, start_col = setup['start']
+                _, end_col2           = setup['end']
+                cols  = self._extract_table_columns(start_row, start_col, end_col2)
+                name  = setup['name']
+                mult  = setup['mult']
+                rng   = setup['range_str']
+
+                # Build _FieldsModal fields: label shows cell ref + value, default = slug
+                col_fields = []
+                for col in cols:
+                    val_disp = f'"{_trunc(col["cell_value"], 24)}"' if col['cell_value'] else '(empty)'
+                    col_fields.append((f'{col["ref"]}  {val_disp}', col['var_name']))
+
+                def _on_cols(result: list[str] | None) -> None:
+                    """Called after Step 2 (column-name modal)."""
+                    self._clear_highlights()
+                    if result is None:
+                        self._log('TABLE-X', f'{cur_ref}  cancelled at column names')
+                        return
+                    # Merge user-supplied names back into cols
+                    for i, col in enumerate(cols):
+                        col['var_name']  = result[i] if i < len(result) else col['var_name']
+                        col['lbl_name']  = f'col_{col["var_name"]}_label'
+
+                    # Push undo for ALL affected cells as one atomic entry
+                    affected = [{'ref': col['ref'],
+                                 'prev': self._choices.get(col['ref'])}
+                                for col in cols]
+                    self._undo_stack.append({
+                        'type':            'table',
+                        'cells':           affected,
+                        'prev_label_base': self._last_label_base,
+                    })
+
+                    self._last_label_base = None
+                    anchor_ref = cols[0]['ref']
+                    self._commit_table(anchor_ref, name, mult, rng, cols)
+                    col_names = ', '.join(c['var_name'] for c in cols)
+                    self._log('TABLE',
+                              f'{rng}  name={name}  mult={mult}  '
+                              f'cols=[{col_names}]')
+                    self._refresh_panel()
+                    self._advance()
+
+                self.push_screen(
+                    _FieldsModal(
+                        f'[bold magenta]Column variable names[/bold magenta]  '
+                        f'table "{name}"  range {rng}',
+                        col_fields,
+                    ),
+                    _on_cols,
                 )
-                self._advance()
 
             self.push_screen(
-                _FieldsModal(
-                    '[bold magenta]Table[/bold magenta] — repeating data-row block',
-                    [('Table key name',            slug),
-                     ('Data row mode  (*, 1, {n,m})', '*')],
-                ),
-                _done,
+                _TableSetupModal(slug, auto_rng),
+                _on_setup,
             )
 
         async def action_act_I(self) -> None:
@@ -1076,22 +1349,50 @@ if _TEXTUAL_OK:
             self._advance()
 
         async def action_act_R(self) -> None:
-            """Remove the classification of the current cell (reclassify it)."""
+            """Remove classification.  For T/T-HEAD cells removes the whole table."""
             ref  = _cell_ref(self._ws_row, self._ws_col)
             meta = self._choices.get(ref)
             if not meta:
                 self.notify('Cell is not classified yet.', timeout=2)
                 return
-            old_choice = meta.get('choice', '?')
-            old_name   = meta.get('name', '')
-            self._push_undo(ref)
-            del self._choices[ref]
-            self._restyle_cell(self._ws_row, self._ws_col)
-            self._log('REMOVE',
-                      f'{ref}  cleared  was: {_CHOICE_NAME.get(old_choice, old_choice)}'
-                      + (f' "{old_name}"' if old_name else ''))
-            self._refresh_panel()
-            self.notify(f'{ref} cleared — choose a new type.', timeout=2)
+            choice = meta.get('choice', '?')
+
+            if choice in ('T', 'T-HEAD'):
+                # Resolve the anchor
+                if choice == 'T-HEAD':
+                    anchor_ref  = meta.get('anchor', ref)
+                    anchor_meta = self._choices.get(anchor_ref, {})
+                else:
+                    anchor_ref  = ref
+                    anchor_meta = meta
+                tname = anchor_meta.get('name', '')
+                trng  = anchor_meta.get('range', anchor_ref)
+                # Snapshot all cells for undo
+                affected = [{'ref': anchor_ref,
+                             'prev': self._choices.get(anchor_ref)}]
+                for col in anchor_meta.get('columns', [])[1:]:
+                    cref = col['ref']
+                    affected.append({'ref': cref, 'prev': self._choices.get(cref)})
+                self._undo_stack.append({
+                    'type':            'table',
+                    'cells':           affected,
+                    'prev_label_base': self._last_label_base,
+                })
+                self._remove_table(anchor_ref, anchor_meta)
+                self._log('REMOVE',
+                          f'table "{tname}" ({trng}) — all {len(affected)} cells cleared')
+                self._refresh_panel()
+                self.notify(f'Table "{tname}" removed ({trng}).', timeout=3)
+            else:
+                old_name = meta.get('name', '')
+                self._push_undo(ref)
+                del self._choices[ref]
+                self._restyle_cell(self._ws_row, self._ws_col)
+                self._log('REMOVE',
+                          f'{ref}  cleared  was: {_CHOICE_NAME.get(choice, choice)}'
+                          + (f' "{old_name}"' if old_name else ''))
+                self._refresh_panel()
+                self.notify(f'{ref} cleared — choose a new type.', timeout=2)
 
         # ── Undo ──────────────────────────────────────────────────────────────
 
@@ -1099,27 +1400,48 @@ if _TEXTUAL_OK:
             if not self._undo_stack:
                 self.notify('Nothing to undo.', timeout=2)
                 return
-            entry   = self._undo_stack.pop()
-            ref     = entry['ref']
-            prev    = entry['prev_choice']
-            curr_ch = self._choices.get(ref, {}).get('choice', 'unclassified')
-            if prev is None:
-                self._choices.pop(ref, None)
-                restored = 'unclassified'
+            entry = self._undo_stack.pop()
+            self._last_label_base = entry.get('prev_label_base')
+
+            if entry.get('type') == 'table':
+                # Multi-cell table undo
+                for cell_entry in entry['cells']:
+                    cref = cell_entry['ref']
+                    prev = cell_entry['prev']
+                    if prev is None:
+                        self._choices.pop(cref, None)
+                    else:
+                        self._choices[cref] = prev
+                    p = _parse_cell_ref(cref)
+                    if p:
+                        self._restyle_cell(p[0], p[1])
+                first_ref = entry['cells'][0]['ref'] if entry['cells'] else None
+                if first_ref:
+                    p = _parse_cell_ref(first_ref)
+                    if p:
+                        self._ws_row, self._ws_col = p[0], p[1]
+                        self._move_cursor(p[0], p[1])
+                self._log('UNDO', f'table  {len(entry["cells"])} cells restored')
+                self.notify(f'Table undo: {len(entry["cells"])} cells restored', timeout=2)
             else:
-                self._choices[ref] = prev
-                restored = _CHOICE_NAME.get(prev.get('choice', ''), prev.get('choice', '?'))
-            self._last_label_base = entry['prev_label_base']
-            self._log('UNDO',
-                      f'{ref}  {_CHOICE_NAME.get(curr_ch, curr_ch)}  →  {restored}')
-            parsed = _parse_cell_ref(ref)
-            if parsed:
-                r, c = parsed
-                self._ws_row, self._ws_col = r, c
-                self._move_cursor(r, c)
-                self._restyle_cell(r, c)
+                ref     = entry['ref']
+                prev    = entry['prev_choice']
+                curr_ch = self._choices.get(ref, {}).get('choice', 'unclassified')
+                if prev is None:
+                    self._choices.pop(ref, None)
+                    restored = 'unclassified'
+                else:
+                    self._choices[ref] = prev
+                    restored = _CHOICE_NAME.get(prev.get('choice', ''), prev.get('choice', '?'))
+                self._log('UNDO',
+                          f'{ref}  {_CHOICE_NAME.get(curr_ch, curr_ch)}  →  {restored}')
+                p = _parse_cell_ref(ref)
+                if p:
+                    self._ws_row, self._ws_col = p[0], p[1]
+                    self._move_cursor(p[0], p[1])
+                    self._restyle_cell(p[0], p[1])
+                self.notify(f'Undone: {ref}', timeout=2)
             self._refresh_panel()
-            self.notify(f'Undone: {ref}', timeout=2)
 
         # ── Other actions ──────────────────────────────────────────────────────
 
