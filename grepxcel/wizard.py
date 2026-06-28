@@ -1,15 +1,28 @@
 """Interactive wizard that guides a user through creating a grepxcel pattern CSV.
 
 Three phases:
-  1. Config   — sheet, direction, ignore.case, currency symbol
-  2. Cell walk — classify each cell as label / variable / ignore / table / goto / end
-               Empty/blank cells are silently skipped; the engine handles them natively.
+  1. Config   — sheet, direction, ignore.case, currency symbol; template detection
+  2. Cell walk — classify each cell: field label / control label / variable / ignore /
+               table / goto / end.  Empty cells are silently skipped unless template
+               mode is active and the cell follows a field label.
   3. Summary + save — write the CSV pattern and print a try-it hint
+
+Label naming convention
+  Field label  [L]: anchor name is ``<base>_label``; base is auto-suggested as the
+               variable name for the immediately next cell.
+  Control label [C]: navigation anchor only (section header, separator); no variable
+               lookahead; named ``<slug>`` without a suffix.
 
 Table sub-flow (entered with T):
   - Multiplicity (1 / N / N..M / *)
   - HEADER row: each column → auto lbl: anchor + prompted var: field name + type + regex
   - Optional FOOTER row
+
+Template mode
+  When the file looks like a blank form (filename keywords or [placeholder] cells),
+  the user is asked to confirm template mode.  In template mode an empty cell that
+  immediately follows a field label is shown as a variable slot instead of being
+  skipped — because the empty slot is exactly where the end-user will fill in data.
 """
 
 from __future__ import annotations
@@ -56,7 +69,8 @@ def _proposal_color(proposal: str) -> str:
     return _C.DIM
 
 
-def _key_label(k: str, label: str) -> str:
+def _kl(k: str, label: str) -> str:
+    """Render a single key+label option."""
     return f'[{_c(k, _C.BOLD, _C.CYAN)}] {label}'
 
 
@@ -65,9 +79,9 @@ def _key_label(k: str, label: str) -> str:
 def _getch() -> str:
     """Read one keypress without requiring ENTER.
 
-    Returns the character (uppercased by the caller).  On Ctrl-C / Ctrl-D /
-    EOF returns '' so the caller can exit cleanly.  Falls back to
-    ``input().strip()[:1]`` when stdin is not a TTY (e.g. CI, piped input).
+    Returns the raw character.  On Ctrl-C / Ctrl-D / EOF returns '' so the
+    caller can exit cleanly.  Falls back to ``input().strip()[:1]`` when stdin
+    is not a TTY (CI, piped input).
     """
     if not sys.stdin.isatty():
         try:
@@ -85,7 +99,7 @@ def _getch() -> str:
             ch = sys.stdin.read(1)
         finally:
             termios.tcsetattr(fd, termios.TCSADRAIN, old)
-        if ch in ('\x03', '\x04'):  # Ctrl-C, Ctrl-D
+        if ch in ('\x03', '\x04'):
             return ''
         return ch
     except (ImportError, AttributeError, OSError):
@@ -104,11 +118,16 @@ def _getch() -> str:
 
 _HISTORY_PATH = os.path.join(os.path.expanduser('~'), '.grepxcel_wizard_history.json')
 
-_CHOICE_LABELS = {'L': 'label', 'V': 'variable', 'I': 'ignore', 'T': 'table'}
+_CHOICE_LABELS = {
+    'L': 'field label',
+    'C': 'control label',
+    'V': 'variable',
+    'I': 'ignore',
+    'T': 'table',
+}
 
 
 def _load_history(data_file: str) -> dict[str, str]:
-    """Return {cell_ref: choice_letter} from the most recent wizard run on *data_file*."""
     key = os.path.abspath(data_file)
     try:
         with open(_HISTORY_PATH, encoding='utf-8') as f:
@@ -118,7 +137,6 @@ def _load_history(data_file: str) -> dict[str, str]:
 
 
 def _save_history(data_file: str, choices: dict[str, str]) -> None:
-    """Persist per-cell choices so the next run can suggest them."""
     key = os.path.abspath(data_file)
     try:
         with open(_HISTORY_PATH, encoding='utf-8') as f:
@@ -130,7 +148,27 @@ def _save_history(data_file: str, choices: dict[str, str]) -> None:
         with open(_HISTORY_PATH, 'w', encoding='utf-8') as f:
             json.dump(all_history, f, indent=2, ensure_ascii=False)
     except (PermissionError, OSError):
-        pass  # history is a nice-to-have; never crash on it
+        pass
+
+
+# ── Template detection ────────────────────────────────────────────────────────
+
+_TEMPLATE_KEYWORDS = ('template', 'tmpl', 'blank', '-form', '_form', 'formulaire')
+
+_PLACEHOLDER_RE = re.compile(r'^\[.+\]')
+
+
+def _detect_template(ws, data_file: str) -> bool:
+    """Return True if heuristics suggest this is a blank template file."""
+    basename = os.path.basename(data_file).lower()
+    if any(kw in basename for kw in _TEMPLATE_KEYWORDS):
+        return True
+    # Any cell containing a [placeholder] value is a strong template signal
+    for row in ws.iter_rows(values_only=True):
+        for v in row:
+            if isinstance(v, str) and _PLACEHOLDER_RE.match(v.strip()):
+                return True
+    return False
 
 
 # ── State ─────────────────────────────────────────────────────────────────────
@@ -190,21 +228,17 @@ def _cell_ref(row: int, col: int) -> str:
 
 
 def _classify_string(s: str, ws=None, row: int = None, col: int = None) -> str:
-    """Classify a string cell as a wizard proposal using structural signals.
+    """Classify a string cell value as a wizard proposal.
 
     Rules derived from analysis of 22 real-world fixture files:
-
-    1. Colon suffix  → label  (scalar label convention in all fixtures)
-    2. Contains @    → var:string  (email)
-    3. Contains ://  → var:string  (URL)
-    4. Single word, alpha+digit mixed → var:string  (codes: AB123456, ELC001)
-    5. Single word, pure alpha → label by default; but if the left-neighbour cell
-       in the same row ends with ':', this cell is a value — override to var:string
-       (e.g. "Department:" → "Engineering": left neighbour heuristic fires)
-    6. Multi-word with a digit in any word → var:string  (period text: "Q1 2026")
-    7. Multi-word, pure alpha → var:string  (proper names, descriptions, titles).
-       Multi-word column headers are virtually always handled by the T sub-flow;
-       they will not reach this rule in practice.
+    1. Colon suffix          → label
+    2. Contains @            → var:string  (email)
+    3. Contains ://          → var:string  (URL)
+    4. Single word alpha+digit → var:string  (codes: AB123, ELC001)
+    5. Single word pure alpha  → label by default;
+       override to var:string if left neighbour ends with ':'
+    6. Multi-word with digit   → var:string  (Q1 2026)
+    7. Multi-word pure alpha   → var:string  (names, descriptions)
     """
     if s.endswith(':') or s.endswith('：'):
         return 'label'
@@ -214,7 +248,6 @@ def _classify_string(s: str, ws=None, row: int = None, col: int = None) -> str:
         return 'var:string'
 
     words = s.split()
-
     if len(words) == 1:
         has_alpha = any(c.isalpha() for c in s)
         has_digit = any(c.isdigit() for c in s)
@@ -234,11 +267,7 @@ def _classify_string(s: str, ws=None, row: int = None, col: int = None) -> str:
 
 
 def _propose_type(value: Any, ws=None, row: int = None, col: int = None) -> str:
-    """Propose a wizard action for a single cell value.
-
-    Pass ``ws``, ``row``, ``col`` from the live worksheet to enable the
-    left-neighbour heuristic for single-word pure-alpha strings.
-    """
+    """Propose a wizard action for a single cell value."""
     if value is None:
         return 'skip'
     if isinstance(value, str):
@@ -261,7 +290,6 @@ def _propose_type(value: Any, ws=None, row: int = None, col: int = None) -> str:
 
 
 def _var_type_from_proposal(proposal: str) -> str:
-    """'var:currency' → 'currency'; 'label'/'skip' → 'string'."""
     if proposal.startswith('var:'):
         return proposal[4:]
     return 'string'
@@ -291,17 +319,49 @@ def _build_cell_order(ws, direction: str) -> list[tuple[int, int]]:
     return [(r, c) for r in range(1, max_row + 1) for c in range(1, max_col + 1)]
 
 
-def _handle_label(state: WizardState, value: Any) -> None:
-    default_name = _slugify(str(value)) if value is not None else 'label'
-    name = _ask(_c('  Label name', _C.CYAN), default_name)
+def _handle_field_label(state: WizardState, value: Any) -> str:
+    """Ask for a field-label anchor name; return the variable base name for lookahead.
+
+    Default anchor name is ``<base>_label``.  The base (without suffix) is
+    returned so the next cell can auto-suggest it as the variable field name.
+    """
+    slug = _slugify(str(value)) if value is not None else 'label'
+    default_name = f'{slug}_label'
+    name = _ask(_c('  Label anchor name', _C.CYAN), default_name)
+    if not name:
+        name = default_name
+    state.lbl_defs.append((name, 'string', str(value) if value is not None else ''))
+    state.body_rows.append(['cell:1', name])
+    # Derive base for lookahead: strip _label suffix if present
+    base = name[:-6] if name.endswith('_label') else name
+    return base
+
+
+def _handle_control_label(state: WizardState, value: Any) -> None:
+    """Ask for a control-label anchor name (section header / navigation anchor).
+
+    No variable lookahead is set after a control label.
+    """
+    slug = _slugify(str(value)) if value is not None else 'ctrl'
+    name = _ask(_c('  Control label name', _C.CYAN), slug)
+    if not name:
+        name = slug
     state.lbl_defs.append((name, 'string', str(value) if value is not None else ''))
     state.body_rows.append(['cell:1', name])
 
 
-def _handle_variable(state: WizardState, value: Any, proposal: str) -> None:
-    name = _ask(_c('  Field name', _C.CYAN))
+def _handle_variable(state: WizardState, value: Any, proposal: str,
+                     name_hint: str = '') -> None:
+    """Ask for variable name, type, and match pattern.
+
+    *name_hint* pre-fills the field-name prompt when the caller knows a
+    likely name (e.g. the base of the preceding field label).
+    """
+    slug = _slugify(str(value)) if value is not None else 'field'
+    default_name = name_hint or slug
+    name = _ask(_c('  Field name', _C.CYAN), default_name)
     if not name:
-        name = _slugify(str(value)) if value is not None else 'field'
+        name = default_name
     type_default = _var_type_from_proposal(proposal)
     ftype = _ask(_c('  Type', _C.CYAN), type_default) or type_default
     match = _ask(_c('  Match pattern', _C.CYAN), '.*') or '.*'
@@ -309,73 +369,98 @@ def _handle_variable(state: WizardState, value: Any, proposal: str) -> None:
     state.body_rows.append(['cell:1', name])
 
 
-def _run_cell_walk(ws, state: WizardState, data_file: str) -> None:
+def _run_cell_walk(ws, state: WizardState, data_file: str,
+                   is_template: bool = False) -> None:
     history = _load_history(data_file)
     choices: dict[str, str] = dict(history)
 
     if history:
-        count = len(history)
-        print(_c(f'\n  ↺  {count} cell choice(s) from a previous session — shown as suggestions.',
-                 _C.MAGENTA))
+        print(_c(f'\n  ↺  {len(history)} cell choice(s) from a previous session'
+                 ' — shown as suggestions.', _C.MAGENTA))
 
     print('\n' + _c('── Phase 2: Cell Walk ──', _C.BOLD, _C.CYAN))
-    print(_c('   Empty cells are skipped. Press a key — no ENTER needed.\n', _C.DIM))
+    lines = ['   Empty cells are skipped.  Press a key — no ENTER needed.']
+    if is_template:
+        lines.append('   Template mode: empty cells after field labels shown as slots.')
+    print(_c('\n'.join(lines), _C.DIM) + '\n')
 
     cells = _build_cell_order(ws, state.direction)
     idx = 0
-    sep = _c('─' * 52, _C.DIM)
+    sep = _c('─' * 54, _C.DIM)
+    last_label_base: str | None = None   # set after [L]; cleared after [V]/[C]/[I]/[T]
+    goto_target = False  # True for exactly one iteration after a successful G jump
 
     while idx < len(cells):
         row, col = cells[idx]
-        cell = ws.cell(row=row, column=col)
-        value = cell.value
+        value = ws.cell(row=row, column=col).value
         ref = _cell_ref(row, col)
         heuristic = _propose_type(value, ws=ws, row=row, col=col)
 
+        # Consume the goto flag before any skip logic so it applies once only
+        was_goto_target = goto_target
+        goto_target = False
+
+        # Empty cell handling
         if heuristic == 'skip':
-            idx += 1
-            continue
+            if was_goto_target:
+                # User explicitly jumped here via G — always show, even if empty
+                heuristic = 'var:string'
+            elif is_template and last_label_base is not None:
+                # Show as template slot — the end-user will fill it in
+                heuristic = 'var:string'
+            else:
+                # Not in template mode or no pending label → silent skip
+                last_label_base = None
+                idx += 1
+                continue
 
         prior = history.get(ref)
 
+        # ── Cell display ──────────────────────────────────────────────────────
         print(sep)
-        print(f'Cell {_c(ref, _C.BOLD, _C.WHITE)}  │  {_c(repr(value), _C.YELLOW)}')
 
+        if value is None:
+            slot_reason = 'goto target' if was_goto_target else 'template slot'
+            val_display = _c(f'(empty — {slot_reason})', _C.DIM)
+        else:
+            val_display = _c(repr(value), _C.YELLOW)
+        print(f'Cell {_c(ref, _C.BOLD, _C.WHITE)}  │  {val_display}')
+
+        # Proposal line
         prop_text = _c(heuristic, _C.BOLD, _proposal_color(heuristic))
+        line2 = f'Proposed: {prop_text}'
+        if last_label_base is not None:
+            line2 += _c(f'  ← follows [{last_label_base}_label]'
+                        f'  →  name hint: {last_label_base}', _C.MAGENTA, _C.DIM)
         if prior:
             prior_label = _CHOICE_LABELS.get(prior, prior)
-            prior_hint = _c(f'  ↺ prev [{prior}] {prior_label}', _C.MAGENTA, _C.DIM)
-            print(f'Proposed: {prop_text}{prior_hint}')
-        else:
-            print(f'Proposed: {prop_text}')
+            line2 += _c(f'   ↺ prev [{prior}] {prior_label}', _C.MAGENTA, _C.DIM)
+        print(line2)
 
         print(sep)
-        print(f'  {_key_label("L", "Label")}  {_key_label("V", "Variable")}  '
-              f'{_key_label("I", "Ignore")}  {_key_label("T", "Table")}  '
-              f'{_key_label("G", "Goto")}  {_key_label("E", "End")}')
-        enter_hint = ('prior' if prior else 'proposal')
+        print(f'  {_kl("L", "Field label")}  {_kl("C", "Control")}  '
+              f'{_kl("V", "Variable")}  {_kl("I", "Ignore")}')
+        print(f'  {_kl("T", "Table")}  {_kl("G", "Goto")}  {_kl("E", "End")}')
+        enter_hint = 'prior' if prior else 'proposal'
         print(_c(f'  ENTER = accept {enter_hint}', _C.DIM))
 
         print(_c('> ', _C.BOLD, _C.WHITE), end='', flush=True)
         ch = _getch()
 
-        # Echo the pressed key and move to new line
         if ch in ('\r', '\n'):
             print()
         elif ch:
             print(_c(ch.upper(), _C.BOLD))
         else:
-            # Ctrl-C / EOF
             print()
             print(_c('\nAborted.', _C.RED), file=sys.stderr)
             _save_history(data_file, choices)
             sys.exit(0)
 
-        # Map ENTER to prior choice or heuristic acceptance
-        if ch in ('\r', '\n'):
-            answer = prior if prior else 'ACCEPT'
-        else:
-            answer = ch.upper()
+        answer = prior if ch in ('\r', '\n') and prior else \
+                 ('ACCEPT' if ch in ('\r', '\n') else ch.upper())
+
+        # ── Dispatch ──────────────────────────────────────────────────────────
 
         if answer == 'E':
             choices[ref] = 'E'
@@ -383,30 +468,44 @@ def _run_cell_walk(ws, state: WizardState, data_file: str) -> None:
 
         elif answer in ('', 'ACCEPT'):
             if heuristic == 'label':
-                _handle_label(state, value)
+                base = _handle_field_label(state, value)
+                last_label_base = base
                 choices[ref] = 'L'
             else:
-                _handle_variable(state, value, heuristic)
+                _handle_variable(state, value, heuristic,
+                                 name_hint=last_label_base or '')
+                last_label_base = None
                 choices[ref] = 'V'
             idx += 1
 
         elif answer == 'L':
-            _handle_label(state, value)
+            base = _handle_field_label(state, value)
+            last_label_base = base
             choices[ref] = 'L'
             idx += 1
 
+        elif answer == 'C':
+            _handle_control_label(state, value)
+            last_label_base = None
+            choices[ref] = 'C'
+            idx += 1
+
         elif answer == 'V':
-            _handle_variable(state, value, heuristic)
+            _handle_variable(state, value, heuristic,
+                             name_hint=last_label_base or '')
+            last_label_base = None
             choices[ref] = 'V'
             idx += 1
 
         elif answer in ('I', 'S'):
             state.body_rows.append(['cell:1', 'IGNORE'])
+            last_label_base = None
             choices[ref] = 'I'
             idx += 1
 
         elif answer == 'T':
             idx = _run_table_subflow(ws, state, row, col, cells, idx)
+            last_label_base = None
             choices[ref] = 'T'
 
         elif answer == 'G':
@@ -416,14 +515,15 @@ def _run_cell_walk(ws, state: WizardState, data_file: str) -> None:
                 target_row, target_col = parsed
                 try:
                     idx = cells.index((target_row, target_col))
+                    goto_target = True  # force-show target even if empty
                     print(_c(f'  → Jumped to {target_raw}.', _C.CYAN))
                 except ValueError:
-                    print(_c(f'  Cell {target_raw} is not in the scan order.', _C.RED))
+                    print(_c(f'  Cell {target_raw} not in scan order.', _C.RED))
             else:
                 print(_c('  Invalid cell reference. Use e.g. B5', _C.RED))
 
         else:
-            print(_c('  Unknown — L / V / I / T / G / E', _C.RED))
+            print(_c('  Unknown — L / C / V / I / T / G / E', _C.RED))
 
     _save_history(data_file, choices)
 
@@ -436,7 +536,6 @@ def _run_table_subflow(ws, state: WizardState,
     """Mini-table sub-flow. Returns the new scan index after the table."""
     print('\n' + _c('── Mini-table ──', _C.BOLD, _C.CYAN))
 
-    # Step 1: Multiplicity
     print('  How many instances?  1 / N / N..M / * (any)')
     mult_raw = _ask(_c('  >', _C.BOLD), '*')
     if mult_raw == '1':
@@ -451,8 +550,7 @@ def _run_table_subflow(ws, state: WizardState,
     else:
         mult = '*'
 
-    # Step 2: Define columns (HEADER + DATA combined)
-    print(f'\n  {_c(f"--- Table columns (row {start_row}) ---", _C.DIM)}')
+    print(f'\n  {_c(f"--- Table columns (header row {start_row}) ---", _C.DIM)}')
     header_lbl_names: list[str] = []
     header_var_names: list[str] = []
     new_lbl_defs: list[tuple[str, str, str]] = []
@@ -466,8 +564,8 @@ def _run_table_subflow(ws, state: WizardState,
 
         if value is None:
             action = _ask(
-                f'  Cell {_c(ref, _C.WHITE)}  '
-                f'{_c("(empty)", _C.DIM)}  [I]gnore / [done]', 'done'
+                f'  Cell {_c(ref, _C.WHITE)} {_c("(empty)", _C.DIM)}'
+                '  [I]gnore / [done]', 'done'
             ).upper()
             if action in ('DONE', ''):
                 break
@@ -475,7 +573,7 @@ def _run_table_subflow(ws, state: WizardState,
             header_var_names.append('IGNORE')
             continue
 
-        col_lbl = f'col_{_slugify(str(value))}'
+        col_lbl = f'col_{_slugify(str(value))}_label'
 
         print(f'  Cell {_c(ref, _C.WHITE)}  {_c(repr(value), _C.YELLOW)}')
         default_var = _slugify(str(value))
@@ -503,7 +601,6 @@ def _run_table_subflow(ws, state: WizardState,
         print(_c('  No columns defined — table cancelled.', _C.RED))
         return cell_idx + 1
 
-    # Step 3: FOOTER (optional)
     footer_row_vals: list[str] | None = None
     has_footer = _ask(_c('  FOOTER row?', _C.CYAN) + ' (yes/no)', 'no').lower()
     if has_footer in ('yes', 'y'):
@@ -525,32 +622,28 @@ def _run_table_subflow(ws, state: WizardState,
             else:
                 default_name = _slugify(str(value))
                 name = _ask(
-                    f'  Cell {_c(ref, _C.WHITE)} {_c(repr(value), _C.YELLOW)}  '
-                    + _c('field name', _C.CYAN),
+                    f'  Cell {_c(ref, _C.WHITE)} {_c(repr(value), _C.YELLOW)}'
+                    f'  {_c("field name", _C.CYAN)}',
                     default_name,
                 )
                 footer_fields.append(name)
                 new_var_defs.append((name, 'string', '.*'))
         footer_row_vals = footer_fields
 
-    # Register all new defs
     state.lbl_defs.extend(new_lbl_defs)
     state.var_defs.extend(new_var_defs)
 
-    # Emit body rows
     state.body_rows.append([f'table:{mult}'])
     state.body_rows.append(['', 'HEADER:1'] + header_lbl_names)
     state.body_rows.append(['', 'DATA:*'] + header_var_names)
     if footer_row_vals is not None:
         state.body_rows.append(['', 'FOOTER:1'] + footer_row_vals)
 
-    last_table_row = start_row + 1
-    if has_footer in ('yes', 'y'):
-        last_table_row = start_row + 2
+    last_table_row = start_row + (2 if has_footer in ('yes', 'y') else 1)
 
     n_data_cols = len([n for n in header_var_names if n != 'IGNORE'])
     print(_c(f'\n  Table added ({n_data_cols} columns, multiplicity={mult}).', _C.GREEN))
-    print(_c('  The engine will capture all matching rows automatically.', _C.DIM))
+    print(_c('  The engine captures all matching rows automatically.', _C.DIM))
 
     for i, (r, c) in enumerate(cells):
         if r > last_table_row:
@@ -562,7 +655,6 @@ def _run_table_subflow(ws, state: WizardState,
 # ── Phase 3: Write pattern ────────────────────────────────────────────────────
 
 def _write_pattern(state: WizardState, output_path: str) -> None:
-    """Write the accumulated state as a CSV pattern file."""
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
     with open(output_path, 'w', newline='', encoding='utf-8') as f:
         writer = csv.writer(f)
@@ -591,7 +683,6 @@ def run_wizard(data_file: str, sheet: str | None = None, output: str | None = No
         print(f'Error loading {data_file}: {exc}', file=sys.stderr)
         return 1
 
-    # Sheet selection
     if sheet:
         if sheet in wb.sheetnames:
             ws = wb[sheet]
@@ -616,14 +707,32 @@ def run_wizard(data_file: str, sheet: str | None = None, output: str | None = No
         output = os.path.join(os.path.dirname(os.path.abspath(data_file)),
                               f'pattern-{stem}.csv')
 
-    print(_c(f'\ngrepxcel wizard', _C.BOLD, _C.CYAN)
-          + f' — {_c(os.path.basename(data_file), _C.WHITE)} ({_c(ws.title, _C.DIM)})')
+    print(_c('\ngrepxcel wizard', _C.BOLD, _C.CYAN)
+          + f' — {_c(os.path.basename(data_file), _C.WHITE)}'
+          + f' ({_c(ws.title, _C.DIM)})')
     print(f'Output → {_c(output, _C.DIM)}\n')
 
-    _run_config_phase(state)
-    _run_cell_walk(ws, state, data_file)
+    # ── Template detection ────────────────────────────────────────────────────
+    is_template = _detect_template(ws, data_file)
+    if is_template:
+        print(_c('  ⚑  Template detected', _C.YELLOW, _C.BOLD)
+              + _c(' — filename or [placeholder] cells found.', _C.DIM))
+        confirm = _ask(
+            _c('  Activate template mode?', _C.CYAN)
+            + _c(' (empty cells after labels shown as variable slots)', _C.DIM)
+            + '\n  (yes/no)', 'yes'
+        ).lower()
+        is_template = confirm in ('yes', 'y', '')
+    else:
+        tpl = _ask(
+            _c('  Template mode?', _C.DIM)
+            + ' (yes/no)', 'no'
+        ).lower()
+        is_template = tpl in ('yes', 'y')
 
-    # Summary
+    _run_config_phase(state)
+    _run_cell_walk(ws, state, data_file, is_template=is_template)
+
     n_tables = sum(1 for r in state.body_rows if r and r[0].startswith('table:'))
     mult_strs = [r[0].split(':', 1)[1] for r in state.body_rows
                  if r and r[0].startswith('table:')]
@@ -645,7 +754,7 @@ def run_wizard(data_file: str, sheet: str | None = None, output: str | None = No
 
     _write_pattern(state, output)
 
-    print(_c(f'\n✓ Pattern written to: {output}', _C.BOLD, _C.GREEN))
+    print(_c(f'\n✓  Pattern written to: {output}', _C.BOLD, _C.GREEN))
     print('\nTry it:')
     print(_c(f'  grepxcel extract -p {output} {data_file}', _C.CYAN))
     print(_c(f'  grepxcel validate-pattern {output}', _C.CYAN))
