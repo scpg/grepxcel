@@ -180,37 +180,68 @@ def _build_state_from_choices(
 
             if 'header_rows' in meta:
                 # New multi-row model: header_rows + data_vars [+ footer_rows]
+                def _emit_header_footer_row(hf_row, row_list):
+                    """Emit one H/F row with role-aware column handling."""
+                    col_names = []
+                    for col in hf_row['cols']:
+                        role = col.get('role', 'label')
+                        if role == 'ignore':
+                            col_names.append('IGNORE')
+                        elif role == 'var':
+                            vn = col.get('var_name', 'IGNORE')
+                            col_names.append(vn)
+                            if vn and vn != 'IGNORE':
+                                state.var_defs.append((
+                                    vn,
+                                    col.get('var_type', 'string'),
+                                    col.get('var_match', '.*'),
+                                ))
+                        else:  # label (default for H/F)
+                            ln = col.get('lbl_name', 'IGNORE')
+                            col_names.append(ln)
+                            if ln and ln != 'IGNORE':
+                                state.lbl_defs.append((
+                                    ln,
+                                    col.get('lbl_type', 'string'),
+                                    col.get('lbl_match', col.get('cell_value', '')),
+                                ))
+                    row_list.append(['', 'HEADER:1'] + col_names)
+
                 for h_row in meta['header_rows']:
-                    lbl_names = [col['lbl_name'] for col in h_row['cols']]
-                    for col in h_row['cols']:
-                        state.lbl_defs.append((
-                            col['lbl_name'],
-                            col.get('lbl_type', 'string'),
-                            col.get('lbl_match', col.get('cell_value', '')),
-                        ))
-                    state.body_rows.append(['', 'HEADER:1'] + lbl_names)
+                    _emit_header_footer_row(h_row, state.body_rows)
+
                 data_vars = meta.get('data_vars', [])
                 var_names = []
                 for item in data_vars:
                     if isinstance(item, dict):
-                        vn    = item.get('var_name', 'IGNORE')
-                        vtype = item.get('var_type',  'string')
-                        vmatch= item.get('var_match', '.*')
+                        role   = item.get('role', 'var')
+                        if role == 'ignore' or item.get('var_name') == 'IGNORE':
+                            var_names.append('IGNORE')
+                        elif role == 'label':
+                            ln = item.get('lbl_name', 'IGNORE')
+                            var_names.append(ln)
+                            if ln and ln != 'IGNORE':
+                                state.lbl_defs.append((
+                                    ln,
+                                    item.get('lbl_type', 'string'),
+                                    item.get('lbl_match', '.*'),
+                                ))
+                        else:  # var
+                            vn    = item.get('var_name', 'IGNORE')
+                            vtype = item.get('var_type', 'string')
+                            vmatch= item.get('var_match', '.*')
+                            var_names.append(vn)
+                            if vn and vn != 'IGNORE':
+                                state.var_defs.append((vn, vtype, vmatch))
                     else:
                         vn, vtype, vmatch = item, 'string', '.*'
-                    var_names.append(vn)
-                    if vn and vn != 'IGNORE':
-                        state.var_defs.append((vn, vtype, vmatch))
+                        var_names.append(vn)
+                        if vn and vn != 'IGNORE':
+                            state.var_defs.append((vn, vtype, vmatch))
                 state.body_rows.append(['', f'DATA:{mult}'] + var_names)
+
                 for f_row in meta.get('footer_rows', []):
-                    lbl_names = [col['lbl_name'] for col in f_row['cols']]
-                    for col in f_row['cols']:
-                        state.lbl_defs.append((
-                            col['lbl_name'],
-                            col.get('lbl_type', 'string'),
-                            col.get('lbl_match', col.get('cell_value', '')),
-                        ))
-                    state.body_rows.append(['', 'HEADER:1'] + lbl_names)
+                    _emit_header_footer_row(f_row, state.body_rows)
             else:
                 # Legacy single-header-row model (columns list)
                 cols      = meta.get('columns', [])
@@ -1409,8 +1440,16 @@ if _TEXTUAL_OK:
                 note_def = (existing.get('notes', '')
                             if existing else
                             self._notes.get(_cell_ref(ref_row, col_c), ''))
+                # Pre-fill name: restore role prefix for display when editing
+                ex_role = existing.get('role', 'var') if existing else 'var'
+                if existing:
+                    if ex_role == 'label':
+                        n_def = f"lbl:{existing.get('lbl_name', n_def)}"
+                    elif ex_role == 'ignore':
+                        n_def = 'IGNORE'
+                    # else var: n_def already set
                 fields = [
-                    ('Variable name  (empty = IGNORE this column)', n_def),
+                    ('Name  (plain = variable · lbl:name = label · empty/IGNORE = skip)', n_def),
                     ('Type  (string / number / date / boolean)', t_def),
                     ('Match pattern', m_def),
                     ('Notes  (written to session log — optional)', note_def),
@@ -1419,17 +1458,25 @@ if _TEXTUAL_OK:
             else:
                 pfx = 'col' if mode == 'HEADER' else 'foot'
                 slug_v = _slugify(val_str) if val_str else ltr.lower()
-                n_def  = (existing.get('lbl_name', f'{pfx}_{slug_v}_label')
-                          if existing else f'{pfx}_{slug_v}_label')
-                t_def  = (existing.get('lbl_type', 'string')
-                          if existing else 'string')
-                m_def  = (existing.get('lbl_match', val_str)
-                          if existing else val_str)
+                ex_role = existing.get('role', 'label') if existing else 'label'
+                if existing:
+                    if ex_role == 'var':
+                        n_def = f"var:{existing.get('var_name', slug_v)}"
+                    elif ex_role == 'ignore':
+                        n_def = 'IGNORE'
+                    else:
+                        n_def = existing.get('lbl_name', f'{pfx}_{slug_v}_label')
+                else:
+                    n_def = f'{pfx}_{slug_v}_label'
+                t_def = (existing.get('lbl_type', existing.get('var_type', 'string'))
+                         if existing else 'string')
+                m_def = (existing.get('lbl_match', existing.get('var_match', val_str))
+                         if existing else val_str)
                 note_def = (existing.get('notes', '') if existing else '')
                 fields = [
-                    ('Label name', n_def),
-                    ('Type  (string / number / date)', t_def),
-                    ('Match pattern  (exact text or regex)', m_def),
+                    ('Name  (plain = label · var:name = variable · empty/IGNORE = skip)', n_def),
+                    ('Type  (string / number / date / boolean)', t_def),
+                    ('Match  (label: exact cell text · var: value regexp like .*)', m_def),
                     ('Notes  (written to session log — optional)', note_def),
                 ]
                 row_label = mode.title()
@@ -1439,27 +1486,61 @@ if _TEXTUAL_OK:
                 f'[/bold magenta]  [dim]{ltr}: {val_disp}[/dim]'
             )
 
-            def _on_col(values, _idx=idx):
+            def _on_col(values, _idx=idx, _val_str=val_str, _ltr=ltr):
                 if values is None:
                     on_done(None)
                     return
+                raw_name   = values[0].strip()
+                type_val   = values[1].strip() or 'string'
+                match_val  = values[2].strip()
+                notes_val  = values[3].strip()
+
                 if mode == 'DATA':
-                    vn = values[0].strip() or 'IGNORE'
-                    results[_idx] = {
-                        'var_name':  vn,
-                        'var_type':  values[1].strip() or 'string',
-                        'var_match': values[2].strip() or '.*',
-                        'notes':     values[3].strip(),
-                    }
-                else:
-                    slug_fb = _slugify(val_str) if val_str else ltr.lower()
-                    pfx2    = 'col' if mode == 'HEADER' else 'foot'
-                    results[_idx] = {
-                        'lbl_name':  values[0].strip() or f'{pfx2}_{slug_fb}_label',
-                        'lbl_type':  values[1].strip() or 'string',
-                        'lbl_match': values[2].strip() or val_str,
-                        'notes':     values[3].strip(),
-                    }
+                    if not raw_name or raw_name.upper() == 'IGNORE':
+                        results[_idx] = {
+                            'role': 'ignore', 'var_name': 'IGNORE',
+                            'var_type': type_val, 'var_match': match_val or '.*',
+                            'notes': notes_val,
+                        }
+                    elif raw_name.lower().startswith('lbl:'):
+                        ln = raw_name[4:].strip() or f'col_{_ltr.lower()}_label'
+                        results[_idx] = {
+                            'role': 'label', 'lbl_name': ln,
+                            'lbl_type': type_val,
+                            'lbl_match': match_val or _val_str,
+                            'notes': notes_val,
+                        }
+                    else:
+                        results[_idx] = {
+                            'role': 'var', 'var_name': raw_name,
+                            'var_type': type_val,
+                            'var_match': match_val or '.*',
+                            'notes': notes_val,
+                        }
+                else:  # HEADER / FOOTER
+                    pfx2 = 'col' if mode == 'HEADER' else 'foot'
+                    slug_fb = _slugify(_val_str) if _val_str else _ltr.lower()
+                    if not raw_name or raw_name.upper() == 'IGNORE':
+                        results[_idx] = {'role': 'ignore'}
+                    elif raw_name.lower().startswith('var:'):
+                        vn = raw_name[4:].strip() or f'{_ltr.lower()}'
+                        # Auto-correct match if user left cell text (wrong for variables)
+                        if match_val == _val_str:
+                            match_val = '.*'
+                        results[_idx] = {
+                            'role': 'var', 'var_name': vn,
+                            'var_type': type_val,
+                            'var_match': match_val or '.*',
+                            'notes': notes_val,
+                        }
+                    else:
+                        results[_idx] = {
+                            'role': 'label',
+                            'lbl_name':  raw_name or f'{pfx2}_{slug_fb}_label',
+                            'lbl_type':  type_val,
+                            'lbl_match': match_val or _val_str,
+                            'notes':     notes_val,
+                        }
                 self._col_modal_seq(col_infos, _idx + 1, existing_cols,
                                     mode, ref_row, results, on_done,
                                     h_rows=h_rows, d_rows=d_rows)
