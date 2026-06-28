@@ -722,8 +722,28 @@ def _write_pattern(state: WizardState, output_path: str) -> None:
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 
-def run_wizard(data_file: str, sheet: str | None = None, output: str | None = None) -> int:
-    """Interactive wizard: loads *data_file*, walks cells, writes a CSV pattern."""
+def run_wizard(
+    data_file: str,
+    sheet: str | None = None,
+    output: str | None = None,
+    no_tui: bool = False,
+) -> int:
+    """Interactive wizard: loads *data_file*, walks cells, writes a CSV pattern.
+
+    When *textual* is installed and stdout is a TTY the full-screen TUI is used
+    by default.  Pass ``no_tui=True`` (or set ``GREPXCEL_NO_TUI=1``) to fall
+    back to the sequential terminal wizard.
+    """
+    # Try TUI first — falls back if textual not installed or not a TTY
+    _force_seq = no_tui or os.environ.get('GREPXCEL_NO_TUI', '') not in ('', '0')
+    if not _force_seq and sys.stdout.isatty():
+        try:
+            from .wizard_tui import run_wizard_tui
+            rc = run_wizard_tui(data_file, sheet=sheet, output=output)
+            if rc != 2:          # 2 = textual not installed → fall through
+                return rc
+        except Exception:
+            pass                 # unexpected TUI error → fall through to sequential
     try:
         import openpyxl
         wb = openpyxl.load_workbook(data_file, data_only=True)
