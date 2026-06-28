@@ -16,6 +16,7 @@ Design principles
 from __future__ import annotations
 
 import csv
+import datetime
 import io
 import os
 import sys
@@ -80,8 +81,12 @@ _SEP = '─' * 42   # visual divider for panel zones
 
 
 def _styled(value: Any, choice: str) -> 'RichText':
-    display = '' if value is None else str(value)[:20]
-    return RichText(display, style=_STYLE.get(choice, ''))
+    if value is None:
+        # Empty classified cell: show a colored dot so the user can see it was classified.
+        # An empty RichText with a bold style renders as nothing — the dot is essential.
+        marker = '○' if choice == 'I' else '●'
+        return RichText(marker, style=_STYLE.get(choice, ''))
+    return RichText(str(value)[:20], style=_STYLE.get(choice, ''))
 
 
 # ── Pattern builder ────────────────────────────────────────────────────────────
@@ -404,6 +409,53 @@ if _TEXTUAL_OK:
                 self.dismiss(None)
 
 
+    class _LogModal(ModalScreen):
+        """Session event log — hidden support tool, triggered by F12."""
+        DEFAULT_CSS = """
+        _LogModal              { align: center middle; }
+        _LogModal > #dialog    { background: $surface; border: thick $warning;
+                                 width: 90; height: 34; padding: 1 2;
+                                 overflow-y: auto; }
+        _LogModal Label.title  { text-style: bold; color: $warning; margin-bottom: 1; }
+        _LogModal Label.hint   { color: $text-muted; margin-top: 1; }
+        """
+
+        def __init__(self, lines: list[str], data_file: str) -> None:
+            super().__init__()
+            self._lines     = lines
+            self._data_file = data_file
+            self._wrote: str | None = None
+
+        def compose(self) -> ComposeResult:
+            fname   = os.path.basename(self._data_file)
+            content = '\n'.join(self._lines) if self._lines else '[dim](no events yet)[/dim]'
+            with Vertical(id='dialog'):
+                yield Label(f'Session event log — {fname}', classes='title')
+                yield Static(content)
+                yield Label('ESC to close  •  W to write log to file', classes='hint')
+
+        def on_key(self, event) -> None:
+            if event.key == 'escape':
+                self.dismiss(self._wrote)
+            elif event.key == 'w':
+                ts       = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
+                stem     = os.path.splitext(os.path.basename(self._data_file))[0]
+                log_path = os.path.join(
+                    os.path.dirname(os.path.abspath(self._data_file)),
+                    f'grepxcel-wizard-log-{stem}-{ts}.txt',
+                )
+                with open(log_path, 'w', encoding='utf-8') as fh:
+                    fh.write('\n'.join(self._lines))
+                self._wrote = log_path
+                # Update hint to confirm
+                try:
+                    self.query_one(Label.hint if False else 'Label.hint', Label).update(
+                        f'[bold green]Written:[/bold green] {log_path}  •  ESC to close'
+                    )
+                except Exception:
+                    pass
+
+
     # ── Main application ───────────────────────────────────────────────────────
 
     class _Panel(Static):
@@ -457,6 +509,9 @@ if _TEXTUAL_OK:
             Binding('f3',     'preview',            'Pattern preview', show=False),
             Binding('ctrl+z', 'undo',               'Undo',            show=False),
             Binding('ctrl+q', 'cancel',             'Cancel',          show=False),
+            Binding('q',      'cancel',             'Quit',            show=False),
+            # F12: hidden session log for debugging / support — not shown anywhere
+            Binding('f12',    'show_log',           'Session log',     show=False),
         ]
 
         def __init__(self, ws, state: WizardState, data_file: str) -> None:
@@ -484,6 +539,18 @@ if _TEXTUAL_OK:
             self._undo_stack: list[dict] = []
             self._highlighted: set[str]  = set()
 
+            # Session event log (F12 debug tool — tracks all classify/navigate events)
+            self._session_start = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            self._event_log: list[str] = [
+                f'grepxcel wizard session — {os.path.basename(data_file)}',
+                f'Started: {self._session_start}',
+            ]
+
+        def _log(self, event_type: str, detail: str) -> None:
+            ts   = datetime.datetime.now().strftime('%H:%M:%S')
+            line = f'{ts}  {event_type:<10}  {detail}'
+            self._event_log.append(line)
+
         def compose(self) -> ComposeResult:
             yield Header(show_clock=False)
             with Horizontal(id='main'):
@@ -508,6 +575,10 @@ if _TEXTUAL_OK:
                 1 for r, c in self._cells
                 if self._ws.cell(row=r, column=c).value is not None
             )
+            self._log('CONFIG',
+                      f'direction={cfg["direction"]}  template={cfg["template"]}'
+                      f'  sheet={self._state.sheet_name}'
+                      f'  cells={self._total_nonempty} non-empty')
             self._populate_table()
             first = _find_next_nonempty(self._cells, self._ws, 0)
             if first is not None:
@@ -713,6 +784,7 @@ if _TEXTUAL_OK:
 
         async def action_highlight_pending(self) -> None:
             if self._highlighted:           # toggle off
+                self._log('HIGHLIGHT', f'cleared ({len(self._highlighted)} cells)')
                 self._clear_highlights()
                 return
             table = self.query_one('#sheet', DataTable)
@@ -732,12 +804,14 @@ if _TEXTUAL_OK:
                 except Exception:
                     pass
             if count:
+                self._log('HIGHLIGHT', f'{count} unclassified cells highlighted')
                 self.notify(
                     f'{count} unclassified cells highlighted.  '
                     'Navigate or press H to clear.',
                     timeout=4,
                 )
             else:
+                self._log('HIGHLIGHT', 'all cells classified — nothing to highlight')
                 self.notify('All non-empty cells are classified!', timeout=2)
 
         # ── Navigation ────────────────────────────────────────────────────────
@@ -807,10 +881,13 @@ if _TEXTUAL_OK:
                     if 1 <= wr <= self._max_row and 1 <= wc <= self._max_col:
                         self._ws_row, self._ws_col = wr, wc
                         self._move_cursor(wr, wc)
+                        self._log('GOTO', f'→ {ref}')
                     else:
                         self.notify(f'Cell {ref} is out of range.', timeout=2)
+                        self._log('GOTO-X', f'{ref}  out of range')
                 else:
                     self.notify(f'Invalid reference: {ref}', timeout=2)
+                    self._log('GOTO-X', f'"{ref}"  invalid reference')
             self.push_screen(_GotoModal(), _on_ref)
 
         # ── Classification helpers ─────────────────────────────────────────────
@@ -849,12 +926,17 @@ if _TEXTUAL_OK:
             def _done(result: list[str] | None) -> None:
                 self._clear_highlights()
                 if result is None:
+                    self._log('LABEL-X', f'{ref}  cancelled')
                     return
                 name = result[0]
+                old  = self._choices.get(ref, {}).get('choice')
                 self._push_undo(ref)
                 base = name[:-6] if name.endswith('_label') else name
                 self._last_label_base = base
                 self._commit(ref, {'choice': 'L', 'name': name})
+                reclassify = f'  (was {old})' if old else ''
+                rawval = '' if value is None else f'  "{str(value)[:30]}"'
+                self._log('LABEL', f'{ref}{rawval}  →  {name}{reclassify}')
                 self._refresh_panel()
                 self._advance()
 
@@ -874,11 +956,16 @@ if _TEXTUAL_OK:
             def _done(result: list[str] | None) -> None:
                 self._clear_highlights()
                 if result is None:
+                    self._log('HEADER-X', f'{ref}  cancelled')
                     return
                 name = result[0]
+                old  = self._choices.get(ref, {}).get('choice')
                 self._push_undo(ref)
                 self._last_label_base = None
                 self._commit(ref, {'choice': 'C', 'name': name})
+                reclassify = f'  (was {old})' if old else ''
+                rawval = '' if value is None else f'  "{str(value)[:30]}"'
+                self._log('HEADER', f'{ref}{rawval}  →  {name}{reclassify}')
                 self._refresh_panel()
                 self._advance()
 
@@ -901,12 +988,18 @@ if _TEXTUAL_OK:
             def _done(result: list[str] | None) -> None:
                 self._clear_highlights()
                 if result is None:
+                    self._log('VALUE-X', f'{ref}  cancelled')
                     return
                 name, ftype, match = result[0], result[1], result[2]
+                old  = self._choices.get(ref, {}).get('choice')
                 self._push_undo(ref)
                 self._last_label_base = None
                 self._commit(ref, {'choice': 'V', 'name': name,
                                    'ftype': ftype, 'match': match})
+                reclassify = f'  (was {old})' if old else ''
+                rawval = '(empty)' if value is None else f'"{str(value)[:30]}"'
+                self._log('VALUE',
+                          f'{ref}  {rawval}  →  {name}  [{ftype}, {match}]{reclassify}')
                 self._refresh_panel()
                 self._advance()
 
@@ -928,11 +1021,15 @@ if _TEXTUAL_OK:
             def _done(result: list[str] | None) -> None:
                 self._clear_highlights()
                 if result is None:
+                    self._log('TABLE-X', f'{ref}  cancelled')
                     return
                 name, mode = result[0], result[1]
+                old  = self._choices.get(ref, {}).get('choice')
                 self._push_undo(ref)
                 self._last_label_base = None
                 self._commit(ref, {'choice': 'T', 'name': name, 'mode': mode})
+                reclassify = f'  (was {old})' if old else ''
+                self._log('TABLE', f'{ref}  →  {name}  DATA:{mode}{reclassify}')
                 self._refresh_panel()
                 self.notify(
                     f'Table "[bold]{name}[/bold]" started (DATA:{mode}).  '
@@ -951,11 +1048,16 @@ if _TEXTUAL_OK:
             )
 
         async def action_act_I(self) -> None:
-            ref = _cell_ref(self._ws_row, self._ws_col)
+            ref   = _cell_ref(self._ws_row, self._ws_col)
+            old   = self._choices.get(ref, {}).get('choice')
+            val   = self._ws.cell(row=self._ws_row, column=self._ws_col).value
+            rawval = '(empty)' if val is None else f'"{str(val)[:30]}"'
             self._push_undo(ref)
             self._last_label_base = None
             self._clear_highlights()
             self._commit(ref, {'choice': 'I'})
+            reclassify = f'  (was {old})' if old else ''
+            self._log('IGNORE', f'{ref}  {rawval}{reclassify}')
             self._refresh_panel()
             self._advance()
 
@@ -966,9 +1068,14 @@ if _TEXTUAL_OK:
             if not meta:
                 self.notify('Cell is not classified yet.', timeout=2)
                 return
+            old_choice = meta.get('choice', '?')
+            old_name   = meta.get('name', '')
             self._push_undo(ref)
             del self._choices[ref]
             self._restyle_cell(self._ws_row, self._ws_col)
+            self._log('REMOVE',
+                      f'{ref}  cleared  was: {_CHOICE_NAME.get(old_choice, old_choice)}'
+                      + (f' "{old_name}"' if old_name else ''))
             self._refresh_panel()
             self.notify(f'{ref} cleared — choose a new type.', timeout=2)
 
@@ -978,14 +1085,19 @@ if _TEXTUAL_OK:
             if not self._undo_stack:
                 self.notify('Nothing to undo.', timeout=2)
                 return
-            entry = self._undo_stack.pop()
-            ref   = entry['ref']
-            prev  = entry['prev_choice']
+            entry   = self._undo_stack.pop()
+            ref     = entry['ref']
+            prev    = entry['prev_choice']
+            curr_ch = self._choices.get(ref, {}).get('choice', 'unclassified')
             if prev is None:
                 self._choices.pop(ref, None)
+                restored = 'unclassified'
             else:
                 self._choices[ref] = prev
+                restored = _CHOICE_NAME.get(prev.get('choice', ''), prev.get('choice', '?'))
             self._last_label_base = entry['prev_label_base']
+            self._log('UNDO',
+                      f'{ref}  {_CHOICE_NAME.get(curr_ch, curr_ch)}  →  {restored}')
             parsed = _parse_cell_ref(ref)
             if parsed:
                 r, c = parsed
@@ -1013,9 +1125,21 @@ if _TEXTUAL_OK:
         async def action_show_help(self) -> None:
             self.push_screen(_HelpModal(), lambda _: None)
 
+        async def action_show_log(self) -> None:
+            """F12: hidden session event log for debugging and support reports."""
+            self._log('LOG-OPEN', f'{len(self._event_log)} events so far')
+            def _on_close(log_path: str | None) -> None:
+                if log_path:
+                    self.notify(f'Log written: {log_path}', timeout=6)
+            self.push_screen(_LogModal(list(self._event_log), self._data_file), _on_close)
+
         # ── Exit ──────────────────────────────────────────────────────────────
 
         async def action_end_save(self) -> None:
+            done  = len(self._choices)
+            total = self._total_nonempty
+            self._log('END-SAVE',
+                      f'{done}/{total} classified  →  saving pattern')
             _save_history(self._data_file,
                           {r: m['choice'] for r, m in self._choices.items()})
             state = _build_state_from_choices(
@@ -1025,6 +1149,7 @@ if _TEXTUAL_OK:
             self.exit(result=state)
 
         async def action_cancel(self) -> None:
+            self._log('CANCEL', 'user cancelled — no pattern saved')
             _save_history(self._data_file,
                           {r: m['choice'] for r, m in self._choices.items()})
             self.exit(result=None)
