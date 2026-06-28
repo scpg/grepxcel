@@ -311,6 +311,26 @@ def _run_config_phase(state: WizardState) -> None:
 
 # ── Phase 2: Cell walk ────────────────────────────────────────────────────────
 
+def _find_next_nonempty(cells: list, ws, from_idx: int) -> int | None:
+    """Index of the first non-empty cell at or after *from_idx*, or None."""
+    for i in range(from_idx, len(cells)):
+        r, c = cells[i]
+        v = ws.cell(row=r, column=c).value
+        if v is not None and (not isinstance(v, str) or v.strip()):
+            return i
+    return None
+
+
+def _find_prev_nonempty(cells: list, ws, from_idx: int) -> int | None:
+    """Index of the last non-empty cell at or before *from_idx*, or None."""
+    for i in range(from_idx, -1, -1):
+        r, c = cells[i]
+        v = ws.cell(row=r, column=c).value
+        if v is not None and (not isinstance(v, str) or v.strip()):
+            return i
+    return None
+
+
 def _build_cell_order(ws, direction: str) -> list[tuple[int, int]]:
     max_row = ws.max_row or 1
     max_col = ws.max_column or 1
@@ -389,6 +409,7 @@ def _run_cell_walk(ws, state: WizardState, data_file: str,
     sep = _c('─' * 54, _C.DIM)
     last_label_base: str | None = None   # set after [L]; cleared after [V]/[C]/[I]/[T]
     goto_target = False  # True for exactly one iteration after a successful G jump
+    seen: set[str] = set()              # cell refs classified in this session
 
     while idx < len(cells):
         row, col = cells[idx]
@@ -437,10 +458,15 @@ def _run_cell_walk(ws, state: WizardState, data_file: str,
             line2 += _c(f'   ↺ prev [{prior}] {prior_label}', _C.MAGENTA, _C.DIM)
         print(line2)
 
+        if ref in seen:
+            print(_c('  ⚠  Already classified this session'
+                     ' — reclassifying adds a duplicate instruction.', _C.YELLOW))
+
         print(sep)
         print(f'  {_kl("L", "Field label")}  {_kl("C", "Control")}  '
               f'{_kl("V", "Variable")}  {_kl("I", "Ignore")}')
-        print(f'  {_kl("T", "Table")}  {_kl("G", "Goto")}  {_kl("E", "End")}')
+        print(f'  {_kl("T", "Table")}  {_kl("G", "Goto ref")}  '
+              f'{_kl("N", "Next")}  {_kl("P", "Prev")}  {_kl("E", "End")}')
         enter_hint = 'prior' if prior else 'proposal'
         print(_c(f'  ENTER = accept {enter_hint}', _C.DIM))
 
@@ -476,18 +502,21 @@ def _run_cell_walk(ws, state: WizardState, data_file: str,
                                  name_hint=last_label_base or '')
                 last_label_base = None
                 choices[ref] = 'V'
+            seen.add(ref)
             idx += 1
 
         elif answer == 'L':
             base = _handle_field_label(state, value)
             last_label_base = base
             choices[ref] = 'L'
+            seen.add(ref)
             idx += 1
 
         elif answer == 'C':
             _handle_control_label(state, value)
             last_label_base = None
             choices[ref] = 'C'
+            seen.add(ref)
             idx += 1
 
         elif answer == 'V':
@@ -495,18 +524,21 @@ def _run_cell_walk(ws, state: WizardState, data_file: str,
                              name_hint=last_label_base or '')
             last_label_base = None
             choices[ref] = 'V'
+            seen.add(ref)
             idx += 1
 
         elif answer in ('I', 'S'):
             state.body_rows.append(['cell:1', 'IGNORE'])
             last_label_base = None
             choices[ref] = 'I'
+            seen.add(ref)
             idx += 1
 
         elif answer == 'T':
             idx = _run_table_subflow(ws, state, row, col, cells, idx)
             last_label_base = None
             choices[ref] = 'T'
+            seen.add(ref)
 
         elif answer == 'G':
             target_raw = _ask(_c('  Go to cell', _C.CYAN)).strip().upper()
@@ -516,14 +548,30 @@ def _run_cell_walk(ws, state: WizardState, data_file: str,
                 try:
                     idx = cells.index((target_row, target_col))
                     goto_target = True  # force-show target even if empty
-                    print(_c(f'  → Jumped to {target_raw}.', _C.CYAN))
+                    print(_c(f'  → Jumped to {_cell_ref(target_row, target_col)}.', _C.CYAN))
                 except ValueError:
                     print(_c(f'  Cell {target_raw} not in scan order.', _C.RED))
             else:
                 print(_c('  Invalid cell reference. Use e.g. B5', _C.RED))
 
+        elif answer == 'N':
+            nxt = _find_next_nonempty(cells, ws, idx + 1)
+            if nxt is not None:
+                idx = nxt
+                print(_c(f'  → Next: {_cell_ref(*cells[nxt])}.', _C.CYAN))
+            else:
+                print(_c('  No more non-empty cells ahead.', _C.DIM))
+
+        elif answer == 'P':
+            prv = _find_prev_nonempty(cells, ws, idx - 1)
+            if prv is not None:
+                idx = prv
+                print(_c(f'  → Prev: {_cell_ref(*cells[prv])}.', _C.CYAN))
+            else:
+                print(_c('  No non-empty cells before this one.', _C.DIM))
+
         else:
-            print(_c('  Unknown — L / C / V / I / T / G / E', _C.RED))
+            print(_c('  Unknown — L / C / V / I / T / G / N / P / E', _C.RED))
 
     _save_history(data_file, choices)
 
