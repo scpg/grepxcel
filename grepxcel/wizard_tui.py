@@ -57,7 +57,8 @@ _STYLE: dict[str, str] = {
     'C':      'bold blue',
     'V':      'bold bright_yellow',
     'T':      'bold magenta',
-    'T-HEAD': 'magenta',          # non-anchor column header cells
+    'T-HEAD': 'magenta',          # header / footer row cells
+    'T-DATA': 'dim magenta',      # data row cells inside the table range
     'I':      'dim',
     'PENDING': 'bold black on dark_goldenrod',
 }
@@ -68,6 +69,7 @@ _CHOICE_COLOR = {
     'V':      'bright_yellow',
     'T':      'magenta',
     'T-HEAD': 'magenta',
+    'T-DATA': 'magenta',
     'I':      'dim',
 }
 
@@ -77,6 +79,7 @@ _CHOICE_NAME = {
     'V':      'Value',
     'T':      'Table anchor',
     'T-HEAD': 'Table column',
+    'T-DATA': 'Table data row',
     'I':      'Ignore',
 }
 
@@ -89,6 +92,30 @@ def _trunc(value: Any, width: int = 20) -> str:
         return ''
     s = str(value)
     return (s[:width - 1] + '…') if len(s) > width else s
+
+
+def _infer_cell_type(cell) -> str:
+    """Return the most likely grepxcel type for an openpyxl cell.
+
+    Priority: Python value type > number_format string > 'string' fallback.
+    Covers date, number (incl. currency / percentage), boolean, string.
+    """
+    import datetime as _dt
+    val = cell.value
+    if val is None:
+        return 'string'
+    if isinstance(val, bool):
+        return 'boolean'
+    if isinstance(val, (_dt.datetime, _dt.date)):
+        return 'date'
+    if isinstance(val, (int, float)):
+        fmt = (cell.number_format or '').lower()
+        # Date indicators in the format string (avoid matching 'mm' for minutes)
+        if any(p in fmt for p in ('yyyy', 'yy/', '/yy', 'dd', 'd-mmm',
+                                   'd/m', 'm/d', 'mmm', 'mmmm')):
+            return 'date'
+        return 'number'
+    return 'string'
 
 
 def _styled(value: Any, choice: str) -> 'RichText':
@@ -131,10 +158,14 @@ def _build_state_from_choices(
         value  = ws.cell(row=r, column=c).value
         name   = meta.get('name', '')
         if choice == 'L':
-            state.lbl_defs.append((name, 'string', str(value) if value is not None else ''))
+            state.lbl_defs.append((name,
+                                   meta.get('ltype', 'string'),
+                                   meta.get('lmatch', str(value) if value is not None else '')))
             state.body_rows.append(['cell:1', name])
         elif choice == 'C':
-            state.lbl_defs.append((name, 'string', str(value) if value is not None else ''))
+            state.lbl_defs.append((name,
+                                   meta.get('ltype', 'string'),
+                                   meta.get('lmatch', str(value) if value is not None else '')))
             state.body_rows.append(['cell:1', name])
         elif choice == 'V':
             state.var_defs.append((name, meta.get('ftype', 'string'), meta.get('match', '.*')))
@@ -196,7 +227,7 @@ def _build_state_from_choices(
                     var_names.append(var_name)
                 state.body_rows.append(['', 'HEADER:1'] + lbl_names)
                 state.body_rows.append(['', f'DATA:{mult}'] + var_names)
-        elif choice == 'T-HEAD':
+        elif choice in ('T-HEAD', 'T-DATA'):
             pass  # handled by the anchor cell above
         elif choice == 'I':
             state.body_rows.append(['cell:1', 'IGNORE'])
@@ -1119,7 +1150,18 @@ if _TEXTUAL_OK:
                               f'  [dim]{tname}: {col_name}[/dim]')
                     extra  = [
                         f'  Table:  [magenta]{tname}[/magenta]  range {trng}',
-                        '  [dim]R = remove whole table[/dim]',
+                        '  [dim]T = edit table  ·  R = remove table[/dim]',
+                    ]
+                elif ch == 'T-DATA':
+                    anchor_ref  = meta.get('anchor', '')
+                    anchor_meta = self._choices.get(anchor_ref, {})
+                    tname = anchor_meta.get('name', '')
+                    trng  = anchor_meta.get('range', anchor_ref)
+                    status = (f'[dim magenta]✓ Table data row[/dim magenta]'
+                              f'  [dim]{tname}[/dim]')
+                    extra  = [
+                        f'  Table:  [magenta]{tname}[/magenta]  range {trng}',
+                        '  [dim]T = edit table  ·  R = remove table[/dim]',
                     ]
                 else:
                     cname  = _CHOICE_NAME.get(ch, ch)
@@ -1279,11 +1321,16 @@ if _TEXTUAL_OK:
             return refs
 
         def _remove_table(self, anchor_ref: str, meta: dict) -> None:
-            """Remove the anchor + all T-HEAD cells for a table."""
-            refs_to_clear = [anchor_ref] + [
-                r for r in self._all_thead_refs(meta) if r != anchor_ref
-            ]
-            for ref in refs_to_clear:
+            """Remove anchor + all T-HEAD and T-DATA cells for a table."""
+            # Collect via _choices scan (handles T-HEAD, T-DATA, any future types)
+            members = {anchor_ref}
+            for ref, m in list(self._choices.items()):
+                if m.get('anchor') == anchor_ref:
+                    members.add(ref)
+            # Also include legacy header refs derived from meta structure
+            for r in self._all_thead_refs(meta):
+                members.add(r)
+            for ref in members:
                 self._choices.pop(ref, None)
                 p = _parse_cell_ref(ref)
                 if p:
@@ -1326,13 +1373,15 @@ if _TEXTUAL_OK:
                         else None)
 
             if mode == 'DATA':
-                slug_v   = _slugify(val_str) if val_str else ltr.lower()
-                n_def    = (existing.get('var_name', slug_v)
-                            if existing else slug_v)
-                t_def    = (existing.get('var_type', 'string')
-                            if existing else 'string')
-                m_def    = (existing.get('var_match', '.*')
-                            if existing else '.*')
+                slug_v    = _slugify(val_str) if val_str else ltr.lower()
+                n_def     = (existing.get('var_name', slug_v)
+                             if existing else slug_v)
+                _cell_obj = self._ws.cell(row=ref_row, column=col_c)
+                _inf_type = _infer_cell_type(_cell_obj)
+                t_def     = (existing.get('var_type', _inf_type)
+                             if existing else _inf_type)
+                m_def     = (existing.get('var_match', '.*')
+                             if existing else '.*')
                 note_def = (existing.get('notes', '')
                             if existing else
                             self._notes.get(_cell_ref(ref_row, col_c), ''))
@@ -1559,29 +1608,43 @@ if _TEXTUAL_OK:
             value = self._ws.cell(row=self._ws_row, column=self._ws_col).value
             ref   = _cell_ref(self._ws_row, self._ws_col)
             slug  = _slugify(str(value)) if value is not None else 'label'
-            default = f'{slug}_label'
+            default_name  = f'{slug}_label'
+            default_match = str(value) if value is not None else ''
+            existing_meta = self._choices.get(ref, {})
+            existing_note = self._notes.get(ref, '')
 
             def _done(result: list[str] | None) -> None:
                 self._clear_highlights()
                 if result is None:
                     self._log('LABEL-X', f'{ref}  cancelled')
                     return
-                name = result[0]
+                name, ltype, lmatch, notes = (result[0], result[1],
+                                              result[2], result[3].strip())
                 old  = self._choices.get(ref, {}).get('choice')
                 self._push_undo(ref)
                 base = name[:-6] if name.endswith('_label') else name
                 self._last_label_base = base
-                self._commit(ref, {'choice': 'L', 'name': name})
+                self._commit(ref, {'choice': 'L', 'name': name,
+                                   'ltype': ltype, 'lmatch': lmatch})
+                if notes:
+                    self._notes[ref] = notes
+                    self._log('NOTE', f'{ref}: {notes}')
+                elif ref in self._notes:
+                    del self._notes[ref]
                 reclassify = f'  (was {old})' if old else ''
                 rawval = '' if value is None else f'  "{str(value)[:30]}"'
-                self._log('LABEL', f'{ref}{rawval}  →  {name}{reclassify}')
+                self._log('LABEL',
+                          f'{ref}{rawval}  →  {name}  [{ltype}, {lmatch}]{reclassify}')
                 self._refresh_panel()
                 self._advance()
 
             self.push_screen(
                 _FieldsModal(
                     '[bold green]Label[/bold green] — text that identifies a nearby value',
-                    [('Label anchor name', default)],
+                    [('Label anchor name', existing_meta.get('name', default_name)),
+                     ('Type  (string / number / date)', existing_meta.get('ltype', 'string')),
+                     ('Match  (exact text or lbl:regexp for regex)', existing_meta.get('lmatch', default_match)),
+                     ('Notes  (written to session log — optional)', existing_note)],
                 ),
                 _done,
             )
@@ -1622,7 +1685,8 @@ if _TEXTUAL_OK:
             base         = self._last_label_base or slug
             default_name = (self._current_prefix + base) if self._current_prefix else base
             p            = self._proposal()
-            default_type = p[4:] if p.startswith('var:') else 'string'
+            default_type = (p[4:] if p.startswith('var:') else
+                            _infer_cell_type(self._ws.cell(row=self._ws_row, column=self._ws_col)))
 
             existing_note = self._notes.get(ref, '')
 
@@ -1687,7 +1751,7 @@ if _TEXTUAL_OK:
             if cur_ch == 'T':
                 existing_anchor = cur_ref
                 existing_meta   = cur_meta
-            elif cur_ch == 'T-HEAD':
+            elif cur_ch in ('T-HEAD', 'T-DATA'):
                 existing_anchor = cur_meta.get('anchor', cur_ref)
                 existing_meta   = self._choices.get(existing_anchor)
 
@@ -1831,12 +1895,24 @@ if _TEXTUAL_OK:
                             [col for hr in header_rows for col in hr['cols']] +
                             [col for fr in footer_rows for col in fr['cols']]
                         )
+                        # DATA row cells (T-DATA) — all cells in d_rows
+                        data_cells = [
+                            {'ref': _cell_ref(r, cinfo['col']),
+                             'row': r, 'col': cinfo['col']}
+                            for r in d_rows for cinfo in col_infos
+                        ]
+
+                        # Undo snapshot: anchor + T-HEAD + T-DATA
                         affected = [{'ref': actual_anchor,
                                      'prev': self._choices.get(actual_anchor)}]
                         for hc in all_head_cells:
                             if hc['ref'] != actual_anchor:
                                 affected.append({'ref':  hc['ref'],
                                                  'prev': self._choices.get(hc['ref'])})
+                        for dc in data_cells:
+                            if dc['ref'] != actual_anchor:
+                                affected.append({'ref':  dc['ref'],
+                                                 'prev': self._choices.get(dc['ref'])})
                         self._undo_stack.append({
                             'type':  'table', 'cells': affected,
                             'prev_label_base': self._last_label_base,
@@ -1858,12 +1934,20 @@ if _TEXTUAL_OK:
                         }
                         self._choices[actual_anchor] = meta
                         self._restyle_cell(start_row, start_col)
+                        # Mark header/footer cells T-HEAD
                         for hc in all_head_cells:
                             if hc['ref'] != actual_anchor:
                                 self._choices[hc['ref']] = {
                                     'choice': 'T-HEAD', 'anchor': actual_anchor,
                                 }
                                 self._restyle_cell(hc['row'], hc['col'])
+                        # Mark data row cells T-DATA
+                        for dc in data_cells:
+                            if dc['ref'] != actual_anchor:
+                                self._choices[dc['ref']] = {
+                                    'choice': 'T-DATA', 'anchor': actual_anchor,
+                                }
+                                self._restyle_cell(dc['row'], dc['col'])
 
                         n_h = len(h_rows); n_f = len(f_rows)
                         n_d = len(d_rows); n_s = len(skip_rows)
@@ -1976,9 +2060,9 @@ if _TEXTUAL_OK:
                 return
             choice = meta.get('choice', '?')
 
-            if choice in ('T', 'T-HEAD'):
+            if choice in ('T', 'T-HEAD', 'T-DATA'):
                 # Resolve the anchor
-                if choice == 'T-HEAD':
+                if choice in ('T-HEAD', 'T-DATA'):
                     anchor_ref  = meta.get('anchor', ref)
                     anchor_meta = self._choices.get(anchor_ref, {})
                 else:
@@ -1986,12 +2070,15 @@ if _TEXTUAL_OK:
                     anchor_meta = meta
                 tname = anchor_meta.get('name', '')
                 trng  = anchor_meta.get('range', anchor_ref)
-                # Snapshot all cells for undo (handles both old and new model)
-                affected = [{'ref': anchor_ref,
-                             'prev': self._choices.get(anchor_ref)}]
+                # Snapshot all cells for undo (T-HEAD + T-DATA + legacy)
+                all_members = {anchor_ref}
+                for cref, cm in self._choices.items():
+                    if cm.get('anchor') == anchor_ref:
+                        all_members.add(cref)
                 for cref in self._all_thead_refs(anchor_meta):
-                    if cref != anchor_ref:
-                        affected.append({'ref': cref, 'prev': self._choices.get(cref)})
+                    all_members.add(cref)
+                affected = [{'ref': ar, 'prev': self._choices.get(ar)}
+                            for ar in all_members]
                 self._undo_stack.append({
                     'type':            'table',
                     'cells':           affected,
