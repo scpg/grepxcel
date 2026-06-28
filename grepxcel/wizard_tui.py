@@ -148,7 +148,7 @@ def _build_state_from_choices(
             state.body_rows.append([f'table:{mult}'])
 
             if 'header_rows' in meta:
-                # New multi-row model: header_rows + data_vars
+                # New multi-row model: header_rows + data_vars [+ footer_rows]
                 for h_row in meta['header_rows']:
                     lbl_names = [col['lbl_name'] for col in h_row['cols']]
                     for col in h_row['cols']:
@@ -157,8 +157,15 @@ def _build_state_from_choices(
                     state.body_rows.append(['', 'HEADER:1'] + lbl_names)
                 data_vars = meta.get('data_vars', [])
                 for vn in data_vars:
-                    state.var_defs.append((vn, 'string', '.*'))
+                    if vn and vn != 'IGNORE':
+                        state.var_defs.append((vn, 'string', '.*'))
                 state.body_rows.append(['', f'DATA:{mult}'] + data_vars)
+                for f_row in meta.get('footer_rows', []):
+                    lbl_names = [col['lbl_name'] for col in f_row['cols']]
+                    for col in f_row['cols']:
+                        state.lbl_defs.append((col['lbl_name'], 'string',
+                                               col.get('cell_value', '')))
+                    state.body_rows.append(['', 'HEADER:1'] + lbl_names)
             else:
                 # Legacy single-header-row model (columns list)
                 cols      = meta.get('columns', [])
@@ -514,10 +521,10 @@ if _TEXTUAL_OK:
     # ── Main application ───────────────────────────────────────────────────────
 
     class _TableSetupModal(ModalScreen):
-        """Table definition — step 1: name, header-row range, multiplicity.
+        """Table definition — step 1: name, full table range, multiplicity.
 
-        Dismissed with {'name', 'range_str', 'mult'} or None on cancel.
-        The range_str is validated here (must parse to a single row).
+        The range covers ALL rows of the table (headers + data + footers).
+        Dismissed with {'name', 'range_str', 'mult', 'start', 'end'} or None.
         """
         DEFAULT_CSS = """
         _TableSetupModal              { align: center middle; }
@@ -543,11 +550,12 @@ if _TEXTUAL_OK:
                 yield Label('Table name', classes='sect')
                 yield Label('Short identifier used in the output JSON key', classes='desc')
                 yield Input(value=self._default_name, id='name')
-                yield Label('Header row range', classes='sect')
-                yield Label('Cells containing the column labels  (e.g. B11:F11)',
-                            classes='desc')
+                yield Label('Full table range', classes='sect')
+                yield Label(
+                    'Include ALL rows: headers, data rows, footers  (e.g. B11:F29)',
+                    classes='desc')
                 yield Input(value=self._default_range, id='range',
-                            placeholder='e.g. B11:F11')
+                            placeholder='e.g. B11:F29')
                 yield Label('Multiplicity', classes='sect')
                 yield Label(
                     '*=any instances  ·  1=exactly one  ·  {n,m}=bounded range',
@@ -590,11 +598,8 @@ if _TEXTUAL_OK:
                 errlbl.update('Could not parse the range — use the format B11:F11.')
                 self.query_one('#range', Input).focus()
                 return
-            if start[0] != end[0]:
-                errlbl.update(
-                    'The header range must be a single row  '
-                    '(same row number on both sides).'
-                )
+            if start[0] > end[0]:
+                errlbl.update('Start row must be ≤ end row (first:last).')
                 self.query_one('#range', Input).focus()
                 return
             if start[1] > end[1]:
@@ -621,6 +626,145 @@ if _TEXTUAL_OK:
 
         def on_key(self, event) -> None:
             if event.key == 'escape':
+                self.dismiss(None)
+
+
+    class _TableRangeModal(ModalScreen):
+        """Step 2 of table definition: show the full range; classify each row.
+
+        User presses H/D/F/S on the highlighted row to mark it as:
+          H = HEADER (fixed label row — column values become label text)
+          D = DATA   (repeating data rows — variables extracted here)
+          F = FOOTER (fixed summary row — column values become label text)
+          S = SKIP   (ignore this row entirely)
+        ENTER confirms; ESC cancels.
+        Dismissed with {row_num: 'H'|'D'|'F'|'S'} dict, or None.
+        """
+        DEFAULT_CSS = """
+        _TableRangeModal            { align: center middle; }
+        _TableRangeModal > #dialog  { background: $surface; border: thick $primary;
+                                      width: 94; height: auto; max-height: 85vh;
+                                      padding: 1 2; }
+        _TableRangeModal Label.t    { text-style: bold; color: $accent; margin-bottom: 1; }
+        _TableRangeModal Label.h    { color: $text-muted; margin-bottom: 1; }
+        _TableRangeModal DataTable  { height: auto; max-height: 56vh; }
+        """
+
+        BINDINGS = [
+            Binding('h', 'set_h', 'Header', show=True),
+            Binding('d', 'set_d', 'Data',   show=True),
+            Binding('f', 'set_f', 'Footer', show=True),
+            Binding('s', 'set_s', 'Skip',   show=True),
+        ]
+
+        _TYPE_LABEL = {
+            'H': '[bold green]HEADER[/bold green]',
+            'D': '[bold blue]DATA  [/bold blue]',
+            'F': '[bold cyan]FOOTER[/bold cyan]',
+            'S': '[dim]SKIP  [/dim]',
+        }
+
+        def __init__(self, ws, start_row: int, end_row: int,
+                     start_col: int, end_col: int,
+                     name: str, mult: str) -> None:
+            super().__init__()
+            self._ws        = ws
+            self._start_row = start_row
+            self._end_row   = min(end_row, start_row + 35)  # cap display at 36 rows
+            self._start_col = start_col
+            self._end_col   = end_col
+            self._name      = name
+            self._mult      = mult
+
+            # Auto-detect row types
+            self._row_types: dict[int, str] = {}
+            first_header_set = False
+            for r in range(self._start_row, self._end_row + 1):
+                vals = [ws.cell(row=r, column=c).value
+                        for c in range(start_col, end_col + 1)]
+                has_text  = any(isinstance(v, str) and v.strip() for v in vals)
+                has_value = any(v is not None for v in vals)
+                if not first_header_set and has_text:
+                    self._row_types[r] = 'H'
+                    first_header_set = True
+                elif has_value:
+                    self._row_types[r] = 'D'
+                else:
+                    self._row_types[r] = 'S'
+
+        def _col_letter(self, col: int) -> str:
+            from openpyxl.utils import get_column_letter
+            return get_column_letter(col)
+
+        def compose(self) -> ComposeResult:
+            start_ref = _cell_ref(self._start_row, self._start_col)
+            end_ref   = _cell_ref(self._end_row, self._end_col)
+            with Vertical(id='dialog'):
+                yield Label(
+                    f'[bold magenta]Table "{self._name}"[/bold magenta]'
+                    f'  range {start_ref}:{end_ref}  mult={self._mult}',
+                    classes='t',
+                )
+                yield Label(
+                    '[bold green]H[/bold green]=Header  '
+                    '[bold blue]D[/bold blue]=Data rows  '
+                    '[bold cyan]F[/bold cyan]=Footer  '
+                    '[dim]S[/dim]=Skip  '
+                    '↑↓ navigate rows  '
+                    'ENTER confirm  ESC cancel',
+                    classes='h',
+                )
+                yield DataTable(id='rdt', cursor_type='row')
+
+        def on_mount(self) -> None:
+            dt = self.query_one('#rdt', DataTable)
+            col_keys  = ['_row', '_type'] + [
+                self._col_letter(c)
+                for c in range(self._start_col, self._end_col + 1)
+            ]
+            col_labels = ['Row', 'Type'] + [
+                self._col_letter(c)
+                for c in range(self._start_col, self._end_col + 1)
+            ]
+            for key, label in zip(col_keys, col_labels):
+                dt.add_column(label, key=key)
+            for r in range(self._start_row, self._end_row + 1):
+                vals = [
+                    _trunc(self._ws.cell(row=r, column=c).value, 11)
+                    for c in range(self._start_col, self._end_col + 1)
+                ]
+                rtype = self._row_types.get(r, 'D')
+                dt.add_row(
+                    str(r),
+                    self._TYPE_LABEL[rtype],
+                    *vals,
+                    key=str(r),
+                )
+            dt.focus()
+
+        def _set_current_type(self, new_type: str) -> None:
+            dt      = self.query_one('#rdt', DataTable)
+            row_idx = dt.cursor_row
+            ws_row  = self._start_row + row_idx
+            self._row_types[ws_row] = new_type
+            dt.update_cell(str(ws_row), '_type', self._TYPE_LABEL[new_type])
+
+        def action_set_h(self) -> None:
+            self._set_current_type('H')
+
+        def action_set_d(self) -> None:
+            self._set_current_type('D')
+
+        def action_set_f(self) -> None:
+            self._set_current_type('F')
+
+        def action_set_s(self) -> None:
+            self._set_current_type('S')
+
+        def on_key(self, event) -> None:
+            if event.key == 'enter':
+                self.dismiss(dict(self._row_types))
+            elif event.key == 'escape':
                 self.dismiss(None)
 
 
@@ -676,7 +820,9 @@ if _TEXTUAL_OK:
             Binding('ctrl+z', 'undo',               'Undo',            show=False),
             Binding('ctrl+q', 'cancel',             'Cancel',          show=False),
             Binding('q',      'cancel',             'Quit',            show=False),
-            # F12: hidden session log for debugging / support — not shown anywhere
+            # Debug / support hotkeys (hidden)
+            Binding('f2',     'add_note',           'Internal note',   show=False),
+            Binding('f11',    'export_clipboard',   'Copy log',        show=False),
             Binding('f12',    'show_log',           'Session log',     show=False),
         ]
 
@@ -711,12 +857,64 @@ if _TEXTUAL_OK:
             self._event_log: list[str] = [
                 f'grepxcel wizard session — {os.path.basename(data_file)}',
                 f'Started: {self._session_start}',
+                f'Data file: {os.path.abspath(data_file)}',
             ]
+
+            # Per-cell debug notes (internal_notes, F2) — separate from _choices
+            self._notes: dict[str, str] = {}
+
+            # Persistent log file (auto-opened; logs/<basename>.wizard.<ts>.log)
+            self._log_file = None
+            ts_file = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
+            stem    = os.path.splitext(os.path.basename(data_file))[0]
+            log_dir = os.path.join(os.getcwd(), 'logs')
+            try:
+                os.makedirs(log_dir, exist_ok=True)
+                log_path = os.path.join(log_dir, f'{stem}.wizard.{ts_file}.log')
+                self._log_file = open(log_path, 'w', encoding='utf-8')  # noqa: WPS515
+                self._log_file_path = log_path
+                self._log_file.write(f'# grepxcel wizard session log\n')
+                self._log_file.write(f'# Data file : {os.path.abspath(data_file)}\n')
+                self._log_file.write(f'# Started   : {self._session_start}\n')
+                self._log_file.write(f'#\n')
+                self._log_file.write(f'# Column key: timestamp  EVENT_TYPE  detail\n')
+                self._log_file.write(f'# Notes added by user via F2 are tagged NOTE\n')
+                self._log_file.write(f'#\n')
+                self._log_file.flush()
+            except OSError:
+                self._log_file_path = None
 
         def _log(self, event_type: str, detail: str) -> None:
             ts   = datetime.datetime.now().strftime('%H:%M:%S')
-            line = f'{ts}  {event_type:<10}  {detail}'
+            line = f'{ts}  {event_type:<12}  {detail}'
             self._event_log.append(line)
+            if self._log_file:
+                try:
+                    self._log_file.write(line + '\n')
+                    self._log_file.flush()
+                except OSError:
+                    pass
+
+        def _close_log_file(self) -> None:
+            """Write summary footer and close the persistent log file."""
+            if not self._log_file:
+                return
+            try:
+                ts = datetime.datetime.now().strftime('%H:%M:%S')
+                self._log_file.write(f'#\n')
+                self._log_file.write(f'# Session ended: {ts}\n')
+                counts = {}
+                for m in self._choices.values():
+                    counts[m.get('choice', '?')] = counts.get(m.get('choice', '?'), 0) + 1
+                self._log_file.write(f'# Classifications: {counts}\n')
+                if self._notes:
+                    self._log_file.write(f'#\n# Internal notes:\n')
+                    for ref, note in sorted(self._notes.items()):
+                        self._log_file.write(f'#   {ref}: {note}\n')
+                self._log_file.close()
+                self._log_file = None
+            except OSError:
+                pass
 
         def compose(self) -> ComposeResult:
             yield Header(show_clock=False)
@@ -848,15 +1046,24 @@ if _TEXTUAL_OK:
                 ch   = meta['choice']
                 ccol = _CHOICE_COLOR.get(ch, 'white')
                 if ch == 'T':
-                    tname  = meta.get('name', '')
-                    trng   = meta.get('range', ref)
-                    ncols  = len(meta.get('columns', []))
-                    mult   = meta.get('mult', '*')
+                    tname = meta.get('name', '')
+                    trng  = meta.get('range', ref)
+                    mult  = meta.get('mult', '*')
+                    if 'header_rows' in meta:
+                        n_h = len(meta.get('header_rows', []))
+                        n_d = len(meta.get('data_vars', []))
+                        n_f = len(meta.get('footer_rows', []))
+                        n_s = len(meta.get('skip_rows', []))
+                        detail = (f'H={n_h} D={n_d} F={n_f}'
+                                  + (f' S={n_s}' if n_s else '')
+                                  + f'  mult={mult}')
+                    else:
+                        ncols  = len(meta.get('columns', []))
+                        detail = f'{ncols} col{"s" if ncols != 1 else ""}  mult={mult}'
                     status = (f'[bold magenta]✓ Table anchor[/bold magenta]'
                               f'  [dim]{tname}[/dim]')
                     extra  = [
-                        f'  Range:  [magenta]{trng}[/magenta]'
-                        f'  ({ncols} col{"s" if ncols != 1 else ""}, mult={mult})',
+                        f'  Range:  [magenta]{trng}[/magenta]  {detail}',
                         '  [dim]R = remove whole table[/dim]',
                     ]
                 elif ch == 'T-HEAD':
@@ -864,17 +1071,29 @@ if _TEXTUAL_OK:
                     anchor_meta = self._choices.get(anchor_ref, {})
                     tname  = anchor_meta.get('name', '')
                     trng   = anchor_meta.get('range', anchor_ref)
-                    # Find column index for this ref
-                    col_idx = next(
-                        (i for i, c in enumerate(anchor_meta.get('columns', []))
-                         if c.get('ref') == ref),
-                        -1
-                    )
+                    # Find role of this cell: header/footer, column index
                     col_name = ''
-                    if col_idx >= 0:
-                        col_name = anchor_meta['columns'][col_idx].get('var_name', '')
-                    status = (f'[magenta]✓ Table column[/magenta]'
-                              f'  [dim]{tname}.{col_name}[/dim]')
+                    role = 'header col'
+                    if 'header_rows' in anchor_meta:
+                        for h_row in anchor_meta.get('header_rows', []):
+                            for col in h_row['cols']:
+                                if col['ref'] == ref:
+                                    col_name = col['lbl_name']
+                                    role = 'header col'
+                        for f_row in anchor_meta.get('footer_rows', []):
+                            for col in f_row['cols']:
+                                if col['ref'] == ref:
+                                    col_name = col['lbl_name']
+                                    role = 'footer col'
+                    else:
+                        col_idx = next(
+                            (i for i, c in enumerate(anchor_meta.get('columns', []))
+                             if c.get('ref') == ref), -1
+                        )
+                        if col_idx >= 0:
+                            col_name = anchor_meta['columns'][col_idx].get('var_name', '')
+                    status = (f'[magenta]✓ Table {role}[/magenta]'
+                              f'  [dim]{tname}: {col_name}[/dim]')
                     extra  = [
                         f'  Table:  [magenta]{tname}[/magenta]  range {trng}',
                         '  [dim]R = remove whole table[/dim]',
@@ -893,12 +1112,15 @@ if _TEXTUAL_OK:
                 status = '[dim]not classified[/dim]'
                 extra  = []
 
+            note = self._notes.get(ref, '')
             lines: list[str] = [
                 f'[bold cyan]─ {ref} {"─" * (40 - len(ref))}[/bold cyan]',
                 f'  {val_line}',
                 f'  Proposal:  {prop_line}',
                 f'  Status:    {status}',
             ] + extra
+            if note:
+                lines.append(f'  [bold yellow]✎ Note:[/bold yellow] {_trunc(note, 36)}')
             if self._last_label_base and not meta:
                 lines += [
                     f'  [dim magenta]← label: {self._last_label_base}_label[/dim magenta]',
@@ -931,6 +1153,7 @@ if _TEXTUAL_OK:
                 '  [dim]Space[/dim] Zoom  [dim]F3[/dim] Preview  [dim]F1[/dim] Help',
                 '  [dim]H[/dim] Highlight pending  [dim]^Z[/dim] Undo',
                 '  [dim]^D[/dim] Dark/light  [dim]^P[/dim] Palette',
+                '  [dim]F2[/dim] Cell note  [dim]F11[/dim] Copy log  [dim]F12[/dim] View log',
                 '',
             ]
 
@@ -1001,7 +1224,7 @@ if _TEXTUAL_OK:
 
         def _commit_table(self, anchor_ref: str, name: str, mult: str,
                           range_str: str, cols: list[dict]) -> None:
-            """Write T + T-HEAD entries to _choices and restyle all cells."""
+            """Write T + T-HEAD entries (legacy single-header format)."""
             anchor_meta = {
                 'choice':  'T',
                 'name':    name,
@@ -1017,10 +1240,26 @@ if _TEXTUAL_OK:
                 self._choices[col['ref']] = {'choice': 'T-HEAD', 'anchor': anchor_ref}
                 self._restyle_cell(col['row'], col['col'])
 
+        def _all_thead_refs(self, anchor_meta: dict) -> list[str]:
+            """Return all T-HEAD cell refs for a table (both old and new model)."""
+            refs = []
+            if 'header_rows' in anchor_meta:
+                for h_row in anchor_meta.get('header_rows', []):
+                    for col in h_row['cols']:
+                        refs.append(col['ref'])
+                for f_row in anchor_meta.get('footer_rows', []):
+                    for col in f_row['cols']:
+                        refs.append(col['ref'])
+            else:
+                for col in anchor_meta.get('columns', []):
+                    refs.append(col['ref'])
+            return refs
+
         def _remove_table(self, anchor_ref: str, meta: dict) -> None:
             """Remove the anchor + all T-HEAD cells for a table."""
-            refs_to_clear = [anchor_ref]
-            refs_to_clear += [col['ref'] for col in meta.get('columns', [])[1:]]
+            refs_to_clear = [anchor_ref] + [
+                r for r in self._all_thead_refs(meta) if r != anchor_ref
+            ]
             for ref in refs_to_clear:
                 self._choices.pop(ref, None)
                 p = _parse_cell_ref(ref)
@@ -1289,7 +1528,11 @@ if _TEXTUAL_OK:
             )
 
         async def action_act_T(self) -> None:
-            """Two-step table definition: (1) name/range/mult → (2) column names."""
+            """Three-step table definition:
+            (1) name / full range / mult
+            (2) classify each row as HEADER / DATA / FOOTER / SKIP
+            (3) name the DATA variable columns
+            """
             cur_ref  = _cell_ref(self._ws_row, self._ws_col)
             cur_val  = self._ws.cell(row=self._ws_row, column=self._ws_col).value
             slug     = _slugify(str(cur_val)) if cur_val is not None else 'table'
@@ -1298,62 +1541,158 @@ if _TEXTUAL_OK:
                         f':{_cell_ref(self._ws_row, end_col)}')
 
             def _on_setup(setup: dict | None) -> None:
-                """Called after Step 1 (setup modal)."""
+                """Step 1 done: have name, full range, mult.  Open row-classifier."""
                 self._clear_highlights()
                 if setup is None:
                     self._log('TABLE-X', f'{cur_ref}  cancelled at setup')
                     return
                 start_row, start_col = setup['start']
-                _, end_col2           = setup['end']
-                cols  = self._extract_table_columns(start_row, start_col, end_col2)
-                name  = setup['name']
-                mult  = setup['mult']
-                rng   = setup['range_str']
+                end_row,   end_col2  = setup['end']
+                name = setup['name']
+                mult = setup['mult']
+                rng  = setup['range_str']
 
-                # Build _FieldsModal fields: label shows cell ref + value, default = slug
-                col_fields = []
-                for col in cols:
-                    val_disp = f'"{_trunc(col["cell_value"], 24)}"' if col['cell_value'] else '(empty)'
-                    col_fields.append((f'{col["ref"]}  {val_disp}', col['var_name']))
-
-                def _on_cols(result: list[str] | None) -> None:
-                    """Called after Step 2 (column-name modal)."""
+                def _on_rows(row_types: dict | None) -> None:
+                    """Step 2 done: know which rows are H/D/F/S.
+                    Open variable-name modal for DATA columns only.
+                    """
                     self._clear_highlights()
-                    if result is None:
-                        self._log('TABLE-X', f'{cur_ref}  cancelled at column names')
+                    if row_types is None:
+                        self._log('TABLE-X', f'{cur_ref}  cancelled at row classification')
                         return
-                    # Merge user-supplied names back into cols
-                    for i, col in enumerate(cols):
-                        col['var_name']  = result[i] if i < len(result) else col['var_name']
-                        col['lbl_name']  = f'col_{col["var_name"]}_label'
 
-                    # Push undo for ALL affected cells as one atomic entry
-                    affected = [{'ref': col['ref'],
-                                 'prev': self._choices.get(col['ref'])}
-                                for col in cols]
-                    self._undo_stack.append({
-                        'type':            'table',
-                        'cells':           affected,
-                        'prev_label_base': self._last_label_base,
-                    })
+                    h_rows = [r for r, t in sorted(row_types.items()) if t == 'H']
+                    d_rows = [r for r, t in sorted(row_types.items()) if t == 'D']
+                    f_rows = [r for r, t in sorted(row_types.items()) if t == 'F']
 
-                    self._last_label_base = None
-                    anchor_ref = cols[0]['ref']
-                    self._commit_table(anchor_ref, name, mult, rng, cols)
-                    col_names = ', '.join(c['var_name'] for c in cols)
-                    self._log('TABLE',
-                              f'{rng}  name={name}  mult={mult}  '
-                              f'cols=[{col_names}]')
-                    self._refresh_panel()
-                    self._advance()
+                    # Build a default variable name per column from the first H row values
+                    ref_row = h_rows[0] if h_rows else (d_rows[0] if d_rows else start_row)
+                    col_count = end_col2 - start_col + 1
+                    col_defaults = []
+                    for c in range(start_col, end_col2 + 1):
+                        val  = self._ws.cell(row=ref_row, column=c).value
+                        from openpyxl.utils import get_column_letter
+                        ltr  = get_column_letter(c)
+                        slug_c = _slugify(str(val)) if val is not None else f'col{ltr}'
+                        val_disp = f'"{_trunc(val, 20)}"' if val is not None else f'(col {ltr})'
+                        col_defaults.append((f'{ltr}  {val_disp}', slug_c))
+
+                    def _on_vars(result: list[str] | None) -> None:
+                        """Step 3 done: have variable names.  Commit everything."""
+                        self._clear_highlights()
+                        if result is None:
+                            self._log('TABLE-X', f'{cur_ref}  cancelled at variable names')
+                            return
+
+                        data_vars = [
+                            (result[i] or 'IGNORE') for i in range(col_count)
+                        ]
+
+                        # Build header_rows spec (label names from cell values)
+                        header_rows = []
+                        for r in h_rows:
+                            hcols = []
+                            for c in range(start_col, end_col2 + 1):
+                                val  = self._ws.cell(row=r, column=c).value
+                                slug_c = _slugify(str(val)) if val is not None else f'col{c}'
+                                hcols.append({
+                                    'ref':        _cell_ref(r, c),
+                                    'row':        r, 'col': c,
+                                    'cell_value': str(val) if val is not None else '',
+                                    'lbl_name':   f'col_{slug_c}_label',
+                                })
+                            header_rows.append({'row': r, 'cols': hcols})
+
+                        # Footer spec (same structure as header)
+                        footer_rows = []
+                        for r in f_rows:
+                            fcols = []
+                            for c in range(start_col, end_col2 + 1):
+                                val  = self._ws.cell(row=r, column=c).value
+                                slug_c = _slugify(str(val)) if val is not None else f'col{c}'
+                                fcols.append({
+                                    'ref':        _cell_ref(r, c),
+                                    'row':        r, 'col': c,
+                                    'cell_value': str(val) if val is not None else '',
+                                    'lbl_name':   f'foot_{slug_c}_label',
+                                })
+                            footer_rows.append({'row': r, 'cols': fcols})
+
+                        skip_rows  = [r for r, t in sorted(row_types.items()) if t == 'S']
+                        anchor_ref = _cell_ref(start_row, start_col)
+
+                        # Collect all cells that will be marked T-HEAD for undo
+                        all_header_cells = [
+                            col for hrow in header_rows for col in hrow['cols']
+                        ] + [
+                            col for frow in footer_rows for col in frow['cols']
+                        ]
+                        affected = [{'ref': anchor_ref,
+                                     'prev': self._choices.get(anchor_ref)}]
+                        for hc in all_header_cells:
+                            if hc['ref'] != anchor_ref:
+                                affected.append({'ref': hc['ref'],
+                                                 'prev': self._choices.get(hc['ref'])})
+                        self._undo_stack.append({
+                            'type':            'table',
+                            'cells':           affected,
+                            'prev_label_base': self._last_label_base,
+                        })
+
+                        self._last_label_base = None
+                        meta = {
+                            'choice':      'T',
+                            'name':        name,
+                            'mult':        mult,
+                            'range':       rng,
+                            'start_row':   start_row, 'end_row': end_row,
+                            'start_col':   start_col, 'end_col': end_col2,
+                            'header_rows': header_rows,
+                            'footer_rows': footer_rows,
+                            'data_vars':   data_vars,
+                            'skip_rows':   skip_rows,
+                            'row_types':   row_types,
+                        }
+                        self._choices[anchor_ref] = meta
+                        self._restyle_cell(start_row, start_col)
+                        for hc in all_header_cells:
+                            if hc['ref'] != anchor_ref:
+                                self._choices[hc['ref']] = {
+                                    'choice': 'T-HEAD', 'anchor': anchor_ref,
+                                }
+                                self._restyle_cell(hc['row'], hc['col'])
+
+                        n_h = len(h_rows)
+                        n_f = len(f_rows)
+                        n_d = len(d_rows)
+                        n_s = len(skip_rows)
+                        self._log(
+                            'TABLE',
+                            f'{rng}  name={name}  mult={mult}  '
+                            f'H={n_h} D={n_d} F={n_f} S={n_s}  '
+                            f'vars=[{", ".join(data_vars)}]',
+                        )
+                        self._refresh_panel()
+                        self._advance()
+
+                    self.push_screen(
+                        _FieldsModal(
+                            f'[bold magenta]Variable names — DATA columns[/bold magenta]  '
+                            f'table "{name}"  {col_count} column(s)\n'
+                            f'  [dim](empty name = IGNORE that column)[/dim]',
+                            col_defaults,
+                        ),
+                        _on_vars,
+                    )
 
                 self.push_screen(
-                    _FieldsModal(
-                        f'[bold magenta]Column variable names[/bold magenta]  '
-                        f'table "{name}"  range {rng}',
-                        col_fields,
+                    _TableRangeModal(
+                        self._ws,
+                        start_row, end_row,
+                        start_col, end_col2,
+                        name, mult,
                     ),
-                    _on_cols,
+                    _on_rows,
                 )
 
             self.push_screen(
@@ -1394,12 +1733,12 @@ if _TEXTUAL_OK:
                     anchor_meta = meta
                 tname = anchor_meta.get('name', '')
                 trng  = anchor_meta.get('range', anchor_ref)
-                # Snapshot all cells for undo
+                # Snapshot all cells for undo (handles both old and new model)
                 affected = [{'ref': anchor_ref,
                              'prev': self._choices.get(anchor_ref)}]
-                for col in anchor_meta.get('columns', [])[1:]:
-                    cref = col['ref']
-                    affected.append({'ref': cref, 'prev': self._choices.get(cref)})
+                for cref in self._all_thead_refs(anchor_meta):
+                    if cref != anchor_ref:
+                        affected.append({'ref': cref, 'prev': self._choices.get(cref)})
                 self._undo_stack.append({
                     'type':            'table',
                     'cells':           affected,
@@ -1503,19 +1842,86 @@ if _TEXTUAL_OK:
             total = self._total_nonempty
             self._log('END-SAVE',
                       f'{done}/{total} classified  →  saving pattern')
+            if self._notes:
+                for ref, note in sorted(self._notes.items()):
+                    self._log('NOTE-SAVED', f'{ref}: {note}')
             _save_history(self._data_file,
                           {r: m['choice'] for r, m in self._choices.items()})
             state = _build_state_from_choices(
                 self._ws, self._choices, self._cells,
                 self._state.direction, self._state.sheet_name,
             )
+            self._close_log_file()
             self.exit(result=state)
 
         async def action_cancel(self) -> None:
             self._log('CANCEL', 'user cancelled — no pattern saved')
             _save_history(self._data_file,
                           {r: m['choice'] for r, m in self._choices.items()})
+            self._close_log_file()
             self.exit(result=None)
+
+        async def action_add_note(self) -> None:
+            """F2: add/edit an internal debug note for the current cell."""
+            ref     = _cell_ref(self._ws_row, self._ws_col)
+            current = self._notes.get(ref, '')
+
+            def _on_note(result: list[str] | None) -> None:
+                if result is None:
+                    return
+                note = result[0].strip()
+                if note:
+                    self._notes[ref] = note
+                    self._log('NOTE', f'{ref}: {note}')
+                elif ref in self._notes:
+                    del self._notes[ref]
+                    self._log('NOTE-DEL', f'{ref}: removed')
+                self._refresh_panel()
+
+            self.push_screen(
+                _FieldsModal(
+                    f'[bold yellow]Internal note[/bold yellow]  {ref}'
+                    f'{"  [dim](existing)[/dim]" if current else ""}',
+                    [('Note (empty = delete)', current)],
+                ),
+                _on_note,
+            )
+
+        async def action_export_clipboard(self) -> None:
+            """F11: copy the full session log to the system clipboard."""
+            lines  = list(self._event_log)
+            if self._notes:
+                lines.append('')
+                lines.append('── Internal notes ──────────────────────')
+                for ref, note in sorted(self._notes.items()):
+                    lines.append(f'  {ref}: {note}')
+            text = '\n'.join(lines)
+            try:
+                import subprocess
+                # clip.exe works in WSL and native Windows
+                proc = subprocess.run(
+                    ['clip.exe'], input=text.encode('utf-8'),
+                    capture_output=True, timeout=5,
+                )
+                if proc.returncode == 0:
+                    self.notify(f'Log copied to clipboard  ({len(lines)} lines)', timeout=4)
+                    return
+            except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+                pass
+            # Fallback: try xclip/xsel
+            for cmd in (['xclip', '-selection', 'clipboard'],
+                        ['xsel', '--clipboard', '--input']):
+                try:
+                    proc = subprocess.run(
+                        cmd, input=text.encode('utf-8'),
+                        capture_output=True, timeout=5,
+                    )
+                    if proc.returncode == 0:
+                        self.notify(f'Log copied to clipboard  ({len(lines)} lines)', timeout=4)
+                        return
+                except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+                    continue
+            self.notify('Clipboard copy failed — use F12 → W to write to file', severity='warning', timeout=5)
 
 
 # ── Public entry point ─────────────────────────────────────────────────────────
