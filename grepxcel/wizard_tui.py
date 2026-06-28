@@ -152,19 +152,33 @@ def _build_state_from_choices(
                 for h_row in meta['header_rows']:
                     lbl_names = [col['lbl_name'] for col in h_row['cols']]
                     for col in h_row['cols']:
-                        state.lbl_defs.append((col['lbl_name'], 'string',
-                                               col.get('cell_value', '')))
+                        state.lbl_defs.append((
+                            col['lbl_name'],
+                            col.get('lbl_type', 'string'),
+                            col.get('lbl_match', col.get('cell_value', '')),
+                        ))
                     state.body_rows.append(['', 'HEADER:1'] + lbl_names)
                 data_vars = meta.get('data_vars', [])
-                for vn in data_vars:
+                var_names = []
+                for item in data_vars:
+                    if isinstance(item, dict):
+                        vn    = item.get('var_name', 'IGNORE')
+                        vtype = item.get('var_type',  'string')
+                        vmatch= item.get('var_match', '.*')
+                    else:
+                        vn, vtype, vmatch = item, 'string', '.*'
+                    var_names.append(vn)
                     if vn and vn != 'IGNORE':
-                        state.var_defs.append((vn, 'string', '.*'))
-                state.body_rows.append(['', f'DATA:{mult}'] + data_vars)
+                        state.var_defs.append((vn, vtype, vmatch))
+                state.body_rows.append(['', f'DATA:{mult}'] + var_names)
                 for f_row in meta.get('footer_rows', []):
                     lbl_names = [col['lbl_name'] for col in f_row['cols']]
                     for col in f_row['cols']:
-                        state.lbl_defs.append((col['lbl_name'], 'string',
-                                               col.get('cell_value', '')))
+                        state.lbl_defs.append((
+                            col['lbl_name'],
+                            col.get('lbl_type', 'string'),
+                            col.get('lbl_match', col.get('cell_value', '')),
+                        ))
                     state.body_rows.append(['', 'HEADER:1'] + lbl_names)
             else:
                 # Legacy single-header-row model (columns list)
@@ -217,7 +231,8 @@ if _TEXTUAL_OK:
         DEFAULT_CSS = """
         _FieldsModal              { align: center middle; }
         _FieldsModal > #dialog    { background: $surface; border: thick $primary;
-                                    width: 64; height: auto; padding: 1 2; }
+                                    width: 68; height: auto; max-height: 82vh;
+                                    padding: 1 2; overflow-y: auto; }
         _FieldsModal Label.title  { text-style: bold; margin-bottom: 1; }
         _FieldsModal Label.lbl    { color: $text-muted; margin-top: 1; }
         _FieldsModal Label.hint   { color: $text-muted; margin-top: 1; }
@@ -538,10 +553,12 @@ if _TEXTUAL_OK:
         _TableSetupModal Input        { margin-bottom: 1; }
         """
 
-        def __init__(self, default_name: str, default_range: str) -> None:
+        def __init__(self, default_name: str, default_range: str,
+                     default_mult: str = '*') -> None:
             super().__init__()
             self._default_name  = default_name
             self._default_range = default_range
+            self._default_mult  = default_mult
 
         def compose(self) -> ComposeResult:
             with Vertical(id='dialog'):
@@ -560,7 +577,7 @@ if _TEXTUAL_OK:
                 yield Label(
                     '*=any instances  ·  1=exactly one  ·  {n,m}=bounded range',
                     classes='desc')
-                yield Input(value='*', id='mult', placeholder='*')
+                yield Input(value=self._default_mult, id='mult', placeholder='*')
                 yield Label(id='errmsg', classes='err')
                 yield Label('ENTER = next field  •  ESC = cancel', classes='hint')
 
@@ -666,7 +683,8 @@ if _TEXTUAL_OK:
 
         def __init__(self, ws, start_row: int, end_row: int,
                      start_col: int, end_col: int,
-                     name: str, mult: str) -> None:
+                     name: str, mult: str,
+                     existing_row_types: 'dict | None' = None) -> None:
             super().__init__()
             self._ws        = ws
             self._start_row = start_row
@@ -676,21 +694,26 @@ if _TEXTUAL_OK:
             self._name      = name
             self._mult      = mult
 
-            # Auto-detect row types
-            self._row_types: dict[int, str] = {}
-            first_header_set = False
-            for r in range(self._start_row, self._end_row + 1):
-                vals = [ws.cell(row=r, column=c).value
-                        for c in range(start_col, end_col + 1)]
-                has_text  = any(isinstance(v, str) and v.strip() for v in vals)
-                has_value = any(v is not None for v in vals)
-                if not first_header_set and has_text:
-                    self._row_types[r] = 'H'
-                    first_header_set = True
-                elif has_value:
-                    self._row_types[r] = 'D'
-                else:
-                    self._row_types[r] = 'S'
+            if existing_row_types:
+                # Re-editing: pre-fill from saved classification
+                self._row_types = {r: existing_row_types.get(r, 'S')
+                                   for r in range(self._start_row, self._end_row + 1)}
+            else:
+                # Auto-detect row types
+                self._row_types: dict[int, str] = {}
+                first_header_set = False
+                for r in range(self._start_row, self._end_row + 1):
+                    vals = [ws.cell(row=r, column=c).value
+                            for c in range(start_col, end_col + 1)]
+                    has_text  = any(isinstance(v, str) and v.strip() for v in vals)
+                    has_value = any(v is not None for v in vals)
+                    if not first_header_set and has_text:
+                        self._row_types[r] = 'H'
+                        first_header_set = True
+                    elif has_value:
+                        self._row_types[r] = 'D'
+                    else:
+                        self._row_types[r] = 'S'
 
         def _col_letter(self, col: int) -> str:
             from openpyxl.utils import get_column_letter
@@ -1266,6 +1289,109 @@ if _TEXTUAL_OK:
                 if p:
                     self._restyle_cell(p[0], p[1])
 
+        def _col_modal_seq(
+            self,
+            col_infos: list[dict],
+            idx: int,
+            existing_cols: 'list | None',
+            mode: str,
+            ref_row: int,
+            results: list,
+            on_done,
+        ) -> None:
+            """Push one _FieldsModal per column in sequence (recursive).
+
+            col_infos  — list of {col, letter} dicts (one per table column)
+            idx        — current column index
+            existing_cols — pre-fill data (list of dicts) or None
+            mode       — 'DATA' | 'HEADER' | 'FOOTER'
+            ref_row    — worksheet row used to read the actual cell value
+            results    — mutable list[dict|None], filled in as modals complete
+            on_done    — callback(results) when all done, callback(None) if cancelled
+            """
+            from openpyxl.utils import get_column_letter as _gcl  # local import is ok
+            if idx >= len(col_infos):
+                on_done(results)
+                return
+
+            ci      = col_infos[idx]
+            col_c   = ci['col']
+            ltr     = ci['letter']
+            val     = self._ws.cell(row=ref_row, column=col_c).value
+            val_str = str(val) if val is not None else ''
+            val_disp = f'"{_trunc(val, 22)}"' if val is not None else f'(empty {ltr})'
+            n_total  = len(col_infos)
+            existing = (existing_cols[idx]
+                        if existing_cols and idx < len(existing_cols)
+                        else None)
+
+            if mode == 'DATA':
+                slug_v   = _slugify(val_str) if val_str else ltr.lower()
+                n_def    = (existing.get('var_name', slug_v)
+                            if existing else slug_v)
+                t_def    = (existing.get('var_type', 'string')
+                            if existing else 'string')
+                m_def    = (existing.get('var_match', '.*')
+                            if existing else '.*')
+                note_def = (existing.get('notes', '')
+                            if existing else
+                            self._notes.get(_cell_ref(ref_row, col_c), ''))
+                fields = [
+                    ('Variable name  (empty = IGNORE this column)', n_def),
+                    ('Type  (string / number / date / boolean)', t_def),
+                    ('Match pattern', m_def),
+                    ('Notes  (written to session log — optional)', note_def),
+                ]
+                row_label = 'DATA'
+            else:
+                pfx = 'col' if mode == 'HEADER' else 'foot'
+                slug_v = _slugify(val_str) if val_str else ltr.lower()
+                n_def  = (existing.get('lbl_name', f'{pfx}_{slug_v}_label')
+                          if existing else f'{pfx}_{slug_v}_label')
+                t_def  = (existing.get('lbl_type', 'string')
+                          if existing else 'string')
+                m_def  = (existing.get('lbl_match', val_str)
+                          if existing else val_str)
+                note_def = (existing.get('notes', '') if existing else '')
+                fields = [
+                    ('Label name', n_def),
+                    ('Type  (string / number / date)', t_def),
+                    ('Match pattern  (exact text or regex)', m_def),
+                    ('Notes  (written to session log — optional)', note_def),
+                ]
+                row_label = mode.title()
+
+            title = (
+                f'[bold magenta]{row_label}  col {idx + 1}/{n_total}'
+                f'[/bold magenta]  [dim]{ltr}: {val_disp}[/dim]'
+            )
+
+            def _on_col(values, _idx=idx):
+                if values is None:
+                    on_done(None)
+                    return
+                if mode == 'DATA':
+                    vn = values[0].strip() or 'IGNORE'
+                    results[_idx] = {
+                        'var_name':  vn,
+                        'var_type':  values[1].strip() or 'string',
+                        'var_match': values[2].strip() or '.*',
+                        'notes':     values[3].strip(),
+                    }
+                else:
+                    slug_fb = _slugify(val_str) if val_str else ltr.lower()
+                    pfx2    = 'col' if mode == 'HEADER' else 'foot'
+                    results[_idx] = {
+                        'lbl_name':  values[0].strip() or f'{pfx2}_{slug_fb}_label',
+                        'lbl_type':  values[1].strip() or 'string',
+                        'lbl_match': values[2].strip() or val_str,
+                        'notes':     values[3].strip(),
+                    }
+                self._col_modal_seq(col_infos, _idx + 1, existing_cols,
+                                    mode, ref_row, results, on_done)
+
+            self.push_screen(_FieldsModal(title, fields), _on_col)
+
         # ── Highlights ────────────────────────────────────────────────────────
 
         def _clear_highlights(self) -> None:
@@ -1498,18 +1624,25 @@ if _TEXTUAL_OK:
             p            = self._proposal()
             default_type = p[4:] if p.startswith('var:') else 'string'
 
+            existing_note = self._notes.get(ref, '')
+
             def _done(result: list[str] | None) -> None:
                 self._clear_highlights()
                 if result is None:
                     self._log('VALUE-X', f'{ref}  cancelled')
                     return
-                name, ftype, match = result[0], result[1], result[2]
+                name, ftype, match, notes = result[0], result[1], result[2], result[3].strip()
                 old  = self._choices.get(ref, {}).get('choice')
                 self._push_undo(ref)
                 self._last_label_base = None
                 self._update_prefix(name)
                 self._commit(ref, {'choice': 'V', 'name': name,
                                    'ftype': ftype, 'match': match})
+                if notes:
+                    self._notes[ref] = notes
+                    self._log('NOTE', f'{ref}: {notes}')
+                elif ref in self._notes:
+                    del self._notes[ref]
                 reclassify = f'  (was {old})' if old else ''
                 rawval = '(empty)' if value is None else f'"{str(value)[:30]}"'
                 self._log('VALUE',
@@ -1522,26 +1655,52 @@ if _TEXTUAL_OK:
                     '[bold bright_yellow]Value[/bold bright_yellow] — extract this cell\'s content',
                     [('Field name', default_name),
                      ('Type',       default_type),
-                     ('Match',      '.*')],
+                     ('Match',      '.*'),
+                     ('Notes  (written to session log — optional)', existing_note)],
                 ),
                 _done,
             )
 
         async def action_act_T(self) -> None:
-            """Three-step table definition:
-            (1) name / full range / mult
-            (2) classify each row as HEADER / DATA / FOOTER / SKIP
-            (3) name the DATA variable columns
+            """Table definition or edit — multi-step flow:
+
+            Step 1  _TableSetupModal   name / full range / mult
+            Step 2  _TableRangeModal   classify each row H / D / F / S
+            Step 3  per-column modals  one _FieldsModal per column:
+                      • For each HEADER row: label name + type + match + notes
+                      • For DATA rows (once): var name + type + match + notes
+                      • For each FOOTER row: label name + type + match + notes
+            Commit  write T + T-HEAD into _choices
+
+            Pressing T on an already-classified T or T-HEAD cell re-opens
+            the flow with all fields pre-filled from the existing definition.
             """
+            from openpyxl.utils import get_column_letter as _gcl
+
             cur_ref  = _cell_ref(self._ws_row, self._ws_col)
+            cur_meta = self._choices.get(cur_ref, {})
+            cur_ch   = cur_meta.get('choice', '')
+
+            # ── Detect edit vs. new ───────────────────────────────────────────
+            existing_anchor: str | None = None
+            existing_meta:   dict | None = None
+            if cur_ch == 'T':
+                existing_anchor = cur_ref
+                existing_meta   = cur_meta
+            elif cur_ch == 'T-HEAD':
+                existing_anchor = cur_meta.get('anchor', cur_ref)
+                existing_meta   = self._choices.get(existing_anchor)
+
             cur_val  = self._ws.cell(row=self._ws_row, column=self._ws_col).value
             slug     = _slugify(str(cur_val)) if cur_val is not None else 'table'
             end_col  = self._detect_table_end_col(self._ws_row, self._ws_col)
-            auto_rng = (f'{_cell_ref(self._ws_row, self._ws_col)}'
-                        f':{_cell_ref(self._ws_row, end_col)}')
+            auto_rng = (f'{cur_ref}:{_cell_ref(self._ws_row, end_col)}')
+
+            setup_name = existing_meta['name']  if existing_meta else slug
+            setup_rng  = existing_meta['range'] if existing_meta else auto_rng
+            setup_mult = existing_meta['mult']  if existing_meta else '*'
 
             def _on_setup(setup: dict | None) -> None:
-                """Step 1 done: have name, full range, mult.  Open row-classifier."""
                 self._clear_highlights()
                 if setup is None:
                     self._log('TABLE-X', f'{cur_ref}  cancelled at setup')
@@ -1551,139 +1710,232 @@ if _TEXTUAL_OK:
                 name = setup['name']
                 mult = setup['mult']
                 rng  = setup['range_str']
+                col_count = end_col2 - start_col + 1
+                col_infos = [
+                    {'col': start_col + i, 'letter': _gcl(start_col + i)}
+                    for i in range(col_count)
+                ]
 
                 def _on_rows(row_types: dict | None) -> None:
-                    """Step 2 done: know which rows are H/D/F/S.
-                    Open variable-name modal for DATA columns only.
-                    """
                     self._clear_highlights()
                     if row_types is None:
                         self._log('TABLE-X', f'{cur_ref}  cancelled at row classification')
                         return
 
-                    h_rows = [r for r, t in sorted(row_types.items()) if t == 'H']
-                    d_rows = [r for r, t in sorted(row_types.items()) if t == 'D']
-                    f_rows = [r for r, t in sorted(row_types.items()) if t == 'F']
+                    h_rows    = sorted(r for r, t in row_types.items() if t == 'H')
+                    d_rows    = sorted(r for r, t in row_types.items() if t == 'D')
+                    f_rows    = sorted(r for r, t in row_types.items() if t == 'F')
+                    skip_rows = sorted(r for r, t in row_types.items() if t == 'S')
 
-                    # Build a default variable name per column from the first H row values
-                    ref_row = h_rows[0] if h_rows else (d_rows[0] if d_rows else start_row)
-                    col_count = end_col2 - start_col + 1
-                    col_defaults = []
-                    for c in range(start_col, end_col2 + 1):
-                        val  = self._ws.cell(row=ref_row, column=c).value
-                        from openpyxl.utils import get_column_letter
-                        ltr  = get_column_letter(c)
-                        slug_c = _slugify(str(val)) if val is not None else f'col{ltr}'
-                        val_disp = f'"{_trunc(val, 20)}"' if val is not None else f'(col {ltr})'
-                        col_defaults.append((f'{ltr}  {val_disp}', slug_c))
+                    # State collectors (filled progressively by column modals)
+                    h_results: list[list | None] = [None] * len(h_rows)
+                    d_results: list[dict | None] = [None] * col_count
+                    f_results: list[list | None] = [None] * len(f_rows)
 
-                    def _on_vars(result: list[str] | None) -> None:
-                        """Step 3 done: have variable names.  Commit everything."""
-                        self._clear_highlights()
-                        if result is None:
-                            self._log('TABLE-X', f'{cur_ref}  cancelled at variable names')
-                            return
+                    # ── Helpers to extract pre-fill data from existing_meta ────
+                    def _existing_h_cols(row_idx: int) -> 'list | None':
+                        if not existing_meta:
+                            return None
+                        hrows = existing_meta.get('header_rows', [])
+                        return hrows[row_idx]['cols'] if row_idx < len(hrows) else None
 
-                        data_vars = [
-                            (result[i] or 'IGNORE') for i in range(col_count)
-                        ]
+                    def _existing_f_cols(row_idx: int) -> 'list | None':
+                        if not existing_meta:
+                            return None
+                        frows = existing_meta.get('footer_rows', [])
+                        return frows[row_idx]['cols'] if row_idx < len(frows) else None
 
-                        # Build header_rows spec (label names from cell values)
+                    def _existing_d_cols() -> 'list | None':
+                        if not existing_meta:
+                            return None
+                        dvs = existing_meta.get('data_vars', [])
+                        if not dvs:
+                            return None
+                        result = []
+                        for item in dvs:
+                            if isinstance(item, dict):
+                                result.append(item)
+                            else:
+                                result.append({
+                                    'var_name': item, 'var_type': 'string',
+                                    'var_match': '.*', 'notes': '',
+                                })
+                        return result
+
+                    # ── Commit ────────────────────────────────────────────────
+                    def _commit_all() -> None:
                         header_rows = []
-                        for r in h_rows:
+                        for ri, r in enumerate(h_rows):
                             hcols = []
-                            for c in range(start_col, end_col2 + 1):
-                                val  = self._ws.cell(row=r, column=c).value
-                                slug_c = _slugify(str(val)) if val is not None else f'col{c}'
+                            row_def = h_results[ri] or []
+                            for ci, cinfo in enumerate(col_infos):
+                                val = self._ws.cell(row=r, column=cinfo['col']).value
+                                val_s = str(val) if val is not None else ''
+                                slug_v = _slugify(val_s) if val_s else cinfo['letter'].lower()
+                                cd = row_def[ci] if ci < len(row_def) else {}
                                 hcols.append({
-                                    'ref':        _cell_ref(r, c),
-                                    'row':        r, 'col': c,
-                                    'cell_value': str(val) if val is not None else '',
-                                    'lbl_name':   f'col_{slug_c}_label',
+                                    'ref':       _cell_ref(r, cinfo['col']),
+                                    'row':       r, 'col': cinfo['col'],
+                                    'cell_value': val_s,
+                                    'lbl_name':  cd.get('lbl_name', f'col_{slug_v}_label'),
+                                    'lbl_type':  cd.get('lbl_type', 'string'),
+                                    'lbl_match': cd.get('lbl_match', val_s),
+                                    'notes':     cd.get('notes', ''),
                                 })
                             header_rows.append({'row': r, 'cols': hcols})
 
-                        # Footer spec (same structure as header)
                         footer_rows = []
-                        for r in f_rows:
+                        for ri, r in enumerate(f_rows):
                             fcols = []
-                            for c in range(start_col, end_col2 + 1):
-                                val  = self._ws.cell(row=r, column=c).value
-                                slug_c = _slugify(str(val)) if val is not None else f'col{c}'
+                            row_def = f_results[ri] or []
+                            for ci, cinfo in enumerate(col_infos):
+                                val = self._ws.cell(row=r, column=cinfo['col']).value
+                                val_s = str(val) if val is not None else ''
+                                slug_v = _slugify(val_s) if val_s else cinfo['letter'].lower()
+                                cd = row_def[ci] if ci < len(row_def) else {}
                                 fcols.append({
-                                    'ref':        _cell_ref(r, c),
-                                    'row':        r, 'col': c,
-                                    'cell_value': str(val) if val is not None else '',
-                                    'lbl_name':   f'foot_{slug_c}_label',
+                                    'ref':       _cell_ref(r, cinfo['col']),
+                                    'row':       r, 'col': cinfo['col'],
+                                    'cell_value': val_s,
+                                    'lbl_name':  cd.get('lbl_name', f'foot_{slug_v}_label'),
+                                    'lbl_type':  cd.get('lbl_type', 'string'),
+                                    'lbl_match': cd.get('lbl_match', val_s),
+                                    'notes':     cd.get('notes', ''),
                                 })
                             footer_rows.append({'row': r, 'cols': fcols})
 
-                        skip_rows  = [r for r, t in sorted(row_types.items()) if t == 'S']
-                        anchor_ref = _cell_ref(start_row, start_col)
+                        data_vars = []
+                        for ci, cinfo in enumerate(col_infos):
+                            cd = d_results[ci] or {}
+                            vn = cd.get('var_name', 'IGNORE') or 'IGNORE'
+                            data_vars.append({
+                                'var_name':  vn,
+                                'var_type':  cd.get('var_type',  'string') or 'string',
+                                'var_match': cd.get('var_match', '.*')    or '.*',
+                                'notes':     cd.get('notes',     ''),
+                            })
+                            note = cd.get('notes', '').strip()
+                            if note:
+                                d_ref = _cell_ref(
+                                    d_rows[0] if d_rows else start_row, cinfo['col']
+                                )
+                                self._notes[d_ref] = note
+                                self._log('NOTE', f'{d_ref}: {note}  (DATA col {cinfo["letter"]})')
 
-                        # Collect all cells that will be marked T-HEAD for undo
-                        all_header_cells = [
-                            col for hrow in header_rows for col in hrow['cols']
-                        ] + [
-                            col for frow in footer_rows for col in frow['cols']
-                        ]
-                        affected = [{'ref': anchor_ref,
-                                     'prev': self._choices.get(anchor_ref)}]
-                        for hc in all_header_cells:
-                            if hc['ref'] != anchor_ref:
-                                affected.append({'ref': hc['ref'],
+                        # Remove old table if editing
+                        if existing_meta and existing_anchor:
+                            self._remove_table(existing_anchor, existing_meta)
+
+                        actual_anchor = _cell_ref(start_row, start_col)
+                        all_head_cells = (
+                            [col for hr in header_rows for col in hr['cols']] +
+                            [col for fr in footer_rows for col in fr['cols']]
+                        )
+                        affected = [{'ref': actual_anchor,
+                                     'prev': self._choices.get(actual_anchor)}]
+                        for hc in all_head_cells:
+                            if hc['ref'] != actual_anchor:
+                                affected.append({'ref':  hc['ref'],
                                                  'prev': self._choices.get(hc['ref'])})
                         self._undo_stack.append({
-                            'type':            'table',
-                            'cells':           affected,
+                            'type':  'table', 'cells': affected,
                             'prev_label_base': self._last_label_base,
                         })
-
                         self._last_label_base = None
+
                         meta = {
                             'choice':      'T',
                             'name':        name,
                             'mult':        mult,
                             'range':       rng,
-                            'start_row':   start_row, 'end_row': end_row,
-                            'start_col':   start_col, 'end_col': end_col2,
+                            'start_row':   start_row, 'end_row':   end_row,
+                            'start_col':   start_col, 'end_col':   end_col2,
                             'header_rows': header_rows,
                             'footer_rows': footer_rows,
                             'data_vars':   data_vars,
                             'skip_rows':   skip_rows,
                             'row_types':   row_types,
                         }
-                        self._choices[anchor_ref] = meta
+                        self._choices[actual_anchor] = meta
                         self._restyle_cell(start_row, start_col)
-                        for hc in all_header_cells:
-                            if hc['ref'] != anchor_ref:
+                        for hc in all_head_cells:
+                            if hc['ref'] != actual_anchor:
                                 self._choices[hc['ref']] = {
-                                    'choice': 'T-HEAD', 'anchor': anchor_ref,
+                                    'choice': 'T-HEAD', 'anchor': actual_anchor,
                                 }
                                 self._restyle_cell(hc['row'], hc['col'])
 
-                        n_h = len(h_rows)
-                        n_f = len(f_rows)
-                        n_d = len(d_rows)
-                        n_s = len(skip_rows)
+                        n_h = len(h_rows); n_f = len(f_rows)
+                        n_d = len(d_rows); n_s = len(skip_rows)
+                        var_names = [dv['var_name'] for dv in data_vars]
                         self._log(
                             'TABLE',
                             f'{rng}  name={name}  mult={mult}  '
                             f'H={n_h} D={n_d} F={n_f} S={n_s}  '
-                            f'vars=[{", ".join(data_vars)}]',
+                            f'vars=[{", ".join(var_names)}]',
                         )
                         self._refresh_panel()
                         self._advance()
 
-                    self.push_screen(
-                        _FieldsModal(
-                            f'[bold magenta]Variable names — DATA columns[/bold magenta]  '
-                            f'table "{name}"  {col_count} column(s)\n'
-                            f'  [dim](empty name = IGNORE that column)[/dim]',
-                            col_defaults,
-                        ),
-                        _on_vars,
-                    )
+                    # ── Footer rows sequence ───────────────────────────────────
+                    def _run_f_row(row_idx: int) -> None:
+                        if row_idx >= len(f_rows):
+                            _commit_all()
+                            return
+                        r = f_rows[row_idx]
+                        ex_f = _existing_f_cols(row_idx)
+                        res_f: list[dict | None] = [None] * col_count
+
+                        def _on_f_done(results, _ri=row_idx) -> None:
+                            if results is None:
+                                self._log('TABLE-X',
+                                          f'{cur_ref}  cancelled at FOOTER col def row {_ri+1}')
+                                return
+                            f_results[_ri] = results
+                            _run_f_row(_ri + 1)
+
+                        self._col_modal_seq(col_infos, 0, ex_f, 'FOOTER', r, res_f, _on_f_done)
+
+                    # ── DATA column sequence ───────────────────────────────────
+                    def _run_d() -> None:
+                        if not d_rows:
+                            _run_f_row(0)
+                            return
+                        ref_r = d_rows[0]
+                        ex_d  = _existing_d_cols()
+                        res_d: list[dict | None] = [None] * col_count
+
+                        def _on_d_done(results) -> None:
+                            if results is None:
+                                self._log('TABLE-X', f'{cur_ref}  cancelled at DATA col def')
+                                return
+                            for i in range(col_count):
+                                d_results[i] = results[i]
+                            _run_f_row(0)
+
+                        self._col_modal_seq(col_infos, 0, ex_d, 'DATA', ref_r, res_d, _on_d_done)
+
+                    # ── Header rows sequence ───────────────────────────────────
+                    def _run_h_row(row_idx: int) -> None:
+                        if row_idx >= len(h_rows):
+                            _run_d()
+                            return
+                        r    = h_rows[row_idx]
+                        ex_h = _existing_h_cols(row_idx)
+                        res_h: list[dict | None] = [None] * col_count
+
+                        def _on_h_done(results, _ri=row_idx) -> None:
+                            if results is None:
+                                self._log('TABLE-X',
+                                          f'{cur_ref}  cancelled at HEADER col def row {_ri+1}')
+                                return
+                            h_results[_ri] = results
+                            _run_h_row(_ri + 1)
+
+                        self._col_modal_seq(col_infos, 0, ex_h, 'HEADER', r, res_h, _on_h_done)
+
+                    # ── Start the column-definition chain ─────────────────────
+                    _run_h_row(0)
 
                 self.push_screen(
                     _TableRangeModal(
@@ -1691,12 +1943,13 @@ if _TEXTUAL_OK:
                         start_row, end_row,
                         start_col, end_col2,
                         name, mult,
+                        existing_row_types=existing_meta.get('row_types') if existing_meta else None,
                     ),
                     _on_rows,
                 )
 
             self.push_screen(
-                _TableSetupModal(slug, auto_rng),
+                _TableSetupModal(setup_name, setup_rng, setup_mult),
                 _on_setup,
             )
 
