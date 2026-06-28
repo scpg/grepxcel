@@ -7,7 +7,7 @@ Design principles
 * push_screen(modal, callback) throughout — no push_screen_wait, no workers needed.
 * _choices dict is the single source of truth; WizardState is built on save.
 * Panel has 4 fixed zones: CELL · CLASSIFY · NAVIGATE · LEGEND+STATS
-* Color system: green=Label  yellow=Value  blue=Header  magenta=Table  dim=Ignore
+* Color system: green=Label  bright_yellow=Value  blue=Header  magenta=Table  dim=Ignore
 * Highlights: H key marks all unclassified non-empty cells in amber; auto-clears on
   any navigation or classification.
 * Undo: Ctrl+Z / undo stack pops the last classification and reverts _choices entry.
@@ -55,7 +55,7 @@ from .wizard import (
 _STYLE: dict[str, str] = {
     'L':      'bold green',
     'C':      'bold blue',
-    'V':      'bold yellow',
+    'V':      'bold bright_yellow',
     'T':      'bold magenta',
     'T-HEAD': 'magenta',          # non-anchor column header cells
     'I':      'dim',
@@ -65,7 +65,7 @@ _STYLE: dict[str, str] = {
 _CHOICE_COLOR = {
     'L':      'green',
     'C':      'blue',
-    'V':      'yellow',
+    'V':      'bright_yellow',
     'T':      'magenta',
     'T-HEAD': 'magenta',
     'I':      'dim',
@@ -97,6 +97,8 @@ def _styled(value: Any, choice: str) -> 'RichText':
         # An empty RichText with a bold style renders as nothing — the dot is essential.
         marker = '○' if choice == 'I' else '●'
         return RichText(marker, style=_STYLE.get(choice, ''))
+    if choice == 'I':
+        return RichText(_trunc(value), style='dim strike')
     return RichText(_trunc(value), style=_STYLE.get(choice, ''))
 
 
@@ -142,23 +144,37 @@ def _build_state_from_choices(
             if ref in seen_t_anchors:
                 continue
             seen_t_anchors.add(ref)
-            mult      = meta.get('mult', '*')
-            cols      = meta.get('columns', [])
-            lbl_names = []
-            var_names = []
-            for col in cols:
-                lbl_name   = col.get('lbl_name', 'IGNORE')
-                var_name   = col.get('var_name', 'IGNORE')
-                var_type   = col.get('var_type', 'string')
-                var_match  = col.get('var_match', '.*')
-                cell_val   = col.get('cell_value', '')
-                state.lbl_defs.append((lbl_name, 'string', cell_val))
-                state.var_defs.append((var_name, var_type, var_match))
-                lbl_names.append(lbl_name)
-                var_names.append(var_name)
+            mult = meta.get('mult', '*')
             state.body_rows.append([f'table:{mult}'])
-            state.body_rows.append(['', 'HEADER:1'] + lbl_names)
-            state.body_rows.append(['', 'DATA:*'] + var_names)
+
+            if 'header_rows' in meta:
+                # New multi-row model: header_rows + data_vars
+                for h_row in meta['header_rows']:
+                    lbl_names = [col['lbl_name'] for col in h_row['cols']]
+                    for col in h_row['cols']:
+                        state.lbl_defs.append((col['lbl_name'], 'string',
+                                               col.get('cell_value', '')))
+                    state.body_rows.append(['', 'HEADER:1'] + lbl_names)
+                data_vars = meta.get('data_vars', [])
+                for vn in data_vars:
+                    state.var_defs.append((vn, 'string', '.*'))
+                state.body_rows.append(['', f'DATA:{mult}'] + data_vars)
+            else:
+                # Legacy single-header-row model (columns list)
+                cols      = meta.get('columns', [])
+                lbl_names = []
+                var_names = []
+                for col in cols:
+                    lbl_name  = col.get('lbl_name', 'IGNORE')
+                    var_name  = col.get('var_name', 'IGNORE')
+                    cell_val  = col.get('cell_value', '')
+                    state.lbl_defs.append((lbl_name, 'string', cell_val))
+                    state.var_defs.append((var_name, col.get('var_type', 'string'),
+                                           col.get('var_match', '.*')))
+                    lbl_names.append(lbl_name)
+                    var_names.append(var_name)
+                state.body_rows.append(['', 'HEADER:1'] + lbl_names)
+                state.body_rows.append(['', f'DATA:{mult}'] + var_names)
         elif choice == 'T-HEAD':
             pass  # handled by the anchor cell above
         elif choice == 'I':
@@ -398,7 +414,7 @@ if _TEXTUAL_OK:
   [bold blue]C[/bold blue]  [bold]Header[/bold] — Section title or navigation marker; no value follows.
           e.g. "APPROVED BY DEPT" used as a structural heading.
 
-  [bold yellow]V[/bold yellow]  [bold]Value[/bold]  — Extract this cell's content (a variable).
+  [bold bright_yellow]V[/bold bright_yellow]  [bold]Value[/bold]  — Extract this cell's content (a variable).
           e.g. the actual invoice number, a date, a name.
 
   [bold magenta]T[/bold magenta]  [bold]Table[/bold]  — Mark the start of a repeating data-row block.
@@ -432,7 +448,7 @@ if _TEXTUAL_OK:
 
 [bold cyan]LEGEND[/bold cyan]
 
-  [bold green]●[/bold green] green   = Label (L)    [bold yellow]●[/bold yellow] yellow  = Value (V)
+  [bold green]●[/bold green] green   = Label (L)    [bold bright_yellow]●[/bold bright_yellow] bright_yellow = Value (V)
   [bold blue]●[/bold blue] blue    = Header (C)  [bold magenta]●[/bold magenta] magenta = Table (T)
   [dim]○[/dim] dim     = Ignore (I)   white   = not yet classified\
 """
@@ -677,6 +693,7 @@ if _TEXTUAL_OK:
             # Primary state: all classifications live here
             self._choices: dict[str, dict] = {}
             self._last_label_base: str | None = None
+            self._current_prefix: str = ''  # dot-notation prefix for variable names
 
             self._ws_row = 1
             self._ws_col = 1
@@ -822,7 +839,7 @@ if _TEXTUAL_OK:
             if proposal == 'label':
                 prop_line = '[bold green]label[/bold green]'
             elif proposal.startswith('var:'):
-                prop_line = f'[bold yellow]{proposal}[/bold yellow]'
+                prop_line = f'[bold bright_yellow]{proposal}[/bold bright_yellow]'
             else:
                 prop_line = f'[dim]{proposal}[/dim]'
 
@@ -895,7 +912,7 @@ if _TEXTUAL_OK:
                 '  [dim]ENTER[/dim]  auto-accept proposal',
                 '  [bold green]L[/bold green]  Label  — text anchors a value',
                 '  [bold blue]C[/bold blue]  Header — section title only',
-                '  [bold yellow]V[/bold yellow]  Value  — extract this cell',
+                '  [bold bright_yellow]V[/bold bright_yellow]  Value  — extract this cell',
                 '  [bold magenta]T[/bold magenta]  Table  — define range + column names',
                 '  [dim]I[/dim]  Ignore — skip',
                 '  [bold]R[/bold]  Remove classification',
@@ -930,7 +947,7 @@ if _TEXTUAL_OK:
             lines += [
                 f'[bold cyan]─ Legend {"─" * 34}[/bold cyan]',
                 '  [bold green]●[/bold green] green   = Label (L)',
-                '  [bold yellow]●[/bold yellow] yellow  = Value (V)',
+                '  [bold bright_yellow]●[/bold bright_yellow] bright_yellow = Value (V)',
                 '  [bold blue]●[/bold blue] blue    = Header (C)',
                 '  [bold magenta]●[/bold magenta] magenta = Table (T)',
                 '  [dim]○[/dim] dim     = Ignore (I)',
@@ -1140,6 +1157,14 @@ if _TEXTUAL_OK:
 
         # ── Classification helpers ─────────────────────────────────────────────
 
+        def _update_prefix(self, name: str) -> None:
+            """Extract dot-notation prefix from a variable name and store it."""
+            if '.' in name:
+                prefix_part, _ = name.rsplit('.', 1)
+                self._current_prefix = prefix_part + '.'
+            else:
+                self._current_prefix = ''
+
         def _push_undo(self, ref: str) -> None:
             self._undo_stack.append({
                 'ref':             ref,
@@ -1229,7 +1254,8 @@ if _TEXTUAL_OK:
             value        = self._ws.cell(row=self._ws_row, column=self._ws_col).value
             ref          = _cell_ref(self._ws_row, self._ws_col)
             slug         = _slugify(str(value)) if value is not None else 'field'
-            default_name = self._last_label_base or slug
+            base         = self._last_label_base or slug
+            default_name = (self._current_prefix + base) if self._current_prefix else base
             p            = self._proposal()
             default_type = p[4:] if p.startswith('var:') else 'string'
 
@@ -1242,6 +1268,7 @@ if _TEXTUAL_OK:
                 old  = self._choices.get(ref, {}).get('choice')
                 self._push_undo(ref)
                 self._last_label_base = None
+                self._update_prefix(name)
                 self._commit(ref, {'choice': 'V', 'name': name,
                                    'ftype': ftype, 'match': match})
                 reclassify = f'  (was {old})' if old else ''
@@ -1253,7 +1280,7 @@ if _TEXTUAL_OK:
 
             self.push_screen(
                 _FieldsModal(
-                    '[bold yellow]Value[/bold yellow] — extract this cell\'s content',
+                    '[bold bright_yellow]Value[/bold bright_yellow] — extract this cell\'s content',
                     [('Field name', default_name),
                      ('Type',       default_type),
                      ('Match',      '.*')],
