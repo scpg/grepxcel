@@ -80,13 +80,21 @@ _CHOICE_NAME = {
 _SEP = '─' * 42   # visual divider for panel zones
 
 
+def _trunc(value: Any, width: int = 20) -> str:
+    """Truncate to width chars, adding … when text is cut."""
+    if value is None:
+        return ''
+    s = str(value)
+    return (s[:width - 1] + '…') if len(s) > width else s
+
+
 def _styled(value: Any, choice: str) -> 'RichText':
     if value is None:
         # Empty classified cell: show a colored dot so the user can see it was classified.
         # An empty RichText with a bold style renders as nothing — the dot is essential.
         marker = '○' if choice == 'I' else '●'
         return RichText(marker, style=_STYLE.get(choice, ''))
-    return RichText(str(value)[:20], style=_STYLE.get(choice, ''))
+    return RichText(_trunc(value), style=_STYLE.get(choice, ''))
 
 
 # ── Pattern builder ────────────────────────────────────────────────────────────
@@ -239,10 +247,12 @@ if _TEXTUAL_OK:
         DEFAULT_CSS = """
         _ConfigModal              { align: center middle; }
         _ConfigModal > #dialog    { background: $surface; border: thick $primary;
-                                    width: 60; height: auto; padding: 1 2; }
-        _ConfigModal Label        { margin-bottom: 1; }
+                                    width: 72; height: auto; padding: 1 3; }
+        _ConfigModal Label.title  { text-style: bold; margin-bottom: 1; }
+        _ConfigModal Label.sect   { text-style: bold; margin-top: 1; }
+        _ConfigModal Label.desc   { color: $text-muted; margin-bottom: 1; }
         _ConfigModal Select       { margin-bottom: 1; }
-        _ConfigModal .hint        { color: $text-muted; }
+        _ConfigModal Label.hint   { color: $text-muted; margin-top: 1; }
         """
 
         def __init__(self, is_template: bool) -> None:
@@ -252,19 +262,23 @@ if _TEXTUAL_OK:
         def compose(self) -> ComposeResult:
             note = '  [yellow]⚑ template detected[/yellow]' if self._is_template else ''
             with Vertical(id='dialog'):
-                yield Label(f'[bold]Wizard configuration[/bold]{note}')
-                yield Label('Scan direction')
+                yield Label(f'Wizard configuration{note}', classes='title')
+                yield Label('Scan direction', classes='sect')
+                yield Label('In which direction does the data read?', classes='desc')
                 yield Select(
                     options=[('Left → Right  (LR)', 'LR'), ('Top → Down  (TD)', 'TD')],
                     value='LR', id='dir',
                 )
-                yield Label('Template mode  (empty cells after labels treated as value slots)')
+                yield Label('Template mode', classes='sect')
+                yield Label('Empty cells after labels are treated as variable slots',
+                            classes='desc')
                 yield Select(
-                    options=[('Yes', 'yes'), ('No', 'no')],
+                    options=[('Yes — empty slots are variables', 'yes'),
+                              ('No — classify each cell manually', 'no')],
                     value='yes' if self._is_template else 'no',
                     id='tpl',
                 )
-                yield Label('[dim]ENTER = start  •  ESC = cancel[/dim]', classes='hint')
+                yield Label('ENTER = start  •  ESC = cancel', classes='hint')
 
         def on_key(self, event) -> None:
             if event.key == 'enter':
@@ -604,7 +618,7 @@ if _TEXTUAL_OK:
                     meta = self._choices.get(ref)
                     cells.append(
                         _styled(v, meta['choice']) if meta
-                        else ('' if v is None else str(v)[:20])
+                        else _trunc(v)
                     )
                 table.add_row(*cells, key=str(row))
             table.fixed_columns = 1
@@ -619,7 +633,7 @@ if _TEXTUAL_OK:
             ref   = _cell_ref(ws_row, ws_col)
             value = self._ws.cell(row=ws_row, column=ws_col).value
             meta  = self._choices.get(ref)
-            new   = _styled(value, meta['choice']) if meta else ('' if value is None else str(value)[:20])
+            new   = _styled(value, meta['choice']) if meta else _trunc(value)
             try:
                 table.update_cell(str(ws_row), str(ws_col), new, update_width=False)
             except Exception:
