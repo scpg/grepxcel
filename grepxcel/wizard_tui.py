@@ -2,27 +2,8 @@
 
 Requires textual: pip install 'grepxcel[wizard]'
 
-Layout
-------
-┌─ Header ─────────────────────────────────────────────────────┐
-│ grepxcel wizard — file.xlsx (Sheet1)                         │
-├─ DataTable (scrollable) ──────────┬─ ClassifyPanel ──────────┤
-│   #   A         B       C         │  Cell B4                 │
-│   1   INVOICE            DATE     │  'Invoice No:'           │
-│ ▶ 2   Invoice No:  [empty]  ...   │  Proposed: label         │
-│   3   Due Date:    [empty]  ...   │                          │
-│                                   │  [L] Field label         │
-│                                   │  [C] Control label       │
-│                                   │  [V] Variable            │
-│                                   │  [I] Ignore              │
-│                                   │                          │
-│                                   │  [N] Next  [P] Prev      │
-│                                   │  [G] Goto  [E] End       │
-│                                   │                          │
-│                                   │  ── Pattern ──           │
-│                                   │  Labels:    0            │
-│                                   │  Variables: 0            │
-├─ Footer (key hints) ──────────────┴──────────────────────────┤
+All screen pushes use the push_screen(modal, callback) pattern — no workers
+needed, no push_screen_wait calls, fully event-driven.
 """
 from __future__ import annotations
 
@@ -55,12 +36,9 @@ from .wizard import (
     _save_history,
     _load_history,
     _detect_template,
-    _var_type_from_proposal,
     _CHOICE_LABELS,
 )
 
-
-# ── cell styling ──────────────────────────────────────────────────────────────
 
 _CHOICE_STYLE: dict[str, str] = {
     'L': 'bold green',
@@ -76,34 +54,32 @@ def _styled(value: Any, choice: str) -> 'RichText':
     return RichText(display, style=_CHOICE_STYLE.get(choice, ''))
 
 
-# ── guards ────────────────────────────────────────────────────────────────────
-
 if _TEXTUAL_OK:
 
     # ── Modals ────────────────────────────────────────────────────────────────
 
     class _FieldsModal(ModalScreen):
-        """Generic input modal with one or more labelled text fields.
+        """One or more labelled text-input fields.
 
-        ENTER in any non-last field moves focus to the next; ENTER in the last
-        field (or when there is only one) submits. ESC cancels.
-        Returns a list of str values (one per field), or None on cancel.
+        ENTER in a non-last field advances focus; ENTER in the last field
+        (or sole field) submits.  ESC cancels → dismiss(None).
+        Dismissed with a list[str] of values, or None on cancel.
         """
 
         DEFAULT_CSS = """
-        _FieldsModal            { align: center middle; }
-        _FieldsModal > #dialog  { background: $surface; border: thick $primary;
-                                  width: 64; height: auto; max-height: 22;
-                                  padding: 1 2; }
-        _FieldsModal .title     { text-style: bold; margin-bottom: 1; }
-        _FieldsModal .lbl       { color: $text-muted; margin-top: 1; }
-        _FieldsModal .hint      { color: $text-muted; margin-top: 1; }
+        _FieldsModal              { align: center middle; }
+        _FieldsModal > #dialog    { background: $surface; border: thick $primary;
+                                    width: 64; height: auto; max-height: 22;
+                                    padding: 1 2; }
+        _FieldsModal Label.title  { text-style: bold; margin-bottom: 1; }
+        _FieldsModal Label.lbl    { color: $text-muted; margin-top: 1; }
+        _FieldsModal Label.hint   { color: $text-muted; margin-top: 1; }
         """
 
-        def __init__(self, title: str, fields: list[tuple[str, str]]):
+        def __init__(self, title: str, fields: list[tuple[str, str]]) -> None:
             super().__init__()
             self._title  = title
-            self._fields = fields   # [(label, default), ...]
+            self._fields = fields
 
         def compose(self) -> ComposeResult:
             with Vertical(id='dialog'):
@@ -125,31 +101,33 @@ if _TEXTUAL_OK:
                 idx = inputs.index(event.input)
             except ValueError:
                 idx = len(inputs) - 1
-
             if idx < len(inputs) - 1:
-                inputs[idx + 1].focus()   # move to next field
+                inputs[idx + 1].focus()
             else:
-                self._submit()            # last field → commit
+                self._submit()
 
         def on_key(self, event) -> None:
             if event.key == 'escape':
                 self.dismiss(None)
 
         def _submit(self) -> None:
-            values = [inp.value for inp in self.query(Input)]
-            result = [v if v else d for v, (_, d) in zip(values, self._fields)]
+            inputs = list(self.query(Input))
+            result = [
+                inp.value if inp.value else default
+                for inp, (_, default) in zip(inputs, self._fields)
+            ]
             self.dismiss(result)
 
 
     class _GotoModal(ModalScreen):
-        """Ask for a cell reference to jump to (e.g. 'B5')."""
+        """Cell-reference input modal (e.g. 'B5')."""
 
         DEFAULT_CSS = """
-        _GotoModal            { align: center middle; }
-        _GotoModal > #dialog  { background: $surface; border: thick $primary;
-                                width: 44; height: auto; padding: 1 2; }
-        _GotoModal .title     { text-style: bold; margin-bottom: 1; }
-        _GotoModal .hint      { color: $text-muted; margin-top: 1; }
+        _GotoModal              { align: center middle; }
+        _GotoModal > #dialog    { background: $surface; border: thick $primary;
+                                  width: 44; height: auto; padding: 1 2; }
+        _GotoModal Label.title  { text-style: bold; margin-bottom: 1; }
+        _GotoModal Label.hint   { color: $text-muted; margin-top: 1; }
         """
 
         def compose(self) -> ComposeResult:
@@ -170,14 +148,15 @@ if _TEXTUAL_OK:
 
 
     class _ConfigModal(ModalScreen):
-        """Shown at startup: scan direction + template mode."""
+        """Startup configuration: scan direction + template mode."""
 
         DEFAULT_CSS = """
-        _ConfigModal            { align: center middle; }
-        _ConfigModal > #dialog  { background: $surface; border: thick $primary;
-                                  width: 60; height: auto; padding: 1 2; }
-        _ConfigModal Label      { margin-bottom: 1; }
-        _ConfigModal Select     { margin-bottom: 1; }
+        _ConfigModal              { align: center middle; }
+        _ConfigModal > #dialog    { background: $surface; border: thick $primary;
+                                    width: 60; height: auto; padding: 1 2; }
+        _ConfigModal Label        { margin-bottom: 1; }
+        _ConfigModal Select       { margin-bottom: 1; }
+        _ConfigModal .hint        { color: $text-muted; }
         """
 
         def __init__(self, is_template: bool) -> None:
@@ -203,7 +182,7 @@ if _TEXTUAL_OK:
                     value='yes' if self._is_template else 'no',
                     id='tpl',
                 )
-                yield Label('[dim]ENTER = start  •  ESC = cancel[/dim]')
+                yield Label('[dim]ENTER = start  •  ESC = cancel[/dim]', classes='hint')
 
         def on_key(self, event) -> None:
             if event.key == 'enter':
@@ -222,12 +201,12 @@ if _TEXTUAL_OK:
     class _Panel(Static):
         """Scrollable right-side classification panel."""
 
+
     class WizardTUIApp(App):
         """Full-screen interactive pattern wizard."""
 
         CSS = """
-        Screen { layers: default modal; }
-
+        Screen  { layers: default modal; }
         #main   { height: 1fr; }
 
         DataTable {
@@ -256,7 +235,7 @@ if _TEXTUAL_OK:
             Binding('g', 'nav_goto', 'Goto'),
             Binding('e', 'end_save', 'End & Save'),
             Binding('enter', 'accept', 'Accept', show=False),
-            Binding('ctrl+c', 'cancel', 'Cancel', show=False),
+            Binding('ctrl+q', 'cancel', 'Cancel', show=False),
         ]
 
         def __init__(
@@ -274,15 +253,14 @@ if _TEXTUAL_OK:
             self._max_col = ws.max_column or 1
 
             self._history = _load_history(data_file)
-            self._choices: dict[str, dict] = {}     # ref → {choice, name?, ...}
+            self._choices: dict[str, dict] = {}
             self._last_label_base: str | None = None
 
-            # Current worksheet position (1-based); set properly after config
             self._ws_row = 1
             self._ws_col = 1
             self._is_template = False
             self._cells: list[tuple[int, int]] = []
-            self._initialized = False
+            self._initialized = False   # NOTE: never name this _ready (conflicts with App._ready)
 
         def compose(self) -> ComposeResult:
             yield Header(show_clock=False)
@@ -296,8 +274,10 @@ if _TEXTUAL_OK:
             self.title = f'grepxcel wizard — {fname} ({self._state.sheet_name})'
 
             is_tpl = _detect_template(self._ws, self._data_file)
-            cfg    = await self.push_screen_wait(_ConfigModal(is_tpl))
+            self.push_screen(_ConfigModal(is_tpl), self._on_config_done)
 
+        def _on_config_done(self, cfg: dict | None) -> None:
+            """Callback: config modal dismissed."""
             if cfg is None:
                 self.exit(result=None)
                 return
@@ -308,7 +288,6 @@ if _TEXTUAL_OK:
 
             self._populate_table()
 
-            # Jump cursor to the first non-empty cell
             first = _find_next_nonempty(self._cells, self._ws, 0)
             if first is not None:
                 r, c = self._cells[first]
@@ -324,33 +303,29 @@ if _TEXTUAL_OK:
             table = self.query_one('#sheet', DataTable)
             table.clear(columns=True)
 
-            # First column: row numbers (pinned)
             table.add_column('#', width=4, key='__rn__')
             for col in range(1, self._max_col + 1):
                 table.add_column(_col_label(col), key=str(col))
 
             for row in range(1, self._max_row + 1):
-                row_cells: list[Any] = [RichText(str(row), style='dim')]
+                cells: list[Any] = [RichText(str(row), style='dim')]
                 for col in range(1, self._max_col + 1):
                     v    = self._ws.cell(row=row, column=col).value
                     ref  = _cell_ref(row, col)
                     meta = self._choices.get(ref)
-                    row_cells.append(
+                    cells.append(
                         _styled(v, meta['choice']) if meta
                         else ('' if v is None else str(v)[:20])
                     )
-                table.add_row(*row_cells, key=str(row))
+                table.add_row(*cells, key=str(row))
 
-            table.fixed_columns = 1  # keep row-number column pinned
+            table.fixed_columns = 1
 
         def _move_cursor(self, ws_row: int, ws_col: int) -> None:
-            """Move DataTable cursor to the worksheet cell (1-based coords)."""
             table = self.query_one('#sheet', DataTable)
-            # DataTable col 0 = row-number pin; DataTable col N = worksheet col N
             table.move_cursor(row=ws_row - 1, column=ws_col, animate=False)
 
         def _restyle_cell(self, ws_row: int, ws_col: int) -> None:
-            """Re-draw one cell in the DataTable after classification."""
             table = self.query_one('#sheet', DataTable)
             ref   = _cell_ref(ws_row, ws_col)
             value = self._ws.cell(row=ws_row, column=ws_col).value
@@ -366,17 +341,16 @@ if _TEXTUAL_OK:
                 return
             dt_col = event.cursor_column
             if dt_col == 0:
-                # Cursor landed on the row-number pin — redirect right
                 self.call_after_refresh(
                     lambda: self.query_one('#sheet', DataTable)
                     .move_cursor(row=event.cursor_row, column=1, animate=False)
                 )
                 return
             self._ws_row = event.cursor_row + 1
-            self._ws_col = dt_col   # dt_col 1 == worksheet col 1
+            self._ws_col = dt_col
             self._refresh_panel()
 
-        # ── Right panel ───────────────────────────────────────────────────────
+        # ── Panel ─────────────────────────────────────────────────────────────
 
         def _proposal(self) -> str:
             v = self._ws.cell(row=self._ws_row, column=self._ws_col).value
@@ -393,16 +367,13 @@ if _TEXTUAL_OK:
             meta     = self._choices.get(ref)
             prior    = self._history.get(ref)
 
-            # Value display
             if value is None:
-                if self._is_template and self._last_label_base:
-                    vd = '[dim](empty — template slot)[/dim]'
-                else:
-                    vd = '[dim](empty)[/dim]'
+                vd = ('[dim](empty — template slot)[/dim]'
+                      if self._is_template and self._last_label_base
+                      else '[dim](empty)[/dim]')
             else:
                 vd = f'[yellow]{str(value)[:28]}[/yellow]'
 
-            # Proposal colour
             if proposal == 'label':
                 pd = f'[green]{proposal}[/green]'
             elif proposal.startswith('var:'):
@@ -427,8 +398,8 @@ if _TEXTUAL_OK:
                 if 'name' in meta:
                     lines.append(f'  [dim]{meta["name"]}[/dim]')
             elif prior:
-                prior_name = _CHOICE_LABELS.get(prior, prior)
-                lines += ['', f'[magenta]↺ prev [{prior}] {prior_name}[/magenta]']
+                pname = _CHOICE_LABELS.get(prior, prior)
+                lines += ['', f'[magenta]↺ prev [{prior}] {pname}[/magenta]']
 
             lines += [
                 '',
@@ -455,7 +426,7 @@ if _TEXTUAL_OK:
 
             self.query_one('#panel', _Panel).update('\n'.join(lines))
 
-        # ── Navigation actions ────────────────────────────────────────────────
+        # ── Navigation ────────────────────────────────────────────────────────
 
         def _scan_idx(self) -> int:
             try:
@@ -463,7 +434,8 @@ if _TEXTUAL_OK:
             except ValueError:
                 return -1
 
-        async def action_nav_next(self) -> None:
+        def _advance(self) -> None:
+            """Move to the next non-empty cell in scan order."""
             nxt = _find_next_nonempty(self._cells, self._ws, self._scan_idx() + 1)
             if nxt is not None:
                 r, c = self._cells[nxt]
@@ -471,6 +443,9 @@ if _TEXTUAL_OK:
                 self._move_cursor(r, c)
             else:
                 self.notify('No more non-empty cells.', timeout=2)
+
+        async def action_nav_next(self) -> None:
+            self._advance()
 
         async def action_nav_prev(self) -> None:
             idx = self._scan_idx()
@@ -483,28 +458,28 @@ if _TEXTUAL_OK:
                 self.notify('No previous non-empty cell.', timeout=2)
 
         async def action_nav_goto(self) -> None:
-            ref = await self.push_screen_wait(_GotoModal())
-            if ref is None:
-                return
-            parsed = _parse_cell_ref(ref)
-            if parsed:
-                wr, wc = parsed
-                if 1 <= wr <= self._max_row and 1 <= wc <= self._max_col:
-                    self._ws_row, self._ws_col = wr, wc
-                    self._move_cursor(wr, wc)
+            def _on_ref(ref: str | None) -> None:
+                if ref is None:
+                    return
+                parsed = _parse_cell_ref(ref)
+                if parsed:
+                    wr, wc = parsed
+                    if 1 <= wr <= self._max_row and 1 <= wc <= self._max_col:
+                        self._ws_row, self._ws_col = wr, wc
+                        self._move_cursor(wr, wc)
+                    else:
+                        self.notify(f'Cell {ref} out of range.', timeout=2)
                 else:
-                    self.notify(f'Cell {ref} is out of range.', timeout=2)
-            else:
-                self.notify(f'Invalid reference: {ref}', timeout=2)
+                    self.notify(f'Invalid reference: {ref}', timeout=2)
+            self.push_screen(_GotoModal(), _on_ref)
 
-        # ── Classification helpers ────────────────────────────────────────────
+        # ── Classification ────────────────────────────────────────────────────
 
         def _commit(self, ref: str, meta: dict) -> None:
             self._choices[ref] = meta
-            r, c = _parse_cell_ref(ref)  # type: ignore[misc]
-            self._restyle_cell(r, c)
-
-        # ── Classification actions ────────────────────────────────────────────
+            parsed = _parse_cell_ref(ref)
+            if parsed:
+                self._restyle_cell(parsed[0], parsed[1])
 
         async def action_accept(self) -> None:
             p = self._proposal()
@@ -513,7 +488,7 @@ if _TEXTUAL_OK:
             elif p.startswith('var:') or (p == 'skip' and self._is_template and self._last_label_base):
                 await self.action_act_V()
             else:
-                await self.action_nav_next()
+                self._advance()
 
         async def action_act_L(self) -> None:
             value = self._ws.cell(row=self._ws_row, column=self._ws_col).value
@@ -521,65 +496,67 @@ if _TEXTUAL_OK:
             slug  = _slugify(str(value)) if value is not None else 'label'
             default = f'{slug}_label'
 
-            result = await self.push_screen_wait(
-                _FieldsModal('Field label', [('Label anchor name', default)])
-            )
-            if result is None:
-                return
+            def _done(result: list[str] | None) -> None:
+                if result is None:
+                    return
+                name = result[0]
+                self._state.lbl_defs.append(
+                    (name, 'string', str(value) if value is not None else ''))
+                self._state.body_rows.append(['cell:1', name])
+                base = name[:-6] if name.endswith('_label') else name
+                self._last_label_base = base
+                self._commit(ref, {'choice': 'L', 'name': name})
+                self._refresh_panel()
+                self._advance()
 
-            name = result[0]
-            self._state.lbl_defs.append((name, 'string', str(value) if value is not None else ''))
-            self._state.body_rows.append(['cell:1', name])
-            base = name[:-6] if name.endswith('_label') else name
-            self._last_label_base = base
-            self._commit(ref, {'choice': 'L', 'name': name})
-            self._refresh_panel()
-            await self.action_nav_next()
+            self.push_screen(_FieldsModal('Field label', [('Label anchor name', default)]), _done)
 
         async def action_act_C(self) -> None:
             value = self._ws.cell(row=self._ws_row, column=self._ws_col).value
             ref   = _cell_ref(self._ws_row, self._ws_col)
             slug  = _slugify(str(value)) if value is not None else 'ctrl'
 
-            result = await self.push_screen_wait(
-                _FieldsModal('Control label', [('Label name', slug)])
-            )
-            if result is None:
-                return
+            def _done(result: list[str] | None) -> None:
+                if result is None:
+                    return
+                name = result[0]
+                self._state.lbl_defs.append(
+                    (name, 'string', str(value) if value is not None else ''))
+                self._state.body_rows.append(['cell:1', name])
+                self._last_label_base = None
+                self._commit(ref, {'choice': 'C', 'name': name})
+                self._refresh_panel()
+                self._advance()
 
-            name = result[0]
-            self._state.lbl_defs.append((name, 'string', str(value) if value is not None else ''))
-            self._state.body_rows.append(['cell:1', name])
-            self._last_label_base = None
-            self._commit(ref, {'choice': 'C', 'name': name})
-            self._refresh_panel()
-            await self.action_nav_next()
+            self.push_screen(_FieldsModal('Control label', [('Label name', slug)]), _done)
 
         async def action_act_V(self) -> None:
-            value   = self._ws.cell(row=self._ws_row, column=self._ws_col).value
-            ref     = _cell_ref(self._ws_row, self._ws_col)
-            slug    = _slugify(str(value)) if value is not None else 'field'
+            value        = self._ws.cell(row=self._ws_row, column=self._ws_col).value
+            ref          = _cell_ref(self._ws_row, self._ws_col)
+            slug         = _slugify(str(value)) if value is not None else 'field'
             default_name = self._last_label_base or slug
-            p        = self._proposal()
+            p            = self._proposal()
             default_type = p[4:] if p.startswith('var:') else 'string'
 
-            result = await self.push_screen_wait(
+            def _done(result: list[str] | None) -> None:
+                if result is None:
+                    return
+                name, ftype, match = result[0], result[1], result[2]
+                self._state.var_defs.append((name, ftype, match))
+                self._state.body_rows.append(['cell:1', name])
+                self._last_label_base = None
+                self._commit(ref, {'choice': 'V', 'name': name})
+                self._refresh_panel()
+                self._advance()
+
+            self.push_screen(
                 _FieldsModal('Variable', [
                     ('Field name',    default_name),
                     ('Type',          default_type),
                     ('Match pattern', '.*'),
-                ])
+                ]),
+                _done,
             )
-            if result is None:
-                return
-
-            name, ftype, match = result[0], result[1], result[2]
-            self._state.var_defs.append((name, ftype, match))
-            self._state.body_rows.append(['cell:1', name])
-            self._last_label_base = None
-            self._commit(ref, {'choice': 'V', 'name': name})
-            self._refresh_panel()
-            await self.action_nav_next()
 
         async def action_act_I(self) -> None:
             ref = _cell_ref(self._ws_row, self._ws_col)
@@ -587,21 +564,21 @@ if _TEXTUAL_OK:
             self._last_label_base = None
             self._commit(ref, {'choice': 'I'})
             self._refresh_panel()
-            await self.action_nav_next()
+            self._advance()
 
-        # ── End ───────────────────────────────────────────────────────────────
+        # ── Exit ──────────────────────────────────────────────────────────────
 
         async def action_end_save(self) -> None:
             _save_history(
                 self._data_file,
-                {ref: meta['choice'] for ref, meta in self._choices.items()},
+                {r: m['choice'] for r, m in self._choices.items()},
             )
             self.exit(result=self._state)
 
         async def action_cancel(self) -> None:
             _save_history(
                 self._data_file,
-                {ref: meta['choice'] for ref, meta in self._choices.items()},
+                {r: m['choice'] for r, m in self._choices.items()},
             )
             self.exit(result=None)
 
@@ -619,7 +596,7 @@ def run_wizard_tui(
     -------
     0   pattern saved successfully
     1   user cancelled
-    2   textual not installed (caller should fall back to sequential wizard)
+    2   textual not installed → caller should fall back to sequential wizard
     """
     if not _TEXTUAL_OK:
         return 2
@@ -643,7 +620,7 @@ def run_wizard_tui(
                 return 1
     elif len(wb.sheetnames) > 1:
         print(f'Multiple sheets: {wb.sheetnames}')
-        print('Use  --sheet NAME  to choose one; defaulting to first sheet.')
+        print('Use  --sheet NAME  to choose; defaulting to first sheet.')
         ws = wb.worksheets[0]
     else:
         ws = wb.active
@@ -655,8 +632,8 @@ def run_wizard_tui(
             f'pattern-{stem}.csv',
         )
 
-    state = WizardState(sheet_name=ws.title)
-    app   = WizardTUIApp(ws, state, data_file)
+    state  = WizardState(sheet_name=ws.title)
+    app    = WizardTUIApp(ws, state, data_file)
     result = app.run()
 
     if result is None:
