@@ -1345,6 +1345,8 @@ if _TEXTUAL_OK:
             ref_row: int,
             results: list,
             on_done,
+            h_rows: 'list[int] | None' = None,
+            d_rows: 'list[int] | None' = None,
         ) -> None:
             """Push one _FieldsModal per column in sequence (recursive).
 
@@ -1355,6 +1357,8 @@ if _TEXTUAL_OK:
             ref_row    — worksheet row used to read the actual cell value
             results    — mutable list[dict|None], filled in as modals complete
             on_done    — callback(results) when all done, callback(None) if cancelled
+            h_rows     — (DATA mode) header row numbers; used to infer variable name
+            d_rows     — (DATA mode) all data row numbers; used for type inference
             """
             from openpyxl.utils import get_column_letter as _gcl  # local import is ok
             if idx >= len(col_infos):
@@ -1373,11 +1377,31 @@ if _TEXTUAL_OK:
                         else None)
 
             if mode == 'DATA':
-                slug_v    = _slugify(val_str) if val_str else ltr.lower()
-                n_def     = (existing.get('var_name', slug_v)
-                             if existing else slug_v)
-                _cell_obj = self._ws.cell(row=ref_row, column=col_c)
-                _inf_type = _infer_cell_type(_cell_obj)
+                # Infer variable name from the matching header cell (may be empty in data row)
+                header_val = None
+                if h_rows:
+                    for hr in h_rows:
+                        hv = self._ws.cell(row=hr, column=col_c).value
+                        if hv is not None:
+                            header_val = hv
+                            break
+                slug_src = header_val if header_val is not None else (val or ltr)
+                slug_v   = _slugify(str(slug_src))
+                n_def    = (existing.get('var_name', slug_v) if existing else slug_v)
+
+                # Show header label (or data cell text) in the title
+                if header_val is not None:
+                    val_disp = f'"{_trunc(val, 15)}"  ← {_trunc(header_val, 22)}' if val is not None else f'← {_trunc(header_val, 28)}'
+                # else val_disp already set above
+
+                # Type inference: scan d_rows for first non-empty cell
+                _inf_type = 'string'
+                scan_rows = d_rows if d_rows else [ref_row]
+                for _dr in scan_rows:
+                    _cell_obj = self._ws.cell(row=_dr, column=col_c)
+                    if _cell_obj.value is not None:
+                        _inf_type = _infer_cell_type(_cell_obj)
+                        break
                 t_def     = (existing.get('var_type', _inf_type)
                              if existing else _inf_type)
                 m_def     = (existing.get('var_match', '.*')
@@ -1437,7 +1461,8 @@ if _TEXTUAL_OK:
                         'notes':     values[3].strip(),
                     }
                 self._col_modal_seq(col_infos, _idx + 1, existing_cols,
-                                    mode, ref_row, results, on_done)
+                                    mode, ref_row, results, on_done,
+                                    h_rows=h_rows, d_rows=d_rows)
 
             self.push_screen(_FieldsModal(title, fields), _on_col)
 
@@ -1997,7 +2022,8 @@ if _TEXTUAL_OK:
                                 d_results[i] = results[i]
                             _run_f_row(0)
 
-                        self._col_modal_seq(col_infos, 0, ex_d, 'DATA', ref_r, res_d, _on_d_done)
+                        self._col_modal_seq(col_infos, 0, ex_d, 'DATA', ref_r, res_d, _on_d_done,
+                                            h_rows=h_rows, d_rows=d_rows)
 
                     # ── Header rows sequence ───────────────────────────────────
                     def _run_h_row(row_idx: int) -> None:
