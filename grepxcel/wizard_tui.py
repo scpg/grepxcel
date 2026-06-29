@@ -1505,18 +1505,20 @@ if _TEXTUAL_OK:
             on_done,
             h_rows: 'list[int] | None' = None,
             d_rows: 'list[int] | None' = None,
+            col_titles: 'list[str] | None' = None,
         ) -> None:
             """Push one _FieldsModal per column in sequence (recursive).
 
-            col_infos  — list of {col, letter} dicts (one per table column)
-            idx        — current column index
+            col_infos   — list of {col, letter} dicts (one per table column)
+            idx         — current column index
             existing_cols — pre-fill data (list of dicts) or None
-            mode       — 'DATA' | 'HEADER' | 'FOOTER'
-            ref_row    — worksheet row used to read the actual cell value
-            results    — mutable list[dict|None], filled in as modals complete
-            on_done    — callback(results) when all done, callback(None) if cancelled
-            h_rows     — (DATA mode) header row numbers; used to infer variable name
-            d_rows     — (DATA mode) all data row numbers; used for type inference
+            mode        — 'DATA' | 'HEADER' | 'FOOTER'
+            ref_row     — worksheet row used to read the actual cell value
+            results     — mutable list[dict|None], filled in as modals complete
+            on_done     — callback(results) when all done, callback(None) if cancelled
+            h_rows      — (DATA mode) header row numbers; used to infer variable name
+            d_rows      — (DATA mode) all data row numbers; used for type inference
+            col_titles  — short legend title per column (from the legend step); shown in title
             """
             from openpyxl.utils import get_column_letter as _gcl  # local import is ok
             if idx >= len(col_infos):
@@ -1608,9 +1610,12 @@ if _TEXTUAL_OK:
                 ]
                 row_label = mode.title()
 
+            legend_tag = ''
+            if col_titles and idx < len(col_titles) and col_titles[idx]:
+                legend_tag = f'  [bold dim]{_trunc(col_titles[idx], 20)}[/bold dim]'
             title = (
                 f'[bold magenta]{row_label}  col {idx + 1}/{n_total}'
-                f'[/bold magenta]  [dim]{ltr}: {val_disp}[/dim]'
+                f'[/bold magenta]  [dim]{ltr}{legend_tag}: {val_disp}[/dim]'
             )
 
             def _on_col(values, _idx=idx, _val_str=val_str, _ltr=ltr):
@@ -1670,7 +1675,8 @@ if _TEXTUAL_OK:
                         }
                 self._col_modal_seq(col_infos, _idx + 1, existing_cols,
                                     mode, ref_row, results, on_done,
-                                    h_rows=h_rows, d_rows=d_rows)
+                                    h_rows=h_rows, d_rows=d_rows,
+                                    col_titles=col_titles)
 
             self.push_screen(_FieldsModal(title, fields), _on_col)
 
@@ -2087,6 +2093,9 @@ if _TEXTUAL_OK:
                     f_rows    = sorted(r for r, t in row_types.items() if t == 'F')
                     skip_rows = sorted(r for r, t in row_types.items() if t == 'S')
 
+                    # Column legend titles — set by the legend step before col modals
+                    col_titles: list[str] = [''] * col_count
+
                     # State collectors (filled progressively by column modals)
                     h_results: list[list | None] = [None] * len(h_rows)
                     d_results: list[dict | None] = [None] * col_count
@@ -2275,7 +2284,8 @@ if _TEXTUAL_OK:
                             f_results[_ri] = results
                             _run_f_row(_ri + 1)
 
-                        self._col_modal_seq(col_infos, 0, ex_f, 'FOOTER', r, res_f, _on_f_done)
+                        self._col_modal_seq(col_infos, 0, ex_f, 'FOOTER', r, res_f, _on_f_done,
+                                            col_titles=col_titles)
 
                     # ── DATA column sequence ───────────────────────────────────
                     def _run_d() -> None:
@@ -2295,7 +2305,7 @@ if _TEXTUAL_OK:
                             _run_f_row(0)
 
                         self._col_modal_seq(col_infos, 0, ex_d, 'DATA', ref_r, res_d, _on_d_done,
-                                            h_rows=h_rows, d_rows=d_rows)
+                                            h_rows=h_rows, d_rows=d_rows, col_titles=col_titles)
 
                     # ── Header rows sequence ───────────────────────────────────
                     def _run_h_row(row_idx: int) -> None:
@@ -2314,10 +2324,41 @@ if _TEXTUAL_OK:
                             h_results[_ri] = results
                             _run_h_row(_ri + 1)
 
-                        self._col_modal_seq(col_infos, 0, ex_h, 'HEADER', r, res_h, _on_h_done)
+                        self._col_modal_seq(col_infos, 0, ex_h, 'HEADER', r, res_h, _on_h_done,
+                                            col_titles=col_titles)
+
+                    # ── Column legend (Step 2.5) — names each column once ──────
+                    def _run_col_legend() -> None:
+                        # Pre-fill from first header row values (best source of col names)
+                        pre: list[str] = [''] * col_count
+                        src_row = h_rows[0] if h_rows else (d_rows[0] if d_rows else None)
+                        if src_row:
+                            for ci, cinfo in enumerate(col_infos):
+                                v = self._ws.cell(row=src_row, column=cinfo['col']).value
+                                pre[ci] = str(v) if v is not None else ''
+
+                        fields = [
+                            (f'Column {cinfo["letter"]}', pre[ci])
+                            for ci, cinfo in enumerate(col_infos)
+                        ]
+
+                        def _on_legend(result: 'list[str] | None') -> None:
+                            nonlocal col_titles
+                            if result is not None:
+                                col_titles = result
+                            _run_h_row(0)
+
+                        self.push_screen(
+                            _FieldsModal(
+                                f'[bold magenta]Column legend[/bold magenta] — '
+                                f'give each column a short title (used as hints in next steps)',
+                                fields,
+                            ),
+                            _on_legend,
+                        )
 
                     # ── Start the column-definition chain ─────────────────────
-                    _run_h_row(0)
+                    _run_col_legend()
 
                 self.push_screen(
                     _TableRangeModal(
