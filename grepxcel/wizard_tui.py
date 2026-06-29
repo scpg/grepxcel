@@ -210,6 +210,7 @@ def _build_state_from_choices(
                 for h_row in meta['header_rows']:
                     _emit_header_footer_row(h_row, state.body_rows)
 
+                table_name = meta.get('name', '').strip()
                 data_vars = meta.get('data_vars', [])
                 var_names = []
                 for item in data_vars:
@@ -230,11 +231,19 @@ def _build_state_from_choices(
                             vn    = item.get('var_name', 'IGNORE')
                             vtype = item.get('var_type', 'string')
                             vmatch= item.get('var_match', '.*')
+                            # Auto-prefix with table name unless already namespaced
+                            if (table_name and vn and vn != 'IGNORE'
+                                    and not vn.startswith(table_name + '.')):
+                                vn = f'{table_name}.{vn}'
                             var_names.append(vn)
                             if vn and vn != 'IGNORE':
                                 state.var_defs.append((vn, vtype, vmatch))
                     else:
-                        vn, vtype, vmatch = item, 'string', '.*'
+                        vn = item
+                        vtype, vmatch = 'string', '.*'
+                        if (table_name and vn and vn != 'IGNORE'
+                                and not vn.startswith(table_name + '.')):
+                            vn = f'{table_name}.{vn}'
                         var_names.append(vn)
                         if vn and vn != 'IGNORE':
                             state.var_defs.append((vn, vtype, vmatch))
