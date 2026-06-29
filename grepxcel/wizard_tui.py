@@ -189,6 +189,9 @@ def _build_state_from_choices(
                             col_names.append('IGNORE')
                         elif role == 'var':
                             vn = col.get('var_name', 'IGNORE')
+                            if (table_name and vn and vn != 'IGNORE'
+                                    and not vn.startswith(table_name + '.')):
+                                vn = f'{table_name}.{vn}'
                             col_names.append(vn)
                             if vn and vn != 'IGNORE':
                                 state.var_defs.append((
@@ -214,6 +217,8 @@ def _build_state_from_choices(
                 _f_nums     = sorted(r for r, t in _row_types.items() if t == 'F')
                 _p_nums     = set(r for r, t in _row_types.items() if t == 'P')
 
+                table_name = meta.get('name', '').strip()
+
                 for h_row in meta['header_rows']:
                     _emit_header_footer_row(h_row, state.body_rows)
 
@@ -222,7 +227,6 @@ def _build_state_from_choices(
                     if any(max(_h_nums) < p < min(_d_nums) for p in _p_nums):
                         state.body_rows.append(['', 'SPLITTER:1'])
 
-                table_name = meta.get('name', '').strip()
                 data_vars = meta.get('data_vars', [])
                 var_names = []
                 for item in data_vars:
@@ -384,12 +388,21 @@ if _TEXTUAL_OK:
                 try:
                     w = self.query_one(f'#f{i}')
                     if w is event.input:
-                        if i < len(self._fields) - 1:
+                        # Advance to the next INPUT field, skipping Selects.
+                        # Textual's Select widget consumes ENTER internally
+                        # (open/close overlay), so ENTER-based navigation must
+                        # skip them. The user reaches Selects via Tab.
+                        advanced = False
+                        for next_i in range(i + 1, len(self._fields)):
                             try:
-                                self.query_one(f'#f{i + 1}').focus()
+                                nw = self.query_one(f'#f{next_i}')
+                                if isinstance(nw, Input):
+                                    nw.focus()
+                                    advanced = True
+                                    break
                             except Exception:
                                 pass
-                        else:
+                        if not advanced:
                             self._submit()
                         return
                 except Exception:
@@ -456,7 +469,7 @@ if _TEXTUAL_OK:
                             else default
                         )
                     else:
-                        results.append(w.value if w.value else default)
+                        results.append(w.value)
                 except Exception:
                     results.append(default)
             self.dismiss(results)
@@ -2163,9 +2176,13 @@ if _TEXTUAL_OK:
                                     'ref':       _cell_ref(r, cinfo['col']),
                                     'row':       r, 'col': cinfo['col'],
                                     'cell_value': val_s,
+                                    'role':      cd.get('role', 'label'),
                                     'lbl_name':  cd.get('lbl_name', f'col_{slug_v}_label'),
                                     'lbl_type':  cd.get('lbl_type', 'string'),
                                     'lbl_match': cd.get('lbl_match', val_s),
+                                    'var_name':  cd.get('var_name', 'IGNORE'),
+                                    'var_type':  cd.get('var_type', 'string'),
+                                    'var_match': cd.get('var_match', '.*'),
                                     'notes':     cd.get('notes', ''),
                                 })
                             header_rows.append({'row': r, 'cols': hcols})
@@ -2183,9 +2200,13 @@ if _TEXTUAL_OK:
                                     'ref':       _cell_ref(r, cinfo['col']),
                                     'row':       r, 'col': cinfo['col'],
                                     'cell_value': val_s,
+                                    'role':      cd.get('role', 'label'),
                                     'lbl_name':  cd.get('lbl_name', f'foot_{slug_v}_label'),
                                     'lbl_type':  cd.get('lbl_type', 'string'),
                                     'lbl_match': cd.get('lbl_match', val_s),
+                                    'var_name':  cd.get('var_name', 'IGNORE'),
+                                    'var_type':  cd.get('var_type', 'string'),
+                                    'var_match': cd.get('var_match', '.*'),
                                     'notes':     cd.get('notes', ''),
                                 })
                             footer_rows.append({'row': r, 'cols': fcols})
@@ -2195,9 +2216,13 @@ if _TEXTUAL_OK:
                             cd = d_results[ci] or {}
                             vn = cd.get('var_name', 'IGNORE') or 'IGNORE'
                             data_vars.append({
+                                'role':      cd.get('role', 'var'),
                                 'var_name':  vn,
                                 'var_type':  cd.get('var_type',  'string') or 'string',
                                 'var_match': cd.get('var_match', '.*')    or '.*',
+                                'lbl_name':  cd.get('lbl_name',  'IGNORE'),
+                                'lbl_type':  cd.get('lbl_type',  'string'),
+                                'lbl_match': cd.get('lbl_match', '.*'),
                                 'notes':     cd.get('notes',     ''),
                             })
                             note = cd.get('notes', '').strip()
@@ -2361,8 +2386,10 @@ if _TEXTUAL_OK:
 
                         def _on_legend(result: 'list[str] | None') -> None:
                             nonlocal col_titles
-                            if result is not None:
-                                col_titles = result
+                            if result is None:
+                                self._log('TABLE-X', f'{cur_ref}  cancelled at column legend')
+                                return
+                            col_titles = result
                             _run_h_row(0)
 
                         self.push_screen(
