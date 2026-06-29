@@ -400,11 +400,24 @@ if _TEXTUAL_OK:
             if event.key == 'escape':
                 self.dismiss(None)
             elif event.key == 'enter':
-                # Only submit when Select is focused AND its dropdown is already closed.
-                # If the dropdown is open, let Select handle ENTER to pick the item.
+                # If Select dropdown is open, let Select handle ENTER (picks the item).
+                # If closed, behave like Input: advance to next field, or submit if last.
                 focused = self.focused
                 if isinstance(focused, Select) and not focused.expanded:
-                    self._submit()
+                    for i in range(len(self._fields)):
+                        try:
+                            w = self.query_one(f'#f{i}')
+                            if w is focused:
+                                if i < len(self._fields) - 1:
+                                    try:
+                                        self.query_one(f'#f{i + 1}').focus()
+                                    except Exception:
+                                        pass
+                                else:
+                                    self._submit()
+                                break
+                        except Exception:
+                            pass
             elif event.key == 'f4':
                 # Cycle through presets for the focused Input field
                 focused = self.focused
