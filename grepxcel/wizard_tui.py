@@ -207,8 +207,20 @@ def _build_state_from_choices(
                                 ))
                     row_list.append(['', row_label] + col_names)
 
+                # Detect SPLITTER rows (P) to emit SPLITTER:1 at the right position
+                _row_types  = meta.get('row_types', {})
+                _h_nums     = sorted(r for r, t in _row_types.items() if t == 'H')
+                _d_nums     = sorted(r for r, t in _row_types.items() if t == 'D')
+                _f_nums     = sorted(r for r, t in _row_types.items() if t == 'F')
+                _p_nums     = set(r for r, t in _row_types.items() if t == 'P')
+
                 for h_row in meta['header_rows']:
                     _emit_header_footer_row(h_row, state.body_rows)
+
+                # SPLITTER between header and data
+                if _h_nums and _d_nums and _p_nums:
+                    if any(max(_h_nums) < p < min(_d_nums) for p in _p_nums):
+                        state.body_rows.append(['', 'SPLITTER:1'])
 
                 table_name = meta.get('name', '').strip()
                 data_vars = meta.get('data_vars', [])
@@ -248,6 +260,11 @@ def _build_state_from_choices(
                         if vn and vn != 'IGNORE':
                             state.var_defs.append((vn, vtype, vmatch))
                 state.body_rows.append(['', f'DATA:{mult}'] + var_names)
+
+                # SPLITTER between data and footer
+                if _d_nums and _f_nums and _p_nums:
+                    if any(max(_d_nums) < p < min(_f_nums) for p in _p_nums):
+                        state.body_rows.append(['', 'SPLITTER:1'])
 
                 for f_row in meta.get('footer_rows', []):
                     _emit_header_footer_row(f_row, state.body_rows, 'FOOTER:1')
@@ -834,17 +851,19 @@ if _TEXTUAL_OK:
         """
 
         BINDINGS = [
-            Binding('h', 'set_h', 'Header', show=True),
-            Binding('d', 'set_d', 'Data',   show=True),
-            Binding('f', 'set_f', 'Footer', show=True),
-            Binding('s', 'set_s', 'Skip',   show=True),
+            Binding('h', 'set_h', 'Header',   show=True),
+            Binding('d', 'set_d', 'Data',     show=True),
+            Binding('f', 'set_f', 'Footer',   show=True),
+            Binding('p', 'set_p', 'Splitter', show=True),
+            Binding('s', 'set_s', 'Skip',     show=True),
         ]
 
         _TYPE_LABEL = {
-            'H': '[bold green]HEADER[/bold green]',
-            'D': '[bold blue]DATA  [/bold blue]',
-            'F': '[bold cyan]FOOTER[/bold cyan]',
-            'S': '[dim]SKIP  [/dim]',
+            'H': '[bold green]HEADER  [/bold green]',
+            'D': '[bold blue]DATA    [/bold blue]',
+            'F': '[bold cyan]FOOTER  [/bold cyan]',
+            'P': '[magenta]SPLITTER[/magenta]',
+            'S': '[dim]SKIP    [/dim]',
         }
 
         def __init__(self, ws, start_row: int, end_row: int,
@@ -896,11 +915,11 @@ if _TEXTUAL_OK:
                 )
                 yield Label(
                     '[bold green]H[/bold green]=Header  '
-                    '[bold blue]D[/bold blue]=Data rows  '
+                    '[bold blue]D[/bold blue]=Data  '
                     '[bold cyan]F[/bold cyan]=Footer  '
+                    '[magenta]P[/magenta]=Splitter (blank row)  '
                     '[dim]S[/dim]=Skip  '
-                    '↑↓ navigate rows  '
-                    'ENTER confirm  ESC cancel',
+                    '↑↓ navigate  ENTER confirm  ESC cancel',
                     classes='h',
                 )
                 yield DataTable(id='rdt', cursor_type='row')
@@ -946,6 +965,9 @@ if _TEXTUAL_OK:
 
         def action_set_f(self) -> None:
             self._set_current_type('F')
+
+        def action_set_p(self) -> None:
+            self._set_current_type('P')
 
         def action_set_s(self) -> None:
             self._set_current_type('S')
@@ -2225,11 +2247,12 @@ if _TEXTUAL_OK:
 
                         n_h = len(h_rows); n_f = len(f_rows)
                         n_d = len(d_rows); n_s = len(skip_rows)
+                        n_p = sum(1 for t in row_types.values() if t == 'P')
                         var_names = [dv['var_name'] for dv in data_vars]
                         self._log(
                             'TABLE',
                             f'{rng}  name={name}  mult={mult}  '
-                            f'H={n_h} D={n_d} F={n_f} S={n_s}  '
+                            f'H={n_h} D={n_d} F={n_f} S={n_s} P={n_p}  '
                             f'vars=[{", ".join(var_names)}]',
                         )
                         self._refresh_panel()
