@@ -180,7 +180,7 @@ def _build_state_from_choices(
 
             if 'header_rows' in meta:
                 # New multi-row model: header_rows + data_vars [+ footer_rows]
-                def _emit_header_footer_row(hf_row, row_list):
+                def _emit_header_footer_row(hf_row, row_list, row_label='HEADER:1'):
                     """Emit one H/F row with role-aware column handling."""
                     col_names = []
                     for col in hf_row['cols']:
@@ -205,7 +205,7 @@ def _build_state_from_choices(
                                     col.get('lbl_type', 'string'),
                                     col.get('lbl_match', col.get('cell_value', '')),
                                 ))
-                    row_list.append(['', 'HEADER:1'] + col_names)
+                    row_list.append(['', row_label] + col_names)
 
                 for h_row in meta['header_rows']:
                     _emit_header_footer_row(h_row, state.body_rows)
@@ -241,7 +241,7 @@ def _build_state_from_choices(
                 state.body_rows.append(['', f'DATA:{mult}'] + var_names)
 
                 for f_row in meta.get('footer_rows', []):
-                    _emit_header_footer_row(f_row, state.body_rows)
+                    _emit_header_footer_row(f_row, state.body_rows, 'FOOTER:1')
             else:
                 # Legacy single-header-row model (columns list)
                 cols      = meta.get('columns', [])
@@ -285,10 +285,13 @@ if _TEXTUAL_OK:
 
     # ── Modals ─────────────────────────────────────────────────────────────────
 
+    _TYPE_OPTIONS = ['string', 'number', 'date', 'boolean']
+
     class _FieldsModal(ModalScreen):
-        """Multi-field text input.
-        ENTER moves between fields; last ENTER submits → dismiss(list[str]).
-        ESC → dismiss(None).
+        """Multi-field input.
+        Fields: list of (label, default) or (label, default, [opts]) for a Select dropdown.
+        ENTER moves between Input fields; last ENTER submits → dismiss(list[str]).
+        Tab moves between all fields (including Select). ESC → dismiss(None).
         """
         DEFAULT_CSS = """
         _FieldsModal              { align: center middle; }
@@ -298,9 +301,10 @@ if _TEXTUAL_OK:
         _FieldsModal Label.title  { text-style: bold; margin-bottom: 1; }
         _FieldsModal Label.lbl    { color: $text-muted; margin-top: 1; }
         _FieldsModal Label.hint   { color: $text-muted; margin-top: 1; }
+        _FieldsModal Select       { width: 100%; margin-top: 0; }
         """
 
-        def __init__(self, title: str, fields: list[tuple[str, str]]) -> None:
+        def __init__(self, title: str, fields: list[tuple]) -> None:
             super().__init__()
             self._title  = title
             self._fields = fields
@@ -308,38 +312,71 @@ if _TEXTUAL_OK:
         def compose(self) -> ComposeResult:
             with Vertical(id='dialog'):
                 yield Label(self._title, classes='title')
-                for i, (lbl, default) in enumerate(self._fields):
+                for i, field in enumerate(self._fields):
+                    lbl, default = field[0], field[1]
+                    opts = field[2] if len(field) > 2 else None
                     yield Label(lbl, classes='lbl')
-                    yield Input(value=default, id=f'f{i}')
-                yield Label('ENTER = confirm  •  ESC = cancel', classes='hint')
+                    if opts is not None:
+                        sel_val = default if default in opts else opts[0]
+                        yield Select(
+                            [(o, o) for o in opts],
+                            value=sel_val,
+                            id=f'f{i}',
+                            allow_blank=False,
+                        )
+                    else:
+                        yield Input(value=default, id=f'f{i}')
+                yield Label('ENTER = confirm  •  Tab = next field  •  ESC = cancel', classes='hint')
 
         def on_mount(self) -> None:
             try:
-                self.query_one('#f0', Input).focus()
+                self.query_one('#f0').focus()
             except Exception:
                 pass
 
         def on_input_submitted(self, event: Input.Submitted) -> None:
-            inputs = list(self.query(Input))
-            try:
-                idx = inputs.index(event.input)
-            except ValueError:
-                idx = len(inputs) - 1
-            if idx < len(inputs) - 1:
-                inputs[idx + 1].focus()
-            else:
-                self._submit()
+            for i in range(len(self._fields)):
+                try:
+                    w = self.query_one(f'#f{i}')
+                    if w is event.input:
+                        if i < len(self._fields) - 1:
+                            try:
+                                self.query_one(f'#f{i + 1}').focus()
+                            except Exception:
+                                pass
+                        else:
+                            self._submit()
+                        return
+                except Exception:
+                    pass
+            self._submit()
 
         def on_key(self, event) -> None:
             if event.key == 'escape':
                 self.dismiss(None)
+            elif event.key == 'enter':
+                # Submit when Enter is pressed while a Select has focus
+                focused = self.focused
+                if isinstance(focused, Select):
+                    self._submit()
 
         def _submit(self) -> None:
-            inputs = list(self.query(Input))
-            self.dismiss([
-                inp.value if inp.value else default
-                for inp, (_, default) in zip(inputs, self._fields)
-            ])
+            results = []
+            for i, field in enumerate(self._fields):
+                default = field[1]
+                try:
+                    w = self.query_one(f'#f{i}')
+                    if isinstance(w, Select):
+                        val = w.value
+                        results.append(
+                            str(val) if val is not None and val is not Select.BLANK
+                            else default
+                        )
+                    else:
+                        results.append(w.value if w.value else default)
+                except Exception:
+                    results.append(default)
+            self.dismiss(results)
 
 
     class _GotoModal(ModalScreen):
@@ -482,7 +519,7 @@ if _TEXTUAL_OK:
         DEFAULT_CSS = """
         _HelpModal              { align: center middle; }
         _HelpModal > #dialog    { background: $surface; border: thick $primary;
-                                  width: 72; height: auto; max-height: 40;
+                                  width: 84; height: auto; max-height: 44;
                                   padding: 1 2; overflow-y: auto; }
         _HelpModal Label.title  { text-style: bold; color: $accent; margin-bottom: 1; }
         _HelpModal Label.hint   { color: $text-muted; margin-top: 1; }
@@ -491,50 +528,43 @@ if _TEXTUAL_OK:
         _HELP = """\
 [bold cyan]CLASSIFY[/bold cyan]
 
-  [bold green]L[/bold green]  [bold]Label[/bold]  — A text cell that identifies a nearby value.
-          e.g. "Invoice No:" → the next cell is the invoice number.
-          Pressing L also suggests the next empty/adjacent cell as a Value.
+  [bold green]L[/bold green]  [bold]Label[/bold]    — Cell whose text identifies a nearby value (e.g. "Invoice No:").
+              In template mode, cursor jumps to the adjacent value cell next.
 
-  [bold blue]C[/bold blue]  [bold]Header[/bold] — Section title or navigation marker; no value follows.
-          e.g. "APPROVED BY DEPT" used as a structural heading.
+  [bold blue]C[/bold blue]  [bold]Header[/bold]   — Section title or structural marker; no value follows it.
 
-  [bold bright_yellow]V[/bold bright_yellow]  [bold]Value[/bold]  — Extract this cell's content (a variable).
-          e.g. the actual invoice number, a date, a name.
+  [bold bright_yellow]V[/bold bright_yellow]  [bold]Value[/bold]    — Extract this cell's content as a named variable.
 
-  [bold magenta]T[/bold magenta]  [bold]Table[/bold]  — Mark the start of a repeating data-row block.
-          Next, mark each column in this row with V to define columns.
+  [bold magenta]T[/bold magenta]  [bold]Table[/bold]    — Define a repeating block (mini-table). A 3-step wizard opens:
+              step 1 — set name, multiplicity, and row range;
+              step 2 — classify each row as Header / Data / Footer / Skip;
+              step 3 — name each column per row type.
 
-  [dim]I[/dim]  [bold]Ignore[/bold] — Skip this cell; emit no pattern entry for it.
+  [dim]I[/dim]  [bold]Ignore[/bold]   — Skip this cell; it produces no pattern entry.
 
-  [bold]R[/bold]  [bold]Remove[/bold] — Clear the classification of the current cell so you
-          can reclassify it. (Also undoable with Ctrl+Z.)
+  [bold]R[/bold]  [bold]Remove[/bold]   — Clear the current cell's classification so you can redo it.
 
 [bold cyan]NAVIGATE[/bold cyan]
 
-  [bold]N[/bold]  Next non-empty cell in scan order
-  [bold]P[/bold]  Prev non-empty cell in scan order
-  [bold]U[/bold]  Jump to next [italic]unclassified[/italic] non-empty cell (wraps around)
-  [bold]G[/bold]  Go to a specific cell reference (e.g. D11)
-  [bold]H[/bold]  Highlight all pending (unclassified) cells in amber
-       Navigate or press H again to clear the highlight
+  [bold]N[/bold]  Next non-empty cell     [bold]P[/bold]  Prev non-empty cell
+  [bold]U[/bold]  Next unclassified cell  [bold]G[/bold]  Go to cell ref (e.g. D11)
+  [bold]H[/bold]  Highlight all unclassified cells in amber (press again to clear)
 
 [bold cyan]OTHER[/bold cyan]
 
-  [bold]ENTER[/bold]     Auto-accept the proposed classification
-  [bold]Space[/bold]     Zoom — view the full untruncated cell content
-  [bold]F3[/bold]        Preview the current pattern CSV
-  [bold]F1[/bold]        This help screen
-  [bold]Ctrl+Z[/bold]    Undo last classification
-  [bold]Ctrl+D[/bold]    Toggle dark / light mode
-  [bold]^P[/bold]        Command palette (search all actions by name)
-  [bold]E[/bold]         End wizard and save the pattern
-  [bold]Ctrl+Q[/bold]    Cancel without saving
+  [bold]ENTER[/bold]      Auto-accept proposed classification (no modal, uses defaults)
+  [bold]Space[/bold]      Zoom — view full untruncated cell content
+  [bold]F1 / ?[/bold]     This help screen
+  [bold]F3[/bold]         Preview current pattern
+  [bold]F2[/bold]         Add internal note to current cell
+  [bold]Ctrl+Z[/bold]     Undo last classification
+  [bold]E[/bold]          End wizard and save pattern file
+  [bold]Ctrl+Q[/bold]     Cancel without saving
 
 [bold cyan]LEGEND[/bold cyan]
 
-  [bold green]●[/bold green] green   = Label (L)    [bold bright_yellow]●[/bold bright_yellow] bright_yellow = Value (V)
-  [bold blue]●[/bold blue] blue    = Header (C)  [bold magenta]●[/bold magenta] magenta = Table (T)
-  [dim]○[/dim] dim     = Ignore (I)   white   = not yet classified\
+  [bold green]●[/bold green] Label (L)   [bold bright_yellow]●[/bold bright_yellow] Value (V)   [bold blue]●[/bold blue] Header (C)
+  [bold magenta]●[/bold magenta] Table (T)   [dim]○[/dim] Ignore (I)  white = not yet classified\
 """
 
         def compose(self) -> ComposeResult:
@@ -900,7 +930,8 @@ if _TEXTUAL_OK:
             # Other (hidden)
             Binding('enter',  'accept',             'Auto-accept',     show=False),
             Binding('space',  'zoom',               'Zoom cell',       show=False),
-            Binding('f1',     'show_help',          'Help',            show=False),
+            Binding('f1',             'show_help', 'Help (F1/?)', show=True),
+            Binding('question_mark',  'show_help', 'Help',       show=False),
             Binding('f3',     'preview',            'Pattern preview', show=False),
             Binding('ctrl+z', 'undo',               'Undo',            show=False),
             Binding('ctrl+q', 'cancel',             'Cancel',          show=False),
@@ -1450,7 +1481,7 @@ if _TEXTUAL_OK:
                     # else var: n_def already set
                 fields = [
                     ('Name  (plain = variable · lbl:name = label · empty/IGNORE = skip)', n_def),
-                    ('Type  (string / number / date / boolean)', t_def),
+                    ('Type', t_def, _TYPE_OPTIONS),
                     ('Match pattern', m_def),
                     ('Notes  (written to session log — optional)', note_def),
                 ]
@@ -1475,7 +1506,7 @@ if _TEXTUAL_OK:
                 note_def = (existing.get('notes', '') if existing else '')
                 fields = [
                     ('Name  (plain = label · var:name = variable · empty/IGNORE = skip)', n_def),
-                    ('Type  (string / number / date / boolean)', t_def),
+                    ('Type', t_def, _TYPE_OPTIONS),
                     ('Match  (label: exact cell text · var: value regexp like .*)', m_def),
                     ('Notes  (written to session log — optional)', note_def),
                 ]
@@ -1701,12 +1732,48 @@ if _TEXTUAL_OK:
         # ── Classification actions ─────────────────────────────────────────────
 
         async def action_accept(self) -> None:
-            p = self._proposal()
+            """Silently commit the proposed classification with defaults — no modal."""
+            p     = self._proposal()
+            value = self._ws.cell(row=self._ws_row, column=self._ws_col).value
+            ref   = _cell_ref(self._ws_row, self._ws_col)
+
             if p == 'label':
-                await self.action_act_L()
+                slug  = _slugify(str(value)) if value is not None else 'label'
+                name  = f'{slug}_label'
+                match = str(value) if value is not None else ''
+                ltype = _infer_cell_type(self._ws.cell(row=self._ws_row, column=self._ws_col))
+                old   = self._choices.get(ref, {}).get('choice')
+                self._push_undo(ref)
+                base  = name[:-6] if name.endswith('_label') else name
+                self._last_label_base = base
+                self._commit(ref, {'choice': 'L', 'name': name,
+                                   'ltype': ltype, 'lmatch': match})
+                rawval = '' if value is None else f'  "{str(value)[:30]}"'
+                reclassify = f'  (was {old})' if old else ''
+                self._log('LABEL',
+                          f'{ref}{rawval}  →  {name}  [{ltype}, {match}]{reclassify}  [auto]')
+                self._refresh_panel()
+                self._advance()
             elif p.startswith('var:') or (p == 'skip' and self._is_template
                                           and self._last_label_base):
-                await self.action_act_V()
+                slug  = _slugify(str(value)) if value is not None else 'field'
+                base  = self._last_label_base or slug
+                name  = (self._current_prefix + base) if self._current_prefix else base
+                ftype = (p[4:] if p.startswith('var:')
+                         else _infer_cell_type(
+                             self._ws.cell(row=self._ws_row, column=self._ws_col)))
+                old   = self._choices.get(ref, {}).get('choice')
+                self._push_undo(ref)
+                self._last_label_base = None
+                self._update_prefix(name)
+                self._commit(ref, {'choice': 'V', 'name': name,
+                                   'ftype': ftype, 'match': '.*'})
+                rawval = '(empty)' if value is None else f'"{str(value)[:30]}"'
+                reclassify = f'  (was {old})' if old else ''
+                self._log('VALUE',
+                          f'{ref}  {rawval}  →  {name}  [{ftype}, .*]{reclassify}  [auto]')
+                self._refresh_panel()
+                self._advance()
             else:
                 self._advance()
 
@@ -1748,7 +1815,7 @@ if _TEXTUAL_OK:
                 _FieldsModal(
                     '[bold green]Label[/bold green] — text that identifies a nearby value',
                     [('Label anchor name', existing_meta.get('name', default_name)),
-                     ('Type  (string / number / date)', existing_meta.get('ltype', 'string')),
+                     ('Type', existing_meta.get('ltype', _infer_cell_type(self._ws.cell(row=self._ws_row, column=self._ws_col))), _TYPE_OPTIONS),
                      ('Match  (exact text or lbl:regexp for regex)', existing_meta.get('lmatch', default_match)),
                      ('Notes  (written to session log — optional)', existing_note)],
                 ),
@@ -1824,7 +1891,7 @@ if _TEXTUAL_OK:
                 _FieldsModal(
                     '[bold bright_yellow]Value[/bold bright_yellow] — extract this cell\'s content',
                     [('Field name', default_name),
-                     ('Type',       default_type),
+                     ('Type',       default_type, _TYPE_OPTIONS),
                      ('Match',      '.*'),
                      ('Notes  (written to session log — optional)', existing_note)],
                 ),
