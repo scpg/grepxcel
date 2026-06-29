@@ -1657,6 +1657,27 @@ if _TEXTUAL_OK:
             else:
                 self.notify('No more non-empty cells.', timeout=2)
 
+        def _advance_adjacent(self) -> None:
+            """Move exactly one cell in the scan direction (LR: right, TD: down).
+            Used after L in template mode so the cursor lands on the adjacent value
+            cell even when it is empty. Falls back to _advance() at sheet boundaries.
+            """
+            self._clear_highlights()
+            r, c = self._ws_row, self._ws_col
+            if self._state.direction == 'LR':
+                nc = c + 1
+                if nc <= self._ws.max_column:
+                    self._ws_row, self._ws_col = r, nc
+                    self._move_cursor(r, nc)
+                    return
+            else:
+                nr = r + 1
+                if nr <= self._ws.max_row:
+                    self._ws_row, self._ws_col = nr, c
+                    self._move_cursor(nr, c)
+                    return
+            self._advance()
+
         async def action_nav_next(self) -> None:
             self._clear_highlights()
             self._advance()
@@ -1762,7 +1783,10 @@ if _TEXTUAL_OK:
                 self._log('LABEL',
                           f'{ref}{rawval}  →  {name}  [{ltype}, {match}]{reclassify}  [auto]')
                 self._refresh_panel()
-                self._advance()
+                if self._is_template:
+                    self._advance_adjacent()
+                else:
+                    self._advance()
             elif p.startswith('var:') or (p == 'skip' and self._is_template
                                           and self._last_label_base):
                 slug  = _slugify(str(value)) if value is not None else 'field'
@@ -1818,7 +1842,10 @@ if _TEXTUAL_OK:
                 self._log('LABEL',
                           f'{ref}{rawval}  →  {name}  [{ltype}, {lmatch}]{reclassify}')
                 self._refresh_panel()
-                self._advance()
+                if self._is_template:
+                    self._advance_adjacent()
+                else:
+                    self._advance()
 
             self.push_screen(
                 _FieldsModal(
