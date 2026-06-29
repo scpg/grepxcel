@@ -397,9 +397,10 @@ if _TEXTUAL_OK:
             if event.key == 'escape':
                 self.dismiss(None)
             elif event.key == 'enter':
-                # Submit when Enter is pressed while a Select has focus
+                # Only submit when Select is focused AND its dropdown is already closed.
+                # If the dropdown is open, let Select handle ENTER to pick the item.
                 focused = self.focused
-                if isinstance(focused, Select):
+                if isinstance(focused, Select) and not focused.expanded:
                     self._submit()
             elif event.key == 'f4':
                 # Cycle through presets for the focused Input field
