@@ -296,6 +296,17 @@ if _TEXTUAL_OK:
 
     _TYPE_OPTIONS = ['string', 'number', 'date', 'boolean']
 
+    # (pattern, short_label) pairs — cycled with F4 in any Match/pattern Input
+    _MATCH_PRESETS: list[tuple[str, str]] = [
+        ('.*',                    'any'),
+        (r'\d+',                  'integer'),
+        (r'\d+\.?\d*',            'number'),
+        (r'\d{4}-\d{2}-\d{2}',   'ISO date'),
+        (r'\d{2}/\d{2}/\d{4}',   'US date'),
+        (r'[\w.+]+@[\w.]+\.\w+', 'email'),
+        (r'https?://\S+',         'URL'),
+    ]
+
     class _FieldsModal(ModalScreen):
         """Multi-field input.
         Fields: list of (label, default) or (label, default, [opts]) for a Select dropdown.
@@ -307,10 +318,11 @@ if _TEXTUAL_OK:
         _FieldsModal > #dialog    { background: $surface; border: thick $primary;
                                     width: 68; height: auto; max-height: 82vh;
                                     padding: 1 2; overflow-y: auto; }
-        _FieldsModal Label.title  { text-style: bold; margin-bottom: 1; }
-        _FieldsModal Label.lbl    { color: $text-muted; margin-top: 1; }
-        _FieldsModal Label.hint   { color: $text-muted; margin-top: 1; }
-        _FieldsModal Select       { width: 100%; margin-top: 0; }
+        _FieldsModal Label.title   { text-style: bold; margin-bottom: 1; }
+        _FieldsModal Label.lbl     { color: $text-muted; margin-top: 1; }
+        _FieldsModal Label.hint    { color: $text-muted; margin-top: 1; }
+        _FieldsModal Label.presets { color: $text-muted; margin-top: 0; }
+        _FieldsModal Select        { width: 100%; margin-top: 0; }
         """
 
         def __init__(self, title: str, fields: list[tuple]) -> None:
@@ -323,7 +335,8 @@ if _TEXTUAL_OK:
                 yield Label(self._title, classes='title')
                 for i, field in enumerate(self._fields):
                     lbl, default = field[0], field[1]
-                    opts = field[2] if len(field) > 2 else None
+                    opts    = field[2] if len(field) > 2 else None
+                    presets = field[3] if len(field) > 3 else None
                     yield Label(lbl, classes='lbl')
                     if opts is not None:
                         sel_val = default if default in opts else opts[0]
@@ -335,6 +348,9 @@ if _TEXTUAL_OK:
                         )
                     else:
                         yield Input(value=default, id=f'f{i}')
+                    if presets is not None:
+                        labels = '  '.join(f'[dim]{lbl}[/dim]' for _, lbl in presets)
+                        yield Label(f'F4 cycles: {labels}', classes='presets')
                 yield Label('ENTER = confirm  •  Tab = next field  •  ESC = cancel', classes='hint')
 
         def on_mount(self) -> None:
@@ -368,6 +384,30 @@ if _TEXTUAL_OK:
                 focused = self.focused
                 if isinstance(focused, Select):
                     self._submit()
+            elif event.key == 'f4':
+                # Cycle through presets for the focused Input field
+                focused = self.focused
+                if not isinstance(focused, Input):
+                    return
+                for i, field in enumerate(self._fields):
+                    presets = field[3] if len(field) > 3 else None
+                    if presets is None:
+                        continue
+                    try:
+                        w = self.query_one(f'#f{i}')
+                    except Exception:
+                        continue
+                    if w is focused:
+                        vals = [p[0] for p in presets]
+                        curr = focused.value
+                        try:
+                            nxt = vals[(vals.index(curr) + 1) % len(vals)]
+                        except ValueError:
+                            nxt = vals[0]
+                        focused.value = nxt
+                        focused.cursor_position = len(nxt)
+                        event.stop()
+                        break
 
         def _submit(self) -> None:
             results = []
@@ -1516,7 +1556,7 @@ if _TEXTUAL_OK:
                 fields = [
                     ('Name  (plain = variable · lbl:name = label · empty/IGNORE = skip)', n_def),
                     ('Type', t_def, _TYPE_OPTIONS),
-                    ('Match pattern', m_def),
+                    ('Match pattern  (F4 cycles presets)', m_def, None, _MATCH_PRESETS),
                     ('Notes  (written to session log — optional)', note_def),
                 ]
                 row_label = 'DATA'
@@ -1541,7 +1581,7 @@ if _TEXTUAL_OK:
                 fields = [
                     ('Name  (plain = label · var:name = variable · empty/IGNORE = skip)', n_def),
                     ('Type', t_def, _TYPE_OPTIONS),
-                    ('Match  (label: exact cell text · var: value regexp like .*)', m_def),
+                    ('Match  (label: exact text · var: regexp · F4 cycles presets)', m_def, None, _MATCH_PRESETS),
                     ('Notes  (written to session log — optional)', note_def),
                 ]
                 row_label = mode.title()
@@ -1877,7 +1917,7 @@ if _TEXTUAL_OK:
                     '[bold green]Label[/bold green] — text that identifies a nearby value',
                     [('Label anchor name', existing_meta.get('name', default_name)),
                      ('Type', existing_meta.get('ltype', _infer_cell_type(self._ws.cell(row=self._ws_row, column=self._ws_col))), _TYPE_OPTIONS),
-                     ('Match  (exact text or lbl:regexp for regex)', existing_meta.get('lmatch', default_match)),
+                     ('Match  (exact text · lbl:regexp for regex · F4 cycles presets)', existing_meta.get('lmatch', default_match), None, _MATCH_PRESETS),
                      ('Notes  (written to session log — optional)', existing_note)],
                 ),
                 _done,
@@ -1953,7 +1993,7 @@ if _TEXTUAL_OK:
                     '[bold bright_yellow]Value[/bold bright_yellow] — extract this cell\'s content',
                     [('Field name', default_name),
                      ('Type',       default_type, _TYPE_OPTIONS),
-                     ('Match',      '.*'),
+                     ('Match', '.*', None, _MATCH_PRESETS),
                      ('Notes  (written to session log — optional)', existing_note)],
                 ),
                 _done,
