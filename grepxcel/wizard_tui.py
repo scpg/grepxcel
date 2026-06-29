@@ -587,6 +587,31 @@ if _TEXTUAL_OK:
                 self.dismiss(None)
 
 
+    class _ConfirmModal(ModalScreen):
+        """Warning + Y/N confirmation before a destructive/questionable save."""
+        DEFAULT_CSS = """
+        _ConfirmModal              { align: center middle; }
+        _ConfirmModal > #dialog    { background: $surface; border: thick $warning;
+                                     width: 72; height: auto; padding: 1 2; }
+        _ConfirmModal Label.hint   { color: $text-muted; margin-top: 1; }
+        """
+
+        def __init__(self, message: str) -> None:
+            super().__init__()
+            self._message = message
+
+        def compose(self) -> ComposeResult:
+            with Vertical(id='dialog'):
+                yield Static(self._message)
+                yield Label('Y = save anyway  •  any other key = go back', classes='hint')
+
+        def on_key(self, event) -> None:
+            if event.key.lower() == 'y':
+                self.dismiss(True)
+            else:
+                self.dismiss(False)
+
+
     class _LogModal(ModalScreen):
         """Session event log — hidden support tool, triggered by F12."""
         DEFAULT_CSS = """
@@ -2390,19 +2415,43 @@ if _TEXTUAL_OK:
         async def action_end_save(self) -> None:
             done  = len(self._choices)
             total = self._total_nonempty
-            self._log('END-SAVE',
-                      f'{done}/{total} classified  →  saving pattern')
-            if self._notes:
-                for ref, note in sorted(self._notes.items()):
-                    self._log('NOTE-SAVED', f'{ref}: {note}')
-            _save_history(self._data_file,
-                          {r: m['choice'] for r, m in self._choices.items()})
             state = _build_state_from_choices(
                 self._ws, self._choices, self._cells,
                 self._state.direction, self._state.sheet_name,
             )
-            self._close_log_file()
-            self.exit(result=state)
+
+            # Detect duplicate lbl: names
+            seen: set[str] = set()
+            duplicates: list[str] = []
+            for name, _, _ in state.lbl_defs:
+                if name in seen and name not in duplicates:
+                    duplicates.append(name)
+                seen.add(name)
+
+            def _do_save() -> None:
+                self._log('END-SAVE',
+                          f'{done}/{total} classified  →  saving pattern')
+                if self._notes:
+                    for ref, note in sorted(self._notes.items()):
+                        self._log('NOTE-SAVED', f'{ref}: {note}')
+                _save_history(self._data_file,
+                              {r: m['choice'] for r, m in self._choices.items()})
+                self._close_log_file()
+                self.exit(result=state)
+
+            if duplicates:
+                dup_str = ', '.join(f'"{n}"' for n in duplicates[:4])
+                if len(duplicates) > 4:
+                    dup_str += f' and {len(duplicates) - 4} more'
+                msg = (
+                    f'[bold yellow]⚠  Duplicate label names[/bold yellow]\n\n'
+                    f'{dup_str}\n\n'
+                    '[dim]Labels with the same name may match the wrong cell '
+                    'during extraction.\nRename the duplicates to fix this.[/dim]'
+                )
+                self.push_screen(_ConfirmModal(msg), lambda ok: _do_save() if ok else None)
+            else:
+                _do_save()
 
         async def action_cancel(self) -> None:
             self._log('CANCEL', 'user cancelled — no pattern saved')
