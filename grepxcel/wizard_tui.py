@@ -311,7 +311,10 @@ if _TEXTUAL_OK:
 
     # ── Modals ─────────────────────────────────────────────────────────────────
 
-    _TYPE_OPTIONS = ['string', 'number', 'date', 'boolean']
+    _TYPE_OPTIONS = [
+        'string', 'integer', 'number', 'currency', 'percentage',
+        'boolean', 'date', 'datetime', 'time', 'duration',
+    ]
 
     # (pattern, short_label) pairs — cycled with F4 in any Match/pattern Input
     _MATCH_PRESETS: list[tuple[str, str]] = [
