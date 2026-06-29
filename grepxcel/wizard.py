@@ -702,22 +702,40 @@ def _run_table_subflow(ws, state: WizardState,
 
 # ── Phase 3: Write pattern ────────────────────────────────────────────────────
 
+def _pattern_rows(state: WizardState) -> list[list]:
+    """Flat list of rows for the pattern — shared by CSV and xlsx writers."""
+    rows: list[list] = []
+    rows.append(['config:', 'read.direction', state.direction])
+    if state.ignore_case:
+        rows.append(['config:', 'ignore.case', 'yes'])
+    rows.append(['config:', 'currency.sign', state.currency_sign])
+    for name, ltype, value in state.lbl_defs:
+        rows.append(['lbl:', name, ltype, value])
+    for name, vtype, match in state.var_defs:
+        rows.append(['var:', name, vtype, match])
+    rows.append(['START:'])
+    for row in state.body_rows:
+        rows.append(row)
+    rows.append(['END:'])
+    return rows
+
+
 def _write_pattern(state: WizardState, output_path: str) -> None:
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
-    with open(output_path, 'w', newline='', encoding='utf-8') as f:
-        writer = csv.writer(f)
-        writer.writerow(['config:', 'read.direction', state.direction])
-        if state.ignore_case:
-            writer.writerow(['config:', 'ignore.case', 'yes'])
-        writer.writerow(['config:', 'currency.sign', state.currency_sign])
-        for name, ltype, value in state.lbl_defs:
-            writer.writerow(['lbl:', name, ltype, value])
-        for name, vtype, match in state.var_defs:
-            writer.writerow(['var:', name, vtype, match])
-        writer.writerow(['START:'])
-        for row in state.body_rows:
-            writer.writerow(row)
-        writer.writerow(['END:'])
+    rows = _pattern_rows(state)
+    if os.path.splitext(output_path)[1].lower() == '.xlsx':
+        import openpyxl as _openpyxl  # already a core dependency
+        wb = _openpyxl.Workbook()
+        ws = wb.active
+        ws.title = 'pattern'
+        for row in rows:
+            ws.append([str(c) if c is not None else '' for c in row])
+        wb.save(output_path)
+    else:
+        with open(output_path, 'w', newline='', encoding='utf-8') as f:
+            writer = csv.writer(f)
+            for row in rows:
+                writer.writerow(row)
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
