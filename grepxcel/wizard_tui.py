@@ -1626,7 +1626,9 @@ if _TEXTUAL_OK:
                     else:
                         n_def = existing.get('lbl_name', f'{pfx}_{slug_v}_label')
                 else:
-                    n_def = f'{pfx}_{slug_v}_label'
+                    # Default to IGNORE for empty cells — natural action (ENTER)
+                    # skips the column instead of creating a dummy label name.
+                    n_def = f'{pfx}_{slug_v}_label' if val_str else 'IGNORE'
                 t_def = (existing.get('lbl_type', existing.get('var_type', 'string'))
                          if existing else 'string')
                 m_def = (existing.get('lbl_match', existing.get('var_match', val_str))
