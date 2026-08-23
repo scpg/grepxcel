@@ -350,7 +350,8 @@ def _handle_field_label(state: WizardState, value: Any) -> str:
     name = _ask(_c('  Label anchor name', _C.CYAN), default_name)
     if not name:
         name = default_name
-    state.lbl_defs.append((name, 'string', str(value) if value is not None else ''))
+    ltype = _var_type_from_proposal(_propose_type(value))
+    state.lbl_defs.append((name, ltype, str(value) if value is not None else ''))
     state.body_rows.append(['cell:1', name])
     # Derive base for lookahead: strip _label suffix if present
     base = name[:-6] if name.endswith('_label') else name
@@ -366,7 +367,8 @@ def _handle_control_label(state: WizardState, value: Any) -> None:
     name = _ask(_c('  Control label name', _C.CYAN), slug)
     if not name:
         name = slug
-    state.lbl_defs.append((name, 'string', str(value) if value is not None else ''))
+    ltype = _var_type_from_proposal(_propose_type(value))
+    state.lbl_defs.append((name, ltype, str(value) if value is not None else ''))
     state.body_rows.append(['cell:1', name])
 
 
@@ -833,6 +835,24 @@ def run_wizard(
     print(f'  Tables    : {_c(str(n_tables), _C.CYAN)}'
           + (f'  {_c(f"({table_desc})", _C.DIM)}' if table_desc else ''))
     print(_c('─' * 49, _C.DIM))
+
+    # B4: warn on duplicate field names (lbl: and var: names share the same namespace)
+    all_names = [n for n, _, _ in state.lbl_defs] + [n for n, _, _ in state.var_defs]
+    seen: set[str] = set()
+    dups: list[str] = []
+    for n in all_names:
+        if n in seen:
+            dups.append(n)
+        seen.add(n)
+    if dups:
+        dup_list = ', '.join(sorted(set(dups)))
+        print(_c(f'\n⚠  Duplicate field name(s): {dup_list}', _C.YELLOW))
+        print(_c('   Fields with the same name will overwrite each other in the pattern.',
+                 _C.DIM))
+        answer = _ask(_c('   Save anyway?', _C.CYAN), 'no')
+        if answer.lower() not in ('yes', 'y'):
+            print(_c('   Save cancelled.', _C.DIM))
+            return 1
 
     confirmed = _ask(f'\nSave pattern to', output)
     if confirmed:

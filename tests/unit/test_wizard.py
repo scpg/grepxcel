@@ -233,6 +233,51 @@ class TestWritePattern:
         content = open(out, encoding='utf-8').read()
         assert 'Értéke' in content
 
+    # B1: xlsx output must be a real openpyxl workbook, not a CSV-inside-xlsx
+    def test_xlsx_output_is_real_workbook(self, tmp_path):
+        state = WizardState(direction='LR', currency_sign='$')
+        state.lbl_defs.append(('inv_lbl', 'string', 'Invoice:'))
+        state.var_defs.append(('inv.number', 'string', '[A-Z]+[0-9]+'))
+        state.body_rows.append(['cell:1', 'inv_lbl'])
+        state.body_rows.append(['cell:1', 'inv.number'])
+        out = str(tmp_path / 'pattern.xlsx')
+        _write_pattern(state, out)
+
+        # Must be a valid xlsx (openpyxl can open it)
+        wb = openpyxl.load_workbook(out)
+        ws = wb.active
+        values = [[c.value for c in row] for row in ws.iter_rows()]
+        wb.close()
+
+        first_col = [row[0] for row in values if row]
+        assert 'config:' in first_col
+        assert 'lbl:' in first_col
+        assert 'var:' in first_col
+        assert 'START:' in first_col
+        assert 'END:' in first_col
+
+    def test_xlsx_contains_lbl_row(self, tmp_path):
+        state = WizardState()
+        state.lbl_defs.append(('total_lbl', 'string', 'Total:'))
+        out = str(tmp_path / 'p.xlsx')
+        _write_pattern(state, out)
+        wb = openpyxl.load_workbook(out)
+        rows = [[c.value for c in r] for r in wb.active.iter_rows()]
+        wb.close()
+        assert any(r[0] == 'lbl:' and r[1] == 'total_lbl' and r[3] == 'Total:'
+                   for r in rows)
+
+    def test_xlsx_contains_var_row(self, tmp_path):
+        state = WizardState()
+        state.var_defs.append(('amount', 'currency', r'\d+\.\d{2}'))
+        out = str(tmp_path / 'p.xlsx')
+        _write_pattern(state, out)
+        wb = openpyxl.load_workbook(out)
+        rows = [[c.value for c in r] for r in wb.active.iter_rows()]
+        wb.close()
+        assert any(r[0] == 'var:' and r[1] == 'amount' and r[2] == 'currency'
+                   for r in rows)
+
 
 # ── WizardState defaults ──────────────────────────────────────────────────────
 

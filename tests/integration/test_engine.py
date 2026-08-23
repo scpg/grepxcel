@@ -50,6 +50,20 @@ def run(fixture_name: str, sheet=None):
     return result, lg
 
 
+def run_with_pattern_file(fixture_name: str, pattern_file: str, sheet=None):
+    """Run engine with an explicit pattern file path against a fixture's data.xlsx."""
+    folder = os.path.join(FIXTURES, fixture_name)
+    lg = Logger(level=VerbosityLevel.QUIET)
+    kwargs = {} if sheet is None else {'sheet': sheet}
+    result = Engine().process(
+        pattern_file=os.path.join(folder, pattern_file),
+        data_file=os.path.join(folder, 'data.xlsx'),
+        logger=lg,
+        **kwargs,
+    )
+    return result, lg
+
+
 def run_all_sheets(fixture_name: str):
     folder = os.path.join(FIXTURES, fixture_name)
     lg = Logger(level=VerbosityLevel.QUIET)
@@ -2160,3 +2174,43 @@ class TestSeekEngine:
         result, lg = _run(pat, data)
         assert result.get('x') == 'read_c'
         assert not lg.has_errors()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 20: Sales Report  (Quelldaten sheet; pattern-manual.xlsx targets pivot cache
+#     that openpyxl cannot read without Excel refresh — use draft pattern here)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestSalesReport:
+    def setup_method(self):
+        self.result, self.lg = run_with_pattern_file(
+            '20_sales_report', 'pattern-from-draft.csv', sheet='Quelldaten'
+        )
+
+    def test_no_errors(self):
+        assert not self.lg.has_errors()
+
+    def test_no_warnings(self):
+        assert self.lg.issues() == []
+
+    def test_top_level_key(self):
+        assert list(self.result.keys()) == ['line']
+
+    def test_one_table_instance(self):
+        assert len(self.result['line']) == 1
+
+    def test_data_row_count(self):
+        # Quelldaten has 278 rows: 1 header + 277 data rows
+        assert len(self.result['line'][0]['data']) == 277
+
+    def test_first_row_fields(self):
+        first = self.result['line'][0]['data'][0]
+        assert first['product'] == 'Alice Mutton'
+        assert first['customer'] == 'ANTON'
+        assert first['q2'] == 702
+
+    def test_last_row_fields(self):
+        last = self.result['line'][0]['data'][-1]
+        assert last['product'] == 'Veggie-spread'
+        assert last['customer'] == 'WHITC'
+        assert last['q3'] == pytest.approx(842.88)
