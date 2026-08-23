@@ -2022,6 +2022,7 @@ if _TEXTUAL_OK:
             default_type = (p[4:] if p.startswith('var:') else
                             _infer_cell_type(self._ws.cell(row=self._ws_row, column=self._ws_col)))
 
+            existing_meta = self._choices.get(ref, {})
             existing_note = self._notes.get(ref, '')
 
             def _done(result: list[str] | None) -> None:
@@ -2051,9 +2052,9 @@ if _TEXTUAL_OK:
             self.push_screen(
                 _FieldsModal(
                     '[bold bright_yellow]Value[/bold bright_yellow] — extract this cell\'s content',
-                    [('Field name', default_name),
-                     ('Type',       default_type, _TYPE_OPTIONS),
-                     ('Match', '.*', None, _MATCH_PRESETS),
+                    [('Field name', existing_meta.get('name', default_name)),
+                     ('Type',       existing_meta.get('ftype', default_type), _TYPE_OPTIONS),
+                     ('Match', existing_meta.get('match', '.*'), None, _MATCH_PRESETS),
                      ('Notes  (written to session log — optional)', existing_note)],
                 ),
                 _done,
