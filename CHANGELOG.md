@@ -14,12 +14,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Produces a ready-to-run `.csv` pattern file without requiring knowledge of
   the pattern syntax. Supports `--sheet` and `-o` to control which sheet is
   walked and where the pattern is written.
+- **Full-screen TUI wizard** — `pip install 'grepxcel[wizard]'` enables a
+  Textual-powered interactive interface with four panel zones (CELL · CLASSIFY ·
+  NAVIGATE · LEGEND+STATS), colour-coded classifications (green=label,
+  yellow=value, blue=header, magenta=table, dim=ignore), per-column type/match
+  modals, undo (Ctrl+Z), clipboard export, session log (F12), SPLITTER row type,
+  match-preset cycling, and a column legend step before per-column modals.
+  Requires `textual>=8.0` (optional extra — base install unchanged).
 - **Improved `_propose_type` heuristic** — the wizard's automatic cell-type
   suggestion now uses structural rules instead of a character-length threshold:
   colon-suffix → label; `@` / `://` → `var:string`; alphanumeric codes (e.g.
   `ELC001`) → `var:string`; multi-word strings → `var:string`; single-word
   pure-alpha → label, overridden to `var:string` when the left neighbour ends
   with `:` (e.g. `"Department:" → "Engineering"`).
+
+### Documentation
+
+- **`docs/wizard-guide.md`** — user-facing reference for the wizard: workflow,
+  key bindings, row types, column modals, output format, and known limitations.
 
 ## [0.2.0] — 2026-06-25
 
