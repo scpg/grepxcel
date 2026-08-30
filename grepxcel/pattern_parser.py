@@ -159,7 +159,8 @@ class PatternParser:
                             f"Use lbl: (global default), lbl:literal, lbl:glob, or lbl:regexp."
                         )
                     fd = self._parse_field(row, role='lbl', row_num=i + 1,
-                                           lbl_match_override=suffix if suffix else None)
+                                           lbl_match_override=suffix if suffix else None,
+                                           global_lbl_match=global_config.lbl_match)
                     defs[fd.name] = fd
                     self._check_comment_zone(row, 4, i + 1, col_a_l)
                 elif col_a_l in ('doc:', 'info:'):
@@ -660,7 +661,8 @@ class PatternParser:
             config.pattern_version_explicit = True
 
     def _parse_field(self, row, role: str = 'var', row_num: int | None = None,
-                     lbl_match_override: str | None = None) -> FieldDef:
+                     lbl_match_override: str | None = None,
+                     global_lbl_match: str = 'literal') -> FieldDef:
         where = f' at pattern row {row_num}' if row_num is not None else ''
         name  = str(row[1]) if row[1] else ''
         if not name:
@@ -677,7 +679,9 @@ class PatternParser:
         regex = str(row[3]) if row[3] else '.*'
         # Skip regex safety check for lbl: fields in non-regexp modes — the
         # pattern is treated as a literal string or glob, not compiled as a regex.
-        if role != 'lbl' or lbl_match_override not in ('literal', 'glob'):
+        # Effective mode: per-field override if set, else global default.
+        effective_lbl_match = lbl_match_override if lbl_match_override is not None else global_lbl_match
+        if role != 'lbl' or effective_lbl_match not in ('literal', 'glob'):
             check_regex_safety(regex, field_name=name)
         return FieldDef(name=name, type=type_, regex=regex, role=role,
                         lbl_match=lbl_match_override)

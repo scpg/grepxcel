@@ -863,11 +863,21 @@ class ClaudeBackend:
         _http = make_httpx_client()
         _kw = {'http_client': _http} if _http is not None else {}
         client = anthropic.Anthropic(**_kw)  # reads ANTHROPIC_API_KEY from env
+        # Claude 5 models (sonnet-5, opus-5) support extended thinking, which fires
+        # automatically and can consume most of a small max_tokens budget, leaving no
+        # room for the text response.  We don't need thinking for structured pattern
+        # generation — disable it explicitly so all tokens go to the output.
+        _thinking_param: dict = (
+            {'thinking': {'type': 'disabled'}}
+            if self._model in ('claude-sonnet-5', 'claude-opus-5', 'claude-fable-5')
+            else {}
+        )
         msg = client.messages.create(
             model=self._model,
-            max_tokens=2048,
+            max_tokens=4096,
             system=system,
             messages=[{'role': 'user', 'content': user}],
+            **_thinking_param,
         )
         in_tok  = msg.usage.input_tokens
         out_tok = msg.usage.output_tokens
@@ -879,7 +889,11 @@ class ClaudeBackend:
             input_cost_usd=in_tok  * in_p  / 1_000_000,
             output_cost_usd=out_tok * out_p / 1_000_000,
         )
-        return msg.content[0].text
+        # Scan for the first text block (thinking blocks have no .text attribute).
+        for block in msg.content:
+            if hasattr(block, 'text'):
+                return block.text
+        raise ValueError(f'No text block in response content: {msg.content!r}')
 
 
 # ── Gemini API backend ────────────────────────────────────────────────────────
@@ -1157,11 +1171,36 @@ class OpenAICompatBackend:
 
 _TABLE_ROW_PREFIXES = ('HEADER:', 'DATA:', 'FOOTER:', 'SPLITTER:', 'SKIP_IF')
 
+# Recognised first-column keywords that mark the start of pattern content.
+_PATTERN_DIRECTIVES = (
+    'config:', 'var:', 'lbl:', 'def:', 'doc:', 'info:', 'start:', 'end:', 'table:',
+    'cell:', 'row:', 'col:', '|',
+)
+
+
+def _trim_prose(llm_text: str) -> str:
+    """Strip any prose preamble the LLM prepended before the pattern content.
+
+    Some models (e.g. claude-sonnet-5) occasionally output a sentence or two
+    before starting the pipe-delimited pattern.  Discard every line that comes
+    before the first line that looks like a pattern directive, so the writer
+    only processes real pattern content.
+    """
+    lines = llm_text.splitlines()
+    for i, line in enumerate(lines):
+        s = line.strip().lower()
+        if not s or s.startswith('```'):
+            continue
+        if any(s.startswith(d) for d in _PATTERN_DIRECTIVES):
+            return '\n'.join(lines[i:])
+    return llm_text  # nothing recognisable found — return as-is and let parser error
+
 
 class PatternWriter:
     """Parses LLM pipe-delimited text and writes a pattern xlsx."""
 
     def write(self, llm_text: str, output_path: str) -> None:
+        llm_text = _trim_prose(llm_text)
         wb = openpyxl.Workbook()
         ws = wb.active
         ws.title  = 'Pattern'

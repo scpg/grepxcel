@@ -1,0 +1,158 @@
+{
+  "reading": [
+    {
+      "_source": {
+        "sheet": "Blutdruckwerte",
+        "ref": "D6:E7"
+      },
+      "data": [
+        {
+          "systolisch1": 120,
+          "diastolisch1": 80
+        }
+      ]
+    },
+    {
+      "_source": {
+        "sheet": "Blutdruckwerte",
+        "ref": "D14:E15"
+      },
+      "data": [
+        {
+          "systolisch1": 129,
+          "diastolisch1": 79
+        }
+      ]
+    }
+  ],
+  "table_0": [
+    {
+      "_source": {
+        "sheet": "Blutdruckwerte",
+        "ref": "D9:E10"
+      }
+    }
+  ],
+  "log": [
+    {
+      "_source": {
+        "sheet": "Blutdruckwerte",
+        "ref": "B14:G29"
+      },
+      "data": [
+        {
+          "datum": "2006-11-01 00:00:00",
+          "zeit": "Morgens",
+          "systolisch": 129,
+          "diastolisch": 79,
+          "herzfrequenz": 72,
+          "kommentare": null
+        },
+        {
+          "datum": "2006-11-01 00:00:00",
+          "zeit": "Früher Abend",
+          "systolisch": 133,
+          "diastolisch": 80,
+          "herzfrequenz": 75,
+          "kommentare": null
+        },
+        {
+          "datum": "2006-11-02 00:00:00",
+          "zeit": "Morgens",
+          "systolisch": 142,
+          "diastolisch": 86,
+          "herzfrequenz": 70,
+          "kommentare": null
+        },
+        {
+          "datum": "2006-11-02 00:00:00",
+          "zeit": "Früher Abend",
+          "systolisch": 141,
+          "diastolisch": 84,
+          "herzfrequenz": 68,
+          "kommentare": null
+        },
+        {
+          "datum": "2006-11-03 00:00:00",
+          "zeit": "Morgens",
+          "systolisch": 137,
+          "diastolisch": 84,
+          "herzfrequenz": 70,
+          "kommentare": null
+        },
+        {
+          "datum": "2006-11-03 00:00:00",
+          "zeit": "Früher Abend",
+          "systolisch": 139,
+          "diastolisch": 83,
+          "herzfrequenz": 72,
+          "kommentare": null
+        },
+        {
+          "datum": "2006-11-04 00:00:00",
+          "zeit": "Morgens",
+          "systolisch": 140,
+          "diastolisch": 85,
+          "herzfrequenz": 78,
+          "kommentare": null
+        },
+        {
+          "datum": "2006-11-04 00:00:00",
+          "zeit": "Früher Abend",
+          "systolisch": 138,
+          "diastolisch": 85,
+          "herzfrequenz": 69,
+          "kommentare": null
+        },
+        {
+          "datum": "2006-11-05 00:00:00",
+          "zeit": "Morgens",
+          "systolisch": 135,
+          "diastolisch": 79,
+          "herzfrequenz": 75,
+          "kommentare": null
+        },
+        {
+          "datum": "2006-11-05 00:00:00",
+          "zeit": "Früher Abend",
+          "systolisch": 136,
+          "diastolisch": 81,
+          "herzfrequenz": 72,
+          "kommentare": null
+        },
+        {
+          "datum": "2006-11-06 00:00:00",
+          "zeit": "Morgens",
+          "systolisch": 137,
+          "diastolisch": 83,
+          "herzfrequenz": 69,
+          "kommentare": null
+        },
+        {
+          "datum": "2006-11-06 00:00:00",
+          "zeit": "Früher Abend",
+          "systolisch": 138,
+          "diastolisch": 85,
+          "herzfrequenz": 66,
+          "kommentare": null
+        },
+        {
+          "datum": "2006-11-07 00:00:00",
+          "zeit": "Morgens",
+          "systolisch": 135,
+          "diastolisch": 80,
+          "herzfrequenz": 67,
+          "kommentare": null
+        },
+        {
+          "datum": "2006-11-07 00:00:00",
+          "zeit": "Früher Abend",
+          "systolisch": 142,
+          "diastolisch": 85,
+          "herzfrequenz": 72,
+          "kommentare": null
+        }
+      ]
+    }
+  ]
+}
