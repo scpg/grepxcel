@@ -166,7 +166,7 @@ class TestValidatePatternTool:
         server = create_server()
         fn = server._tool_manager._tools['validate_pattern'].fn
         result = fn(
-            pattern=_fixture('01_simple_invoice', 'pattern-from-draft.xlsx'),
+            pattern=_fixture_pattern('01_simple_invoice'),
         )
         assert 'VALID' in result
 
@@ -174,7 +174,7 @@ class TestValidatePatternTool:
         server = create_server()
         fn = server._tool_manager._tools['validate_pattern'].fn
         result = fn(
-            pattern=_fixture('01_simple_invoice', 'pattern-from-draft.xlsx'),
+            pattern=_fixture_pattern('01_simple_invoice'),
             verbose=True,
         )
         assert 'fields:' in result or 'VALID' in result
@@ -221,7 +221,7 @@ class TestSchemaTool:
         server = create_server()
         fn = server._tool_manager._tools['schema'].fn
         result = fn(
-            pattern=_fixture('01_simple_invoice', 'pattern-from-draft.xlsx'),
+            pattern=_fixture_pattern('01_simple_invoice'),
         )
         parsed = json.loads(result)
         assert '$schema' in parsed or 'type' in parsed
@@ -231,7 +231,7 @@ class TestSchemaTool:
         server = create_server()
         fn = server._tool_manager._tools['schema'].fn
         result = fn(
-            pattern=_fixture('01_simple_invoice', 'pattern-from-draft.xlsx'),
+            pattern=_fixture_pattern('01_simple_invoice'),
         )
         parsed = json.loads(result)
         assert 'properties' in parsed

@@ -30,8 +30,8 @@ regressions when we change the analysis prompt, we need a repeatable score.
 We never compare pattern *text* (there are many valid ways to write the same
 pattern). Instead we compare what the patterns **produce**:
 
-1. For a fixture that has a hand-written reference `pattern.xlsx`, run the model
-   to draft a candidate pattern from the fixture's `data.xlsx`.
+1. For a fixture that has a hand-written reference pattern (`*_pattern-manual.xlsx`), run the model
+   to draft a candidate pattern from the fixture's `*_data.xlsx`.
 2. Run `extract` twice on the same data — once with the reference pattern, once
    with the candidate.
 3. Compare the two JSON outputs.

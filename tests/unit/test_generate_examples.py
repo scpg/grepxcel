@@ -143,9 +143,10 @@ class TestBundledExamplesMatchFixtures:
     def test_data_xlsx_matches_fixture(self, ex):
         fixture_data = pathlib.Path(find_data_file(str(FIXTURES_DIR / ex['source_fixture'])))
         bundled_data = pathlib.Path(ex['data'])
+        src = ex['source_fixture']
         assert fixture_data.read_bytes() == bundled_data.read_bytes(), (
             f"Bundled {ex['name']}/data.xlsx differs from "
-            f"tests/fixtures/{ex['source_fixture']}/data.xlsx — "
+            f"tests/fixtures/{src}/{src}_data.xlsx — "
             f"copy the updated fixture into grepxcel/examples/{ex['name']}/"
         )
 
@@ -155,8 +156,9 @@ class TestBundledExamplesMatchFixtures:
             find_pattern_xlsx(str(FIXTURES_DIR / ex['source_fixture']))
         )
         bundled_pattern = pathlib.Path(ex['pattern'])
+        src = ex['source_fixture']
         assert fixture_pattern.read_bytes() == bundled_pattern.read_bytes(), (
             f"Bundled {ex['name']}/pattern.xlsx differs from "
-            f"tests/fixtures/{ex['source_fixture']}/pattern-from-draft.xlsx — "
+            f"tests/fixtures/{src}/{src}_pattern-from-draft.xlsx — "
             f"copy the updated fixture into grepxcel/examples/{ex['name']}/"
         )
