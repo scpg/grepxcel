@@ -541,10 +541,6 @@ backends:
           Needs:  pip install 'grepxcel[suggest]'
           Model is downloaded automatically on first run (~5 GB).
           No data leaves your machine during inference.
-  github  Send the Excel structure description to GitHub Models (free with a
-          GitHub subscription, quota-limited). Highest draft quality in our eval.
-          Needs GITHUB_TOKEN (Models: read) and pip install 'grepxcel[draft-cloud]'.
-          Choose a model with --github-model (e.g. openai/gpt-4.1, openai/gpt-4o).
   claude  Send the Excel structure description to the Claude API.
           Needs ANTHROPIC_API_KEY and pip install 'grepxcel[draft-cloud]'.
           The raw file is NOT transmitted — only column types, sample
@@ -556,10 +552,11 @@ backends:
           auto-discovered unless --server-model is set. Data stays local
           unless you point --server-url at a remote host.
   gemini  Planned for a future release — not yet available.
+  github  Currently unavailable — GitHub retired the free-tier Models endpoint.
+          The implementation is preserved for when GitHub provides a replacement.
 
 Keys are read from a .env file (current dir or any parent) if present.
-The cloud backends print the per-call token usage; github also prints the
-remaining quota, claude prints the per-call dollar cost.
+Cloud backends print per-call token usage; claude also prints the dollar cost.
 
 model cache (local backend):
   Stored once in the per-user cache (platform-appropriate, via platformdirs):
@@ -616,10 +613,11 @@ def _draft_args(p: argparse.ArgumentParser) -> None:
         choices=['local', 'claude', 'gemini', 'github', 'server'],
         default='local',
         help='Inference backend: local (default, GGUF model), claude (requires '
-             'ANTHROPIC_API_KEY), github (GitHub Models, requires GITHUB_TOKEN '
-             "with 'Models: read'; use --github-model to pick a model), "
+             'ANTHROPIC_API_KEY), '
              'server (any OpenAI-compatible server, e.g. LM Studio / Ollama / '
-             'vLLM; use --server-url). gemini is planned for a future release.',
+             'vLLM; use --server-url). '
+             'gemini is planned for a future release. '
+             'github is currently unavailable (GitHub retired the free-tier endpoint).',
     )
     p.add_argument(
         '--github-model',
@@ -1057,6 +1055,18 @@ def _run_draft(args) -> int:
         print(
             '[!] The Gemini backend is planned for a future release and is not yet '
             'available.\n    Use --backend local or --backend claude.',
+            file=sys.stderr,
+        )
+        return 1
+    if selected == 'github':
+        # Implemented but disabled — GitHub retired the free-tier Models endpoint
+        # (HTTP 410 "retirement brownout").  The implementation is preserved; flip
+        # _GITHUB_MODELS_ENABLED in drafter.py if GitHub provides a new endpoint.
+        print(
+            '[!] The GitHub Models backend is currently unavailable.\n'
+            '    GitHub retired the free-tier Models endpoint '
+            '(HTTP 410 retirement brownout).\n'
+            '    Use --backend local or --backend claude instead.',
             file=sys.stderr,
         )
         return 1

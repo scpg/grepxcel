@@ -961,14 +961,31 @@ class GeminiBackend:
 
 # ── GitHub Models backend ─────────────────────────────────────────────────────
 
+# Feature flag: the GitHub Models free-tier endpoint is DISABLED — GitHub
+# announced its retirement via HTTP 410 "retirement brownout" responses
+# (code: github_models_retirement_brownout).  The full implementation is kept
+# intact so it can be re-enabled if GitHub launches a replacement endpoint
+# (e.g. Copilot-gated or paid tier).  To re-enable: flip this to True,
+# update ENDPOINT if the URL changed, and re-enable any skipped tests.
+_GITHUB_MODELS_ENABLED = False
+
+
+class GitHubModelsUnavailableError(RuntimeError):
+    """Raised when the (disabled) GitHub Models backend is invoked programmatically."""
+
+
 class GitHubModelsBackend:
     """Sends inference requests to GitHub Models (OpenAI-compatible endpoint).
 
-    Access is included with a GitHub account / Copilot subscription, so there
-    is no per-token dollar cost — consumption is governed by rate limits
-    instead. Those limits (requests + tokens, with the remaining amounts) are
-    returned in x-ratelimit-* response headers and captured into the
-    CostRecord so usage stays visible.
+    DISABLED — GitHub retired the free-tier Models endpoint (HTTP 410,
+    'github_models_retirement_brownout').  The implementation is preserved in
+    case GitHub provides a replacement endpoint; flip _GITHUB_MODELS_ENABLED
+    to True (and update ENDPOINT if needed) to re-enable it.
+
+    When active, access is included with a GitHub account / Copilot
+    subscription — no per-token dollar cost, governed by rate limits instead.
+    Rate-limit headers (x-ratelimit-*) are captured into CostRecord so usage
+    stays visible.
 
     Requires GITHUB_TOKEN in the environment, with the 'Models: read'
     fine-grained permission. Model ids are namespaced, e.g. 'openai/gpt-4o',
@@ -995,6 +1012,12 @@ class GitHubModelsBackend:
             return None
 
     def chat(self, system: str, user: str) -> str:
+        if not _GITHUB_MODELS_ENABLED:
+            raise GitHubModelsUnavailableError(
+                'The GitHub Models backend is currently unavailable — GitHub '
+                'retired the free-tier endpoint (HTTP 410 retirement brownout). '
+                'Use --backend local or --backend claude instead.'
+            )
         try:
             from openai import OpenAI
         except ImportError:

@@ -27,7 +27,7 @@ Backend names
 -------------
     local   — local LLM (llama-cpp, requires 'grepxcel[suggest]' extras)
     claude  — Claude API  (requires ANTHROPIC_API_KEY)
-    github  — GitHub Models / OpenAI-compatible (requires GITHUB_TOKEN)
+    (github is built but disabled — GitHub retired the free-tier endpoint)
     (gemini is built but disabled — not yet available here)
 
 After running this script, commit the new pattern file(s) and regenerate the
@@ -51,12 +51,12 @@ ROOT     = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
 FIXTURES = os.path.join(ROOT, 'tests', 'fixtures')
 
 # Map from our file-suffix backend names to grepxcel CLI --backend values.
-# gemini is intentionally excluded — it is built but disabled pending GCP billing
-# (see memory: project_gemini_pending.md).  Add it here once enabled.
+# gemini is excluded — built but disabled pending GCP billing (project_gemini_pending.md).
+# github is excluded — built but disabled; GitHub retired the free-tier endpoint (HTTP 410).
+# Re-add either here once the corresponding _*_ENABLED flag in drafter.py is flipped.
 _BACKEND_MAP = {
     'claude': 'claude',
     'local':  'local',
-    'github': 'github',
 }
 
 
