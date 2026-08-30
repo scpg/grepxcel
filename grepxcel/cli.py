@@ -357,14 +357,24 @@ examples:
   grepxcel wizard data.xlsx
   grepxcel wizard data.xlsx --sheet Sheet2
   grepxcel wizard data.xlsx -o my-pattern.csv
+  grepxcel wizard data.xlsx --save-state session.json
+  grepxcel wizard --load-state session.json -o my-pattern.csv
         """,
     )
-    p.add_argument('file', metavar='FILE', help='Excel data file to inspect')
+    p.add_argument('file', metavar='FILE', nargs='?',
+                   help='Excel data file to inspect '
+                        '(required unless --load-state is given)')
     p.add_argument('--sheet', metavar='NAME_OR_INDEX',
                    help='Sheet to use (default: active sheet)')
     p.add_argument('-o', '--output', metavar='FILE',
-                   help='Write the pattern CSV to FILE '
+                   help='Write the pattern CSV/XLSX to FILE '
                         '(default: pattern-<stem>.csv next to the data file)')
+    p.add_argument('--load-state', metavar='FILE',
+                   help='Load a saved wizard state (JSON) and write the pattern '
+                        'directly without any interactive session')
+    p.add_argument('--save-state', metavar='FILE',
+                   help='After saving the pattern, also write the wizard session '
+                        'state to FILE as JSON (enables replay and scripted testing)')
 
 
 def _add_quickstart_subparser(sub) -> None:
@@ -1096,11 +1106,19 @@ def main(argv=None):
         sys.exit(run_quickstart())
 
     if args.command == 'wizard':
+        load_state = getattr(args, 'load_state', None)
+        if not args.file and not load_state:
+            # argparse won't catch this since FILE is nargs='?'
+            print('grepxcel wizard: error: FILE is required unless --load-state is given',
+                  file=sys.stderr)
+            sys.exit(2)
         from .wizard import run_wizard
         sys.exit(run_wizard(
             data_file=args.file,
             sheet=getattr(args, 'sheet', None),
             output=getattr(args, 'output', None),
+            load_state=load_state,
+            save_state=getattr(args, 'save_state', None),
         ))
 
     if args.command == 'draft':

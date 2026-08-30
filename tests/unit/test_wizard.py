@@ -3,6 +3,7 @@
 import csv
 import datetime
 import io
+import json
 import os
 
 import openpyxl
@@ -11,9 +12,11 @@ import pytest
 from grepxcel.wizard import (
     WizardState,
     _propose_type,
+    _save_state_json,
     _slugify,
     _col_label,
     _write_pattern,
+    run_wizard,
 )
 
 
@@ -289,4 +292,186 @@ class TestWizardState:
         assert s.currency_sign == '€'
         assert s.lbl_defs == []
         assert s.var_defs == []
-        assert s.body_rows == []
+
+    # ── to_dict / from_dict (JSON round-trip) ────────────────────────────────
+
+    def test_to_dict_is_json_serialisable(self):
+        s = WizardState(direction='TD', currency_sign='$', ignore_case=True)
+        s.lbl_defs.append(('inv_lbl', 'string', 'Invoice:'))
+        s.var_defs.append(('inv.number', 'integer', r'\d+'))
+        s.body_rows.append(['cell:1', 'inv.number'])
+        d = s.to_dict()
+        # Must round-trip through JSON without error
+        text = json.dumps(d)
+        assert '"direction"' in text
+        assert '"inv_lbl"' in text
+        assert '"inv.number"' in text
+
+    def test_from_dict_restores_all_fields(self):
+        original = WizardState(
+            direction='TD',
+            ignore_case=True,
+            currency_sign='$',
+            sheet_name='Sheet2',
+        )
+        original.lbl_defs.append(('dept_lbl', 'string', 'Department:'))
+        original.var_defs.append(('dept', 'string', r'[A-Z]+'))
+        original.body_rows.append(['cell:1', 'dept'])
+
+        restored = WizardState.from_dict(original.to_dict())
+        assert restored.direction == 'TD'
+        assert restored.ignore_case is True
+        assert restored.currency_sign == '$'
+        assert restored.sheet_name == 'Sheet2'
+        assert restored.lbl_defs == [('dept_lbl', 'string', 'Department:')]
+        assert restored.var_defs == [('dept', 'string', r'[A-Z]+')]
+        assert restored.body_rows == [['cell:1', 'dept']]
+
+    def test_from_dict_uses_defaults_for_missing_keys(self):
+        restored = WizardState.from_dict({})
+        assert restored.direction == 'LR'
+        assert restored.ignore_case is False
+        assert restored.currency_sign == '€'
+        assert restored.sheet_name is None
+        assert restored.lbl_defs == []
+        assert restored.var_defs == []
+        assert restored.body_rows == []
+
+    def test_round_trip_via_json_string(self):
+        s = WizardState(direction='LR', currency_sign='£')
+        s.lbl_defs.append(('total_lbl', 'currency', 'Total:'))
+        s.body_rows.append(['table:*'])
+        restored = WizardState.from_dict(json.loads(json.dumps(s.to_dict())))
+        assert restored.direction == 'LR'
+        assert restored.currency_sign == '£'
+        assert restored.lbl_defs == [('total_lbl', 'currency', 'Total:')]
+        assert restored.body_rows == [['table:*']]
+
+
+# ── _save_state_json ──────────────────────────────────────────────────────────
+
+class TestSaveStateJson:
+    def test_writes_valid_json(self, tmp_path):
+        state = WizardState(direction='TD', currency_sign='$')
+        state.lbl_defs.append(('lbl', 'string', 'Invoice:'))
+        path = str(tmp_path / 'state.json')
+        _save_state_json(state, path)
+        with open(path, encoding='utf-8') as fh:
+            d = json.load(fh)
+        assert d['direction'] == 'TD'
+        assert d['currency_sign'] == '$'
+        assert d['lbl_defs'] == [['lbl', 'string', 'Invoice:']]
+
+    def test_round_trip_preserves_body_rows(self, tmp_path):
+        state = WizardState()
+        state.body_rows.append(['table:*'])
+        state.body_rows.append(['', 'HEADER:1', 'col_a'])
+        state.body_rows.append(['', 'DATA:*', 'col_a'])
+        path = str(tmp_path / 'state.json')
+        _save_state_json(state, path)
+        with open(path, encoding='utf-8') as fh:
+            restored = WizardState.from_dict(json.load(fh))
+        assert restored.body_rows == state.body_rows
+
+
+# ── run_wizard --load-state / --save-state ────────────────────────────────────
+
+FIXTURE_DIR = os.path.join(os.path.dirname(__file__), '..', 'fixtures')
+
+
+def _make_state_json(tmp_path, name='invoice') -> str:
+    """Write a minimal WizardState JSON file and return its path."""
+    state = WizardState(direction='LR', currency_sign='€')
+    state.lbl_defs.append(('inv_lbl', 'string', 'Invoice No:'))
+    state.var_defs.append(('inv.number', 'string', r'[A-Z]+\d+'))
+    state.body_rows.append(['cell:1', 'inv_lbl'])
+    state.body_rows.append(['cell:1', 'inv.number'])
+    path = str(tmp_path / f'{name}.json')
+    with open(path, 'w', encoding='utf-8') as fh:
+        json.dump(state.to_dict(), fh, indent=2)
+    return path
+
+
+class TestRunWizardLoadState:
+    """run_wizard(load_state=...) converts JSON → pattern without an Excel file."""
+
+    def test_writes_csv_pattern(self, tmp_path):
+        state_path = _make_state_json(tmp_path)
+        out = str(tmp_path / 'out.csv')
+        rc = run_wizard(data_file=None, load_state=state_path, output=out)
+        assert rc == 0
+        assert os.path.exists(out)
+        with open(out, newline='', encoding='utf-8') as fh:
+            rows = list(csv.reader(fh))
+        first_col = [r[0] for r in rows]
+        assert 'lbl:' in first_col
+        assert 'var:' in first_col
+        assert 'START:' in first_col
+        assert 'END:' in first_col
+
+    def test_lbl_and_var_rows_match_state(self, tmp_path):
+        state_path = _make_state_json(tmp_path)
+        out = str(tmp_path / 'out.csv')
+        run_wizard(data_file=None, load_state=state_path, output=out)
+        with open(out, newline='', encoding='utf-8') as fh:
+            rows = list(csv.reader(fh))
+        assert ['lbl:', 'inv_lbl', 'string', 'Invoice No:'] in rows
+        assert any(r[0] == 'var:' and r[1] == 'inv.number' for r in rows)
+
+    def test_writes_xlsx_pattern_when_output_is_xlsx(self, tmp_path):
+        state_path = _make_state_json(tmp_path)
+        out = str(tmp_path / 'out.xlsx')
+        rc = run_wizard(data_file=None, load_state=state_path, output=out)
+        assert rc == 0
+        wb = openpyxl.load_workbook(out)
+        rows = [[c.value for c in r] for r in wb.active.iter_rows()]
+        wb.close()
+        first_col = [r[0] for r in rows if r]
+        assert 'lbl:' in first_col
+        assert 'var:' in first_col
+
+    def test_default_output_name_derived_from_state_file(self, tmp_path, monkeypatch):
+        monkeypatch.chdir(tmp_path)
+        state_path = _make_state_json(tmp_path, name='mystate')
+        rc = run_wizard(data_file=None, load_state=state_path)
+        assert rc == 0
+        assert (tmp_path / 'pattern-mystate.csv').exists()
+
+    def test_error_on_missing_state_file(self, tmp_path):
+        rc = run_wizard(data_file=None, load_state=str(tmp_path / 'no_such.json'))
+        assert rc == 1
+
+    def test_error_on_invalid_json(self, tmp_path):
+        bad = str(tmp_path / 'bad.json')
+        with open(bad, 'w') as fh:
+            fh.write('not json {{{')
+        rc = run_wizard(data_file=None, load_state=bad)
+        assert rc == 1
+
+
+class TestRunWizardSaveState:
+    """run_wizard(save_state=...) writes state JSON after the pattern is saved."""
+
+    def test_save_state_written_alongside_pattern(self, tmp_path):
+        state_path = _make_state_json(tmp_path)
+        out_pattern = str(tmp_path / 'out.csv')
+        out_state   = str(tmp_path / 'saved.json')
+        rc = run_wizard(data_file=None, load_state=state_path,
+                        output=out_pattern, save_state=out_state)
+        assert rc == 0
+        assert os.path.exists(out_state)
+        with open(out_state, encoding='utf-8') as fh:
+            d = json.load(fh)
+        assert 'lbl_defs' in d
+        assert 'var_defs' in d
+
+    def test_save_state_is_valid_round_trip(self, tmp_path):
+        state_path = _make_state_json(tmp_path)
+        out_pattern = str(tmp_path / 'out.csv')
+        out_state   = str(tmp_path / 'saved.json')
+        run_wizard(data_file=None, load_state=state_path,
+                   output=out_pattern, save_state=out_state)
+        with open(out_state, encoding='utf-8') as fh:
+            restored = WizardState.from_dict(json.load(fh))
+        assert restored.lbl_defs == [('inv_lbl', 'string', 'Invoice No:')]
+        assert any(n == 'inv.number' for n, _, _ in restored.var_defs)

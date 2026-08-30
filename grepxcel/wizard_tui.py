@@ -2680,6 +2680,7 @@ def run_wizard_tui(
     data_file: str,
     sheet: str | None = None,
     output: str | None = None,
+    save_state: str | None = None,
 ) -> int:
     """Run the TUI wizard.
 
@@ -2688,6 +2689,10 @@ def run_wizard_tui(
     0   pattern saved successfully
     1   user cancelled
     2   textual not installed (caller falls back to sequential wizard)
+
+    ``save_state``
+        If given, write the final WizardState to this JSON path after saving
+        the pattern.  Enables replay, scripted testing, and ``--load-state``.
     """
     if not _TEXTUAL_OK:
         return 2
@@ -2733,6 +2738,9 @@ def run_wizard_tui(
 
     _write_pattern(result, output)
     print(f'\n✓  Pattern written: {output}')
+    if save_state:
+        from .wizard import _save_state_json
+        _save_state_json(result, save_state)
     print(f'   Try:  grepxcel extract -p {output} {data_file}')
     print(f'         grepxcel validate-pattern {output}')
     return 0
