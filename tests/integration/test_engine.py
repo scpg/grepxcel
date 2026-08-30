@@ -9,7 +9,9 @@ import datetime
 import pytest
 import openpyxl as _openpyxl
 from grepxcel import Engine, Logger, VerbosityLevel
-from tests.conftest import find_data_file, find_pattern_xlsx, find_pattern_csv
+from tests.conftest import (
+    find_data_file, find_pattern_xlsx, find_pattern_csv, find_pattern_for_backend,
+)
 
 FIXTURES = os.path.join(os.path.dirname(__file__), '..', 'fixtures')
 
@@ -50,6 +52,29 @@ def run(fixture_name: str, sheet=None):
     return result, lg
 
 
+def run_draft(fixture_name: str, sheet=None):
+    """Run the engine using the stable 'draft' baseline pattern.
+
+    Engine tests that assert on specific field names should use this helper
+    rather than run() so they remain stable as higher-priority patterns
+    (pattern-from-claude, pattern-from-local, …) are added for a fixture.
+    """
+    folder = os.path.join(FIXTURES, fixture_name)
+    pattern = find_pattern_for_backend(folder, 'draft')
+    if pattern is None:
+        # Fallback: let find_pattern_xlsx pick whatever is available.
+        pattern = find_pattern_xlsx(folder)
+    lg = Logger(level=VerbosityLevel.QUIET)
+    kwargs = {} if sheet is None else {'sheet': sheet}
+    result = Engine().process(
+        pattern_file=pattern,
+        data_file=find_data_file(folder),
+        logger=lg,
+        **kwargs,
+    )
+    return result, lg
+
+
 def run_with_pattern_file(fixture_name: str, pattern_file: str, sheet=None):
     """Run engine with an explicit pattern file path against a fixture's data file."""
     folder = os.path.join(FIXTURES, fixture_name)
@@ -81,7 +106,9 @@ def run_all_sheets(fixture_name: str):
 
 class TestSimpleInvoice:
     def setup_method(self):
-        self.result, self.lg = run('01_simple_invoice')
+        # Use the stable draft pattern so field-name assertions don't shift as
+        # higher-priority patterns (claude, local, …) are added for this fixture.
+        self.result, self.lg = run_draft('01_simple_invoice')
 
     def test_no_errors(self):
         assert not self.lg.has_errors()
