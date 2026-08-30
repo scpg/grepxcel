@@ -2,7 +2,9 @@
 """
 Generate test fixture xlsx files in tests/fixtures/.
 
-Each fixture is a pair: pattern.xlsx (what to look for) + data.xlsx (the actual spreadsheet).
+Each fixture is a pair:
+  {name}_pattern-from-draft.xlsx  — the extraction pattern (programmatically authored here)
+  {name}_data.xlsx                — the source spreadsheet
 
   01_simple_invoice      — cells only, no tables; all values valid
   02_product_catalog     — one table:* group, three mini-table instances
@@ -39,8 +41,8 @@ FIXTURES = os.path.join(ROOT, 'tests', 'fixtures')
 def save(name: str, pattern_wb: Workbook, data_wb: Workbook):
     folder = os.path.join(FIXTURES, name)
     os.makedirs(folder, exist_ok=True)
-    pattern_wb.save(os.path.join(folder, 'pattern.xlsx'))
-    data_wb.save(os.path.join(folder, 'data.xlsx'))
+    pattern_wb.save(os.path.join(folder, f'{name}_pattern-from-draft.xlsx'))
+    data_wb.save(os.path.join(folder, f'{name}_data.xlsx'))
     print(f'  {name}/')
 
 
