@@ -115,13 +115,21 @@ def test_cert_failure_hint_is_actionable():
 # ── make_httpx_client ────────────────────────────────────────────────────────
 
 def test_make_httpx_client_with_ca(monkeypatch):
-    pytest.importorskip('httpx')
+    # anthropic >= 1.x and openai >= 3.x both require httpx2; make_httpx_client()
+    # prefers httpx2.Client and falls back to httpx.Client on older installs.
     certifi = pytest.importorskip('certifi')
-    # Use a real, valid CA bundle so the SSLContext loads cleanly.
     monkeypatch.setenv('GREPXCEL_CA_BUNDLE', certifi.where())
     client = ps.make_httpx_client()
-    import httpx
-    assert isinstance(client, httpx.Client)
+    try:
+        import httpx2
+        assert isinstance(client, httpx2.Client), (
+            f'Expected httpx2.Client, got {type(client)}'
+        )
+    except ImportError:
+        import httpx
+        assert isinstance(client, httpx.Client), (
+            f'Expected httpx.Client (httpx2 unavailable), got {type(client)}'
+        )
     client.close()
 
 

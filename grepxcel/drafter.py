@@ -848,7 +848,8 @@ class ClaudeBackend:
             )
             sys.exit(1)
         # Honor a corporate CA bundle / OS trust store behind a TLS-inspection
-        # proxy (httpx ignores REQUESTS_CA_BUNDLE on its own). See proxy_support.
+        # proxy (httpx2 ignores REQUESTS_CA_BUNDLE on its own). See proxy_support.
+        # anthropic >= 1.x requires httpx2; make_httpx_client() returns httpx2.Client.
         from .proxy_support import make_httpx_client
         _http = make_httpx_client()
         _kw = {'http_client': _http} if _http is not None else {}
@@ -1011,6 +1012,7 @@ class GitHubModelsBackend:
                 'and add GITHUB_TOKEN=... to your environment or .env file.'
             )
         # Corporate-proxy CA trust (see proxy_support / ClaudeBackend above).
+        # openai >= 3.x requires httpx2; make_httpx_client() returns httpx2.Client.
         from .proxy_support import make_httpx_client
         _http = make_httpx_client()
         _kw = {'http_client': _http} if _http is not None else {}
