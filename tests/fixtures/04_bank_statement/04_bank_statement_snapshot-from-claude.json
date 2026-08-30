@@ -1,0 +1,59 @@
+{
+  "account": {
+    "holder": "Jane Smith",
+    "number": "GB29NWBK60161331926819",
+    "period": "January 2026"
+  },
+  "transaction": [
+    {
+      "_source": {
+        "sheet": "Sheet1",
+        "ref": "A5:E12"
+      },
+      "data": [
+        {
+          "date": "2026-01-01 00:00:00",
+          "description": "Opening Balance",
+          "debit": 0,
+          "credit": 2500,
+          "balance": 2500
+        },
+        {
+          "date": "2026-01-05 00:00:00",
+          "description": "Grocery Store",
+          "debit": 85.5,
+          "credit": 0,
+          "balance": 2414.5
+        },
+        {
+          "date": "2026-01-10 00:00:00",
+          "description": "Monthly Salary",
+          "debit": 0,
+          "credit": 3200,
+          "balance": 5614.5
+        },
+        {
+          "date": "2026-01-15 00:00:00",
+          "description": "Electricity Bill",
+          "debit": 120,
+          "credit": 0,
+          "balance": 5494.5
+        },
+        {
+          "date": "2026-01-20 00:00:00",
+          "description": "Online Shopping",
+          "debit": 250,
+          "credit": 0,
+          "balance": 5244.5
+        },
+        {
+          "date": "Totals",
+          "description": null,
+          "debit": 455.5,
+          "credit": 5700,
+          "balance": null
+        }
+      ]
+    }
+  ]
+}

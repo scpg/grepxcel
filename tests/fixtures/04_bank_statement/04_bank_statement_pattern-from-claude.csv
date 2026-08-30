@@ -1,0 +1,29 @@
+config:,pattern.version,1
+config:,read.direction,LR
+lbl:,account_holder_label,string,Account Holder:
+lbl:,account_number_label,string,Account Number:
+lbl:,statement_period_label,string,Statement Period:
+lbl:,col_date,string,Date
+lbl:,col_description,string,Description
+lbl:,col_debit,string,Debit
+lbl:,col_credit,string,Credit
+lbl:,col_balance,string,Balance
+var:,account.holder,string,.*
+var:,account.number,string,.*
+var:,account.period,string,.*
+var:,transaction.date,datetime
+var:,transaction.description,string,.*
+var:,transaction.debit,number,.*
+var:,transaction.credit,number,.*
+var:,transaction.balance,currency,.*
+START:
+cell:next,account_holder_label
+cell:next,account.holder
+cell:next,account_number_label
+cell:next,account.number
+cell:next,statement_period_label
+cell:next,account.period
+table:*
+,HEADER:1,col_date,col_description,col_debit,col_credit,col_balance
+,DATA:*,transaction.date,transaction.description,transaction.debit,transaction.credit,transaction.balance
+END:

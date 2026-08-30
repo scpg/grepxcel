@@ -1,0 +1,43 @@
+{
+  "company": {
+    "phone": "(413) 555-0190",
+    "fax": "(413) 555-0191",
+    "email": "someone@example.com"
+  },
+  "stmt": {
+    "number": "Bill To:",
+    "bill_to": "Date:",
+    "date": "Company Name",
+    "customer_id": "Address 2"
+  },
+  "remittance": [
+    {
+      "_source": {
+        "sheet": "Billing Statement",
+        "ref": "B26:C32"
+      },
+      "data": [
+        {
+          "customer_name": "Customer ID:",
+          "date": "Enter customer ID"
+        },
+        {
+          "customer_name": "Statement #:",
+          "date": "Enter statement number"
+        },
+        {
+          "customer_name": "Date:",
+          "date": "2026-06-09 00:00:00"
+        },
+        {
+          "customer_name": "Amount Due:",
+          "date": 555
+        },
+        {
+          "customer_name": "Amount Enclosed:",
+          "date": null
+        }
+      ]
+    }
+  ]
+}

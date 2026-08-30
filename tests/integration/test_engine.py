@@ -40,6 +40,36 @@ def run_custom_pattern(pattern_rows: list, fixture_name: str, sheet=None):
 
 
 def run(fixture_name: str, sheet=None):
+    """Run the engine using the stable 'draft' baseline pattern.
+
+    All engine test classes assert specific field names that match the
+    programmatic draft patterns (01-14) or the original LLM draft (15-22).
+    Using the best available pattern would cause these assertions to drift as
+    higher-priority patterns (pattern-from-claude, pattern-from-local, …) are
+    added.  Use run_best() explicitly when you want the highest-priority pattern.
+    """
+    folder = os.path.join(FIXTURES, fixture_name)
+    pattern = find_pattern_for_backend(folder, 'draft')
+    if pattern is None:
+        pattern = find_pattern_xlsx(folder)   # fallback for legacy bare names
+    lg = Logger(level=VerbosityLevel.QUIET)
+    kwargs = {} if sheet is None else {'sheet': sheet}
+    result = Engine().process(
+        pattern_file=pattern,
+        data_file=find_data_file(folder),
+        logger=lg,
+        **kwargs,
+    )
+    return result, lg
+
+
+def run_best(fixture_name: str, sheet=None):
+    """Run the engine using the highest-priority available pattern.
+
+    Uses find_pattern_xlsx() (manual > claude > local > draft > bare).
+    Use this when you explicitly want to test with the best pattern, not the
+    stable draft baseline.
+    """
     folder = os.path.join(FIXTURES, fixture_name)
     lg = Logger(level=VerbosityLevel.QUIET)
     kwargs = {} if sheet is None else {'sheet': sheet}
@@ -52,27 +82,8 @@ def run(fixture_name: str, sheet=None):
     return result, lg
 
 
-def run_draft(fixture_name: str, sheet=None):
-    """Run the engine using the stable 'draft' baseline pattern.
-
-    Engine tests that assert on specific field names should use this helper
-    rather than run() so they remain stable as higher-priority patterns
-    (pattern-from-claude, pattern-from-local, …) are added for a fixture.
-    """
-    folder = os.path.join(FIXTURES, fixture_name)
-    pattern = find_pattern_for_backend(folder, 'draft')
-    if pattern is None:
-        # Fallback: let find_pattern_xlsx pick whatever is available.
-        pattern = find_pattern_xlsx(folder)
-    lg = Logger(level=VerbosityLevel.QUIET)
-    kwargs = {} if sheet is None else {'sheet': sheet}
-    result = Engine().process(
-        pattern_file=pattern,
-        data_file=find_data_file(folder),
-        logger=lg,
-        **kwargs,
-    )
-    return result, lg
+# Keep run_draft as an explicit alias for callers that prefer the verbose name.
+run_draft = run
 
 
 def run_with_pattern_file(fixture_name: str, pattern_file: str, sheet=None):
@@ -90,10 +101,18 @@ def run_with_pattern_file(fixture_name: str, pattern_file: str, sheet=None):
 
 
 def run_all_sheets(fixture_name: str):
+    """Run process_all() using the stable 'draft' baseline pattern.
+
+    Mirrors run() — all TestAllSheets assertions use known draft field names,
+    so we pin to draft to stay stable as higher-priority patterns are added.
+    """
     folder = os.path.join(FIXTURES, fixture_name)
+    pattern = find_pattern_for_backend(folder, 'draft')
+    if pattern is None:
+        pattern = find_pattern_xlsx(folder)
     lg = Logger(level=VerbosityLevel.QUIET)
     result = Engine().process_all(
-        pattern_file=find_pattern_xlsx(folder),
+        pattern_file=pattern,
         data_file=find_data_file(folder),
         logger=lg,
     )
@@ -106,9 +125,7 @@ def run_all_sheets(fixture_name: str):
 
 class TestSimpleInvoice:
     def setup_method(self):
-        # Use the stable draft pattern so field-name assertions don't shift as
-        # higher-priority patterns (claude, local, …) are added for this fixture.
-        self.result, self.lg = run_draft('01_simple_invoice')
+        self.result, self.lg = run('01_simple_invoice')
 
     def test_no_errors(self):
         assert not self.lg.has_errors()
@@ -2114,9 +2131,12 @@ class TestVerboseExtractionTrace:
 
     def _verbose_run(self, fixture_name: str):
         folder = os.path.join(FIXTURES, fixture_name)
+        pattern = find_pattern_for_backend(folder, 'draft')
+        if pattern is None:
+            pattern = find_pattern_xlsx(folder)
         lg = Logger(level=VerbosityLevel.VERBOSE)
         Engine().process(
-            pattern_file=find_pattern_xlsx(folder),
+            pattern_file=pattern,
             data_file=find_data_file(folder),
             logger=lg,
         )
@@ -2211,9 +2231,16 @@ class TestSeekEngine:
 class TestSalesReport:
     def setup_method(self):
         folder = os.path.join(FIXTURES, '20_sales_report')
+        # Pin to draft CSV — the comment at the top of this section explains why:
+        # the manual pattern targets a pivot cache openpyxl can't read; draft
+        # targets 'Quelldaten' directly.  find_pattern_csv() would now return the
+        # claude CSV, whose field names differ from the assertions below.
+        pattern = find_pattern_for_backend(folder, 'draft')
+        if pattern is None:
+            pattern = find_pattern_csv(folder)
         self.lg = Logger(level=VerbosityLevel.QUIET)
         self.result = Engine().process(
-            pattern_file=find_pattern_csv(folder),
+            pattern_file=pattern,
             data_file=find_data_file(folder),
             logger=self.lg,
             sheet='Quelldaten',

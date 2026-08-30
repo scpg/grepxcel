@@ -9,18 +9,20 @@ import pytest
 
 from grepxcel.cli import main
 from grepxcel.xlsx_writer import nested_to_xlsx
-from tests.conftest import find_data_file, find_pattern_xlsx
+from tests.conftest import find_data_file, find_pattern_xlsx, find_pattern_for_backend
 
+# Pin to the draft baseline so these format-only tests remain stable as
+# higher-priority patterns (claude, local) are added.
 _INVOICE_FIX = os.path.join(os.path.dirname(__file__), '..', 'fixtures', '01_simple_invoice')
-_INVOICE_PAT = find_pattern_xlsx(_INVOICE_FIX)
+_INVOICE_PAT = find_pattern_for_backend(_INVOICE_FIX, 'draft') or find_pattern_xlsx(_INVOICE_FIX)
 _INVOICE_DATA = find_data_file(_INVOICE_FIX)
 
 _CATALOG_FIX = os.path.join(os.path.dirname(__file__), '..', 'fixtures', '02_product_catalog')
-_CATALOG_PAT = find_pattern_xlsx(_CATALOG_FIX)
+_CATALOG_PAT = find_pattern_for_backend(_CATALOG_FIX, 'draft') or find_pattern_xlsx(_CATALOG_FIX)
 _CATALOG_DATA = find_data_file(_CATALOG_FIX)
 
 _EXPENSE_FIX = os.path.join(os.path.dirname(__file__), '..', 'fixtures', '05_expense_report')
-_EXPENSE_PAT = find_pattern_xlsx(_EXPENSE_FIX)
+_EXPENSE_PAT = find_pattern_for_backend(_EXPENSE_FIX, 'draft') or find_pattern_xlsx(_EXPENSE_FIX)
 _EXPENSE_DATA = find_data_file(_EXPENSE_FIX)
 
 

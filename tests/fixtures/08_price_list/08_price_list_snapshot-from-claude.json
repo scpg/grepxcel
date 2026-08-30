@@ -1,0 +1,88 @@
+{
+  "supplier": {
+    "name": "TechDistrib GmbH",
+    "ref": "TD-2026-Q2",
+    "valid_from": "2026-04-01 00:00:00",
+    "valid_to": "2026-06-30 00:00:00"
+  },
+  "product_1": [
+    {
+      "_source": {
+        "sheet": "Sheet1",
+        "ref": "A4:D8"
+      },
+      "data": [
+        {
+          "code": "EL0001",
+          "name": "USB-C Hub 7-port",
+          "unit": "pcs",
+          "unit_price": 49.99
+        },
+        {
+          "code": "EL0002",
+          "name": "Wireless Keyboard",
+          "unit": "pcs",
+          "unit_price": 79
+        },
+        {
+          "code": "EL0003",
+          "name": "HD Webcam 1080p",
+          "unit": "pcs",
+          "unit_price": 55.5
+        }
+      ]
+    },
+    {
+      "_source": {
+        "sheet": "Sheet1",
+        "ref": "A9:D14"
+      },
+      "data": [
+        {
+          "code": "CA0001",
+          "name": "HDMI 2.0 2m cable",
+          "unit": "pcs",
+          "unit_price": 9.99
+        },
+        {
+          "code": "CA0002",
+          "name": "USB-C to USB-A 1m",
+          "unit": "pcs",
+          "unit_price": 6.49
+        },
+        {
+          "code": "CA0003",
+          "name": "DisplayPort 1.4 2m",
+          "unit": "pcs",
+          "unit_price": 12.99
+        },
+        {
+          "code": "CA0004",
+          "name": "Ethernet Cat6 5m",
+          "unit": "pcs",
+          "unit_price": 8.75
+        }
+      ]
+    },
+    {
+      "_source": {
+        "sheet": "Sheet1",
+        "ref": "A15:D18"
+      },
+      "data": [
+        {
+          "code": "ST0001",
+          "name": "SSD 1TB 2.5\"",
+          "unit": "pcs",
+          "unit_price": 89
+        },
+        {
+          "code": "ST0002",
+          "name": "NVMe SSD 500GB",
+          "unit": "pcs",
+          "unit_price": 65
+        }
+      ]
+    }
+  ]
+}

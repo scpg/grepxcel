@@ -1,0 +1,80 @@
+{
+  "electronics": [
+    {
+      "_source": {
+        "sheet": "Sheet1",
+        "ref": "A1:D5"
+      },
+      "data": [
+        {
+          "product": "Laptop",
+          "sku": "ELC001",
+          "qty": 5,
+          "price": 999
+        },
+        {
+          "product": "Mouse",
+          "sku": "ELC002",
+          "qty": 50,
+          "price": 25
+        },
+        {
+          "product": "Keyboard",
+          "sku": "ELC003",
+          "qty": 30,
+          "price": 45
+        }
+      ]
+    }
+  ],
+  "stationery": [
+    {
+      "_source": {
+        "sheet": "Sheet1",
+        "ref": "A6:D9"
+      },
+      "data": [
+        {
+          "product": "Pen",
+          "sku": "STN001",
+          "qty": 500,
+          "price": 2
+        },
+        {
+          "product": "Notebook",
+          "sku": "STN002",
+          "qty": 200,
+          "price": 8
+        }
+      ]
+    }
+  ],
+  "furniture": [
+    {
+      "_source": {
+        "sheet": "Sheet1",
+        "ref": "A10:D14"
+      },
+      "data": [
+        {
+          "product": "Chair",
+          "sku": "FRN001",
+          "qty": 10,
+          "price": 250
+        },
+        {
+          "product": "Desk",
+          "sku": "FRN002",
+          "qty": 5,
+          "price": 450
+        },
+        {
+          "product": "Lamp",
+          "sku": "FRN003",
+          "qty": 20,
+          "price": 35
+        }
+      ]
+    }
+  ]
+}

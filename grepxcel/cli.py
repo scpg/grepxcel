@@ -543,6 +543,7 @@ backends:
           No data leaves your machine during inference.
   claude  Send the Excel structure description to the Claude API.
           Needs ANTHROPIC_API_KEY and pip install 'grepxcel[draft-cloud]'.
+          Uses claude-sonnet-5 by default — high quality at reasonable cost.
           The raw file is NOT transmitted — only column types, sample
           values, and labels are sent.
   server  Send the Excel structure description to any OpenAI-compatible API

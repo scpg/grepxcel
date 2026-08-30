@@ -103,8 +103,10 @@ Takeaways from the original eval:
 - **GitHub Models free tier is gone.** As of 2026 GitHub retired the free-tier
   Models endpoint. The `github` backend is disabled in grepxcel (flip
   `_GITHUB_MODELS_ENABLED` in drafter.py to re-enable for a future replacement).
-- **`claude` backend is now the primary quality option** for non-local runs.
-  A draft costs ~$0.003–0.04 depending on model.
+- **`claude` backend is the primary quality option** for non-local runs.
+  Default model upgraded to `claude-sonnet-5` (Claude 5, high quality at $3/$15 per 1M tokens).
+  Use `ClaudeBackend(model='claude-opus-5')` for the absolute best quality.
+  A draft costs ~$0.003–0.01 per fixture at Sonnet 5 pricing.
 
 **2026-08-30 model upgrade**: switched default local model from `gemma-4-E4B-it`
 (51%, 4B params, 4.6 GB Q4_K_M) to `Qwen3-8B` (8B params, 4.7 GB Q4_K_M).

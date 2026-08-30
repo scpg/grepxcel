@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-End-to-end verification of the 'grepxcel suggest' feature.
+End-to-end verification of the 'grepxcel draft' feature (LLM-assisted pattern drafter).
 
 Run from the project root:
-    python3 scripts/verify_suggest.py
+    python3 scripts/verify_draft.py
 
 No model download required — all LLM calls are stubbed.
 The script exits with code 0 if every test passes, 1 otherwise.
@@ -514,17 +514,17 @@ with tempfile.TemporaryDirectory() as td:
 
 # ── 10. grepxcel suggest --help (no crash) ───────────────────────────────────
 
-section("10. CLI smoke test — grepxcel suggest --help")
+section("10. CLI smoke test — grepxcel draft --help")
 
 result = subprocess.run(
-    ["grepxcel", "suggest", "--help"],
+    ["grepxcel", "draft", "--help"],
     capture_output=True, text=True,
 )
-check("grepxcel suggest --help exits 0",   result.returncode == 0,
+check("grepxcel draft --help exits 0",   result.returncode == 0,
       f"stderr: {result.stderr[:200]}")
-check("help mentions 'FILE'",              "FILE"   in result.stdout, result.stdout[:300])
-check("help mentions '--output'",          "--output" in result.stdout, result.stdout[:300])
-check("help mentions '--verbose'",         "--verbose" in result.stdout, result.stdout[:300])
+check("help mentions 'FILE'",            "FILE"    in result.stdout, result.stdout[:300])
+check("help mentions '--output'",        "--output" in result.stdout, result.stdout[:300])
+check("help mentions '--verbose'",       "--verbose" in result.stdout, result.stdout[:300])
 
 
 # ── summary ───────────────────────────────────────────────────────────────────

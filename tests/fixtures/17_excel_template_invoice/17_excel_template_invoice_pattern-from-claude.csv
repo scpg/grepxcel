@@ -1,0 +1,27 @@
+config:,pattern.version,1
+config:,read.direction,LR
+lbl:,company_name,string,First Up Consultants
+lbl:,invoice_header,string,INVOICE
+lbl:,bill_to_label,string,BILL TO
+lbl:,invoice_num_label,string,INVOICE #
+lbl:,date_label,string,DATE
+lbl:,terms_label,string,← You can change TERMS to DUE DATE and enter a date (usually 30 days after the invoice date)
+lbl:,contact_intro,string,"If you have any questions about this invoice, please contact"
+lbl:,contact_details,string,Cora Thomas at (516) 555-0135 or cora@example.com.
+var:,company.info,string,.*
+var:,invoice.number,currency,\d+
+var:,invoice.date,date
+var:,invoice.terms,string,.*
+var:,contact.note,string,.*
+START:
+table:*
+,HEADER:1,company_name,invoice_header
+,DATA:*,company.info,IGNORE
+table:*
+,HEADER:1,bill_to_label,invoice_num_label,date_label,terms_label
+,DATA:*,invoice.billto,invoice.number,invoice.date,invoice.terms
+cell:next,contact_intro
+cell:next,IGNORE
+cell:next,contact_details
+cell:next,contact.note
+END:

@@ -1,0 +1,56 @@
+config:,pattern.version,1
+config:,read.direction,LR
+lbl:,instr_intro,string,Create a Personal Monthly Budget in this worksheet. Helpful instructions on how to use this worksheet are in cells in this column. Arrow down to get started.
+lbl:,instr_title,string,Title of this worksheet is in cell at right. Next instruction is in cell A4.
+lbl:,instr_income_proj,string,Projected Monthly Income label is in cell at right. Enter Income 1 in cell E4 and Extra Income in E5 to calculate Total monthly income in E6. Next instruction is in cell A6.
+lbl:,header_proj_income,string,PROJECTED MONTHLY INCOME
+lbl:,header_income_1_proj,string,Income 1
+lbl:,header_income_amount_proj,string,4300
+lbl:,header_proj_balance,string,PROJECTED BALANCE (Projected income minus expenses)
+lbl:,header_balance_amount_proj,string,3405
+lbl:,instr_income_actual,string,Actual Monthly Income label is in cell at right. Enter Income 1 in cell E8 and Extra Income in E9 to calculate Total monthly income in E10. Next instruction is in cell A12.
+lbl:,header_actual_income,string,ACTUAL MONTHLY INCOME
+lbl:,header_income_1_actual,string,Income 1
+lbl:,header_income_amount_actual,string,4000
+lbl:,header_diff,string,DIFFERENCE (Actual minus projected)
+lbl:,header_diff_amount,string,-341
+lbl:,instr_expenses,string,Enter details in Housing table starting in cell at right and in Entertainment table starting in cell G12. Next instruction is in cell A25.
+lbl:,header_housing,string,HOUSING
+lbl:,header_housing_proj_cost,string,Projected Cost
+lbl:,header_housing_actual_cost,string,Actual Cost
+lbl:,header_housing_diff,string,Difference
+lbl:,header_entertainment,string,ENTERTAINMENT
+lbl:,header_entertainment_proj_cost,string,Projected Cost
+lbl:,header_entertainment_actual_cost,string,Actual Cost
+lbl:,header_entertainment_diff,string,Difference
+var:,budget.title,string,PERSONAL MONTHLY BUDGET
+var:,income_proj.description,string,.*
+var:,income_proj.amount,currency,-?\d+(\.\d{2})?
+var:,balance_proj.description,string,.*
+var:,balance_proj.amount,currency,-?\d+(\.\d{2})?
+var:,income_actual.description,string,.*
+var:,income_actual.amount,currency,-?\d+(\.\d{2})?
+var:,expense.instruction,string,.*
+var:,housing.description,string,.*
+var:,housing.projected_cost,currency,-?\d+(\.\d{2})?
+var:,housing.actual_cost,currency,-?\d+(\.\d{2})?
+var:,housing.difference,currency,-?\d+(\.\d{2})?
+var:,entertainment.description,string,.*
+var:,entertainment.projected_cost,currency,-?\d+(\.\d{2})?
+var:,entertainment.actual_cost,currency,-?\d+(\.\d{2})?
+var:,entertainment.difference,currency,-?\d+(\.\d{2})?
+START:
+cell:next,instr_intro
+cell:next,IGNORE
+cell:next,instr_title
+cell:next,budget.title
+table:*
+,HEADER:1,instr_income_proj,header_proj_income,header_income_1_proj,header_income_amount_proj,header_proj_balance,header_balance_amount_proj
+,DATA:2,IGNORE,IGNORE,income_proj.description,income_proj.amount,balance_proj.description,balance_proj.amount
+table:*
+,HEADER:1,instr_income_actual,header_actual_income,header_income_1_actual,header_income_amount_actual,header_diff,header_diff_amount
+,DATA:2,IGNORE,IGNORE,income_actual.description,income_actual.amount,IGNORE,IGNORE
+table:*
+,HEADER:1,instr_expenses,header_housing,header_housing_proj_cost,header_housing_actual_cost,header_housing_diff,header_entertainment,header_entertainment_proj_cost,header_entertainment_actual_cost,header_entertainment_diff
+,"DATA:{0,52}",expense.instruction,housing.description,housing.projected_cost,housing.actual_cost,housing.difference,entertainment.description,entertainment.projected_cost,entertainment.actual_cost,entertainment.difference
+END:

@@ -1,0 +1,10 @@
+config:,pattern.version,1
+lbl:,summary_title,string,Q1 2026 Summary
+lbl:,department_label,string,Department:
+var:,summary.department,string,.*
+START:
+cell:next,summary_title
+cell:next,IGNORE
+cell:next,department_label
+cell:next,summary.department
+END:

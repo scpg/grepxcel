@@ -810,31 +810,36 @@ class ClaudeBackend:
     Only the Excel structure description (column types, sample values, labels)
     is transmitted — the raw file bytes never leave the machine.
 
-    Pricing (USD per 1M tokens, as of 2025-05):
+    Default model: claude-sonnet-5 (Claude 5, high quality at reasonable cost).
+
+    Pricing (USD per 1M tokens, as of 2026-08):
       claude-haiku-4-5:   input $0.80   output $4.00
-      claude-sonnet-4-5:  input $3.00   output $15.00
-      claude-opus-4-5:    input $15.00  output $75.00
+      claude-sonnet-5:    input $3.00   output $15.00
+      claude-opus-5:      input $15.00  output $75.00
     """
 
     # USD per 1M tokens (source: platform.claude.com/docs/en/about-claude/models/overview)
     _PRICING: dict[str, tuple[float, float]] = {
-        # Current models
-        'claude-opus-4-8':              (5.00,  25.00),
-        'claude-haiku-4-5-20251001':    (1.00,   5.00),
-        'claude-haiku-4-5':             (1.00,   5.00),
-        'claude-sonnet-4-6':            (3.00,  15.00),
-        # Legacy models still available
-        'claude-sonnet-4-5-20250929':   (3.00,  15.00),
-        'claude-sonnet-4-5':            (3.00,  15.00),
-        'claude-opus-4-7':              (5.00,  25.00),
-        'claude-opus-4-6':              (5.00,  25.00),
-        'claude-opus-4-5-20251101':     (5.00,  25.00),
-        'claude-opus-4-5':              (5.00,  25.00),
-        'claude-opus-4-1-20250805':    (15.00,  75.00),
-        'claude-opus-4-1':             (15.00,  75.00),
+        # Claude 5 family (2026)
+        'claude-opus-5':                (15.00,  75.00),
+        'claude-sonnet-5':               (3.00,  15.00),
+        'claude-fable-5':                (3.00,  15.00),
+        'claude-haiku-4-5-20251001':     (1.00,   5.00),
+        'claude-haiku-4-5':              (1.00,   5.00),
+        # Legacy models kept for completeness
+        'claude-opus-4-8':               (5.00,  25.00),
+        'claude-sonnet-4-6':             (3.00,  15.00),
+        'claude-sonnet-4-5-20250929':    (3.00,  15.00),
+        'claude-sonnet-4-5':             (3.00,  15.00),
+        'claude-opus-4-7':               (5.00,  25.00),
+        'claude-opus-4-6':               (5.00,  25.00),
+        'claude-opus-4-5-20251101':      (5.00,  25.00),
+        'claude-opus-4-5':               (5.00,  25.00),
+        'claude-opus-4-1-20250805':     (15.00,  75.00),
+        'claude-opus-4-1':              (15.00,  75.00),
     }
 
-    def __init__(self, model: str = 'claude-haiku-4-5-20251001'):
+    def __init__(self, model: str = 'claude-sonnet-5'):
         self._model     = model
         self._last_cost: CostRecord | None = None
 

@@ -1,0 +1,26 @@
+config:,pattern.version,1
+lbl:,emp_label,string,Employee:
+lbl:,emp_id_label,string,Employee ID:
+lbl:,year_label,string,Year:
+lbl:,col_month,string,Month
+lbl:,col_working_days,string,Working Days
+lbl:,col_days_absent,string,Days Absent
+lbl:,col_reason,string,Reason
+var:,emp.name,string,.*
+var:,emp.id,string,EMP-\d+
+var:,emp.year,integer,\d{4}
+var:,timesheet.month,string,.*
+var:,timesheet.working_days,integer,\d+
+var:,timesheet.days_absent,integer,\d+
+var:,timesheet.reason,string,.*
+START:
+cell:next,emp_label
+cell:next,emp.name
+cell:next,emp_id_label
+cell:next,emp.id
+cell:next,year_label
+cell:next,emp.year
+table:*
+,HEADER:1,col_month,col_working_days,col_days_absent,col_reason
+,DATA:*,timesheet.month,timesheet.working_days,timesheet.days_absent,timesheet.reason
+END:

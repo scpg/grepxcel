@@ -7,8 +7,8 @@ Multi-sheet fixtures are extracted once per sheet and the sheet name is
 appended to the filename.
 
 Usage:
-    python scripts/extract_fixtures.py                 # all fixtures
-    python scripts/extract_fixtures.py 06 03           # selected fixtures (by prefix)
+    python scripts/extract_all_fixtures.py                 # all fixtures
+    python scripts/extract_all_fixtures.py 06 03           # selected fixtures (by prefix)
 
 Output directory: output/fixtures/  (gitignored)
 """
@@ -33,6 +33,29 @@ from grepxcel import Engine, Logger, VerbosityLevel
 ROOT     = os.path.join(os.path.dirname(__file__), '..')
 FIXTURES = os.path.join(ROOT, 'tests', 'fixtures')
 OUT_DIR  = os.path.join(ROOT, 'output', 'fixtures')
+
+_PATTERN_SUFFIXES = ('pattern-manual.xlsx', 'pattern-from-draft.xlsx')
+
+
+def _find_data(folder: str) -> str | None:
+    """Return the data xlsx path, trying prefixed name first then bare fallback."""
+    name = os.path.basename(folder)
+    for candidate in (f'{name}_data.xlsx', 'data.xlsx'):
+        p = os.path.join(folder, candidate)
+        if os.path.exists(p):
+            return p
+    return None
+
+
+def _find_pattern(folder: str) -> str | None:
+    """Return the best pattern xlsx path (manual preferred, then from-draft)."""
+    name = os.path.basename(folder)
+    for suffix in _PATTERN_SUFFIXES:
+        for candidate in (f'{name}_{suffix}', suffix):
+            p = os.path.join(folder, candidate)
+            if os.path.exists(p):
+                return p
+    return None
 
 
 def _json_default(obj):
@@ -84,11 +107,11 @@ def run(filter_prefixes: list[str] | None = None) -> None:
 
     for name in fixture_dirs:
         folder       = os.path.join(FIXTURES, name)
-        pattern_path = os.path.join(folder, 'pattern.xlsx')
-        data_path    = os.path.join(folder, 'data.xlsx')
+        pattern_path = _find_pattern(folder)
+        data_path    = _find_data(folder)
 
-        if not os.path.exists(pattern_path) or not os.path.exists(data_path):
-            print(f'  {name}/  SKIP (missing pattern.xlsx or data.xlsx)')
+        if not pattern_path or not data_path:
+            print(f'  {name}/  SKIP (missing pattern or data file)')
             continue
 
         sheets = _sheet_names(data_path)
