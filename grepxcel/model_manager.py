@@ -37,18 +37,22 @@ from pathlib import Path
 # be an immutable commit SHA from https://huggingface.co/<MODEL_REPO_ID>/commits
 # — never a branch name like "main".
 
-# Gemma-4-E4B-it — the best LOCAL model in our execution-based draft eval
-# (~51% value-recall across all fixtures vs ~42% for the previous default
-# Qwen2.5-Coder-7B). Cloud models and the free GitHub Models backend are still
-# stronger (81-86%); for the highest quality at no dollar cost use
-# `grepxcel draft --backend github`. Gemma 4 is a large generational jump over
-# Gemma 2 on this task. ~5 GB Q4_K_M, comfortable on an 8 GB GPU.
-MODEL_REPO_ID    = "unsloth/gemma-4-E4B-it-GGUF"
-MODEL_FILENAME   = "gemma-4-E4B-it-Q4_K_M.gguf"
-MODEL_REVISION   = "653803f092503c04a65164346f3208a36e707693"  # pinned commit
-MODEL_CHAT_FORMAT = None  # auto-detect from GGUF metadata (Gemma embeds its template)
+# Qwen3-8B-it — upgraded 2026-08-30 from gemma-4-E4B (51%) to Qwen3-8B.
+# Qwen3-8B offers 8B parameters in the same ~4.7 GB Q4_K_M footprint as
+# gemma-4-E4B (~4.6 GB), a 2025-generation model with strong instruction-
+# following and structured-output quality.  GitHub Models retired its free
+# endpoint (2026), making local quality more important.  Qwen3 embeds its
+# chat template in the GGUF so MODEL_CHAT_FORMAT stays None (auto-detect).
+# ~4.7 GB Q4_K_M, comfortable on an 8 GB GPU with n_ctx=8192.
+#
+# Previous model was gemma-4-E4B-it-Q4_K_M.gguf — kept in KNOWN_MODEL_HASHES
+# so an already-cached copy stays trusted.
+MODEL_REPO_ID    = "unsloth/Qwen3-8B-GGUF"
+MODEL_FILENAME   = "Qwen3-8B-Q4_K_M.gguf"
+MODEL_REVISION   = "a6adef130ffb23ddaf1a62fec9dced968c9bc482"  # pinned commit
+MODEL_CHAT_FORMAT = None  # auto-detect from GGUF metadata (Qwen3 embeds its template)
 
-_SIZE_HINT        = "~5.0 GB"
+_SIZE_HINT        = "~4.7 GB"
 _CHECK_INTERVAL   = 86_400          # seconds — 24 h
 _AUTOUPDATE_ENV   = "GREPXCEL_MODEL_AUTOUPDATE"
 
@@ -81,9 +85,12 @@ _VERIFY_MODE_ENV      = "GREPXCEL_VERIFY_MODEL"
 #   HfApi().get_paths_info(MODEL_REPO_ID, [MODEL_FILENAME], revision=MODEL_REVISION)[0].lfs.sha256
 KNOWN_MODEL_HASHES: dict[str, str] = {
     # Current default.
+    "Qwen3-8B-Q4_K_M.gguf":
+        "120307ba529eb2439d6c430d94104dabd578497bc7bfe7e322b5d9933b449bd4",
+    # Previous default — kept so an already-cached copy stays trusted.
     "gemma-4-E4B-it-Q4_K_M.gguf":
         "519b9793ed6ce0ff530f1b7c96e848e08e49e7af4d57bb97f76215963a54146d",
-    # Previous default — kept so an already-cached copy stays trusted.
+    # Older previous default — kept so an already-cached copy stays trusted.
     "Qwen2.5-Coder-7B-Instruct-Q4_K_M.gguf":
         "1664fccab734674a50763490a8c6931b70e3f2f8ec10031b54806d30e5f956b6",
 }

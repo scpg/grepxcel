@@ -773,9 +773,13 @@ class LlamaCppClient:
             print("  Hardware: CPU (no GPU detected — set GREPXCEL_GPU_LAYERS to override)",
                   file=sys.stderr)
 
+        # n_ctx = 8192: system+user prompt for complex fixtures can exceed 4096
+        # tokens; 8192 comfortably covers all current fixtures while staying
+        # well within the VRAM budget of an 8 GB GPU (KV cache overhead for
+        # a ~5 GB model is ~400 MB at this window size).
         kwargs: dict = dict(
             model_path   = self.model_path,
-            n_ctx        = 4096,
+            n_ctx        = 8192,
             n_threads    = os.cpu_count() or 4,
             n_gpu_layers = n_gpu_layers,
             verbose      = False,

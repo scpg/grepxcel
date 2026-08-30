@@ -537,7 +537,7 @@ local 'draft' model needs an optional install:
 If a dependency is missing, grepxcel tells you exactly what to install.
 
 backends:
-  local   (default) Run a local GGUF model (Gemma-4-E4B) via llama-cpp-python.
+  local   (default) Run a local GGUF model (Qwen3-8B) via llama-cpp-python.
           Needs:  pip install 'grepxcel[suggest]'
           Model is downloaded automatically on first run (~5 GB).
           No data leaves your machine during inference.
