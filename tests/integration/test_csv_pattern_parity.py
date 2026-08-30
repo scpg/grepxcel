@@ -29,7 +29,7 @@ import openpyxl
 import pytest
 
 from grepxcel import Engine, Logger, VerbosityLevel
-from tests.conftest import find_pattern_xlsx, find_pattern_csv
+from tests.conftest import find_data_file, find_pattern_xlsx, find_pattern_csv
 
 _FIXTURES_DIR = os.path.join(os.path.dirname(__file__), '..', 'fixtures')
 
@@ -43,7 +43,7 @@ _ALL_FIXTURE_NAMES: list[str] = sorted(
 _LEVEL1_FIXTURES: list[str] = [
     name for name in _ALL_FIXTURE_NAMES
     if find_pattern_xlsx(os.path.join(_FIXTURES_DIR, name)) is not None
-    and os.path.exists(os.path.join(_FIXTURES_DIR, name, 'data.xlsx'))
+    and os.path.exists(find_data_file(os.path.join(_FIXTURES_DIR, name)))
 ]
 
 # Level 2: fixtures with a real committed pattern csv whose tier matches the xlsx.
@@ -55,7 +55,7 @@ def _level2_fixtures():
         folder = os.path.join(_FIXTURES_DIR, name)
         xlsx = find_pattern_xlsx(folder)
         csv = find_pattern_csv(folder)
-        if not xlsx or not csv or not os.path.exists(os.path.join(folder, 'data.xlsx')):
+        if not xlsx or not csv or not os.path.exists(find_data_file(folder)):
             continue
         xlsx_base = os.path.basename(xlsx).replace('.xlsx', '')
         csv_base = os.path.basename(csv).replace('.csv', '')
@@ -110,7 +110,7 @@ def test_csv_pattern_matches_xlsx_pattern(fixture, tmp_path):
     """CSV-sourced extraction must equal xlsx-sourced extraction for every fixture."""
     folder       = os.path.join(_FIXTURES_DIR, fixture)
     xlsx_pattern = find_pattern_xlsx(folder)
-    data_file    = os.path.join(folder, 'data.xlsx')
+    data_file    = find_data_file(folder)
     sheet        = _SHEET_OVERRIDES.get(fixture)
 
     csv_pattern = str(tmp_path / 'pattern.csv')
@@ -131,7 +131,7 @@ def test_level1_sweep_is_not_vacuous():
     non_empty = 0
     for fixture in _LEVEL1_FIXTURES:
         folder    = os.path.join(_FIXTURES_DIR, fixture)
-        data_file = os.path.join(folder, 'data.xlsx')
+        data_file = find_data_file(folder)
         sheet     = _SHEET_OVERRIDES.get(fixture)
         with tempfile.TemporaryDirectory() as td:
             csv_pattern = os.path.join(td, 'pattern.csv')
@@ -155,7 +155,7 @@ def test_real_csv_pattern_matches_xlsx_pattern(fixture):
     folder       = os.path.join(_FIXTURES_DIR, fixture)
     xlsx_pattern = find_pattern_xlsx(folder)
     csv_pattern  = find_pattern_csv(folder)
-    data_file    = os.path.join(folder, 'data.xlsx')
+    data_file    = find_data_file(folder)
     sheet        = _SHEET_OVERRIDES.get(fixture)
 
     xlsx_result = _extract(xlsx_pattern, data_file, sheet)

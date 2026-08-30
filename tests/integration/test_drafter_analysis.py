@@ -54,7 +54,7 @@ import openpyxl
 import pytest
 
 from grepxcel.drafter import ExcelAnalyzer
-from tests.conftest import find_pattern_xlsx
+from tests.conftest import find_data_file, find_pattern_xlsx
 
 # ---------------------------------------------------------------------------
 # Fixture discovery
@@ -71,7 +71,7 @@ def _under_review(name: str) -> bool:
 _DATA_FIXTURES: list[str] = sorted(
     name for name in os.listdir(_FIXTURES_DIR)
     if os.path.isdir(os.path.join(_FIXTURES_DIR, name))
-    and os.path.exists(os.path.join(_FIXTURES_DIR, name, 'data.xlsx'))
+    and os.path.exists(find_data_file(os.path.join(_FIXTURES_DIR, name)))
     and not _under_review(name)
 )
 
@@ -130,7 +130,7 @@ def _pattern_info(fixture_name: str) -> tuple[bool, list[str]]:
 
 
 def _analyse(fixture_name: str) -> str:
-    data_path = os.path.join(_FIXTURES_DIR, fixture_name, 'data.xlsx')
+    data_path = find_data_file(os.path.join(_FIXTURES_DIR, fixture_name))
     sheet     = _SHEET_OVERRIDES.get(fixture_name)
     return ExcelAnalyzer(data_path, sheet=sheet).analyse()
 
@@ -193,7 +193,7 @@ def test_lbl_literals_appear_in_analysis(fixture_name):
 # ─── --sheet selection errors are clean, not tracebacks (Finding 4) ───────────
 
 class TestSheetSelectionErrors:
-    _DATA = os.path.join(_FIXTURES_DIR, '01_simple_invoice', 'data.xlsx')
+    _DATA = find_data_file(os.path.join(_FIXTURES_DIR, '01_simple_invoice'))
 
     def test_out_of_range_index_raises_clean_valueerror(self):
         with pytest.raises(ValueError, match='out of range'):

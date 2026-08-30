@@ -18,7 +18,7 @@ import pytest
 
 from grepxcel import Engine, Logger, VerbosityLevel
 from grepxcel.schema import generate_schema
-from tests.conftest import find_pattern_xlsx
+from tests.conftest import find_data_file, find_pattern_xlsx
 
 
 class _JSONEncoder(json.JSONEncoder):
@@ -41,7 +41,7 @@ _ALL_FIXTURE_NAMES: list[str] = sorted(
 _FIXTURES_WITH_DATA: list[str] = [
     name for name in _ALL_FIXTURE_NAMES
     if find_pattern_xlsx(os.path.join(_FIXTURES_DIR, name)) is not None
-    and os.path.exists(os.path.join(_FIXTURES_DIR, name, 'data.xlsx'))
+    and os.path.exists(find_data_file(os.path.join(_FIXTURES_DIR, name)))
 ]
 
 _SHEET_OVERRIDES: dict[str, str] = {
@@ -71,7 +71,7 @@ def test_extraction_validates_against_generated_schema(fixture):
     """The extraction output must conform to the schema generated from its pattern."""
     folder = os.path.join(_FIXTURES_DIR, fixture)
     pattern = find_pattern_xlsx(folder)
-    data = os.path.join(folder, 'data.xlsx')
+    data = find_data_file(folder)
     sheet = _SHEET_OVERRIDES.get(fixture)
 
     schema = generate_schema(pattern)

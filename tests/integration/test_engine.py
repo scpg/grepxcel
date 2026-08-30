@@ -9,7 +9,7 @@ import datetime
 import pytest
 import openpyxl as _openpyxl
 from grepxcel import Engine, Logger, VerbosityLevel
-from tests.conftest import find_pattern_xlsx
+from tests.conftest import find_data_file, find_pattern_xlsx, find_pattern_csv
 
 FIXTURES = os.path.join(os.path.dirname(__file__), '..', 'fixtures')
 
@@ -27,9 +27,9 @@ def _write_pattern(rows: list) -> str:
 
 
 def run_custom_pattern(pattern_rows: list, fixture_name: str, sheet=None):
-    """Run engine with in-memory pattern against an existing fixture data.xlsx."""
+    """Run engine with in-memory pattern against an existing fixture data file."""
     pat = _write_pattern(pattern_rows)
-    data_file = os.path.join(FIXTURES, fixture_name, 'data.xlsx')
+    data_file = find_data_file(os.path.join(FIXTURES, fixture_name))
     lg = Logger(level=VerbosityLevel.QUIET)
     kwargs = {} if sheet is None else {'sheet': sheet}
     result = Engine().process(pattern_file=pat, data_file=data_file, logger=lg, **kwargs)
@@ -43,7 +43,7 @@ def run(fixture_name: str, sheet=None):
     kwargs = {} if sheet is None else {'sheet': sheet}
     result = Engine().process(
         pattern_file=find_pattern_xlsx(folder),
-        data_file=os.path.join(folder, 'data.xlsx'),
+        data_file=find_data_file(folder),
         logger=lg,
         **kwargs,
     )
@@ -51,13 +51,13 @@ def run(fixture_name: str, sheet=None):
 
 
 def run_with_pattern_file(fixture_name: str, pattern_file: str, sheet=None):
-    """Run engine with an explicit pattern file path against a fixture's data.xlsx."""
+    """Run engine with an explicit pattern file path against a fixture's data file."""
     folder = os.path.join(FIXTURES, fixture_name)
     lg = Logger(level=VerbosityLevel.QUIET)
     kwargs = {} if sheet is None else {'sheet': sheet}
     result = Engine().process(
         pattern_file=os.path.join(folder, pattern_file),
-        data_file=os.path.join(folder, 'data.xlsx'),
+        data_file=find_data_file(folder),
         logger=lg,
         **kwargs,
     )
@@ -69,7 +69,7 @@ def run_all_sheets(fixture_name: str):
     lg = Logger(level=VerbosityLevel.QUIET)
     result = Engine().process_all(
         pattern_file=find_pattern_xlsx(folder),
-        data_file=os.path.join(folder, 'data.xlsx'),
+        data_file=find_data_file(folder),
         logger=lg,
     )
     return result, lg
@@ -2090,7 +2090,7 @@ class TestVerboseExtractionTrace:
         lg = Logger(level=VerbosityLevel.VERBOSE)
         Engine().process(
             pattern_file=find_pattern_xlsx(folder),
-            data_file=os.path.join(folder, 'data.xlsx'),
+            data_file=find_data_file(folder),
             logger=lg,
         )
 
@@ -2114,7 +2114,7 @@ class TestVerboseExtractionTrace:
         lg = Logger(level=VerbosityLevel.QUIET)
         Engine().process(
             pattern_file=find_pattern_xlsx(folder),
-            data_file=os.path.join(folder, 'data.xlsx'),
+            data_file=find_data_file(folder),
             logger=lg,
         )
         assert '←' not in capsys.readouterr().err
@@ -2183,8 +2183,13 @@ class TestSeekEngine:
 
 class TestSalesReport:
     def setup_method(self):
-        self.result, self.lg = run_with_pattern_file(
-            '20_sales_report', 'pattern-from-draft.csv', sheet='Quelldaten'
+        folder = os.path.join(FIXTURES, '20_sales_report')
+        self.lg = Logger(level=VerbosityLevel.QUIET)
+        self.result = Engine().process(
+            pattern_file=find_pattern_csv(folder),
+            data_file=find_data_file(folder),
+            logger=self.lg,
+            sheet='Quelldaten',
         )
 
     def test_no_errors(self):

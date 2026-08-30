@@ -2,7 +2,7 @@
 
 ## Source
 
-`data.xlsx` was **not** authored for this project. It was obtained from the
+`16_bundesliga_data.xlsx` was **not** authored for this project. It was obtained from the
 public internet to exercise grepxcel against a real-world, third-party Excel
 file rather than a hand-crafted fixture.
 
@@ -39,7 +39,7 @@ Because this is an unknown file downloaded from the public internet, it was
 **not** committed as-is. The original download was uploaded to
 <https://metadefender.com/> (OPSWAT MetaDefender), which scans and
 **content-disarms-and-reconstructs (CDR)** the file. The sanitised version
-produced by MetaDefender is what is stored here as `data.xlsx`.
+produced by MetaDefender is what is stored here as `16_bundesliga_data.xlsx`.
 
 ## Why it's here
 

@@ -7,6 +7,7 @@ import shutil
 import pytest
 
 from grepxcel.cli import _expand_files, _DEFAULT_MAX_FILES, main as cli_main
+from tests.conftest import find_data_file, find_pattern_xlsx
 
 FIXTURES = os.path.join(os.path.dirname(__file__), '..', 'fixtures')
 
@@ -164,8 +165,8 @@ class TestBatchExtractCLI:
     """End-to-end tests for directory-based extraction via CLI."""
 
     def test_directory_argument(self, tmp_path):
-        pattern = _fixture('01_simple_invoice', 'pattern-from-draft.xlsx')
-        data_src = _fixture('01_simple_invoice', 'data.xlsx')
+        pattern = find_pattern_xlsx(_fixture('01_simple_invoice'))
+        data_src = find_data_file(_fixture('01_simple_invoice'))
         data_dst = tmp_path / 'data.xlsx'
         shutil.copy2(data_src, data_dst)
 
@@ -181,8 +182,8 @@ class TestBatchExtractCLI:
         assert len(jsons) == 1
 
     def test_recursive_flag(self, tmp_path):
-        pattern = _fixture('01_simple_invoice', 'pattern-from-draft.xlsx')
-        data_src = _fixture('01_simple_invoice', 'data.xlsx')
+        pattern = find_pattern_xlsx(_fixture('01_simple_invoice'))
+        data_src = find_data_file(_fixture('01_simple_invoice'))
 
         sub = tmp_path / 'sub'
         sub.mkdir()
@@ -201,7 +202,7 @@ class TestBatchExtractCLI:
         assert len(jsons) == 2
 
     def test_empty_directory_exits_nonzero(self, tmp_path):
-        pattern = _fixture('01_simple_invoice', 'pattern-from-draft.xlsx')
+        pattern = find_pattern_xlsx(_fixture('01_simple_invoice'))
         empty = tmp_path / 'empty'
         empty.mkdir()
         with pytest.raises(SystemExit) as exc_info:
@@ -212,8 +213,8 @@ class TestBatchExtractCLI:
         assert exc_info.value.code == 1
 
     def test_temp_files_skipped_in_directory(self, tmp_path):
-        pattern = _fixture('01_simple_invoice', 'pattern-from-draft.xlsx')
-        data_src = _fixture('01_simple_invoice', 'data.xlsx')
+        pattern = find_pattern_xlsx(_fixture('01_simple_invoice'))
+        data_src = find_data_file(_fixture('01_simple_invoice'))
         shutil.copy2(data_src, tmp_path / 'data.xlsx')
         shutil.copy2(data_src, tmp_path / '~$data.xlsx')
 

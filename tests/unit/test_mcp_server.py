@@ -15,9 +15,19 @@ from grepxcel.mcp_server import (
 
 FIXTURES = os.path.join(os.path.dirname(__file__), '..', 'fixtures')
 
+from tests.conftest import find_data_file, find_pattern_xlsx
+
 
 def _fixture(name, filename):
     return os.path.join(FIXTURES, name, filename)
+
+
+def _fixture_data(name):
+    return find_data_file(os.path.join(FIXTURES, name))
+
+
+def _fixture_pattern(name, variant='pattern-from-draft.xlsx'):
+    return _fixture(name, f'{name}_{variant}')
 
 
 class TestPathSandbox:
@@ -96,8 +106,8 @@ class TestExtractTool:
         server = create_server()
         fn = server._tool_manager._tools['extract'].fn
         result = fn(
-            pattern=_fixture('01_simple_invoice', 'pattern-from-draft.xlsx'),
-            data=_fixture('01_simple_invoice', 'data.xlsx'),
+            pattern=_fixture_pattern('01_simple_invoice'),
+            data=_fixture_data('01_simple_invoice'),
         )
         parsed = json.loads(result)
         assert 'inv' in parsed
@@ -107,8 +117,8 @@ class TestExtractTool:
         server = create_server()
         fn = server._tool_manager._tools['extract'].fn
         result = fn(
-            pattern=_fixture('01_simple_invoice', 'pattern-from-draft.xlsx'),
-            data=_fixture('01_simple_invoice', 'data.xlsx'),
+            pattern=_fixture_pattern('01_simple_invoice'),
+            data=_fixture_data('01_simple_invoice'),
             sheet='Sheet1',
         )
         parsed = json.loads(result)
@@ -118,8 +128,8 @@ class TestExtractTool:
         server = create_server()
         fn = server._tool_manager._tools['extract'].fn
         result = fn(
-            pattern=_fixture('12_multi_sheet', 'pattern-from-draft.xlsx'),
-            data=_fixture('12_multi_sheet', 'data.xlsx'),
+            pattern=_fixture_pattern('12_multi_sheet'),
+            data=_fixture_data('12_multi_sheet'),
             all_sheets=True,
         )
         parsed = json.loads(result)
@@ -130,8 +140,8 @@ class TestExtractTool:
         server = create_server()
         fn = server._tool_manager._tools['extract'].fn
         result = fn(
-            pattern=_fixture('02_product_catalog', 'pattern-from-draft.xlsx'),
-            data=_fixture('02_product_catalog', 'data.xlsx'),
+            pattern=_fixture_pattern('02_product_catalog'),
+            data=_fixture_data('02_product_catalog'),
         )
         parsed = json.loads(result)
         assert isinstance(parsed, dict)
@@ -188,13 +198,13 @@ class TestLintTool:
     def test_lint_valid_file(self):
         server = create_server()
         fn = server._tool_manager._tools['lint'].fn
-        result = fn(file=_fixture('01_simple_invoice', 'data.xlsx'))
+        result = fn(file=_fixture_data('01_simple_invoice'))
         assert len(result) > 0
 
     def test_lint_returns_string(self):
         server = create_server()
         fn = server._tool_manager._tools['lint'].fn
-        result = fn(file=_fixture('02_product_catalog', 'data.xlsx'))
+        result = fn(file=_fixture_data('02_product_catalog'))
         assert isinstance(result, str)
 
     def test_lint_path_traversal_rejected(self, tmp_path):
