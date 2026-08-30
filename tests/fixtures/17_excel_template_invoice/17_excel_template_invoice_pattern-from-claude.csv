@@ -13,6 +13,7 @@ var:,invoice.number,currency,\d+
 var:,invoice.date,date
 var:,invoice.terms,string,.*
 var:,contact.note,string,.*
+var:,invoice.billto,string,.*
 START:
 table:*
 ,HEADER:1,company_name,invoice_header
