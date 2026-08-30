@@ -7,7 +7,7 @@ Usage:
     python3 scripts/install_llm_deps.py
 
 Use this instead of:
-    pip install -r requirements-suggest.txt
+    pip install -r requirements-draft.txt
 
 The script installs huggingface_hub normally and compiles llama-cpp-python
 with the right backend flags for the current machine. On machines with no

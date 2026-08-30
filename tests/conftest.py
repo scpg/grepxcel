@@ -10,7 +10,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 #   {fixture_name}_data.xlsx
 #   {fixture_name}_pattern-manual.xlsx
 #   {fixture_name}_pattern-from-draft.xlsx
-#   {fixture_name}_data-export-control.xlsx
+#   {fixture_name}_data-no-macros.xlsx
 #
 # Legacy bare names (data.xlsx, pattern-from-draft.xlsx, …) are tried as
 # fallbacks so tests stay green during any in-progress rename.

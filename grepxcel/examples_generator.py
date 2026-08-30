@@ -7,31 +7,47 @@ import sys
 
 _EXAMPLES_PACKAGE = 'grepxcel.examples'
 
+# Each entry maps a user-facing example name to a source fixture in
+# tests/fixtures/<source_fixture>/. The bundled files in grepxcel/examples/
+# are copies of the fixture's pattern-from-draft.xlsx and data.xlsx, renamed
+# to the simpler pattern.xlsx / data.xlsx for a clean new-user experience.
+#
+# Mapping: example name  →  source fixture
+#   01_simple_invoice    →  tests/fixtures/01_simple_invoice/
+#   02_product_catalog   →  tests/fixtures/02_product_catalog/
+#   03_expense_report    →  tests/fixtures/05_expense_report/   (renumbered for UX)
+#   04_loan_schedule     →  tests/fixtures/11_loan_schedule/    (renumbered for UX)
+#
+# To update a bundled example after changing a fixture:
+#   cp tests/fixtures/<source_fixture>/<source_fixture>_data.xlsx \
+#      grepxcel/examples/<example_name>/data.xlsx
+#   cp tests/fixtures/<source_fixture>/<source_fixture>_pattern-from-draft.xlsx \
+#      grepxcel/examples/<example_name>/pattern.xlsx
 EXAMPLES = [
     {
         'name': '01_simple_invoice',
-        'source_fixture': '01_simple_invoice',
+        'source_fixture': '01_simple_invoice',  # → tests/fixtures/01_simple_invoice/
         'description': 'Key-value extraction (cell:next) — 8 scalar fields',
         'pattern': '',
         'data': '',
     },
     {
         'name': '02_product_catalog',
-        'source_fixture': '02_product_catalog',
+        'source_fixture': '02_product_catalog',  # → tests/fixtures/02_product_catalog/
         'description': 'Table extraction (HEADER/DATA) — 4-column repeating table',
         'pattern': '',
         'data': '',
     },
     {
         'name': '03_expense_report',
-        'source_fixture': '05_expense_report',
+        'source_fixture': '05_expense_report',  # → tests/fixtures/05_expense_report/ (renumbered)
         'description': 'Key-value + table + footer — 18 fields with Subtotal',
         'pattern': '',
         'data': '',
     },
     {
         'name': '04_loan_schedule',
-        'source_fixture': '11_loan_schedule',
+        'source_fixture': '11_loan_schedule',  # → tests/fixtures/11_loan_schedule/ (renumbered)
         'description': 'Key-value header + amortization table — 24 fields',
         'pattern': '',
         'data': '',
