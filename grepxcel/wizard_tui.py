@@ -17,10 +17,16 @@ from __future__ import annotations
 
 import csv
 import datetime
+import hashlib
 import io
 import os
 import sys
 from typing import Any
+
+try:
+    from . import __version__ as _GX_VERSION
+except Exception:
+    _GX_VERSION = '?'
 
 try:
     from textual.app import App, ComposeResult
@@ -1063,8 +1069,9 @@ if _TEXTUAL_OK:
             Binding('ctrl+q', 'cancel',             'Cancel',          show=False),
             Binding('q',      'cancel',             'Quit',            show=False),
             # Debug / support hotkeys (hidden)
-            Binding('f2',     'add_note',           'Internal note',   show=False),
-            Binding('f11',    'export_clipboard',   'Copy log',        show=False),
+            Binding('f2',     'add_note',           'Cell note',       show=False),
+            Binding('semicolon', 'add_comment',     'Comment',         show=False),
+            Binding('f11',    'screenshot',         'Screenshot',      show=False),
             Binding('f12',    'show_log',           'Session log',     show=False),
         ]
 
@@ -1105,29 +1112,63 @@ if _TEXTUAL_OK:
             # Per-cell debug notes (internal_notes, F2) — separate from _choices
             self._notes: dict[str, str] = {}
 
-            # Persistent log file (auto-opened; logs/<basename>.wizard.<ts>.log)
+            # ── Persistent log file ─────────────────────────────────────────
+            # Layout: logs/wizard/<stem>/<YYYY-MM-DD-HHmmss>_<sha8>/session.log
+            # Screenshots land in the same session directory.
             self._log_file = None
-            ts_file = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
-            stem    = os.path.splitext(os.path.basename(data_file))[0]
-            log_dir = os.path.join(os.getcwd(), 'logs')
+            self._log_file_path = None
+            self._log_dir: str | None = None
+            self._screenshot_count = 0
+
+            ts_file  = datetime.datetime.now().strftime('%Y-%m-%d-%H%M%S')
+            stem     = os.path.splitext(os.path.basename(data_file))[0]
+            abs_path = os.path.abspath(data_file)
+
+            # Compute SHA-256 of the data file (streaming to handle large files)
+            sha256 = hashlib.sha256()
+            file_size = 0
             try:
-                os.makedirs(log_dir, exist_ok=True)
-                log_path = os.path.join(log_dir, f'{stem}.wizard.{ts_file}.log')
+                with open(data_file, 'rb') as _fh:
+                    for _chunk in iter(lambda: _fh.read(65536), b''):
+                        sha256.update(_chunk)
+                        file_size += len(_chunk)
+                sha256_hex = sha256.hexdigest()
+                sha8 = sha256_hex[:8]
+            except OSError:
+                sha256_hex = 'unavailable'
+                sha8 = 'unknown'
+                file_size = 0
+
+            session_dir = os.path.join(
+                os.getcwd(), 'logs', 'wizard', stem, f'{ts_file}_{sha8}',
+            )
+            try:
+                os.makedirs(session_dir, exist_ok=True)
+                log_path = os.path.join(session_dir, 'session.log')
                 self._log_file = open(log_path, 'w', encoding='utf-8')  # noqa: WPS515
                 self._log_file_path = log_path
-                self._log_file.write(f'# grepxcel wizard session log\n')
-                self._log_file.write(f'# Data file : {os.path.abspath(data_file)}\n')
-                self._log_file.write(f'# Started   : {self._session_start}\n')
-                self._log_file.write(f'#\n')
-                self._log_file.write(f'# Column key: timestamp  EVENT_TYPE  detail\n')
-                self._log_file.write(f'# Notes added by user via F2 are tagged NOTE\n')
-                self._log_file.write(f'#\n')
+                self._log_dir = session_dir
+                sep = '═' * 51
+                self._log_file.write(f'grepxcel wizard session\n')
+                self._log_file.write(f'{sep}\n')
+                self._log_file.write(f'Data file : {abs_path}\n')
+                self._log_file.write(f'SHA-256   : {sha256_hex}\n')
+                self._log_file.write(f'File size : {file_size} bytes\n')
+                self._log_file.write(f'Sheet     : {state.sheet_name or "(active)"}\n')
+                self._log_file.write(f'Version   : grepxcel {_GX_VERSION}\n')
+                self._log_file.write(f'Started   : {self._session_start}\n')
+                self._log_file.write(f'{sep}\n')
+                self._log_file.write(f'# Columns: timestamp   EVENT_TYPE    detail\n')
+                self._log_file.write(f'# COMMENT lines = user notes typed with ;\n')
+                self._log_file.write(f'# NOTE lines    = per-cell notes typed with F2\n')
+                self._log_file.write(f'{sep}\n\n')
                 self._log_file.flush()
             except OSError:
-                self._log_file_path = None
+                pass
 
         def _log(self, event_type: str, detail: str) -> None:
-            ts   = datetime.datetime.now().strftime('%H:%M:%S')
+            _now = datetime.datetime.now()
+            ts   = _now.strftime('%H:%M:%S.') + f'{_now.microsecond // 1000:03d}'
             line = f'{ts}  {event_type:<12}  {detail}'
             self._event_log.append(line)
             if self._log_file:
@@ -1406,7 +1447,7 @@ if _TEXTUAL_OK:
                 '  [dim]Space[/dim] Zoom  [dim]F3[/dim] Preview  [dim]F1[/dim] Help',
                 '  [dim]H[/dim] Highlight pending  [dim]^Z[/dim] Undo',
                 '  [dim]^D[/dim] Dark/light  [dim]^P[/dim] Palette',
-                '  [dim]F2[/dim] Cell note  [dim]F11[/dim] Copy log  [dim]F12[/dim] View log',
+                '  [dim]F2[/dim] Cell note  [dim];[/dim] Comment  [dim]F11[/dim] Screenshot  [dim]F12[/dim] View log',
                 '',
             ]
 
@@ -1805,6 +1846,7 @@ if _TEXTUAL_OK:
 
         async def action_nav_next(self) -> None:
             self._clear_highlights()
+            self._log('NAV-NEXT', f'from {_cell_ref(self._ws_row, self._ws_col)}')
             self._advance()
 
         async def action_nav_prev(self) -> None:
@@ -1815,8 +1857,10 @@ if _TEXTUAL_OK:
                 r, c = self._cells[prv]
                 self._ws_row, self._ws_col = r, c
                 self._move_cursor(r, c)
+                self._log('NAV-PREV', f'→ {_cell_ref(r, c)}')
             else:
                 self.notify('No previous non-empty cell.', timeout=2)
+                self._log('NAV-PREV', 'no previous non-empty cell')
 
         async def action_nav_unclassified(self) -> None:
             """Jump to the next unclassified non-empty cell, wrapping around."""
@@ -1829,6 +1873,7 @@ if _TEXTUAL_OK:
                     if _cell_ref(r, c) not in self._choices:
                         self._ws_row, self._ws_col = r, c
                         self._move_cursor(r, c)
+                        self._log('NAV-UNCLASSIFIED', f'→ {_cell_ref(r, c)}')
                         return
             # Wrap to beginning
             for i in range(0, start):
@@ -1838,8 +1883,10 @@ if _TEXTUAL_OK:
                         self._ws_row, self._ws_col = r, c
                         self._move_cursor(r, c)
                         self.notify('Wrapped to first unclassified cell.', timeout=2)
+                        self._log('NAV-UNCLASSIFIED', f'→ {_cell_ref(r, c)}  (wrapped)')
                         return
             self.notify('All non-empty cells are classified!', timeout=2)
+            self._log('NAV-UNCLASSIFIED', 'all cells classified')
 
         async def action_nav_goto(self) -> None:
             def _on_ref(ref: str | None) -> None:
@@ -2541,9 +2588,11 @@ if _TEXTUAL_OK:
             ref   = _cell_ref(self._ws_row, self._ws_col)
             value = self._ws.cell(row=self._ws_row, column=self._ws_col).value
             meta  = self._choices.get(ref)
+            self._log('ZOOM', f'{ref}  value={value!r}')
             self.push_screen(_ZoomModal(ref, value, meta), lambda _: None)
 
         async def action_preview(self) -> None:
+            self._log('PREVIEW', f'{len(self._choices)} cells classified so far')
             csv_text = _choices_to_csv(
                 self._ws, self._choices, self._cells,
                 self._state.direction, self._state.sheet_name,
@@ -2551,6 +2600,7 @@ if _TEXTUAL_OK:
             self.push_screen(_PreviewModal(csv_text), lambda _: None)
 
         async def action_show_help(self) -> None:
+            self._log('HELP', 'opened help modal')
             self.push_screen(_HelpModal(), lambda _: None)
 
         async def action_show_log(self) -> None:
@@ -2637,41 +2687,45 @@ if _TEXTUAL_OK:
                 _on_note,
             )
 
-        async def action_export_clipboard(self) -> None:
-            """F11: copy the full session log to the system clipboard."""
-            lines  = list(self._event_log)
-            if self._notes:
-                lines.append('')
-                lines.append('── Internal notes ──────────────────────')
-                for ref, note in sorted(self._notes.items()):
-                    lines.append(f'  {ref}: {note}')
-            text = '\n'.join(lines)
-            try:
-                import subprocess
-                # clip.exe works in WSL and native Windows
-                proc = subprocess.run(
-                    ['clip.exe'], input=text.encode('utf-8'),
-                    capture_output=True, timeout=5,
-                )
-                if proc.returncode == 0:
-                    self.notify(f'Log copied to clipboard  ({len(lines)} lines)', timeout=4)
+        async def action_add_comment(self) -> None:
+            """;  Add a free-text comment into the session log."""
+            ref = _cell_ref(self._ws_row, self._ws_col)
+
+            def _on_result(result: list[str] | None) -> None:
+                if not result:
                     return
-            except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
-                pass
-            # Fallback: try xclip/xsel
-            for cmd in (['xclip', '-selection', 'clipboard'],
-                        ['xsel', '--clipboard', '--input']):
-                try:
-                    proc = subprocess.run(
-                        cmd, input=text.encode('utf-8'),
-                        capture_output=True, timeout=5,
-                    )
-                    if proc.returncode == 0:
-                        self.notify(f'Log copied to clipboard  ({len(lines)} lines)', timeout=4)
-                        return
-                except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
-                    continue
-            self.notify('Clipboard copy failed — use F12 → W to write to file', severity='warning', timeout=5)
+                text = result[0].strip()
+                if text:
+                    self._log('COMMENT', f'[{ref}] {text}')
+                    self.notify('Comment saved to log.', timeout=2)
+
+            self.push_screen(
+                _FieldsModal(
+                    '[bold cyan]Session comment[/bold cyan]'
+                    f'  [dim]{ref}[/dim]',
+                    [('Comment (saved to session log)', '')],
+                ),
+                _on_result,
+            )
+
+        async def action_screenshot(self) -> None:
+            """F11: save an SVG screenshot of the current TUI state."""
+            if not self._log_dir:
+                self.notify('No session log directory — screenshot unavailable.',
+                            severity='warning', timeout=4)
+                return
+            self._screenshot_count += 1
+            n        = self._screenshot_count
+            filename = f'screenshot_{n:03d}.svg'
+            try:
+                saved = self.save_screenshot(filename=filename, path=self._log_dir)
+                ref   = _cell_ref(self._ws_row, self._ws_col)
+                self._log('SCREENSHOT', f'{filename}  at {ref}  ({len(self._choices)} classified)')
+                self.notify(f'Screenshot saved: {filename}', timeout=4)
+            except Exception as exc:
+                self._screenshot_count -= 1
+                self.notify(f'Screenshot failed: {exc}', severity='warning', timeout=5)
+                self._log('SCREENSHOT-X', str(exc))
 
 
 # ── Public entry point ─────────────────────────────────────────────────────────
