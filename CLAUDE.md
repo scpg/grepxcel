@@ -96,13 +96,18 @@ The CLI is subcommand-based: `extract`, `validate-pattern`, `draft`, `docs`, `li
 > The pattern file may be `.xlsx` **or** `.csv`. `suggest` is a hidden
 > backward-compatible alias for `draft`.
 
-> **Note on venv activation:** `source .venv/bin/activate` is not needed.
-> Both `grepxcel` and `pytest` are installed with a shebang pointing directly to
-> `.venv/bin/python3`, so calling them by their full path is fully self-contained.
-> Claude Code allowlists `Bash(.venv/bin/pytest *)` and `Bash(.venv/bin/grepxcel *)`
-> in `.claude/settings.local.json` — `source` cannot be allowlisted because it is a
-> shell builtin that modifies shell state and Claude Code intentionally blocks
-> compound commands (`&&`, `||`, `;`) from matching permission patterns.
+> **Note on venv activation — for Claude (AI):** `source .venv/bin/activate` must
+> never be used by Claude. Each `Bash` tool call runs in a new shell process, so any
+> activation would evaporate immediately and have no effect. More importantly, granting
+> an AI unrestricted access to `bash` or `source` is a real security risk — Claude Code
+> deliberately allowlists only specific, narrow commands (`Bash(.venv/bin/pytest *)`,
+> `Bash(.venv/bin/grepxcel *)`) in `.claude/settings.local.json`. Claude must always
+> call tools by their full path (`.venv/bin/pytest`, `.venv/bin/grepxcel`, etc.) and
+> never attempt to activate the venv or run shell builtins.
+>
+> **Note on venv activation — for humans:** `source .venv/bin/activate` works normally
+> from the project root. Activate whenever you need an interactive Python session, `pip`,
+> or any other venv tool beyond `pytest` and `grepxcel`.
 
 ### CLI parameters (`grepxcel extract`)
 
