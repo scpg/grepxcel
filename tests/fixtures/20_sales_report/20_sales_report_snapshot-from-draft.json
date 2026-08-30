@@ -1,0 +1,2228 @@
+{
+  "line": [
+    {
+      "_source": {
+        "sheet": "Quelldaten",
+        "ref": "A1:F279"
+      },
+      "data": [
+        {
+          "product": "Alice Mutton",
+          "customer": "ANTON",
+          "q1": 0,
+          "q2": 702,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Alice Mutton",
+          "customer": "BERGS",
+          "q1": 312,
+          "q2": 0,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Alice Mutton",
+          "customer": "BOLID",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 1170
+        },
+        {
+          "product": "Alice Mutton",
+          "customer": "BOTTM",
+          "q1": 1170,
+          "q2": 0,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Alice Mutton",
+          "customer": "ERNSH",
+          "q1": 1123.2,
+          "q2": 0,
+          "q3": 0,
+          "q4": 2607.15
+        },
+        {
+          "product": "Alice Mutton",
+          "customer": "GODOS",
+          "q1": 0,
+          "q2": 280.8,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Alice Mutton",
+          "customer": "HUNGC",
+          "q1": 62.4,
+          "q2": 0,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Alice Mutton",
+          "customer": "PICCO",
+          "q1": 0,
+          "q2": 1560,
+          "q3": 936,
+          "q4": 0
+        },
+        {
+          "product": "Alice Mutton",
+          "customer": "RATTC",
+          "q1": 0,
+          "q2": 592.8,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Alice Mutton",
+          "customer": "REGGC",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 741
+        },
+        {
+          "product": "Alice Mutton",
+          "customer": "SAVEA",
+          "q1": 0,
+          "q2": 0,
+          "q3": 3900,
+          "q4": 789.75
+        },
+        {
+          "product": "Alice Mutton",
+          "customer": "SEVES",
+          "q1": 0,
+          "q2": 877.5,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Alice Mutton",
+          "customer": "WHITC",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 780
+        },
+        {
+          "product": "Aniseed Syrup",
+          "customer": "ALFKI",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 60
+        },
+        {
+          "product": "Aniseed Syrup",
+          "customer": "BOTTM",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 200
+        },
+        {
+          "product": "Aniseed Syrup",
+          "customer": "ERNSH",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 180
+        },
+        {
+          "product": "Aniseed Syrup",
+          "customer": "LINOD",
+          "q1": 544,
+          "q2": 0,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Aniseed Syrup",
+          "customer": "QUICK",
+          "q1": 0,
+          "q2": 600,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Aniseed Syrup",
+          "customer": "VAFFE",
+          "q1": 0,
+          "q2": 0,
+          "q3": 140,
+          "q4": 0
+        },
+        {
+          "product": "Boston Crab Meat",
+          "customer": "ANTON",
+          "q1": 0,
+          "q2": 165.6,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Boston Crab Meat",
+          "customer": "BERGS",
+          "q1": 0,
+          "q2": 920,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Boston Crab Meat",
+          "customer": "BONAP",
+          "q1": 0,
+          "q2": 248.4,
+          "q3": 524.4,
+          "q4": 0
+        },
+        {
+          "product": "Boston Crab Meat",
+          "customer": "BOTTM",
+          "q1": 551.25,
+          "q2": 0,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Boston Crab Meat",
+          "customer": "BSBEV",
+          "q1": 147,
+          "q2": 0,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Boston Crab Meat",
+          "customer": "FRANS",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 18.4
+        },
+        {
+          "product": "Boston Crab Meat",
+          "customer": "HILAA",
+          "q1": 0,
+          "q2": 92,
+          "q3": 1104,
+          "q4": 0
+        },
+        {
+          "product": "Boston Crab Meat",
+          "customer": "LAZYK",
+          "q1": 147,
+          "q2": 0,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Boston Crab Meat",
+          "customer": "LEHMS",
+          "q1": 0,
+          "q2": 515.2,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Boston Crab Meat",
+          "customer": "MAGAA",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 55.2
+        },
+        {
+          "product": "Boston Crab Meat",
+          "customer": "OTTIK",
+          "q1": 0,
+          "q2": 0,
+          "q3": 368,
+          "q4": 0
+        },
+        {
+          "product": "Boston Crab Meat",
+          "customer": "PERIC",
+          "q1": 308.7,
+          "q2": 0,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Boston Crab Meat",
+          "customer": "QUEEN",
+          "q1": 26.46,
+          "q2": 0,
+          "q3": 419.52,
+          "q4": 110.4
+        },
+        {
+          "product": "Boston Crab Meat",
+          "customer": "QUICK",
+          "q1": 0,
+          "q2": 0,
+          "q3": 1223.6,
+          "q4": 0
+        },
+        {
+          "product": "Boston Crab Meat",
+          "customer": "RANCH",
+          "q1": 294,
+          "q2": 0,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Boston Crab Meat",
+          "customer": "SAVEA",
+          "q1": 0,
+          "q2": 0,
+          "q3": 772.8,
+          "q4": 736
+        },
+        {
+          "product": "Boston Crab Meat",
+          "customer": "TRAIH",
+          "q1": 0,
+          "q2": 36.8,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Boston Crab Meat",
+          "customer": "VAFFE",
+          "q1": 294,
+          "q2": 0,
+          "q3": 0,
+          "q4": 736
+        },
+        {
+          "product": "Camembert Pierrot",
+          "customer": "ANATR",
+          "q1": 0,
+          "q2": 0,
+          "q3": 340,
+          "q4": 0
+        },
+        {
+          "product": "Camembert Pierrot",
+          "customer": "AROUT",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 510
+        },
+        {
+          "product": "Camembert Pierrot",
+          "customer": "BERGS",
+          "q1": 0,
+          "q2": 0,
+          "q3": 680,
+          "q4": 0
+        },
+        {
+          "product": "Camembert Pierrot",
+          "customer": "BOTTM",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 1700
+        },
+        {
+          "product": "Camembert Pierrot",
+          "customer": "CHOPS",
+          "q1": 0,
+          "q2": 323,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Camembert Pierrot",
+          "customer": "FAMIA",
+          "q1": 0,
+          "q2": 346.8,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Camembert Pierrot",
+          "customer": "FRANK",
+          "q1": 0,
+          "q2": 0,
+          "q3": 612,
+          "q4": 0
+        },
+        {
+          "product": "Camembert Pierrot",
+          "customer": "FURIB",
+          "q1": 544,
+          "q2": 0,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Camembert Pierrot",
+          "customer": "GOURL",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 340
+        },
+        {
+          "product": "Camembert Pierrot",
+          "customer": "LEHMS",
+          "q1": 0,
+          "q2": 892.5,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Camembert Pierrot",
+          "customer": "MEREP",
+          "q1": 0,
+          "q2": 0,
+          "q3": 2261,
+          "q4": 0
+        },
+        {
+          "product": "Camembert Pierrot",
+          "customer": "OTTIK",
+          "q1": 0,
+          "q2": 0,
+          "q3": 1020,
+          "q4": 0
+        },
+        {
+          "product": "Camembert Pierrot",
+          "customer": "QUEEN",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 510
+        },
+        {
+          "product": "Camembert Pierrot",
+          "customer": "QUICK",
+          "q1": 0,
+          "q2": 2427.6,
+          "q3": 1776.5,
+          "q4": 0
+        },
+        {
+          "product": "Camembert Pierrot",
+          "customer": "RICAR",
+          "q1": 1088,
+          "q2": 0,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Camembert Pierrot",
+          "customer": "RICSU",
+          "q1": 1550.4,
+          "q2": 0,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Camembert Pierrot",
+          "customer": "SAVEA",
+          "q1": 0,
+          "q2": 0,
+          "q3": 2380,
+          "q4": 0
+        },
+        {
+          "product": "Camembert Pierrot",
+          "customer": "WARTH",
+          "q1": 0,
+          "q2": 693.6,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Camembert Pierrot",
+          "customer": "WOLZA",
+          "q1": 0,
+          "q2": 0,
+          "q3": 510,
+          "q4": 0
+        },
+        {
+          "product": "Chef Anton's Cajun Seasoning",
+          "customer": "BERGS",
+          "q1": 0,
+          "q2": 0,
+          "q3": 237.6,
+          "q4": 0
+        },
+        {
+          "product": "Chef Anton's Cajun Seasoning",
+          "customer": "BONAP",
+          "q1": 0,
+          "q2": 935,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Chef Anton's Cajun Seasoning",
+          "customer": "EASTC",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 550
+        },
+        {
+          "product": "Chef Anton's Cajun Seasoning",
+          "customer": "FOLKO",
+          "q1": 0,
+          "q2": 1045,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Chef Anton's Cajun Seasoning",
+          "customer": "FURIB",
+          "q1": 225.28,
+          "q2": 0,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Chef Anton's Cajun Seasoning",
+          "customer": "MAGAA",
+          "q1": 0,
+          "q2": 0,
+          "q3": 198,
+          "q4": 0
+        },
+        {
+          "product": "Chef Anton's Cajun Seasoning",
+          "customer": "QUEEN",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 132
+        },
+        {
+          "product": "Chef Anton's Cajun Seasoning",
+          "customer": "QUICK",
+          "q1": 0,
+          "q2": 990,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Chef Anton's Cajun Seasoning",
+          "customer": "TRADH",
+          "q1": 0,
+          "q2": 0,
+          "q3": 352,
+          "q4": 0
+        },
+        {
+          "product": "Chef Anton's Cajun Seasoning",
+          "customer": "WARTH",
+          "q1": 0,
+          "q2": 0,
+          "q3": 550,
+          "q4": 0
+        },
+        {
+          "product": "Chef Anton's Gumbo Mix",
+          "customer": "MAGAA",
+          "q1": 0,
+          "q2": 0,
+          "q3": 288.22,
+          "q4": 0
+        },
+        {
+          "product": "Chef Anton's Gumbo Mix",
+          "customer": "THEBI",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 85.4
+        },
+        {
+          "product": "Filo Mix",
+          "customer": "AROUT",
+          "q1": 0,
+          "q2": 210,
+          "q3": 0,
+          "q4": 56
+        },
+        {
+          "product": "Filo Mix",
+          "customer": "BERGS",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 175
+        },
+        {
+          "product": "Filo Mix",
+          "customer": "BLONP",
+          "q1": 112,
+          "q2": 0,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Filo Mix",
+          "customer": "DUMON",
+          "q1": 0,
+          "q2": 0,
+          "q3": 63,
+          "q4": 0
+        },
+        {
+          "product": "Filo Mix",
+          "customer": "FAMIA",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 28
+        },
+        {
+          "product": "Filo Mix",
+          "customer": "LAUGB",
+          "q1": 0,
+          "q2": 0,
+          "q3": 35,
+          "q4": 0
+        },
+        {
+          "product": "Filo Mix",
+          "customer": "NORTS",
+          "q1": 0,
+          "q2": 42,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Filo Mix",
+          "customer": "OLDWO",
+          "q1": 0,
+          "q2": 0,
+          "q3": 168,
+          "q4": 0
+        },
+        {
+          "product": "Filo Mix",
+          "customer": "REGGC",
+          "q1": 0,
+          "q2": 0,
+          "q3": 23.8,
+          "q4": 0
+        },
+        {
+          "product": "Filo Mix",
+          "customer": "RICAR",
+          "q1": 0,
+          "q2": 490,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Filo Mix",
+          "customer": "RICSU",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 420
+        },
+        {
+          "product": "Filo Mix",
+          "customer": "TOMSP",
+          "q1": 75.6,
+          "q2": 0,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Filo Mix",
+          "customer": "VAFFE",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 99.75
+        },
+        {
+          "product": "Filo Mix",
+          "customer": "VINET",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 126
+        },
+        {
+          "product": "Gorgonzola Telino",
+          "customer": "AROUT",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 625
+        },
+        {
+          "product": "Gorgonzola Telino",
+          "customer": "BLONP",
+          "q1": 0,
+          "q2": 593.75,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Gorgonzola Telino",
+          "customer": "BONAP",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 35.62
+        },
+        {
+          "product": "Gorgonzola Telino",
+          "customer": "CACTU",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 12.5
+        },
+        {
+          "product": "Gorgonzola Telino",
+          "customer": "ERNSH",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 890
+        },
+        {
+          "product": "Gorgonzola Telino",
+          "customer": "FOLKO",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 18.75
+        },
+        {
+          "product": "Gorgonzola Telino",
+          "customer": "GOURL",
+          "q1": 140,
+          "q2": 0,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Gorgonzola Telino",
+          "customer": "HANAR",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 125
+        },
+        {
+          "product": "Gorgonzola Telino",
+          "customer": "HILAA",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 250
+        },
+        {
+          "product": "Gorgonzola Telino",
+          "customer": "HUNGO",
+          "q1": 0,
+          "q2": 600,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Gorgonzola Telino",
+          "customer": "LEHMS",
+          "q1": 0,
+          "q2": 250,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Gorgonzola Telino",
+          "customer": "OLDWO",
+          "q1": 0,
+          "q2": 0,
+          "q3": 187.5,
+          "q4": 0
+        },
+        {
+          "product": "Gorgonzola Telino",
+          "customer": "PICCO",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 100
+        },
+        {
+          "product": "Gorgonzola Telino",
+          "customer": "QUEEN",
+          "q1": 0,
+          "q2": 0,
+          "q3": 237.5,
+          "q4": 0
+        },
+        {
+          "product": "Gorgonzola Telino",
+          "customer": "QUICK",
+          "q1": 0,
+          "q2": 584.37,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Gorgonzola Telino",
+          "customer": "RATTC",
+          "q1": 0,
+          "q2": 421.25,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Gorgonzola Telino",
+          "customer": "RICSU",
+          "q1": 0,
+          "q2": 375,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Gorgonzola Telino",
+          "customer": "SAVEA",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 625
+        },
+        {
+          "product": "Gorgonzola Telino",
+          "customer": "SUPRD",
+          "q1": 297.5,
+          "q2": 0,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Gorgonzola Telino",
+          "customer": "TOMSP",
+          "q1": 27,
+          "q2": 0,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Gorgonzola Telino",
+          "customer": "TORTU",
+          "q1": 0,
+          "q2": 250,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Gorgonzola Telino",
+          "customer": "TRADH",
+          "q1": 0,
+          "q2": 190,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Gorgonzola Telino",
+          "customer": "WANDK",
+          "q1": 0,
+          "q2": 0,
+          "q3": 90,
+          "q4": 0
+        },
+        {
+          "product": "Gorgonzola Telino",
+          "customer": "WARTH",
+          "q1": 0,
+          "q2": 375,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Grandma's Boysenberry Spread",
+          "customer": "GOURL",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 750
+        },
+        {
+          "product": "Grandma's Boysenberry Spread",
+          "customer": "MEREP",
+          "q1": 0,
+          "q2": 0,
+          "q3": 1750,
+          "q4": 0
+        },
+        {
+          "product": "Ipoh Coffee",
+          "customer": "ANTON",
+          "q1": 0,
+          "q2": 586.5,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Ipoh Coffee",
+          "customer": "BERGS",
+          "q1": 0,
+          "q2": 2760,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Ipoh Coffee",
+          "customer": "FURIB",
+          "q1": 110.4,
+          "q2": 0,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Ipoh Coffee",
+          "customer": "KOENE",
+          "q1": 552,
+          "q2": 0,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Ipoh Coffee",
+          "customer": "MAISD",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 1035
+        },
+        {
+          "product": "Ipoh Coffee",
+          "customer": "OLDWO",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 1104
+        },
+        {
+          "product": "Ipoh Coffee",
+          "customer": "PICCO",
+          "q1": 0,
+          "q2": 1150,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Ipoh Coffee",
+          "customer": "QUICK",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 1840
+        },
+        {
+          "product": "Ipoh Coffee",
+          "customer": "SUPRD",
+          "q1": 736,
+          "q2": 0,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Ipoh Coffee",
+          "customer": "WELLI",
+          "q1": 0,
+          "q2": 0,
+          "q3": 920,
+          "q4": 0
+        },
+        {
+          "product": "Ipoh Coffee",
+          "customer": "WILMK",
+          "q1": 0,
+          "q2": 0,
+          "q3": 276,
+          "q4": 0
+        },
+        {
+          "product": "Jack's New England Clam Chowder",
+          "customer": "AROUT",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 135.1
+        },
+        {
+          "product": "Jack's New England Clam Chowder",
+          "customer": "BERGS",
+          "q1": 231,
+          "q2": 0,
+          "q3": 0,
+          "q4": 96.5
+        },
+        {
+          "product": "Jack's New England Clam Chowder",
+          "customer": "BLONP",
+          "q1": 0,
+          "q2": 110.01,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Jack's New England Clam Chowder",
+          "customer": "BOTTM",
+          "q1": 154,
+          "q2": 0,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Jack's New England Clam Chowder",
+          "customer": "CACTU",
+          "q1": 0,
+          "q2": 96.5,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Jack's New England Clam Chowder",
+          "customer": "FAMIA",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 115.8
+        },
+        {
+          "product": "Jack's New England Clam Chowder",
+          "customer": "FRANK",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 183.35
+        },
+        {
+          "product": "Jack's New England Clam Chowder",
+          "customer": "GOURL",
+          "q1": 0,
+          "q2": 0,
+          "q3": 38.6,
+          "q4": 0
+        },
+        {
+          "product": "Jack's New England Clam Chowder",
+          "customer": "HUNGO",
+          "q1": 0,
+          "q2": 694.8,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Jack's New England Clam Chowder",
+          "customer": "LAUGB",
+          "q1": 0,
+          "q2": 154,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Jack's New England Clam Chowder",
+          "customer": "OTTIK",
+          "q1": 0,
+          "q2": 82.51,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Jack's New England Clam Chowder",
+          "customer": "PICCO",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 337.75
+        },
+        {
+          "product": "Jack's New England Clam Chowder",
+          "customer": "REGGC",
+          "q1": 0,
+          "q2": 0,
+          "q3": 154.4,
+          "q4": 0
+        },
+        {
+          "product": "Jack's New England Clam Chowder",
+          "customer": "SAVEA",
+          "q1": 0,
+          "q2": 0,
+          "q3": 1389.6,
+          "q4": 405.3
+        },
+        {
+          "product": "Jack's New England Clam Chowder",
+          "customer": "SEVES",
+          "q1": 0,
+          "q2": 52.11,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Jack's New England Clam Chowder",
+          "customer": "TOMSP",
+          "q1": 0,
+          "q2": 135.1,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Jack's New England Clam Chowder",
+          "customer": "VAFFE",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 275.02
+        },
+        {
+          "product": "Jack's New England Clam Chowder",
+          "customer": "VINET",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 115.8
+        },
+        {
+          "product": "Laughing Lumberjack Lager",
+          "customer": "FRANK",
+          "q1": 0,
+          "q2": 0,
+          "q3": 350,
+          "q4": 0
+        },
+        {
+          "product": "Laughing Lumberjack Lager",
+          "customer": "LONEP",
+          "q1": 0,
+          "q2": 98,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Laughing Lumberjack Lager",
+          "customer": "PERIC",
+          "q1": 0,
+          "q2": 420,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Laughing Lumberjack Lager",
+          "customer": "THECR",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 42
+        },
+        {
+          "product": "Longlife Tofu",
+          "customer": "FRANS",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 50
+        },
+        {
+          "product": "Longlife Tofu",
+          "customer": "HILAA",
+          "q1": 128,
+          "q2": 0,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Longlife Tofu",
+          "customer": "MEREP",
+          "q1": 240,
+          "q2": 0,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Longlife Tofu",
+          "customer": "QUICK",
+          "q1": 120,
+          "q2": 0,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Longlife Tofu",
+          "customer": "VICTE",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 112.5
+        },
+        {
+          "product": "Longlife Tofu",
+          "customer": "WARTH",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 350
+        },
+        {
+          "product": "Louisiana Fiery Hot Pepper Sauce",
+          "customer": "BONAP",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 199.97
+        },
+        {
+          "product": "Louisiana Fiery Hot Pepper Sauce",
+          "customer": "ERNSH",
+          "q1": 0,
+          "q2": 820.95,
+          "q3": 0,
+          "q4": 1299.84
+        },
+        {
+          "product": "Louisiana Fiery Hot Pepper Sauce",
+          "customer": "FRANR",
+          "q1": 0,
+          "q2": 0,
+          "q3": 252.6,
+          "q4": 0
+        },
+        {
+          "product": "Louisiana Fiery Hot Pepper Sauce",
+          "customer": "FURIB",
+          "q1": 0,
+          "q2": 0,
+          "q3": 268.39,
+          "q4": 0
+        },
+        {
+          "product": "Louisiana Fiery Hot Pepper Sauce",
+          "customer": "HANAR",
+          "q1": 0,
+          "q2": 682.02,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Louisiana Fiery Hot Pepper Sauce",
+          "customer": "HUNGO",
+          "q1": 0,
+          "q2": 421,
+          "q3": 0,
+          "q4": 842
+        },
+        {
+          "product": "Louisiana Fiery Hot Pepper Sauce",
+          "customer": "LAMAI",
+          "q1": 0,
+          "q2": 226.8,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Louisiana Fiery Hot Pepper Sauce",
+          "customer": "LINOD",
+          "q1": 0,
+          "q2": 0,
+          "q3": 442.05,
+          "q4": 0
+        },
+        {
+          "product": "Louisiana Fiery Hot Pepper Sauce",
+          "customer": "OTTIK",
+          "q1": 0,
+          "q2": 599.92,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Louisiana Fiery Hot Pepper Sauce",
+          "customer": "PICCO",
+          "q1": 0,
+          "q2": 0,
+          "q3": 202.08,
+          "q4": 0
+        },
+        {
+          "product": "Louisiana Fiery Hot Pepper Sauce",
+          "customer": "QUICK",
+          "q1": 423.36,
+          "q2": 0,
+          "q3": 0,
+          "q4": 1515.6
+        },
+        {
+          "product": "Louisiana Fiery Hot Pepper Sauce",
+          "customer": "RATTC",
+          "q1": 336,
+          "q2": 0,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Louisiana Fiery Hot Pepper Sauce",
+          "customer": "RICAR",
+          "q1": 588,
+          "q2": 0,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Louisiana Fiery Hot Pepper Sauce",
+          "customer": "RICSU",
+          "q1": 0,
+          "q2": 0,
+          "q3": 210.5,
+          "q4": 0
+        },
+        {
+          "product": "Louisiana Fiery Hot Pepper Sauce",
+          "customer": "VICTE",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 42.1
+        },
+        {
+          "product": "Louisiana Hot Spiced Okra",
+          "customer": "ANTON",
+          "q1": 0,
+          "q2": 0,
+          "q3": 68,
+          "q4": 0
+        },
+        {
+          "product": "Louisiana Hot Spiced Okra",
+          "customer": "EASTC",
+          "q1": 0,
+          "q2": 408,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Louisiana Hot Spiced Okra",
+          "customer": "ERNSH",
+          "q1": 816,
+          "q2": 0,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Louisiana Hot Spiced Okra",
+          "customer": "FOLKO",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 850
+        },
+        {
+          "product": "Louisiana Hot Spiced Okra",
+          "customer": "LAMAI",
+          "q1": 0,
+          "q2": 122.4,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Louisiana Hot Spiced Okra",
+          "customer": "SUPRD",
+          "q1": 693.6,
+          "q2": 0,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Mozzarella di Giovanni",
+          "customer": "BOTTM",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 1218
+        },
+        {
+          "product": "Mozzarella di Giovanni",
+          "customer": "BSBEV",
+          "q1": 0,
+          "q2": 34.8,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Mozzarella di Giovanni",
+          "customer": "CONSH",
+          "q1": 278,
+          "q2": 0,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Mozzarella di Giovanni",
+          "customer": "FOLKO",
+          "q1": 0,
+          "q2": 835.2,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Mozzarella di Giovanni",
+          "customer": "GREAL",
+          "q1": 0,
+          "q2": 313.2,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Mozzarella di Giovanni",
+          "customer": "ISLAT",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 348
+        },
+        {
+          "product": "Mozzarella di Giovanni",
+          "customer": "LEHMS",
+          "q1": 0,
+          "q2": 695,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Mozzarella di Giovanni",
+          "customer": "LINOD",
+          "q1": 0,
+          "q2": 0,
+          "q3": 2088,
+          "q4": 0
+        },
+        {
+          "product": "Mozzarella di Giovanni",
+          "customer": "MAGAA",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 887.4
+        },
+        {
+          "product": "Mozzarella di Giovanni",
+          "customer": "MAISD",
+          "q1": 0,
+          "q2": 0,
+          "q3": 522,
+          "q4": 0
+        },
+        {
+          "product": "Mozzarella di Giovanni",
+          "customer": "MORGK",
+          "q1": 0,
+          "q2": 1044,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Mozzarella di Giovanni",
+          "customer": "QUICK",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 243.6
+        },
+        {
+          "product": "Mozzarella di Giovanni",
+          "customer": "RICSU",
+          "q1": 0,
+          "q2": 730.8,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Mozzarella di Giovanni",
+          "customer": "SAVEA",
+          "q1": 0,
+          "q2": 0,
+          "q3": 417.6,
+          "q4": 0
+        },
+        {
+          "product": "Mozzarella di Giovanni",
+          "customer": "SIMOB",
+          "q1": 0,
+          "q2": 835.2,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Mozzarella di Giovanni",
+          "customer": "VICTE",
+          "q1": 1112,
+          "q2": 0,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Northwoods Cranberry Sauce",
+          "customer": "BONAP",
+          "q1": 0,
+          "q2": 340,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Northwoods Cranberry Sauce",
+          "customer": "GOURL",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 1600
+        },
+        {
+          "product": "Northwoods Cranberry Sauce",
+          "customer": "LEHMS",
+          "q1": 0,
+          "q2": 960,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Northwoods Cranberry Sauce",
+          "customer": "QUEEN",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 960
+        },
+        {
+          "product": "Northwoods Cranberry Sauce",
+          "customer": "WILMK",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 400
+        },
+        {
+          "product": "Ravioli Angelo",
+          "customer": "ANTON",
+          "q1": 0,
+          "q2": 87.75,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Ravioli Angelo",
+          "customer": "AROUT",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 780
+        },
+        {
+          "product": "Ravioli Angelo",
+          "customer": "BLAUS",
+          "q1": 0,
+          "q2": 78,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Ravioli Angelo",
+          "customer": "BONAP",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 204.75
+        },
+        {
+          "product": "Ravioli Angelo",
+          "customer": "BSBEV",
+          "q1": 0,
+          "q2": 117,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Ravioli Angelo",
+          "customer": "PICCO",
+          "q1": 0,
+          "q2": 0,
+          "q3": 390,
+          "q4": 0
+        },
+        {
+          "product": "Ravioli Angelo",
+          "customer": "TOMSP",
+          "q1": 187.2,
+          "q2": 0,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Ravioli Angelo",
+          "customer": "WARTH",
+          "q1": 312,
+          "q2": 0,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Sasquatch Ale",
+          "customer": "ANTON",
+          "q1": 0,
+          "q2": 560,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Sasquatch Ale",
+          "customer": "SAVEA",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 554.4
+        },
+        {
+          "product": "Sasquatch Ale",
+          "customer": "THEBI",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 140
+        },
+        {
+          "product": "Sasquatch Ale",
+          "customer": "TOMSP",
+          "q1": 179.2,
+          "q2": 105,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Sasquatch Ale",
+          "customer": "VAFFE",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 196
+        },
+        {
+          "product": "Sasquatch Ale",
+          "customer": "WHITC",
+          "q1": 372.4,
+          "q2": 0,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Sir Rodney's Marmalade",
+          "customer": "ERNSH",
+          "q1": 0,
+          "q2": 3159,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Sir Rodney's Marmalade",
+          "customer": "HUNGC",
+          "q1": 0,
+          "q2": 0,
+          "q3": 1701,
+          "q4": 0
+        },
+        {
+          "product": "Sir Rodney's Marmalade",
+          "customer": "LEHMS",
+          "q1": 0,
+          "q2": 0,
+          "q3": 1360.8,
+          "q4": 0
+        },
+        {
+          "product": "Sir Rodney's Marmalade",
+          "customer": "SEVES",
+          "q1": 0,
+          "q2": 1093.5,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Sir Rodney's Scones",
+          "customer": "BLAUS",
+          "q1": 0,
+          "q2": 0,
+          "q3": 80,
+          "q4": 0
+        },
+        {
+          "product": "Sir Rodney's Scones",
+          "customer": "BSBEV",
+          "q1": 112,
+          "q2": 150,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Sir Rodney's Scones",
+          "customer": "CHOPS",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 380
+        },
+        {
+          "product": "Sir Rodney's Scones",
+          "customer": "DUMON",
+          "q1": 0,
+          "q2": 0,
+          "q3": 60,
+          "q4": 0
+        },
+        {
+          "product": "Sir Rodney's Scones",
+          "customer": "ERNSH",
+          "q1": 400,
+          "q2": 0,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Sir Rodney's Scones",
+          "customer": "FOLIG",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 400
+        },
+        {
+          "product": "Sir Rodney's Scones",
+          "customer": "FRANK",
+          "q1": 0,
+          "q2": 0,
+          "q3": 225,
+          "q4": 304
+        },
+        {
+          "product": "Sir Rodney's Scones",
+          "customer": "GODOS",
+          "q1": 0,
+          "q2": 54,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Sir Rodney's Scones",
+          "customer": "GREAL",
+          "q1": 0,
+          "q2": 0,
+          "q3": 108,
+          "q4": 0
+        },
+        {
+          "product": "Sir Rodney's Scones",
+          "customer": "KOENE",
+          "q1": 272,
+          "q2": 0,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Sir Rodney's Scones",
+          "customer": "LILAS",
+          "q1": 240,
+          "q2": 0,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Sir Rodney's Scones",
+          "customer": "LINOD",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 300
+        },
+        {
+          "product": "Sir Rodney's Scones",
+          "customer": "MEREP",
+          "q1": 0,
+          "q2": 0,
+          "q3": 420,
+          "q4": 0
+        },
+        {
+          "product": "Sir Rodney's Scones",
+          "customer": "OCEAN",
+          "q1": 96,
+          "q2": 0,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Sir Rodney's Scones",
+          "customer": "PRINI",
+          "q1": 126,
+          "q2": 0,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Sir Rodney's Scones",
+          "customer": "QUEEN",
+          "q1": 216,
+          "q2": 0,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Sir Rodney's Scones",
+          "customer": "QUICK",
+          "q1": 0,
+          "q2": 0,
+          "q3": 600,
+          "q4": 0
+        },
+        {
+          "product": "Sir Rodney's Scones",
+          "customer": "RANCH",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 50
+        },
+        {
+          "product": "Sir Rodney's Scones",
+          "customer": "SIMOB",
+          "q1": 0,
+          "q2": 0,
+          "q3": 240,
+          "q4": 0
+        },
+        {
+          "product": "Sir Rodney's Scones",
+          "customer": "WANDK",
+          "q1": 0,
+          "q2": 320,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Sir Rodney's Scones",
+          "customer": "WHITC",
+          "q1": 0,
+          "q2": 120,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Steeleye Stout",
+          "customer": "BERGS",
+          "q1": 115.2,
+          "q2": 0,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Steeleye Stout",
+          "customer": "BSBEV",
+          "q1": 0,
+          "q2": 360,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Steeleye Stout",
+          "customer": "CACTU",
+          "q1": 0,
+          "q2": 54,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Steeleye Stout",
+          "customer": "EASTC",
+          "q1": 504,
+          "q2": 0,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Steeleye Stout",
+          "customer": "ERNSH",
+          "q1": 0,
+          "q2": 0,
+          "q3": 405,
+          "q4": 0
+        },
+        {
+          "product": "Steeleye Stout",
+          "customer": "FOLIG",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 270
+        },
+        {
+          "product": "Steeleye Stout",
+          "customer": "FRANK",
+          "q1": 0,
+          "q2": 0,
+          "q3": 486,
+          "q4": 0
+        },
+        {
+          "product": "Steeleye Stout",
+          "customer": "FURIB",
+          "q1": 0,
+          "q2": 306,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Steeleye Stout",
+          "customer": "GREAL",
+          "q1": 0,
+          "q2": 0,
+          "q3": 72,
+          "q4": 0
+        },
+        {
+          "product": "Steeleye Stout",
+          "customer": "LINOD",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 121.5
+        },
+        {
+          "product": "Steeleye Stout",
+          "customer": "MEREP",
+          "q1": 691.2,
+          "q2": 0,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Steeleye Stout",
+          "customer": "QUEDE",
+          "q1": 0,
+          "q2": 0,
+          "q3": 360,
+          "q4": 378
+        },
+        {
+          "product": "Steeleye Stout",
+          "customer": "VICTE",
+          "q1": 0,
+          "q2": 540,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Steeleye Stout",
+          "customer": "WARTH",
+          "q1": 0,
+          "q2": 108,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Steeleye Stout",
+          "customer": "WHITC",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 504
+        },
+        {
+          "product": "Teatime Chocolate Biscuits",
+          "customer": "FAMIA",
+          "q1": 124.83,
+          "q2": 0,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Teatime Chocolate Biscuits",
+          "customer": "FRANK",
+          "q1": 0,
+          "q2": 0,
+          "q3": 124.2,
+          "q4": 0
+        },
+        {
+          "product": "Teatime Chocolate Biscuits",
+          "customer": "FRANS",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 46
+        },
+        {
+          "product": "Teatime Chocolate Biscuits",
+          "customer": "GODOS",
+          "q1": 0,
+          "q2": 92,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Teatime Chocolate Biscuits",
+          "customer": "GREAL",
+          "q1": 0,
+          "q2": 0,
+          "q3": 248.4,
+          "q4": 0
+        },
+        {
+          "product": "Teatime Chocolate Biscuits",
+          "customer": "ISLAT",
+          "q1": 0,
+          "q2": 0,
+          "q3": 46,
+          "q4": 0
+        },
+        {
+          "product": "Teatime Chocolate Biscuits",
+          "customer": "LINOD",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 48.3
+        },
+        {
+          "product": "Teatime Chocolate Biscuits",
+          "customer": "QUEDE",
+          "q1": 24.82,
+          "q2": 0,
+          "q3": 276,
+          "q4": 0
+        },
+        {
+          "product": "Teatime Chocolate Biscuits",
+          "customer": "QUEEN",
+          "q1": 36.5,
+          "q2": 0,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Teatime Chocolate Biscuits",
+          "customer": "QUICK",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 437
+        },
+        {
+          "product": "Teatime Chocolate Biscuits",
+          "customer": "RICAR",
+          "q1": 292,
+          "q2": 0,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Teatime Chocolate Biscuits",
+          "customer": "SAVEA",
+          "q1": 0,
+          "q2": 257.6,
+          "q3": 0,
+          "q4": 110.4
+        },
+        {
+          "product": "Teatime Chocolate Biscuits",
+          "customer": "SUPRD",
+          "q1": 153.3,
+          "q2": 0,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Teatime Chocolate Biscuits",
+          "customer": "TOMSP",
+          "q1": 166.44,
+          "q2": 0,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Teatime Chocolate Biscuits",
+          "customer": "TORTU",
+          "q1": 0,
+          "q2": 0,
+          "q3": 64.4,
+          "q4": 0
+        },
+        {
+          "product": "Teatime Chocolate Biscuits",
+          "customer": "WANDK",
+          "q1": 0,
+          "q2": 0,
+          "q3": 82.8,
+          "q4": 0
+        },
+        {
+          "product": "Teatime Chocolate Biscuits",
+          "customer": "WARTH",
+          "q1": 146,
+          "q2": 0,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Teatime Chocolate Biscuits",
+          "customer": "WELLI",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 209.76
+        },
+        {
+          "product": "Uncle Bob's Organic Dried Pears",
+          "customer": "BONAP",
+          "q1": 0,
+          "q2": 1275,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Uncle Bob's Organic Dried Pears",
+          "customer": "BSBEV",
+          "q1": 720,
+          "q2": 0,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Uncle Bob's Organic Dried Pears",
+          "customer": "FOLIG",
+          "q1": 0,
+          "q2": 0,
+          "q3": 1050,
+          "q4": 0
+        },
+        {
+          "product": "Uncle Bob's Organic Dried Pears",
+          "customer": "GOURL",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 76.5
+        },
+        {
+          "product": "Uncle Bob's Organic Dried Pears",
+          "customer": "OTTIK",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 1050
+        },
+        {
+          "product": "Uncle Bob's Organic Dried Pears",
+          "customer": "QUICK",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 2700
+        },
+        {
+          "product": "Uncle Bob's Organic Dried Pears",
+          "customer": "SAVEA",
+          "q1": 0,
+          "q2": 0,
+          "q3": 1350,
+          "q4": 0
+        },
+        {
+          "product": "Uncle Bob's Organic Dried Pears",
+          "customer": "VAFFE",
+          "q1": 0,
+          "q2": 0,
+          "q3": 300,
+          "q4": 0
+        },
+        {
+          "product": "Uncle Bob's Organic Dried Pears",
+          "customer": "VICTE",
+          "q1": 364.8,
+          "q2": 300,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Veggie-spread",
+          "customer": "ALFKI",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 878
+        },
+        {
+          "product": "Veggie-spread",
+          "customer": "ERNSH",
+          "q1": 2281.5,
+          "q2": 0,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Veggie-spread",
+          "customer": "FOLIG",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 1317
+        },
+        {
+          "product": "Veggie-spread",
+          "customer": "HUNGO",
+          "q1": 921.37,
+          "q2": 0,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Veggie-spread",
+          "customer": "MORGK",
+          "q1": 0,
+          "q2": 263.4,
+          "q3": 0,
+          "q4": 0
+        },
+        {
+          "product": "Veggie-spread",
+          "customer": "PICCO",
+          "q1": 0,
+          "q2": 0,
+          "q3": 0,
+          "q4": 395.1
+        },
+        {
+          "product": "Veggie-spread",
+          "customer": "WHITC",
+          "q1": 0,
+          "q2": 0,
+          "q3": 842.88,
+          "q4": 0
+        }
+      ]
+    }
+  ]
+}

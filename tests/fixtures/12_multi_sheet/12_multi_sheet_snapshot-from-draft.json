@@ -1,0 +1,31 @@
+{
+  "dept": {
+    "name": "Engineering",
+    "code": "ENG-001"
+  },
+  "emp": [
+    {
+      "_source": {
+        "sheet": "Details",
+        "ref": "A4:C8"
+      },
+      "data": [
+        {
+          "name": "Alice Brown",
+          "role": "Lead Engineer",
+          "salary": 85000
+        },
+        {
+          "name": "Bob Chen",
+          "role": "Senior Dev",
+          "salary": 72000
+        },
+        {
+          "name": "Carol Davis",
+          "role": "Junior Dev",
+          "salary": 55000
+        }
+      ]
+    }
+  ]
+}

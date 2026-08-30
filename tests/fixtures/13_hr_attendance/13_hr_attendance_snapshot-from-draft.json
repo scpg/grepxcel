@@ -1,0 +1,40 @@
+{
+  "emp": {
+    "name": "Sarah Connor",
+    "id": "EMP-0042",
+    "year": 2026
+  },
+  "att": [
+    {
+      "_source": {
+        "sheet": "Sheet1",
+        "ref": "A4:D8"
+      },
+      "data": [
+        {
+          "month": "January",
+          "working": 22,
+          "absent": 1,
+          "reason": "Sick leave"
+        },
+        {
+          "month": "February",
+          "working": 20,
+          "absent": 0,
+          "reason": "-"
+        },
+        {
+          "month": "March",
+          "working": 23,
+          "absent": 2,
+          "reason": "Personal leave"
+        }
+      ],
+      "footer": {
+        "label": "Q1 Total",
+        "working": 65,
+        "absent": 3
+      }
+    }
+  ]
+}
