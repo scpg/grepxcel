@@ -143,6 +143,8 @@ def _build_state_from_choices(
     cells: list[tuple[int, int]],
     direction: str,
     sheet_name: str,
+    ignore_case: bool = False,
+    currency_sign: str = '€',
 ) -> WizardState:
     """Build a WizardState from the choices dict, in cell-scan order.
 
@@ -153,7 +155,12 @@ def _build_state_from_choices(
     Web-service note: this is the function a REST handler would call after
     the client submits the final classification list.
     """
-    state = WizardState(direction=direction, sheet_name=sheet_name)
+    state = WizardState(
+        direction=direction,
+        sheet_name=sheet_name,
+        ignore_case=ignore_case,
+        currency_sign=currency_sign,
+    )
     seen_t_anchors: set[str] = set()
     for r, c in cells:
         ref  = _cell_ref(r, c)
@@ -301,11 +308,18 @@ def _build_state_from_choices(
     return state
 
 
-def _choices_to_csv(ws, choices, cells, direction, sheet_name) -> str:
-    state = _build_state_from_choices(ws, choices, cells, direction, sheet_name)
+def _choices_to_csv(ws, choices, cells, direction, sheet_name,
+                    ignore_case: bool = False, currency_sign: str = '€') -> str:
+    state = _build_state_from_choices(
+        ws, choices, cells, direction, sheet_name,
+        ignore_case=ignore_case, currency_sign=currency_sign,
+    )
     buf = io.StringIO()
     w   = csv.writer(buf)
     w.writerow(['config:', 'read.direction', state.direction])
+    if state.ignore_case:
+        w.writerow(['config:', 'ignore.case', 'yes'])
+    w.writerow(['config:', 'currency.sign', state.currency_sign])
     for name, typ, text in state.lbl_defs:
         w.writerow(['lbl:', name, typ, text])
     for name, typ, match in state.var_defs:
@@ -516,6 +530,7 @@ if _TEXTUAL_OK:
         _ConfigModal Label.sect   { text-style: bold; margin-top: 1; }
         _ConfigModal Label.desc   { color: $text-muted; margin-bottom: 1; }
         _ConfigModal Select       { margin-bottom: 1; }
+        _ConfigModal Input        { width: 16; margin-bottom: 1; }
         _ConfigModal Label.hint   { color: $text-muted; margin-top: 1; }
         """
 
@@ -542,16 +557,34 @@ if _TEXTUAL_OK:
                     value='yes' if self._is_template else 'no',
                     id='tpl',
                 )
+                yield Label('Ignore case', classes='sect')
+                yield Label('Match label text case-insensitively', classes='desc')
+                yield Select(
+                    options=[('No  (case-sensitive, default)', 'no'),
+                              ('Yes — ignore case when matching', 'yes')],
+                    value='no', id='ic',
+                )
+                yield Label('Currency symbol', classes='sect')
+                yield Label('Symbol used in currency-typed fields', classes='desc')
+                yield Input(value='€', id='cur')
                 yield Label('ENTER = start  •  ESC = cancel', classes='hint')
 
         def on_key(self, event) -> None:
             if event.key == 'enter':
                 try:
-                    direction = str(self.query_one('#dir', Select).value)
-                    template  = str(self.query_one('#tpl', Select).value) == 'yes'
+                    direction    = str(self.query_one('#dir', Select).value)
+                    template     = str(self.query_one('#tpl', Select).value) == 'yes'
+                    ignore_case  = str(self.query_one('#ic',  Select).value) == 'yes'
+                    currency_sign = self.query_one('#cur', Input).value.strip() or '€'
                 except Exception:
                     direction, template = 'LR', self._is_template
-                self.dismiss({'direction': direction, 'template': template})
+                    ignore_case, currency_sign = False, '€'
+                self.dismiss({
+                    'direction':     direction,
+                    'template':      template,
+                    'ignore_case':   ignore_case,
+                    'currency_sign': currency_sign,
+                })
             elif event.key == 'escape':
                 self.dismiss(None)
 
@@ -1216,15 +1249,19 @@ if _TEXTUAL_OK:
             if cfg is None:
                 self.exit(result=None)
                 return
-            self._state.direction = cfg['direction']
-            self._is_template     = cfg['template']
-            self._cells           = _build_cell_order(self._ws, self._state.direction)
-            self._total_nonempty  = sum(
+            self._state.direction    = cfg['direction']
+            self._state.ignore_case  = cfg.get('ignore_case', False)
+            self._state.currency_sign = cfg.get('currency_sign', '€')
+            self._is_template        = cfg['template']
+            self._cells              = _build_cell_order(self._ws, self._state.direction)
+            self._total_nonempty     = sum(
                 1 for r, c in self._cells
                 if self._ws.cell(row=r, column=c).value is not None
             )
             self._log('CONFIG',
                       f'direction={cfg["direction"]}  template={cfg["template"]}'
+                      f'  ignore_case={cfg.get("ignore_case", False)}'
+                      f'  currency={cfg.get("currency_sign", "€")}'
                       f'  sheet={self._state.sheet_name}'
                       f'  cells={self._total_nonempty} non-empty')
             self._populate_table()
@@ -1476,7 +1513,9 @@ if _TEXTUAL_OK:
                 f'   Hdrs: {counts.get("C", 0)}',
                 f'  Tables: {counts.get("T", 0)}   Ignored: {counts.get("I", 0)}'
                 f'   Dir: {self._state.direction}',
-                f'  Template: {"[yellow]ON[/yellow]" if self._is_template else "[dim]off[/dim]"}',
+                f'  Template: {"[yellow]ON[/yellow]" if self._is_template else "[dim]off[/dim]"}'
+                f'   IC: {"[yellow]yes[/yellow]" if self._state.ignore_case else "[dim]no[/dim]"}'
+                f'   Curr: [dim]{self._state.currency_sign}[/dim]',
             ]
             if self._undo_stack:
                 lines.append(f'  [dim]Undo depth: {len(self._undo_stack)}[/dim]')
@@ -2596,6 +2635,8 @@ if _TEXTUAL_OK:
             csv_text = _choices_to_csv(
                 self._ws, self._choices, self._cells,
                 self._state.direction, self._state.sheet_name,
+                ignore_case=self._state.ignore_case,
+                currency_sign=self._state.currency_sign,
             )
             self.push_screen(_PreviewModal(csv_text), lambda _: None)
 
@@ -2619,6 +2660,8 @@ if _TEXTUAL_OK:
             state = _build_state_from_choices(
                 self._ws, self._choices, self._cells,
                 self._state.direction, self._state.sheet_name,
+                ignore_case=self._state.ignore_case,
+                currency_sign=self._state.currency_sign,
             )
 
             # Detect duplicate lbl: names
