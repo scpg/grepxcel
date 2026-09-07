@@ -16,6 +16,7 @@ var:,transaction.description,string,.*
 var:,transaction.debit,number,.*
 var:,transaction.credit,number,.*
 var:,transaction.balance,currency,.*
+lbl:,col_totals,string,Totals
 START:
 cell:next,account_holder_label
 cell:next,account.holder
@@ -26,4 +27,5 @@ cell:next,account.period
 table:*
 ,HEADER:1,col_date,col_description,col_debit,col_credit,col_balance
 ,DATA:*,transaction.date,transaction.description,transaction.debit,transaction.credit,transaction.balance
+,FOOTER:1,col_totals,IGNORE,IGNORE,IGNORE,IGNORE
 END:

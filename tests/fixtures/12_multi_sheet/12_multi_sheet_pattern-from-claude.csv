@@ -1,6 +1,6 @@
 config:,pattern.version,1
-lbl:,summary_title,string,Q1 2026 Summary
-lbl:,department_label,string,Department:
+lbl:,summary_title,string,Department:
+lbl:,department_label,string,Cost Centre:
 var:,summary.department,string,.*
 START:
 cell:next,summary_title

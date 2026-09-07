@@ -8,7 +8,7 @@
     {
       "_source": {
         "sheet": "Sheet1",
-        "ref": "A5:E12"
+        "ref": "A5:E11"
       },
       "data": [
         {
@@ -45,13 +45,6 @@
           "debit": 250,
           "credit": 0,
           "balance": 5244.5
-        },
-        {
-          "date": "Totals",
-          "description": null,
-          "debit": 455.5,
-          "credit": 5700,
-          "balance": null
         }
       ]
     }

@@ -16,10 +16,11 @@ var:,loan.term_months,integer
 var:,loan.start_date,datetime
 var:,payment.number,integer
 var:,payment.date,datetime
-var:,payment.amount,integer
+var:,payment.amount,currency
 var:,payment.principal,currency
 var:,payment.interest,currency
 var:,payment.balance,currency
+lbl:,col_totals,string,Totals
 START:
 cell:next,loan_amount_label
 cell:next,loan.amount
@@ -32,4 +33,5 @@ cell:next,loan.start_date
 table:*
 ,HEADER:1,payment_num_header,date_header,payment_header,principal_header,interest_header,balance_header
 ,DATA:*,payment.number,payment.date,payment.amount,payment.principal,payment.interest,payment.balance
+,FOOTER:1,col_totals,IGNORE,IGNORE,IGNORE,IGNORE,IGNORE
 END:

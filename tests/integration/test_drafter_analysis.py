@@ -84,10 +84,12 @@ _FULL_FIXTURES: list[str] = [
 # These are genuinely hard cases (labels embedded in table rows, not KV pairs)
 # tracked separately from grepxcel correctness.
 _LBL_ANALYSIS_XFAIL: set[str] = {
-    '12_multi_sheet',             # 'Q1 2026 Summary' heading not surfaced by analyser (merged/title cell)
+    # '12_multi_sheet' removed: lbl: literals updated to 'Department:' / 'Cost Centre:' which ARE surfaced
     '17_excel_template_invoice',  # Vertex42 template: table column headers not surfaced by analyser
     '21_monthly_budget',          # lbl patterns contain \n (multi-line cells); literal stripped to 'n' by test
     '22_weekly_timesheet',        # lbl patterns contain \n (multi-line cells); literal stripped to 'n' by test
+    '04_bank_statement',          # 'Totals' is a footer row inside the data table, not surfaced by analyser
+    '11_loan_schedule',           # 'Totals' is a footer row inside the data table, not surfaced by analyser
 }
 
 # Some fixtures require a non-active sheet to match the reference pattern.

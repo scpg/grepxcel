@@ -9,7 +9,7 @@
     {
       "_source": {
         "sheet": "Sheet1",
-        "ref": "A4:F12"
+        "ref": "A4:F11"
       },
       "data": [
         {
@@ -59,14 +59,6 @@
           "principal": 1656.9,
           "interest": 8.3,
           "balance": 0
-        },
-        {
-          "number": "Totals",
-          "date": null,
-          "amount": 10175.2,
-          "principal": 10000,
-          "interest": 175.2,
-          "balance": null
         }
       ]
     }

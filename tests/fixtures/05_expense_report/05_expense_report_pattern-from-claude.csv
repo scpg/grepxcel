@@ -22,7 +22,7 @@ var:,employee.period,string,.*
 var:,employee.manager,string,.*
 var:,transport.date,datetime
 var:,transport.description,string,.*
-var:,transport.amount,integer,\d+
+var:,transport.amount,number,\d+(\.\d+)?
 var:,transport.receipt,string,.*
 var:,meals.date,datetime
 var:,meals.description,string,.*
