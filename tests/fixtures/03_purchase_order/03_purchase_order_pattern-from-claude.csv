@@ -18,6 +18,7 @@ var:,line.description,string,.*
 var:,line.qty,integer,\d+
 var:,line.unit_price,integer,\d+
 var:,line.total,integer,\d+
+lbl:,col_grand_total,string,Grand Total
 START:
 cell:next,po_label
 cell:next,po.number
@@ -30,4 +31,5 @@ cell:next,po.ref
 table:*
 ,HEADER:1,col_item,col_description,col_qty,col_unit_price,col_total
 ,DATA:*,line.item,line.description,line.qty,line.unit_price,line.total
+,FOOTER:1,col_grand_total,IGNORE,IGNORE,IGNORE,IGNORE
 END:

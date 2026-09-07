@@ -1,11 +1,104 @@
 {
   "summary": {
-    "total_income": 30256.720000000005,
-    "total_expenses": 18183.279999999995,
-    "balance": 0.6246226259289844,
-    "pct_income_spent": "Item"
+    "total_income": 48440,
+    "total_expenses": 30256.720000000005,
+    "balance": 18183.279999999995,
+    "pct_income_spent": 0.6246226259289844
   },
   "income": [
+    {
+      "_source": {
+        "sheet": "Budget by month",
+        "ref": "B13:P19"
+      },
+      "data": [
+        {
+          "item": "Income 1",
+          "jan": 2500,
+          "feb": 2525,
+          "mar": 2525,
+          "apr": 2525,
+          "may": 2525,
+          "jun": 2525,
+          "jul": 2525,
+          "aug": 2525,
+          "sep": 2525,
+          "oct": 2525,
+          "nov": 2525,
+          "dec": 2525,
+          "total": 30275,
+          "average": 2522.9166666666665
+        },
+        {
+          "item": "Income 2",
+          "jan": 1000,
+          "feb": 1010,
+          "mar": 1010,
+          "apr": 1010,
+          "may": 1010,
+          "jun": 1010,
+          "jul": 1010,
+          "aug": 1010,
+          "sep": 1010,
+          "oct": 1010,
+          "nov": 1010,
+          "dec": 1010,
+          "total": 12110,
+          "average": 1009.1666666666666
+        },
+        {
+          "item": "Income 3",
+          "jan": 250,
+          "feb": 252.5,
+          "mar": 252.5,
+          "apr": 252.5,
+          "may": 252.5,
+          "jun": 252.5,
+          "jul": 252.5,
+          "aug": 252.5,
+          "sep": 252.5,
+          "oct": 252.5,
+          "nov": 252.5,
+          "dec": 252.5,
+          "total": 3027.5,
+          "average": 252.29166666666666
+        },
+        {
+          "item": "Other",
+          "jan": 250,
+          "feb": 252.5,
+          "mar": 252.5,
+          "apr": 252.5,
+          "may": 252.5,
+          "jun": 252.5,
+          "jul": 252.5,
+          "aug": 252.5,
+          "sep": 252.5,
+          "oct": 252.5,
+          "nov": 252.5,
+          "dec": 252.5,
+          "total": 3027.5,
+          "average": 252.29166666666666
+        },
+        {
+          "item": "Total",
+          "jan": 4000,
+          "feb": 4040,
+          "mar": 4040,
+          "apr": 4040,
+          "may": 4040,
+          "jun": 4040,
+          "jul": 4040,
+          "aug": 4040,
+          "sep": 4040,
+          "oct": 4040,
+          "nov": 4040,
+          "dec": 4040,
+          "total": 48440,
+          "average": 1009.1666666666665
+        }
+      ]
+    },
     {
       "_source": {
         "sheet": "Budget by month",

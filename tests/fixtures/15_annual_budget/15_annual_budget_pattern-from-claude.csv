@@ -72,9 +72,7 @@ var:,expenses.total,currency
 var:,expenses.average,currency
 START:
 cell:next,annual_budget_label
-cell:next,IGNORE
 cell:next,summary_label
-cell:next,IGNORE
 cell:next,total_income_label
 cell:next,summary.total_income
 cell:next,total_expenses_label

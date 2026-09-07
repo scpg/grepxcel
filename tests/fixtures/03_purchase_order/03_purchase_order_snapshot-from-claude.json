@@ -9,7 +9,7 @@
     {
       "_source": {
         "sheet": "Sheet1",
-        "ref": "A3:E8"
+        "ref": "A3:E7"
       },
       "data": [
         {
@@ -32,13 +32,6 @@
           "qty": 6,
           "unit_price": 75,
           "total": 450
-        },
-        {
-          "item": "Grand Total",
-          "description": null,
-          "qty": null,
-          "unit_price": null,
-          "total": 3030
         }
       ]
     }
