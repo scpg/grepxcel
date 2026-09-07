@@ -1,0 +1,14 @@
+{
+  "invoice": {
+    "number": "AB123456",
+    "date": "2026-03-15 00:00:00",
+    "date_due": "2026-04-14 00:00:00",
+    "net": 120,
+    "vat": 24,
+    "total": 144
+  },
+  "client": {
+    "name": "Alice Wonderland",
+    "email": "alice@wonderland.example"
+  }
+}
