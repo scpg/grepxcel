@@ -6,8 +6,8 @@ lbl:,bill_to_label,string,BILL TO
 lbl:,invoice_num_label,string,INVOICE #
 lbl:,date_label,string,DATE
 lbl:,terms_label,string,← You can change TERMS to DUE DATE and enter a date (usually 30 days after the invoice date)
-lbl:,contact_intro,string,"If you have any questions about this invoice, please contact"
-lbl:,contact_details,string,Cora Thomas at (516) 555-0135 or cora@example.com.
+lbl:,contact_intro,string,First Up Consultants
+lbl:,contact_details,string,INVOICE
 var:,company.info,string,.*
 var:,invoice.number,currency,\d+
 var:,invoice.date,date

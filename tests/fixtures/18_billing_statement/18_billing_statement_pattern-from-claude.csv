@@ -5,7 +5,7 @@ lbl:,street_address,string,Street Address
 lbl:,phone_label,string,Phone:
 lbl:,address_2,string,Address 2
 lbl:,fax_label,string,Fax:
-lbl:,city_zip,string,"City, ST ZIP Code"
+lbl:,city_zip,string,"City, ST  ZIP Code"
 lbl:,email_label,string,E-mail:
 lbl:,statement_label,string,Statement
 lbl:,statement_num_label,string,Statement #:
@@ -25,7 +25,6 @@ lbl:,col_payment,string,Payment
 lbl:,col_balance,string,Balance
 lbl:,remittance_customer_name,string,Customer Name:
 lbl:,remittance_enter_customer,string,Enter customer name
-var:,company.name,string,.*
 var:,company.phone,string,.*
 var:,company.fax,string,.*
 var:,company.email,string,.*

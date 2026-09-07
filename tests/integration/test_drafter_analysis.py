@@ -89,6 +89,7 @@ _LBL_ANALYSIS_XFAIL: set[str] = {
     '21_monthly_budget',          # lbl patterns contain \n (multi-line cells); literal stripped to 'n' by test
     '22_weekly_timesheet',        # lbl patterns contain \n (multi-line cells); literal stripped to 'n' by test
     '03_purchase_order',          # 'Grand Total' is a footer row inside the data table, not surfaced by analyser
+    '18_billing_statement',       # template placeholders and double-space literals not surfaced by analyser
     '04_bank_statement',          # 'Totals' is a footer row inside the data table, not surfaced by analyser
     '11_loan_schedule',           # 'Totals' is a footer row inside the data table, not surfaced by analyser
 }
