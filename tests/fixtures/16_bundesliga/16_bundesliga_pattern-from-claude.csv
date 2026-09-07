@@ -12,7 +12,7 @@ lbl:,col_win,string,win
 lbl:,col_draw,string,draw
 lbl:,col_defeat,string,defeat
 lbl:,col_goals,string,goals
-var:,match.date,datetime
+var:,match.date,string
 var:,match.spieltag,integer,\d+
 var:,match.home_team,string,.*
 var:,match.away_team,string,.*

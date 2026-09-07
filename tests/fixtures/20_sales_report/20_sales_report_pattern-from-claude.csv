@@ -1,7 +1,6 @@
 config:,pattern.version,1
 config:,read.direction,LR
 config:,currency.sign,€
-lbl:,filter_note,string,Diese PivotTable wird nach den 10 meistverkauften Produkten im 1. Quartal gefiltert
 lbl:,col_product,string,Produkt
 lbl:,col_q1,string,Summe aus Qrtl 1
 lbl:,col_q2,string,Summe aus Qrtl 2

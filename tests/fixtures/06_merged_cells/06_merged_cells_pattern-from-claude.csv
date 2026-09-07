@@ -4,7 +4,7 @@ lbl:,col_product,string,Product
 lbl:,col_price,string,Price
 var:,item.category,string,.*
 var:,item.product,string,.*
-var:,item.price,integer,\d+(\.\d{2})?
+var:,item.price,currency,\d+(\.\d{2})?
 START:
 table:*
 ,HEADER:1,col_category,col_product,col_price

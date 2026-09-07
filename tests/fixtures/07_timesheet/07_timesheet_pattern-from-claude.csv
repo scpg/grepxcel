@@ -10,7 +10,7 @@ var:,emp.name,string,.*
 var:,emp.week_start,datetime
 var:,emp.project,string,.*
 var:,line.day,string,.*
-var:,line.hours,integer,\d+(\.\d+)?
+var:,line.hours,number,\d+(\.\d+)?
 var:,line.task,string,.*
 START:
 cell:next,employee_label
