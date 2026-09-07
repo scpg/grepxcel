@@ -10,7 +10,7 @@ lbl:,email_label,string,Email:
 lbl:,net_label,string,Net:
 lbl:,vat_label,string,VAT:
 lbl:,total_label,string,Total:
-var:,inv.number,string,INV-\d+
+var:,inv.number,string,.*
 var:,inv.date,date
 var:,inv.due_date,datetime
 var:,client.name,string,.*

@@ -1,7 +1,6 @@
 config:,pattern.version,1
 config:,read.direction,LR
 lbl:,instr_intro,string,Create a Personal Monthly Budget in this worksheet. Helpful instructions on how to use this worksheet are in cells in this column. Arrow down to get started.
-lbl:,instr_title,string,Title of this worksheet is in cell at right. Next instruction is in cell A4.
 lbl:,instr_income_proj,string,Projected Monthly Income label is in cell at right. Enter Income 1 in cell E4 and Extra Income in E5 to calculate Total monthly income in E6. Next instruction is in cell A6.
 lbl:,header_proj_income,string,PROJECTED MONTHLY INCOME
 lbl:,header_income_1_proj,string,Income 1
@@ -23,7 +22,6 @@ lbl:,header_entertainment,string,ENTERTAINMENT
 lbl:,header_entertainment_proj_cost,string,Projected Cost
 lbl:,header_entertainment_actual_cost,string,Actual Cost
 lbl:,header_entertainment_diff,string,Difference
-var:,budget.title,string,PERSONAL MONTHLY BUDGET
 var:,income_proj.description,string,.*
 var:,income_proj.amount,currency,-?\d+(\.\d{2})?
 var:,balance_proj.description,string,.*
@@ -42,8 +40,6 @@ var:,entertainment.difference,currency,-?\d+(\.\d{2})?
 START:
 cell:next,instr_intro
 cell:next,IGNORE
-cell:next,instr_title
-cell:next,budget.title
 table:*
 ,HEADER:1,instr_income_proj,header_proj_income,header_income_1_proj,header_income_amount_proj,header_proj_balance,header_balance_amount_proj
 ,DATA:2,IGNORE,IGNORE,income_proj.description,income_proj.amount,balance_proj.description,balance_proj.amount
