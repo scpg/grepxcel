@@ -181,14 +181,23 @@ def render_result(result: CheckResult, verbose: bool = False, out=None) -> None:
                 _render_table_grid(instr.rows, out)
 
 
-def run_validate(paths: list[str], verbose: bool = False, out=None) -> int:
-    """Validate each pattern file; return 0 if all valid, 1 otherwise."""
+def run_validate(paths: list[str], verbose: bool = False, quiet: bool = False,
+                 out=None) -> int:
+    """Validate each pattern file; return 0 if all valid, 1 otherwise.
+
+    quiet=True suppresses the '✓ VALID' confirmation line; warnings and errors
+    are still printed so the caller knows what failed.  Exit code is unchanged.
+    """
     out = out or sys.stderr
     all_valid = True
     for idx, path in enumerate(paths):
         if idx:
             print('', file=out)
         result = check_pattern(path)
-        render_result(result, verbose=verbose, out=out)
+        if quiet and result.valid and not result.warnings:
+            # Silent on clean success — only surface problems.
+            pass
+        else:
+            render_result(result, verbose=verbose, out=out)
         all_valid = all_valid and result.valid
     return 0 if all_valid else 1

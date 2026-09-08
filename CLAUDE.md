@@ -78,6 +78,7 @@ The CLI is subcommand-based: `extract`, `validate-pattern`, `draft`, `docs`, `li
 
 ```bash
 .venv/bin/grepxcel extract -p pattern.xlsx data.xlsx
+.venv/bin/grepxcel extract -p pattern.xlsx data.xlsx -q            # quiet: warnings/errors only (no header/summary)
 .venv/bin/grepxcel extract -p pattern.xlsx data.xlsx -v            # detailed warnings + per-field trace
 .venv/bin/grepxcel extract -p pattern.xlsx data.xlsx -vv           # + debug: anchor probes
 .venv/bin/grepxcel extract -p pattern.xlsx data.xlsx -d            # same as -vv
@@ -88,6 +89,7 @@ The CLI is subcommand-based: `extract`, `validate-pattern`, `draft`, `docs`, `li
 .venv/bin/grepxcel extract -p pattern.xlsx data_dir/ -r           # recursive into subdirs
 .venv/bin/grepxcel extract -p pattern.xlsx data.xlsx --strict     # exit 2 on any missing field
 .venv/bin/grepxcel validate-pattern pattern.xlsx                   # check a pattern is valid (no extraction)
+.venv/bin/grepxcel validate-pattern pattern.xlsx -q               # quiet: silent on success (CI-friendly)
 .venv/bin/grepxcel validate-pattern pattern.csv -v                # + parsed fields & extraction steps
 .venv/bin/grepxcel draft data.xlsx                                 # draft a starter pattern (local LLM)
 .venv/bin/grepxcel draft data.xlsx --ca-bundle corp-ca.pem         # behind a corporate TLS-inspection proxy
@@ -131,6 +133,7 @@ The CLI is subcommand-based: `extract`, `validate-pattern`, `draft`, `docs`, `li
 | `-r, --recursive` | off | Recurse into subdirectories when a directory is given |
 | `-o, --output DIR` | — | Write JSON to directory (stdout if omitted) |
 | `-l, --log FILE` | — | Append structured log to file |
+| `-q, --quiet` | off | Suppress ENGINE START + summary; only warnings/errors on stderr |
 | `-v` / `-vv` | off | Verbosity: detailed warnings + traces / anchor probes |
 | `-d, --debug` | off | Same as `-vv` |
 | `--sheet NAME_OR_INDEX` | active | Sheet name or 0-based index to process |
@@ -147,7 +150,7 @@ The CLI is subcommand-based: `extract`, `validate-pattern`, `draft`, `docs`, `li
 ### Output convention
 
 - **stdout** — extracted JSON (pipe-friendly)
-- **stderr** — warnings, errors, summary, verbose/debug output
+- **stderr** — warnings, errors, summary, verbose/debug output (`-q` suppresses summary/header, keeps warnings/errors)
 
 ## Branch workflow
 

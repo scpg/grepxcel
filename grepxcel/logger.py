@@ -351,7 +351,7 @@ class Logger:
         if issues:
             lines.append('ISSUES (cell — reason):')
             for rec in issues:
-                lines.append('  ' + self._issue_line(rec))
+                lines.append('  ' + self.issue_line(rec))
             lines.append('─' * 62)
         self._write(VerbosityLevel.NORMAL, '\n'.join(lines))
 
@@ -434,8 +434,12 @@ class Logger:
         self._file.write(line + '\n')
         self._file.flush()
 
-    def _issue_line(self, rec: LogRecord) -> str:
-        """One concise line summarising a single problem cell for the recap."""
+    def issue_line(self, rec: LogRecord) -> str:
+        """One concise line summarising a single problem cell for the recap.
+
+        Used both in the NORMAL-level summary block and by --quiet mode, which
+        suppresses the summary header/stats but still surfaces each issue.
+        """
         mark = '✗' if rec.severity == Severity.ERROR else '⚠'
         where = rec.location or '(no cell)'
         field = f' [{rec.field}]' if rec.field else ''
@@ -446,6 +450,9 @@ class Logger:
         else:
             detail = rec.message
         return f'{mark}  {where}{field}  —  {detail}'
+
+    # Keep the private alias so any external callers (tests, scripts) still work.
+    _issue_line = issue_line
 
     # --- Step-by-step (VERBOSE) --------------------------------------------
 

@@ -145,16 +145,25 @@ multiplicities, regex safety, comments) and also flags an empty extraction
 sequence and references to undefined fields. Exits non-zero if any file is
 invalid.
 
+verbosity:
+  (none)  print ✓ VALID / ✗ INVALID + any warnings or errors
+  -q      silent on success; only print warnings / errors (useful in CI)
+  -v      + parsed config, fields, and extraction sequence
+
 examples:
   grepxcel validate-pattern pattern.xlsx
   grepxcel validate-pattern pattern.csv -v        # + parsed fields & steps
   grepxcel validate-pattern a.xlsx b.csv          # validate several
+  grepxcel validate-pattern pattern.xlsx -q       # silent success, CI-friendly
         """,
     )
     p.add_argument('files', nargs='+', metavar='FILE',
                    help='Pattern file(s) to validate (.xlsx or .csv)')
     p.add_argument('-v', '--verbose', action='store_true',
                    help='Print the parsed config, fields, and extraction sequence')
+    p.add_argument('-q', '--quiet', action='store_true',
+                   help='Silent on success — only print warnings or errors; '
+                        'exit code is unchanged')
 
 
 def _add_lint_subparser(sub) -> None:
@@ -400,6 +409,7 @@ def _add_extract_subparser(sub) -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 verbosity:
+  -q      warnings + errors only — no ENGINE START header or summary stats
   (none)  warnings + summary on stderr, extracted JSON on stdout
   -v      + per-field trace: 'field ← B1 = value ✓/✗' for cells and table data
   -vv     + every anchor probe and rejection reason
@@ -408,6 +418,8 @@ verbosity:
 examples:
   grepxcel extract -p pattern.xlsx report.xlsx
   grepxcel extract -p pattern.xlsx jan.xlsx feb.xlsx mar.xlsx
+  grepxcel extract -p pattern.xlsx data.xlsx -q          # clean output
+  grepxcel extract -p pattern.xlsx data.xlsx --format csv -q
   grepxcel extract -p pattern.xlsx data.xlsx -v
   grepxcel extract -p pattern.xlsx data.xlsx --output results/
   grepxcel extract -p pattern.xlsx data.xlsx --log logs/run.log --output results/
@@ -444,6 +456,13 @@ examples:
         '-d', '--debug',
         action='store_true',
         help='Debug output (anchor probes and rejections); equivalent to -vv',
+    )
+    p.add_argument(
+        '-q', '--quiet',
+        action='store_true',
+        help='Suppress the ENGINE START header and summary stats; '
+             'only warnings and errors are printed to stderr. '
+             'Useful when piping output or calling from scripts.',
     )
     p.add_argument(
         '-o', '--output',
@@ -677,6 +696,8 @@ def _resolve_level(args) -> VerbosityLevel:
         return VerbosityLevel.DEBUG
     if args.verbose == 1:
         return VerbosityLevel.VERBOSE
+    if getattr(args, 'quiet', False):
+        return VerbosityLevel.QUIET
     return VerbosityLevel.NORMAL
 
 
@@ -689,7 +710,8 @@ def _process_file(pattern: str, data_file: str, args,
     """
     level = _resolve_level(args)
 
-    if len(args.files) > 1:
+    quiet = getattr(args, 'quiet', False)
+    if len(args.files) > 1 and not quiet:
         print(f'\n{"─" * 62}', file=sys.stderr)
         print(f'  File: {data_file}', file=sys.stderr)
         print(f'{"─" * 62}', file=sys.stderr)
@@ -777,6 +799,18 @@ def _process_file(pattern: str, data_file: str, args,
     stats = logger.last_stats
     if stats:
         issue_fields.extend(stats.get('empty_field_names', []))
+
+    # In quiet mode the Logger emitted nothing to the console; surface any
+    # warnings/errors now as concise one-liners (same text as the ISSUES recap
+    # inside the normal summary block, but without the stats header).
+    if quiet and not ok:
+        color = should_color(sys.stderr)
+        if len(args.files) > 1:
+            print(f'  {data_file}:', file=sys.stderr)
+        for rec in logger.issues():
+            print(colorize_marks('  ' + logger.issue_line(rec), color),
+                  file=sys.stderr)
+
     return ok, issue_fields
 
 
@@ -878,7 +912,9 @@ def _run_lint(args) -> int:
 
 def _run_validate(args) -> int:
     from .pattern_check import run_validate
-    return run_validate(args.files, verbose=getattr(args, 'verbose', False))
+    return run_validate(args.files,
+                        verbose=getattr(args, 'verbose', False),
+                        quiet=getattr(args, 'quiet', False))
 
 
 # ── schema handler ──────────────────────────────────────────────────────────
