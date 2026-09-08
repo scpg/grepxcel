@@ -1,13 +1,11 @@
 {
   "po": {
     "number": "PO-2026",
-    "date": "2026-05-01 00:00:00"
+    "date": "2026-05-01T00:00:00",
+    "vendor_name": "Acme Supplies",
+    "reference": "ACME001"
   },
-  "vendor": {
-    "name": "Acme Supplies",
-    "ref": "ACME001"
-  },
-  "row": [
+  "item": [
     {
       "_source": {
         "sheet": "Sheet1",
@@ -15,30 +13,29 @@
       },
       "data": [
         {
-          "item": "Laptop",
-          "desc": "Dell XPS 15",
+          "name": "Laptop",
+          "description": "Dell XPS 15",
           "qty": 2,
-          "price": 1200,
+          "unit_price": 1200,
           "total": 2400
         },
         {
-          "item": "X",
-          "desc": "Monitor Stand",
+          "name": "X",
+          "description": "Monitor Stand",
           "qty": 4,
-          "price": 45,
+          "unit_price": 45,
           "total": 180
         },
         {
-          "item": "Dock",
-          "desc": "USB-C Hub",
+          "name": "Dock",
+          "description": "USB-C Hub",
           "qty": 6,
-          "price": 75,
+          "unit_price": 75,
           "total": 450
         }
       ],
       "footer": {
-        "label": "Grand Total",
-        "value": 3030
+        "grand_total": 3030
       }
     }
   ]
