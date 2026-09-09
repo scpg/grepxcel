@@ -126,7 +126,8 @@ def test_make_httpx_client_with_ca(monkeypatch):
             f'Expected httpx2.Client, got {type(client)}'
         )
     except ImportError:
-        import httpx
+        # httpx2 not available — fall back to httpx; skip if neither is installed
+        httpx = pytest.importorskip('httpx')
         assert isinstance(client, httpx.Client), (
             f'Expected httpx.Client (httpx2 unavailable), got {type(client)}'
         )
