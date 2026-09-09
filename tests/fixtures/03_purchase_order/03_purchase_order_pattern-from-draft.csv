@@ -1,3 +1,4 @@
+config:,pattern.version,1
 config:,read.direction,LR
 config:,currency.sign,€
 lbl:,po_label,string,PO Number:

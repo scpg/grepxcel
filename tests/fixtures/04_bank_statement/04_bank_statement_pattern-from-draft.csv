@@ -1,33 +1,34 @@
-config:,read.direction,LR,,,,
-config:,currency.sign,€,,,,
-lbl:,acc_lbl,string,Account Holder:,,,
-lbl:,num_lbl,string,Account Number:,,,
-lbl:,per_lbl,string,Statement Period:,,,
-lbl:,col_date,string,Date,,,
-lbl:,col_desc,string,Description,,,
-lbl:,col_debit,string,Debit,,,
-lbl:,col_credit,string,Credit,,,
-lbl:,col_balance,string,Balance,,,
-var:,account.holder,string,.+,,,
-var:,account.number,string,[A-Z0-9]+,,,
-var:,account.period,string,.+,,,
-var:,txn.date,date,.*,,,
-var:,txn.description,string,.+,,,
-var:,txn.debit,currency,.*,,,
-var:,txn.credit,currency,.*,,,
-var:,txn.balance,currency,.*,,,
-var:,totals.label,string,Totals,,,
-var:,totals.debits,currency,.*,,,
-var:,totals.credits,currency,.*,,,
-START:,,,,,,
-cell:1,acc_lbl,,,,,
-cell:1,account.holder,,,,,
-cell:1,num_lbl,,,,,
-cell:1,account.number,,,,,
-cell:1,per_lbl,,,,,
-cell:1,account.period,,,,,
-table:*,,,,,,
+config:,pattern.version,1
+config:,read.direction,LR
+config:,currency.sign,€
+lbl:,acc_lbl,string,Account Holder:
+lbl:,num_lbl,string,Account Number:
+lbl:,per_lbl,string,Statement Period:
+lbl:,col_date,string,Date
+lbl:,col_desc,string,Description
+lbl:,col_debit,string,Debit
+lbl:,col_credit,string,Credit
+lbl:,col_balance,string,Balance
+var:,account.holder,string,.+
+var:,account.number,string,[A-Z0-9]+
+var:,account.period,string,.+
+var:,txn.date,date,.*
+var:,txn.description,string,.+
+var:,txn.debit,currency,.*
+var:,txn.credit,currency,.*
+var:,txn.balance,currency,.*
+var:,totals.label,string,Totals
+var:,totals.debits,currency,.*
+var:,totals.credits,currency,.*
+START:
+cell:1,acc_lbl
+cell:1,account.holder
+cell:1,num_lbl
+cell:1,account.number
+cell:1,per_lbl
+cell:1,account.period
+table:*
 ,HEADER:1,col_date,col_desc,col_debit,col_credit,col_balance
 ,DATA:*,txn.date,txn.description,txn.debit,txn.credit,txn.balance
 ,FOOTER:1,totals.label,IGNORE,totals.debits,totals.credits,IGNORE
-END:,,,,,,
+END:
