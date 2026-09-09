@@ -1264,6 +1264,27 @@ def main(argv=None):
                     should_color(sys.stderr)), file=sys.stderr)
                 sys.exit(2)
 
+    # ── Pattern pre-validation ───────────────────────────────────────────────
+    # Run static checks once before touching any data file.
+    # Errors abort immediately; warnings are printed but extraction continues.
+    from .pattern_check import check_pattern
+    _pv = check_pattern(args.pattern)
+    if not _pv.valid:
+        color = should_color(sys.stderr)
+        print(colorize_marks(
+            f'✗  Pattern invalid: {args.pattern}', color), file=sys.stderr)
+        for err in _pv.errors:
+            print(colorize_marks(f'   ✗ {err}', color), file=sys.stderr)
+        sys.exit(1)
+    if _pv.warnings:
+        color = should_color(sys.stderr)
+        quiet = getattr(args, 'quiet', False)
+        if not quiet:
+            print(colorize_marks(
+                f'⚠  Pattern warnings: {args.pattern}', color), file=sys.stderr)
+        for warn in _pv.warnings:
+            print(colorize_marks(f'   ⚠ {warn}', color), file=sys.stderr)
+
     all_ok = True
     strict = getattr(args, 'strict', False)
     strict_failures: list[tuple[str, list[str]]] = []
