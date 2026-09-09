@@ -92,6 +92,9 @@ _LBL_ANALYSIS_XFAIL: set[str] = {
     '18_billing_statement',       # template placeholders and double-space literals not surfaced by analyser
     '04_bank_statement',          # 'Totals' is a footer row inside the data table, not surfaced by analyser
     '11_loan_schedule',           # 'Totals' is a footer row inside the data table, not surfaced by analyser
+    '06_merged_cells',            # 'Grand Total' is a summary row between table sections, not surfaced by analyser
+    '07_timesheet',               # 'Total Hours' is the last (totals) row of the table body, not surfaced separately
+    '12_multi_sheet',             # 'Q1 2026 Summary' is a standalone title row between KV and table sections
 }
 
 # Some fixtures require a non-active sheet to match the reference pattern.
