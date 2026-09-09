@@ -37,11 +37,15 @@ from openpyxl import Workbook
 ROOT     = os.path.join(os.path.dirname(__file__), '..')
 FIXTURES = os.path.join(ROOT, 'tests', 'fixtures')
 
+from grepxcel.pattern_colors import colorize_pattern_file
+
 
 def save(name: str, pattern_wb: Workbook, data_wb: Workbook):
     folder = os.path.join(FIXTURES, name)
     os.makedirs(folder, exist_ok=True)
-    pattern_wb.save(os.path.join(folder, f'{name}_pattern-from-draft.xlsx'))
+    pattern_path = os.path.join(folder, f'{name}_pattern-from-draft.xlsx')
+    pattern_wb.save(pattern_path)
+    colorize_pattern_file(pattern_path)
     data_wb.save(os.path.join(folder, f'{name}_data.xlsx'))
     print(f'  {name}/')
 
