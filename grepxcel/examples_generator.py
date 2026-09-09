@@ -9,8 +9,9 @@ _EXAMPLES_PACKAGE = 'grepxcel.examples'
 
 # Each entry maps a user-facing example name to a source fixture in
 # tests/fixtures/<source_fixture>/. The bundled files in grepxcel/examples/
-# are copies of the fixture's pattern-from-draft.xlsx and data.xlsx, renamed
+# are copies of the fixture's highest-priority pattern and data.xlsx, renamed
 # to the simpler pattern.xlsx / data.xlsx for a clean new-user experience.
+# Priority: pattern-manual.xlsx > pattern-from-claude.xlsx > pattern-from-draft.xlsx
 #
 # Mapping: example name  →  source fixture
 #   01_simple_invoice    →  tests/fixtures/01_simple_invoice/
@@ -18,11 +19,14 @@ _EXAMPLES_PACKAGE = 'grepxcel.examples'
 #   03_expense_report    →  tests/fixtures/05_expense_report/   (renumbered for UX)
 #   04_loan_schedule     →  tests/fixtures/11_loan_schedule/    (renumbered for UX)
 #
-# To update a bundled example after changing a fixture:
-#   cp tests/fixtures/<source_fixture>/<source_fixture>_data.xlsx \
-#      grepxcel/examples/<example_name>/data.xlsx
-#   cp tests/fixtures/<source_fixture>/<source_fixture>_pattern-from-draft.xlsx \
-#      grepxcel/examples/<example_name>/pattern.xlsx
+# To update bundled examples after changing a fixture pattern:
+#   Run scripts/generate_fixtures.py (updates pattern-from-draft + data files)
+#   Then copy the highest-priority pattern and updated data:
+#     cp tests/fixtures/<source_fixture>/<source_fixture>_data.xlsx \
+#        grepxcel/examples/<example_name>/data.xlsx
+#     cp tests/fixtures/<source_fixture>/<source_fixture>_pattern-manual.xlsx \
+#        grepxcel/examples/<example_name>/pattern.xlsx
+#   (or _pattern-from-claude.xlsx if no manual pattern exists)
 EXAMPLES = [
     {
         'name': '01_simple_invoice',

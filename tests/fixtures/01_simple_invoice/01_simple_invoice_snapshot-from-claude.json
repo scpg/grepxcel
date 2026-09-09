@@ -1,0 +1,16 @@
+{
+  "inv": {
+    "number": "AB123456",
+    "date": "2026-03-15 00:00:00",
+    "due_date": "2026-04-14 00:00:00"
+  },
+  "client": {
+    "name": "Alice Wonderland",
+    "email": "alice@wonderland.example"
+  },
+  "amount": {
+    "net": 120,
+    "vat": 24,
+    "total": 144
+  }
+}

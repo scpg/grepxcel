@@ -699,7 +699,7 @@ def fixture_11():
         ['config:', 'currency.sign',  '€'],
         ['lbl:', 'amt_lbl',  'string', 'Loan Amount:'],
         ['lbl:', 'rate_lbl', 'string', 'Monthly Rate:'],
-        ['lbl:', 'term_lbl', 'string', r'Term \(months\):'],
+        ['lbl:', 'term_lbl', 'string', 'Term (months):'],
         ['lbl:', 'start_lbl','string', 'Start Date:'],
         ['lbl:', 'col_no',        'string', 'Payment #'],
         ['lbl:', 'col_date',      'string', 'Date'],

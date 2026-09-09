@@ -1,0 +1,18 @@
+config:,pattern.version,1
+config:,read.direction,LR
+lbl:,header1,string,www.bulibox.de
+lbl:,header2,string,Markiere Verein:
+lbl:,header3,string,VfB Stuttgart
+var:,match.date,datetime,"\d{2}\.\d{2}\.\d{4}(\s\d{1,2}:\d{2})?"
+var:,match.spieltag,integer,\d+
+var:,match.heimmannschaft,string,.*
+var:,match.gastmannschaft,string,.*
+var:,match.win,integer,\d+
+var:,match.draw,integer,\d+
+var:,match.defeat,integer,\d+
+var:,match.goals,string,\d+:\d+
+START:
+table:*
+,HEADER:1,header1,header2,header3,header4,header5,header6,header7,header8,header9
+,DATA:*,IGNORE,IGNORE,IGNORE,match.date,match.spieltag,match.heimmannschaft,match.gastmannschaft,IGNORE,match.win,match.draw,match.defeat,match.goals
+END:

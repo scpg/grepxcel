@@ -1,0 +1,128 @@
+{
+  "target": {
+    "systolic": 120,
+    "diastolic": 80
+  },
+  "measurement": [
+    {
+      "_source": {
+        "sheet": "Blutdruckwerte",
+        "ref": "B14:G29"
+      },
+      "data": [
+        {
+          "date": "2006-11-01 00:00:00",
+          "time": "Morgens",
+          "systolic": 129,
+          "diastolic": 79,
+          "heart_rate": 72,
+          "comments": null
+        },
+        {
+          "date": "2006-11-01 00:00:00",
+          "time": "Früher Abend",
+          "systolic": 133,
+          "diastolic": 80,
+          "heart_rate": 75,
+          "comments": null
+        },
+        {
+          "date": "2006-11-02 00:00:00",
+          "time": "Morgens",
+          "systolic": 142,
+          "diastolic": 86,
+          "heart_rate": 70,
+          "comments": null
+        },
+        {
+          "date": "2006-11-02 00:00:00",
+          "time": "Früher Abend",
+          "systolic": 141,
+          "diastolic": 84,
+          "heart_rate": 68,
+          "comments": null
+        },
+        {
+          "date": "2006-11-03 00:00:00",
+          "time": "Morgens",
+          "systolic": 137,
+          "diastolic": 84,
+          "heart_rate": 70,
+          "comments": null
+        },
+        {
+          "date": "2006-11-03 00:00:00",
+          "time": "Früher Abend",
+          "systolic": 139,
+          "diastolic": 83,
+          "heart_rate": 72,
+          "comments": null
+        },
+        {
+          "date": "2006-11-04 00:00:00",
+          "time": "Morgens",
+          "systolic": 140,
+          "diastolic": 85,
+          "heart_rate": 78,
+          "comments": null
+        },
+        {
+          "date": "2006-11-04 00:00:00",
+          "time": "Früher Abend",
+          "systolic": 138,
+          "diastolic": 85,
+          "heart_rate": 69,
+          "comments": null
+        },
+        {
+          "date": "2006-11-05 00:00:00",
+          "time": "Morgens",
+          "systolic": 135,
+          "diastolic": 79,
+          "heart_rate": 75,
+          "comments": null
+        },
+        {
+          "date": "2006-11-05 00:00:00",
+          "time": "Früher Abend",
+          "systolic": 136,
+          "diastolic": 81,
+          "heart_rate": 72,
+          "comments": null
+        },
+        {
+          "date": "2006-11-06 00:00:00",
+          "time": "Morgens",
+          "systolic": 137,
+          "diastolic": 83,
+          "heart_rate": 69,
+          "comments": null
+        },
+        {
+          "date": "2006-11-06 00:00:00",
+          "time": "Früher Abend",
+          "systolic": 138,
+          "diastolic": 85,
+          "heart_rate": 66,
+          "comments": null
+        },
+        {
+          "date": "2006-11-07 00:00:00",
+          "time": "Morgens",
+          "systolic": 135,
+          "diastolic": 80,
+          "heart_rate": 67,
+          "comments": null
+        },
+        {
+          "date": "2006-11-07 00:00:00",
+          "time": "Früher Abend",
+          "systolic": 142,
+          "diastolic": 85,
+          "heart_rate": 72,
+          "comments": null
+        }
+      ]
+    }
+  ]
+}

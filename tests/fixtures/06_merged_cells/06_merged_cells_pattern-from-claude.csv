@@ -1,0 +1,13 @@
+config:,pattern.version,1
+config:,read.direction,LR
+lbl:,col_category,string,Category
+lbl:,col_product,string,Product
+lbl:,col_price,string,Price
+var:,item.category,string,.*
+var:,item.product,string,.*
+var:,item.price,number,-?\d+(\.\d+)?
+START:
+table:*
+,HEADER:1,col_category,col_product,col_price
+,DATA:*,item.category,item.product,item.price
+END:

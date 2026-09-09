@@ -1,0 +1,35 @@
+config:,pattern.version,1
+config:,read.direction,LR
+lbl:,loan_amount_label,string,Loan Amount:
+lbl:,monthly_rate_label,string,Monthly Rate:
+lbl:,term_label,string,Term (months):
+lbl:,start_date_label,string,Start Date:
+lbl:,col_payment_num,string,Payment #
+lbl:,col_date,string,Date
+lbl:,col_payment,string,Payment
+lbl:,col_principal,string,Principal
+lbl:,col_interest,string,Interest
+lbl:,col_balance,string,Balance
+var:,loan.amount,integer,-?\d+
+var:,loan.monthly_rate,string,.*
+var:,loan.term_months,integer,-?\d+
+var:,loan.start_date,datetime
+var:,schedule.payment_num,integer,-?\d+
+var:,schedule.date,datetime
+var:,schedule.payment,integer,-?\d+
+var:,schedule.principal,currency,-?\d+(\.\d+)?
+var:,schedule.interest,currency,-?\d+(\.\d+)?
+var:,schedule.balance,currency,-?\d+(\.\d+)?
+START:
+cell:next,loan_amount_label
+cell:next,loan.amount
+cell:next,monthly_rate_label
+cell:next,loan.monthly_rate
+cell:next,term_label
+cell:next,loan.term_months
+cell:next,start_date_label
+cell:next,loan.start_date
+table:*
+,HEADER:1,col_payment_num,col_date,col_payment,col_principal,col_interest,col_balance
+,DATA:*,schedule.payment_num,schedule.date,schedule.payment,schedule.principal,schedule.interest,schedule.balance
+END:

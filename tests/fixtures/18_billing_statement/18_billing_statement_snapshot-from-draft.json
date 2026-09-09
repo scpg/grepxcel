@@ -1,0 +1,102 @@
+{
+  "stmt": {
+    "number": "Enter statement number",
+    "bill_to_name": "Name",
+    "date": "2026-06-09 00:00:00",
+    "customer_id": "Enter customer ID"
+  },
+  "remittance": {
+    "amount_due": 555
+  },
+  "line": [
+    {
+      "_source": {
+        "sheet": "Billing Statement",
+        "ref": "B14:H24"
+      },
+      "data": [
+        {
+          "date": "2026-02-01 00:00:00",
+          "type": "product-15",
+          "invoice": 415,
+          "description": "product-15",
+          "amount": 1,
+          "payment": 1,
+          "balance": 0
+        },
+        {
+          "date": "2026-02-03 00:00:00",
+          "type": "product-16",
+          "invoice": 416,
+          "description": "product-16",
+          "amount": 10,
+          "payment": 5,
+          "balance": 5
+        },
+        {
+          "date": "2026-02-05 00:00:00",
+          "type": "product-17",
+          "invoice": 417,
+          "description": "product-17",
+          "amount": 100,
+          "payment": 50,
+          "balance": 50
+        },
+        {
+          "date": "2026-02-07 00:00:00",
+          "type": "product-18",
+          "invoice": 418,
+          "description": "product-18",
+          "amount": 1000,
+          "payment": 500,
+          "balance": 500
+        },
+        {
+          "date": "2026-02-09 00:00:00",
+          "type": "product-19",
+          "invoice": 419,
+          "description": null,
+          "amount": null,
+          "payment": null,
+          "balance": 0
+        },
+        {
+          "date": null,
+          "type": null,
+          "invoice": null,
+          "description": null,
+          "amount": null,
+          "payment": null,
+          "balance": 0
+        },
+        {
+          "date": null,
+          "type": null,
+          "invoice": null,
+          "description": null,
+          "amount": null,
+          "payment": " Total ",
+          "balance": 555
+        },
+        {
+          "date": "Reminder: Please include the statement number on your check.",
+          "type": null,
+          "invoice": null,
+          "description": null,
+          "amount": null,
+          "payment": null,
+          "balance": null
+        },
+        {
+          "date": "Terms: Balance due in 30 days.",
+          "type": null,
+          "invoice": null,
+          "description": null,
+          "amount": null,
+          "payment": null,
+          "balance": null
+        }
+      ]
+    }
+  ]
+}

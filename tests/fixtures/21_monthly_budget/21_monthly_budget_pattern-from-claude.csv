@@ -1,0 +1,60 @@
+config:,pattern.version,1
+config:,read.direction,LR
+lbl:,title_label,string,Title of this worksheet is in cell at right. Next instruction is in cell A4.
+var:,doc.title,string,.*
+lbl:,proj_income_instr,string,Projected Monthly Income label is in cell at right. Enter Income 1 in cell E4 and Extra Income in E5 to calculate Total monthly income in E6. Next instruction is in cell A6.
+lbl:,proj_income_header,string,PROJECTED MONTHLY INCOME
+lbl:,proj_income_item,string,Income 1
+lbl:,proj_income_amount,string,4300
+lbl:,proj_balance_header,string,PROJECTED BALANCE (Projected income minus expenses)
+lbl:,proj_balance_amount,string,3405
+var:,proj_income.item,string,.*
+var:,proj_income.amount,currency,"-?\d+(\.\d{1,2})?"
+var:,proj_balance.label,string,.*
+var:,proj_balance.amount,currency,"-?\d+(\.\d{1,2})?"
+lbl:,actual_income_instr,string,Actual Monthly Income label is in cell at right. Enter Income 1 in cell E8 and Extra Income in E9 to calculate Total monthly income in E10. Next instruction is in cell A12.
+lbl:,actual_income_header,string,ACTUAL MONTHLY INCOME
+lbl:,actual_income_item,string,Income 1
+lbl:,actual_income_amount,string,4000
+lbl:,diff_header,string,DIFFERENCE (Actual minus projected)
+lbl:,diff_amount,string,-341
+var:,actual_income.item,string,.*
+var:,actual_income.amount,currency,"-?\d+(\.\d{1,2})?"
+lbl:,housing_instr,string,Enter details in Housing table starting in cell at right and in Entertainment table starting in cell G12. Next instruction is in cell A25.
+lbl:,housing_header,string,HOUSING
+lbl:,col_projected_cost,string,Projected Cost
+lbl:,col_actual_cost,string,Actual Cost
+lbl:,col_difference,string,Difference
+lbl:,entertainment_header,string,ENTERTAINMENT
+var:,expense.category,string,.*
+var:,housing.item,string,.*
+var:,housing.projected_cost,currency,"-?\d+(\.\d{1,2})?"
+var:,housing.actual_cost,currency,"-?\d+(\.\d{1,2})?"
+var:,housing.difference,currency,"-?\d+(\.\d{1,2})?"
+var:,entertainment.item,string,.*
+var:,entertainment.projected_cost,currency,"-?\d+(\.\d{1,2})?"
+var:,entertainment.actual_cost,currency,"-?\d+(\.\d{1,2})?"
+var:,entertainment.difference,currency,"-?\d+(\.\d{1,2})?"
+START:
+cell:next,IGNORE
+cell:next,title_label
+cell:next,doc.title
+seek:A4
+cell:next,proj_income_instr
+cell:next,proj_income_header
+cell:next,IGNORE
+table:*
+,HEADER:1,proj_income_item,proj_income_amount,proj_balance_header,proj_balance_amount
+,DATA:*,proj_income.item,proj_income.amount,proj_balance.label,proj_balance.amount
+seek:A8
+cell:next,actual_income_instr
+cell:next,actual_income_header
+cell:next,IGNORE
+table:*
+,HEADER:1,actual_income_item,actual_income_amount,diff_header,diff_amount
+,DATA:*,actual_income.item,actual_income.amount,IGNORE,IGNORE
+seek:A12
+table:*
+,HEADER:1,housing_instr,housing_header,col_projected_cost,col_actual_cost,col_difference,entertainment_header,col_projected_cost,col_actual_cost,col_difference
+,DATA:*,expense.category,housing.item,housing.projected_cost,housing.actual_cost,housing.difference,entertainment.item,entertainment.projected_cost,entertainment.actual_cost,entertainment.difference
+END:

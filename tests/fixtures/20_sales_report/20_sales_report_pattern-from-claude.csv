@@ -1,0 +1,19 @@
+config:,pattern.version,1
+config:,read.direction,LR
+lbl:,filter_note,string,Diese PivotTable wird nach den 10 meistverkauften Produkten im 1. Quartal gefiltert
+lbl:,col_produkt,string,Produkt
+lbl:,col_q1,string,Summe aus Qrtl 1
+lbl:,col_q2,string,Summe aus Qrtl 2
+lbl:,col_q3,string,Summe aus Qrtl 3
+lbl:,col_q4,string,Summe aus Qrtl 4
+var:,sales.produkt,string,.*
+var:,sales.q1,currency,"-?\d+(\.\d{1,2})?"
+var:,sales.q2,currency,"-?\d+(\.\d{1,2})?"
+var:,sales.q3,currency,"-?\d+(\.\d{1,2})?"
+var:,sales.q4,currency,"-?\d+(\.\d{1,2})?"
+START:
+cell:next,filter_note
+table:*
+,HEADER:1,col_produkt,col_q1,col_q2,col_q3,col_q4
+,DATA:*,sales.produkt,sales.q1,sales.q2,sales.q3,sales.q4
+END:

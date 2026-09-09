@@ -1,0 +1,76 @@
+{
+  "item": [
+    {
+      "_source": {
+        "sheet": "Sheet1",
+        "ref": "A1:D5"
+      },
+      "data": [
+        {
+          "name": "Laptop",
+          "sku": "ELC001",
+          "qty": 5,
+          "price": 999
+        },
+        {
+          "name": "Mouse",
+          "sku": "ELC002",
+          "qty": 50,
+          "price": 25
+        },
+        {
+          "name": "Keyboard",
+          "sku": "ELC003",
+          "qty": 30,
+          "price": 45
+        }
+      ]
+    },
+    {
+      "_source": {
+        "sheet": "Sheet1",
+        "ref": "A6:D9"
+      },
+      "data": [
+        {
+          "name": "Pen",
+          "sku": "STN001",
+          "qty": 500,
+          "price": 2
+        },
+        {
+          "name": "Notebook",
+          "sku": "STN002",
+          "qty": 200,
+          "price": 8
+        }
+      ]
+    },
+    {
+      "_source": {
+        "sheet": "Sheet1",
+        "ref": "A10:D14"
+      },
+      "data": [
+        {
+          "name": "Chair",
+          "sku": "FRN001",
+          "qty": 10,
+          "price": 250
+        },
+        {
+          "name": "Desk",
+          "sku": "FRN002",
+          "qty": 5,
+          "price": 450
+        },
+        {
+          "name": "Lamp",
+          "sku": "FRN003",
+          "qty": 20,
+          "price": 35
+        }
+      ]
+    }
+  ]
+}

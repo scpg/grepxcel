@@ -1,0 +1,33 @@
+{
+  "company": {
+    "name": "TIME SHEET"
+  },
+  "footer": {
+    "sig_val": "TIME SHEET",
+    "grand_total": "NOD PUBLISHERS"
+  },
+  "pay": [
+    {
+      "_source": {
+        "sheet": "TimeSheet",
+        "ref": "H29:L32"
+      },
+      "data": [
+        {
+          "regular": 15,
+          "overtime": 22.5,
+          "sick": 15,
+          "holiday": 15,
+          "vacation": 15
+        },
+        {
+          "regular": 675,
+          "overtime": 52.5,
+          "sick": 247.5,
+          "holiday": 0,
+          "vacation": 0
+        }
+      ]
+    }
+  ]
+}

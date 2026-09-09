@@ -1,0 +1,25 @@
+config:,pattern.version,1
+config:,read.direction,LR
+lbl:,col_company,string,First Up Consultants
+lbl:,col_invoice_word,string,INVOICE
+lbl:,col_bill_to,string,BILL TO
+lbl:,col_invoice_num,string,INVOICE #
+lbl:,col_date,string,DATE
+lbl:,col_howto,string,← You can change TERMS to DUE DATE and enter a date (usually 30 days after the invoice date)
+lbl:,contact_label,string,"If you have any questions about this invoice, please contact"
+var:,company.info,string,.*
+var:,bill_to.info,string,.*
+var:,inv.number,currency,"-?\d+(\.\d{1,2})?"
+var:,inv.date,date
+var:,note.text,string,.*
+var:,contact.info,string,.*
+START:
+table:*
+,HEADER:1,col_company,col_invoice_word
+,DATA:*,company.info,IGNORE
+table:*
+,HEADER:1,col_bill_to,col_invoice_num,col_date,col_howto
+,DATA:*,bill_to.info,inv.number,inv.date,note.text
+cell:next,contact_label
+cell:next,contact.info
+END:

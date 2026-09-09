@@ -49,6 +49,7 @@ In your output, separate columns with ' | ' (space-pipe-space).
    Parentheses, dots, brackets etc. are matched as-is. They will allow you to confirm
    that the analysis and extraction of data is being done correctly and that the file
    being processed respects the structure that has been defined it should have.
+   Optional: use lbl:not-null to assert the label must be present (fatal if missing).
 
 3. Variable definitions — extracted to the output JSON:
    var: | field.name | type | regex
@@ -79,6 +80,14 @@ In your output, separate columns with ' | ' (space-pipe-space).
    Important notes:
      - integers can be negative too — include a leading -? in the regex if needed.
      - same applies for currency amounts — they often can be negative (e.g. credit notes, negative adjustments).
+
+   Optional modifiers on column A (order-independent, colon-separated):
+     var:not-null | field | type |        ← fatal error if the cell is empty
+     var:glob     | field | type | SKU-*  ← column D is a glob pattern, not regex
+     var:literal  | field | type | Active ← column D is an exact string, not regex
+   These can be combined: var:not-null:glob | field | type | SKU-*
+   For lbl:, use lbl:not-null to assert the label must be present.
+   You do NOT need to use these in a basic pattern — they are optional quality gates.
 
 
 4. Extraction sequence between START: and END:

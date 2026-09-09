@@ -1,0 +1,29 @@
+config:,pattern.version,1
+config:,read.direction,LR
+lbl:,supplier_label,string,Supplier:
+lbl:,ref_label,string,Ref:
+lbl:,valid_from_label,string,Valid From:
+lbl:,valid_to_label,string,Valid To:
+var:,inv.supplier,string,.*
+var:,inv.ref,string,.*
+var:,inv.valid_from,datetime,\d{4}-\d{2}-\d{2} \d{2}:\d{2}
+var:,inv.valid_to,datetime,\d{4}-\d{2}-\d{2} \d{2}:\d{2}
+START:
+cell:next,supplier_label
+cell:next,inv.supplier
+cell:next,ref_label
+cell:next,inv.ref
+cell:next,valid_from_label
+cell:next,inv.valid_from
+cell:next,valid_to_label
+cell:next,inv.valid_to
+table:*
+,HEADER:1,code_lbl,product_lbl,unit_lbl,unit_price_lbl
+,DATA:*,item.code,item.product,item.unit,item.unit_price
+table:*
+,HEADER:1,code_lbl,product_lbl,unit_lbl,unit_price_lbl
+,DATA:*,item.code,item.product,item.unit,item.unit_price
+table:*
+,HEADER:1,code_lbl,product_lbl,unit_lbl,unit_price_lbl
+,DATA:*,item.code,item.product,item.unit,item.unit_price
+END:
