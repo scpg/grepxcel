@@ -236,22 +236,47 @@ class TestPatternParserSecurity:
         with pytest.raises(SecurityError, match='Formulas are not allowed'):
             PatternParser().parse(path)
 
-    def test_numeric_value_rejected(self, tmp_path):
+    def test_numeric_value_coerced_to_string(self, tmp_path):
+        """Numbers are silently coerced — users often type 1 for pattern.version
+        and Excel stores it as an integer."""
         wb = openpyxl.Workbook()
         ws = wb.active
-        ws['A1'] = 42
-        path = str(tmp_path / 'bad.xlsx')
+        ws['A1'] = 42        # integer stored by Excel
+        ws['A2'] = 1.0       # whole float → "1"
+        path = str(tmp_path / 'num.xlsx')
         wb.save(path)
-        with pytest.raises(SecurityError, match='plain text'):
+        # parse() raises PatternError (empty/invalid sequence) but NOT SecurityError
+        try:
             PatternParser().parse(path)
+        except SecurityError:
+            pytest.fail('SecurityError raised for numeric cell — should be coerced')
+        except Exception:
+            pass  # PatternError or similar is fine
 
-    def test_boolean_value_rejected(self, tmp_path):
+    def test_boolean_value_coerced_to_string(self, tmp_path):
+        """Booleans are silently coerced — Excel can store TRUE/FALSE as booleans."""
         wb = openpyxl.Workbook()
         ws = wb.active
         ws['A1'] = True
-        path = str(tmp_path / 'bad.xlsx')
+        path = str(tmp_path / 'bool.xlsx')
         wb.save(path)
-        with pytest.raises(SecurityError, match='plain text'):
+        try:
+            PatternParser().parse(path)
+        except SecurityError:
+            pytest.fail('SecurityError raised for boolean cell — should be coerced')
+        except Exception:
+            pass
+
+    def test_datetime_value_rejected(self, tmp_path):
+        """Dates/times are still rejected — no sensible string representation exists
+        for a value that appears in a pattern configuration cell."""
+        import datetime
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws['A1'] = datetime.datetime(2026, 1, 1)
+        path = str(tmp_path / 'date.xlsx')
+        wb.save(path)
+        with pytest.raises(SecurityError, match='date/time'):
             PatternParser().parse(path)
 
     def test_overly_long_value_rejected(self, tmp_path):

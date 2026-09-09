@@ -562,10 +562,17 @@ class PatternParser:
     def _read_and_validate(self, ws) -> list:
         """
         Read all rows from the pattern worksheet, enforcing that every cell is
-        either empty or a plain string.  Formulas, numbers, dates, and booleans
-        are all rejected — the pattern file is a configuration document, not a
-        spreadsheet.
+        either empty or convertible to a plain string.
+
+        Formulas are rejected outright (security: they can execute code).
+        Dates and times are rejected (ambiguous — no sensible pattern string exists).
+        Numbers, integers, and booleans are silently coerced to their string
+        representation — Excel auto-types cells typed without a leading apostrophe,
+        and rejecting them would be a confusing paper-cut for users (e.g. typing
+        ``1`` for ``pattern.version``).
         """
+        import datetime as _dt
+
         rows = []
         for row in ws.iter_rows():
             row_values = []
@@ -583,12 +590,29 @@ class PatternParser:
                         f'Replace it with a plain text value.'
                     )
 
-                # Only plain strings are accepted
-                if not isinstance(val, str):
+                # Dates/times are ambiguous in a pattern context — reject them.
+                if isinstance(val, (_dt.datetime, _dt.date, _dt.time)):
+                    raise SecurityError(
+                        f'Pattern file cell {cell.coordinate} contains a date/time '
+                        f'value: {val!r}  Format the cell as Text, then re-enter the '
+                        f'value as a plain string.'
+                    )
+
+                # Numbers and booleans are silently coerced to strings.
+                # Excel stores unquoted literals (e.g. ``1``) as numbers; rejecting
+                # them produces confusing errors for common cases like pattern.version.
+                if isinstance(val, bool):
+                    val = str(val)
+                elif isinstance(val, float):
+                    # Represent whole floats without the decimal (1.0 → "1")
+                    val = str(int(val)) if val == int(val) else str(val)
+                elif isinstance(val, int):
+                    val = str(val)
+                elif not isinstance(val, str):
                     raise SecurityError(
                         f'Pattern file cells must contain plain text only. '
-                        f'Cell {cell.coordinate} contains a {type(val).__name__} value: {val!r}  '
-                        f'All values in a pattern file must be strings.'
+                        f'Cell {cell.coordinate} contains an unsupported '
+                        f'{type(val).__name__} value: {val!r}'
                     )
 
                 # Guard against excessively long values
