@@ -638,7 +638,7 @@ class TestClaudeBackend:
         assert isinstance(ClaudeBackend(), LLMBackend)
 
     def test_default_model(self):
-        assert ClaudeBackend()._model == 'claude-haiku-4-5-20251001'
+        assert ClaudeBackend()._model == 'claude-sonnet-5'
 
     def test_custom_model(self):
         assert ClaudeBackend(model='claude-opus-4-8')._model == 'claude-opus-4-8'
@@ -658,7 +658,7 @@ class TestClaudeBackend:
         kwargs = create_call.call_args.kwargs
         assert kwargs['system'] == 'sys prompt'
         assert kwargs['messages'] == [{'role': 'user', 'content': 'user prompt'}]
-        assert kwargs['model'] == 'claude-haiku-4-5-20251001'
+        assert kwargs['model'] == 'claude-sonnet-5'
 
     def test_missing_anthropic_exits(self, capsys):
         with patch.dict('sys.modules', {'anthropic': None}):

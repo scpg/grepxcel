@@ -1,0 +1,23 @@
+config:,pattern.version,1
+config:,read.direction,LR
+lbl:,po.number,string,PO Number:
+lbl:,po.date,datetime,Date:
+lbl:,po.vendor,string,Vendor:
+lbl:,po.ref,string,Ref:
+var:,po.number,string,PO-\d+
+var:,po.date,datetime
+var:,po.vendor,string,.*
+var:,po.ref,string,.*
+START:
+cell:next,po.number
+cell:next,po.number
+cell:next,po.date
+cell:next,po.date
+cell:next,po.vendor
+cell:next,po.vendor
+cell:next,po.ref
+cell:next,po.ref
+table:*
+,HEADER:1,Item,Description,Qty,Unit Price,Total
+,DATA:*,line.item,line.description,line.qty,line.unit_price,line.total
+END:

@@ -6,11 +6,11 @@ import pytest
 
 import grepxcel
 from grepxcel import Engine, Logger, VerbosityLevel
-from tests.conftest import find_pattern_xlsx
+from tests.conftest import find_data_file, find_pattern_xlsx
 
 _FIX = os.path.join(os.path.dirname(__file__), '..', 'fixtures', '01_simple_invoice')
 _PATTERN = find_pattern_xlsx(_FIX)
-_DATA = os.path.join(_FIX, 'data.xlsx')
+_DATA = find_data_file(_FIX)
 
 
 def test_extract_is_exported():

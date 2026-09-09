@@ -1,0 +1,74 @@
+config:,pattern.version,1
+config:,read.direction,LR
+lbl:,title_label,string,TIME SHEET
+lbl:,address_label,string,222 2nd Ave
+lbl:,emp_name_label,string,Employee name:
+lbl:,employee_name_val,string,Shir Rosenstein
+lbl:,col_dow1,string,Day of week
+lbl:,col_time_in1,string,Time in
+lbl:,col_breaks1,string,Breaks (minutes)
+lbl:,col_time_out1,string,Time out
+lbl:,col_total1,string,Total [h]:mm
+lbl:,col_regular1,string,Regular [h]:mm
+lbl:,col_overtime1,string,Overtime [h]:mm
+lbl:,col_sick1,string,Sick [h]:mm
+lbl:,col_holiday1,string,Holiday [h]:mm
+lbl:,col_vacation1,string,Vacation [h]:mm
+lbl:,col_regular_pay,string,Regular
+lbl:,col_overtime_pay,string,Overtime
+lbl:,col_sick_pay,string,Sick
+lbl:,col_holiday_pay,string,Holiday
+lbl:,col_vacation_pay,string,Vacation
+lbl:,mgr_sig_label,string,Manager Signature
+lbl:,grand_total_label,string,Grand total pay:
+var:,company.name,string,.*
+var:,header.address,string,.*
+var:,header.emp_label_val,string,.*
+var:,header.emp_name,date
+var:,week1.dow,datetime
+var:,week1.time_in,time
+var:,week1.breaks,integer,-?\d+
+var:,week1.time_out,time
+var:,week1.total,duration
+var:,week1.regular,duration
+var:,week1.overtime,duration
+var:,week1.sick,duration
+var:,week1.holiday,duration
+var:,week1.vacation,duration
+var:,week2.dow,datetime
+var:,week2.time_in,time
+var:,week2.breaks,integer,-?\d+
+var:,week2.time_out,time
+var:,week2.total,duration
+var:,week2.regular,duration
+var:,week2.overtime,duration
+var:,week2.sick,duration
+var:,week2.holiday,duration
+var:,week2.vacation,duration
+var:,pay.regular,currency,"-?\d+(\.\d{1,2})?"
+var:,pay.overtime,currency,"-?\d+(\.\d{1,2})?"
+var:,pay.sick,currency,"-?\d+(\.\d{1,2})?"
+var:,pay.holiday,currency,"-?\d+(\.\d{1,2})?"
+var:,pay.vacation,currency,"-?\d+(\.\d{1,2})?"
+var:,footer.sig_val,string,.*
+var:,footer.grand_total,currency,"-?\d+(\.\d{1,2})?"
+START:
+cell:next,title_label
+cell:next,company.name
+table:*
+,HEADER:1,address_label,emp_name_label,employee_name_val
+,DATA:*,header.address,header.emp_label_val,header.emp_name
+table:*
+,HEADER:1,col_dow1,col_time_in1,col_breaks1,col_time_out1,col_total1,col_regular1,col_overtime1,col_sick1,col_holiday1,col_vacation1
+,DATA:*,week1.dow,week1.time_in,week1.breaks,week1.time_out,week1.total,week1.regular,week1.overtime,week1.sick,week1.holiday,week1.vacation
+table:*
+,HEADER:1,col_dow1,col_time_in1,col_breaks1,col_time_out1,col_total1,col_regular1,col_overtime1,col_sick1,col_holiday1,col_vacation1
+,DATA:*,week2.dow,week2.time_in,week2.breaks,week2.time_out,week2.total,week2.regular,week2.overtime,week2.sick,week2.holiday,week2.vacation
+table:*
+,HEADER:1,col_regular_pay,col_overtime_pay,col_sick_pay,col_holiday_pay,col_vacation_pay
+,DATA:*,pay.regular,pay.overtime,pay.sick,pay.holiday,pay.vacation
+cell:next,mgr_sig_label
+cell:next,footer.sig_val
+cell:next,grand_total_label
+cell:next,footer.grand_total
+END:

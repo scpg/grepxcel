@@ -1,6 +1,7 @@
 import json
 
 import pytest
+from tests.conftest import find_data_file, find_pattern_xlsx
 from grepxcel.logger import (
     Logger, LogRecord, EngineError, VerbosityLevel,
     Severity, Category, col_letter, cell_ref, LOG_SCHEMA_VERSION,
@@ -379,8 +380,8 @@ def test_sentinel_no_cell_data_in_json_log(tmp_path):
     import grepxcel
 
     fixture = 'tests/fixtures/01_simple_invoice'
-    pattern = f'{fixture}/pattern-from-draft.xlsx'
-    data = f'{fixture}/data.xlsx'
+    pattern = find_pattern_xlsx(fixture)
+    data = find_data_file(fixture)
     log_path = tmp_path / 'sentinel.jsonl'
 
     lg = Logger(level=VerbosityLevel.VERBOSE, log_file=str(log_path),

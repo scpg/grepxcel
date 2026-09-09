@@ -1,0 +1,3072 @@
+{
+  "match": [
+    {
+      "_source": {
+        "sheet": "Spielplan",
+        "ref": "B4:J311"
+      },
+      "data": [
+        {
+          "date": "2025-08-22 20:30:00",
+          "matchday": 1,
+          "home_team": "FC Bayern München",
+          "away_team": "RB Leipzig",
+          "win": 9,
+          "draw": 7,
+          "defeat": 2,
+          "goals": "38:24"
+        },
+        {
+          "date": "23./24.08.2025",
+          "matchday": 1,
+          "home_team": "Borussia Mönchengladbach",
+          "away_team": "Hamburger SV",
+          "win": 34,
+          "draw": 26,
+          "defeat": 40,
+          "goals": "154:155"
+        },
+        {
+          "date": "23./24.08.2025",
+          "matchday": 1,
+          "home_team": "Eintracht Frankfurt",
+          "away_team": "SV Werder Bremen",
+          "win": 39,
+          "draw": 25,
+          "defeat": 44,
+          "goals": "160:168"
+        },
+        {
+          "date": "23./24.08.2025",
+          "matchday": 1,
+          "home_team": "Bayer 04 Leverkusen",
+          "away_team": "TSG Hoffenheim",
+          "win": 21,
+          "draw": 6,
+          "defeat": 7,
+          "goals": "71:44"
+        },
+        {
+          "date": "23./24.08.2025",
+          "matchday": 1,
+          "home_team": "Sport-Club Freiburg",
+          "away_team": "FC Augsburg",
+          "win": 21,
+          "draw": 11,
+          "defeat": 6,
+          "goals": "66:36"
+        },
+        {
+          "date": "23./24.08.2025",
+          "matchday": 1,
+          "home_team": "FC St. Pauli",
+          "away_team": "Borussia Dortmund",
+          "win": 2,
+          "draw": 4,
+          "defeat": 16,
+          "goals": "20:52"
+        },
+        {
+          "date": "23./24.08.2025",
+          "matchday": 1,
+          "home_team": "1. FSV Mainz 05",
+          "away_team": "1. FC Köln",
+          "win": 12,
+          "draw": 12,
+          "defeat": 10,
+          "goals": "48:36"
+        },
+        {
+          "date": "23./24.08.2025",
+          "matchday": 1,
+          "home_team": "1. FC Union Berlin",
+          "away_team": "VfB Stuttgart",
+          "win": 3,
+          "draw": 5,
+          "defeat": 4,
+          "goals": "18:21"
+        },
+        {
+          "date": "23./24.08.2025",
+          "matchday": 1,
+          "home_team": "1. FC Heidenheim 1846",
+          "away_team": "VfL Wolfsburg",
+          "win": 1,
+          "draw": 1,
+          "defeat": 2,
+          "goals": "3:6"
+        },
+        {
+          "date": "29.-31.08.2025",
+          "matchday": 2,
+          "home_team": "Hamburger SV",
+          "away_team": "FC St. Pauli",
+          "win": 12,
+          "draw": 9,
+          "defeat": 7,
+          "goals": "46:33"
+        },
+        {
+          "date": "29.-31.08.2025",
+          "matchday": 2,
+          "home_team": "SV Werder Bremen",
+          "away_team": "Bayer 04 Leverkusen",
+          "win": 28,
+          "draw": 35,
+          "defeat": 25,
+          "goals": "131:144"
+        },
+        {
+          "date": "29.-31.08.2025",
+          "matchday": 2,
+          "home_team": "VfB Stuttgart",
+          "away_team": "Borussia Mönchengladbach",
+          "win": 44,
+          "draw": 30,
+          "defeat": 32,
+          "goals": "175:142"
+        },
+        {
+          "date": "29.-31.08.2025",
+          "matchday": 2,
+          "home_team": "1. FC Köln",
+          "away_team": "Sport-Club Freiburg",
+          "win": 14,
+          "draw": 8,
+          "defeat": 20,
+          "goals": "48:60"
+        },
+        {
+          "date": "29.-31.08.2025",
+          "matchday": 2,
+          "home_team": "Borussia Dortmund",
+          "away_team": "1. FC Union Berlin",
+          "win": 8,
+          "draw": 0,
+          "defeat": 4,
+          "goals": "31:14"
+        },
+        {
+          "date": "29.-31.08.2025",
+          "matchday": 2,
+          "home_team": "VfL Wolfsburg",
+          "away_team": "1. FSV Mainz 05",
+          "win": 20,
+          "draw": 17,
+          "defeat": 11,
+          "goals": "83:64"
+        },
+        {
+          "date": "29.-31.08.2025",
+          "matchday": 2,
+          "home_team": "FC Augsburg",
+          "away_team": "FC Bayern München",
+          "win": 4,
+          "draw": 2,
+          "defeat": 22,
+          "goals": "25:70"
+        },
+        {
+          "date": "29.-31.08.2025",
+          "matchday": 2,
+          "home_team": "TSG Hoffenheim",
+          "away_team": "Eintracht Frankfurt",
+          "win": 10,
+          "draw": 9,
+          "defeat": 13,
+          "goals": "44:51"
+        },
+        {
+          "date": "29.-31.08.2025",
+          "matchday": 2,
+          "home_team": "RB Leipzig",
+          "away_team": "1. FC Heidenheim 1846",
+          "win": 4,
+          "draw": 3,
+          "defeat": 1,
+          "goals": "12:8"
+        },
+        {
+          "date": "12.-14.09.2025",
+          "matchday": 3,
+          "home_team": "FC Bayern München",
+          "away_team": "Hamburger SV",
+          "win": 65,
+          "draw": 22,
+          "defeat": 19,
+          "goals": "247:101"
+        },
+        {
+          "date": "12.-14.09.2025",
+          "matchday": 3,
+          "home_team": "Borussia Mönchengladbach",
+          "away_team": "SV Werder Bremen",
+          "win": 43,
+          "draw": 28,
+          "defeat": 39,
+          "goals": "192:170"
+        },
+        {
+          "date": "12.-14.09.2025",
+          "matchday": 3,
+          "home_team": "Bayer 04 Leverkusen",
+          "away_team": "Eintracht Frankfurt",
+          "win": 39,
+          "draw": 13,
+          "defeat": 28,
+          "goals": "150:114"
+        },
+        {
+          "date": "12.-14.09.2025",
+          "matchday": 3,
+          "home_team": "Sport-Club Freiburg",
+          "away_team": "VfB Stuttgart",
+          "win": 17,
+          "draw": 5,
+          "defeat": 24,
+          "goals": "62:82"
+        },
+        {
+          "date": "12.-14.09.2025",
+          "matchday": 3,
+          "home_team": "VfL Wolfsburg",
+          "away_team": "1. FC Köln",
+          "win": 17,
+          "draw": 11,
+          "defeat": 8,
+          "goals": "68:44"
+        },
+        {
+          "date": "12.-14.09.2025",
+          "matchday": 3,
+          "home_team": "FC St. Pauli",
+          "away_team": "FC Augsburg",
+          "win": 2,
+          "draw": 2,
+          "defeat": 4,
+          "goals": "12:12"
+        },
+        {
+          "date": "12.-14.09.2025",
+          "matchday": 3,
+          "home_team": "1. FSV Mainz 05",
+          "away_team": "RB Leipzig",
+          "win": 6,
+          "draw": 4,
+          "defeat": 8,
+          "goals": "26:41"
+        },
+        {
+          "date": "12.-14.09.2025",
+          "matchday": 3,
+          "home_team": "1. FC Union Berlin",
+          "away_team": "TSG Hoffenheim",
+          "win": 6,
+          "draw": 2,
+          "defeat": 4,
+          "goals": "20:19"
+        },
+        {
+          "date": "12.-14.09.2025",
+          "matchday": 3,
+          "home_team": "1. FC Heidenheim 1846",
+          "away_team": "Borussia Dortmund",
+          "win": 0,
+          "draw": 2,
+          "defeat": 2,
+          "goals": "5:8"
+        },
+        {
+          "date": "19.-21.09.2025",
+          "matchday": 4,
+          "home_team": "Hamburger SV",
+          "away_team": "1. FC Heidenheim 1846",
+          "win": 4,
+          "draw": 3,
+          "defeat": 3,
+          "goals": "16:13"
+        },
+        {
+          "date": "19.-21.09.2025",
+          "matchday": 4,
+          "home_team": "SV Werder Bremen",
+          "away_team": "Sport-Club Freiburg",
+          "win": 24,
+          "draw": 10,
+          "defeat": 14,
+          "goals": "93:64"
+        },
+        {
+          "date": "19.-21.09.2025",
+          "matchday": 4,
+          "home_team": "VfB Stuttgart",
+          "away_team": "FC St. Pauli",
+          "win": 14,
+          "draw": 5,
+          "defeat": 3,
+          "goals": "36:17"
+        },
+        {
+          "date": "19.-21.09.2025",
+          "matchday": 4,
+          "home_team": "Borussia Dortmund",
+          "away_team": "VfL Wolfsburg",
+          "win": 35,
+          "draw": 13,
+          "defeat": 10,
+          "goals": "125:60"
+        },
+        {
+          "date": "19.-21.09.2025",
+          "matchday": 4,
+          "home_team": "Eintracht Frankfurt",
+          "away_team": "1. FC Union Berlin",
+          "win": 8,
+          "draw": 6,
+          "defeat": 4,
+          "goals": "34:20"
+        },
+        {
+          "date": "19.-21.09.2025",
+          "matchday": 4,
+          "home_team": "Bayer 04 Leverkusen",
+          "away_team": "Borussia Mönchengladbach",
+          "win": 36,
+          "draw": 28,
+          "defeat": 22,
+          "goals": "166:123"
+        },
+        {
+          "date": "19.-21.09.2025",
+          "matchday": 4,
+          "home_team": "FC Augsburg",
+          "away_team": "1. FSV Mainz 05",
+          "win": 14,
+          "draw": 7,
+          "defeat": 15,
+          "goals": "48:54"
+        },
+        {
+          "date": "19.-21.09.2025",
+          "matchday": 4,
+          "home_team": "TSG Hoffenheim",
+          "away_team": "FC Bayern München",
+          "win": 5,
+          "draw": 7,
+          "defeat": 22,
+          "goals": "32:84"
+        },
+        {
+          "date": "19.-21.09.2025",
+          "matchday": 4,
+          "home_team": "RB Leipzig",
+          "away_team": "1. FC Köln",
+          "win": 7,
+          "draw": 5,
+          "defeat": 2,
+          "goals": "33:15"
+        },
+        {
+          "date": "26.-28.09.2025",
+          "matchday": 5,
+          "home_team": "FC Bayern München",
+          "away_team": "SV Werder Bremen",
+          "win": 63,
+          "draw": 26,
+          "defeat": 27,
+          "goals": "242:129"
+        },
+        {
+          "date": "26.-28.09.2025",
+          "matchday": 5,
+          "home_team": "Borussia Mönchengladbach",
+          "away_team": "Eintracht Frankfurt",
+          "win": 33,
+          "draw": 31,
+          "defeat": 38,
+          "goals": "152:156"
+        },
+        {
+          "date": "26.-28.09.2025",
+          "matchday": 5,
+          "home_team": "1. FC Köln",
+          "away_team": "VfB Stuttgart",
+          "win": 36,
+          "draw": 27,
+          "defeat": 33,
+          "goals": "148:157"
+        },
+        {
+          "date": "26.-28.09.2025",
+          "matchday": 5,
+          "home_team": "Sport-Club Freiburg",
+          "away_team": "TSG Hoffenheim",
+          "win": 13,
+          "draw": 12,
+          "defeat": 7,
+          "goals": "56:49"
+        },
+        {
+          "date": "26.-28.09.2025",
+          "matchday": 5,
+          "home_team": "VfL Wolfsburg",
+          "away_team": "RB Leipzig",
+          "win": 5,
+          "draw": 5,
+          "defeat": 8,
+          "goals": "19:28"
+        },
+        {
+          "date": "26.-28.09.2025",
+          "matchday": 5,
+          "home_team": "FC St. Pauli",
+          "away_team": "Bayer 04 Leverkusen",
+          "win": 7,
+          "draw": 8,
+          "defeat": 7,
+          "goals": "31:31"
+        },
+        {
+          "date": "26.-28.09.2025",
+          "matchday": 5,
+          "home_team": "1. FSV Mainz 05",
+          "away_team": "Borussia Dortmund",
+          "win": 7,
+          "draw": 10,
+          "defeat": 21,
+          "goals": "39:64"
+        },
+        {
+          "date": "26.-28.09.2025",
+          "matchday": 5,
+          "home_team": "1. FC Union Berlin",
+          "away_team": "Hamburger SV",
+          "win": 1,
+          "draw": 1,
+          "defeat": 0,
+          "goals": "4:2"
+        },
+        {
+          "date": "26.-28.09.2025",
+          "matchday": 5,
+          "home_team": "1. FC Heidenheim 1846",
+          "away_team": "FC Augsburg",
+          "win": 1,
+          "draw": 0,
+          "defeat": 3,
+          "goals": "7:8"
+        },
+        {
+          "date": "03.-05.10.2025",
+          "matchday": 6,
+          "home_team": "Hamburger SV",
+          "away_team": "1. FSV Mainz 05",
+          "win": 8,
+          "draw": 8,
+          "defeat": 8,
+          "goals": "28:30"
+        },
+        {
+          "date": "03.-05.10.2025",
+          "matchday": 6,
+          "home_team": "SV Werder Bremen",
+          "away_team": "FC St. Pauli",
+          "win": 12,
+          "draw": 7,
+          "defeat": 1,
+          "goals": "35:13"
+        },
+        {
+          "date": "03.-05.10.2025",
+          "matchday": 6,
+          "home_team": "VfB Stuttgart",
+          "away_team": "1. FC Heidenheim 1846",
+          "win": 3,
+          "draw": 2,
+          "defeat": 3,
+          "goals": "14:12"
+        },
+        {
+          "date": "03.-05.10.2025",
+          "matchday": 6,
+          "home_team": "Borussia Mönchengladbach",
+          "away_team": "Sport-Club Freiburg",
+          "win": 13,
+          "draw": 17,
+          "defeat": 18,
+          "goals": "63:79"
+        },
+        {
+          "date": "03.-05.10.2025",
+          "matchday": 6,
+          "home_team": "Borussia Dortmund",
+          "away_team": "RB Leipzig",
+          "win": 8,
+          "draw": 2,
+          "defeat": 8,
+          "goals": "29:32"
+        },
+        {
+          "date": "03.-05.10.2025",
+          "matchday": 6,
+          "home_team": "Eintracht Frankfurt",
+          "away_team": "FC Bayern München",
+          "win": 25,
+          "draw": 24,
+          "defeat": 59,
+          "goals": "136:222"
+        },
+        {
+          "date": "03.-05.10.2025",
+          "matchday": 6,
+          "home_team": "Bayer 04 Leverkusen",
+          "away_team": "1. FC Union Berlin",
+          "win": 6,
+          "draw": 5,
+          "defeat": 1,
+          "goals": "21:8"
+        },
+        {
+          "date": "03.-05.10.2025",
+          "matchday": 6,
+          "home_team": "FC Augsburg",
+          "away_team": "VfL Wolfsburg",
+          "win": 10,
+          "draw": 10,
+          "defeat": 8,
+          "goals": "32:33"
+        },
+        {
+          "date": "03.-05.10.2025",
+          "matchday": 6,
+          "home_team": "TSG Hoffenheim",
+          "away_team": "1. FC Köln",
+          "win": 13,
+          "draw": 8,
+          "defeat": 7,
+          "goals": "56:32"
+        },
+        {
+          "date": "17.-19.10.2025",
+          "matchday": 7,
+          "home_team": "FC Bayern München",
+          "away_team": "Borussia Dortmund",
+          "win": 54,
+          "draw": 32,
+          "defeat": 26,
+          "goals": "226:138"
+        },
+        {
+          "date": "17.-19.10.2025",
+          "matchday": 7,
+          "home_team": "1. FC Köln",
+          "away_team": "FC Augsburg",
+          "win": 8,
+          "draw": 9,
+          "defeat": 7,
+          "goals": "33:26"
+        },
+        {
+          "date": "17.-19.10.2025",
+          "matchday": 7,
+          "home_team": "Sport-Club Freiburg",
+          "away_team": "Eintracht Frankfurt",
+          "win": 14,
+          "draw": 12,
+          "defeat": 20,
+          "goals": "53:69"
+        },
+        {
+          "date": "17.-19.10.2025",
+          "matchday": 7,
+          "home_team": "VfL Wolfsburg",
+          "away_team": "VfB Stuttgart",
+          "win": 23,
+          "draw": 8,
+          "defeat": 21,
+          "goals": "80:73"
+        },
+        {
+          "date": "17.-19.10.2025",
+          "matchday": 7,
+          "home_team": "FC St. Pauli",
+          "away_team": "TSG Hoffenheim",
+          "win": 3,
+          "draw": 2,
+          "defeat": 1,
+          "goals": "9:5"
+        },
+        {
+          "date": "17.-19.10.2025",
+          "matchday": 7,
+          "home_team": "1. FSV Mainz 05",
+          "away_team": "Bayer 04 Leverkusen",
+          "win": 12,
+          "draw": 6,
+          "defeat": 20,
+          "goals": "47:62"
+        },
+        {
+          "date": "17.-19.10.2025",
+          "matchday": 7,
+          "home_team": "1. FC Union Berlin",
+          "away_team": "Borussia Mönchengladbach",
+          "win": 6,
+          "draw": 3,
+          "defeat": 3,
+          "goals": "16:13"
+        },
+        {
+          "date": "17.-19.10.2025",
+          "matchday": 7,
+          "home_team": "1. FC Heidenheim 1846",
+          "away_team": "SV Werder Bremen",
+          "win": 3,
+          "draw": 1,
+          "defeat": 2,
+          "goals": "12:14"
+        },
+        {
+          "date": "17.-19.10.2025",
+          "matchday": 7,
+          "home_team": "RB Leipzig",
+          "away_team": "Hamburger SV",
+          "win": 2,
+          "draw": 1,
+          "defeat": 1,
+          "goals": "7:4"
+        },
+        {
+          "date": "24.-26.10.2025",
+          "matchday": 8,
+          "home_team": "Hamburger SV",
+          "away_team": "VfL Wolfsburg",
+          "win": 11,
+          "draw": 15,
+          "defeat": 16,
+          "goals": "53:65"
+        },
+        {
+          "date": "24.-26.10.2025",
+          "matchday": 8,
+          "home_team": "SV Werder Bremen",
+          "away_team": "1. FC Union Berlin",
+          "win": 3,
+          "draw": 1,
+          "defeat": 6,
+          "goals": "13:16"
+        },
+        {
+          "date": "24.-26.10.2025",
+          "matchday": 8,
+          "home_team": "VfB Stuttgart",
+          "away_team": "1. FSV Mainz 05",
+          "win": 15,
+          "draw": 9,
+          "defeat": 12,
+          "goals": "61:53"
+        },
+        {
+          "date": "24.-26.10.2025",
+          "matchday": 8,
+          "home_team": "Borussia Mönchengladbach",
+          "away_team": "FC Bayern München",
+          "win": 28,
+          "draw": 31,
+          "defeat": 55,
+          "goals": "143:219"
+        },
+        {
+          "date": "24.-26.10.2025",
+          "matchday": 8,
+          "home_team": "Borussia Dortmund",
+          "away_team": "1. FC Köln",
+          "win": 42,
+          "draw": 25,
+          "defeat": 29,
+          "goals": "167:134"
+        },
+        {
+          "date": "24.-26.10.2025",
+          "matchday": 8,
+          "home_team": "Eintracht Frankfurt",
+          "away_team": "FC St. Pauli",
+          "win": 7,
+          "draw": 8,
+          "defeat": 5,
+          "goals": "38:31"
+        },
+        {
+          "date": "24.-26.10.2025",
+          "matchday": 8,
+          "home_team": "Bayer 04 Leverkusen",
+          "away_team": "Sport-Club Freiburg",
+          "win": 23,
+          "draw": 15,
+          "defeat": 12,
+          "goals": "88:57"
+        },
+        {
+          "date": "24.-26.10.2025",
+          "matchday": 8,
+          "home_team": "FC Augsburg",
+          "away_team": "RB Leipzig",
+          "win": 1,
+          "draw": 7,
+          "defeat": 10,
+          "goals": "15:35"
+        },
+        {
+          "date": "24.-26.10.2025",
+          "matchday": 8,
+          "home_team": "TSG Hoffenheim",
+          "away_team": "1. FC Heidenheim 1846",
+          "win": 1,
+          "draw": 3,
+          "defeat": 0,
+          "goals": "5:4"
+        },
+        {
+          "date": "31.10.-02.11.2025",
+          "matchday": 9,
+          "home_team": "FC Bayern München",
+          "away_team": "Bayer 04 Leverkusen",
+          "win": 52,
+          "draw": 20,
+          "defeat": 20,
+          "goals": "174:109"
+        },
+        {
+          "date": "31.10.-02.11.2025",
+          "matchday": 9,
+          "home_team": "1. FC Köln",
+          "away_team": "Hamburger SV",
+          "win": 33,
+          "draw": 26,
+          "defeat": 39,
+          "goals": "151:150"
+        },
+        {
+          "date": "31.10.-02.11.2025",
+          "matchday": 9,
+          "home_team": "VfL Wolfsburg",
+          "away_team": "TSG Hoffenheim",
+          "win": 15,
+          "draw": 9,
+          "defeat": 10,
+          "goals": "64:54"
+        },
+        {
+          "date": "31.10.-02.11.2025",
+          "matchday": 9,
+          "home_team": "FC St. Pauli",
+          "away_team": "Borussia Mönchengladbach",
+          "win": 4,
+          "draw": 8,
+          "defeat": 12,
+          "goals": "26:42"
+        },
+        {
+          "date": "31.10.-02.11.2025",
+          "matchday": 9,
+          "home_team": "1. FSV Mainz 05",
+          "away_team": "SV Werder Bremen",
+          "win": 11,
+          "draw": 7,
+          "defeat": 18,
+          "goals": "46:58"
+        },
+        {
+          "date": "31.10.-02.11.2025",
+          "matchday": 9,
+          "home_team": "1. FC Union Berlin",
+          "away_team": "Sport-Club Freiburg",
+          "win": 7,
+          "draw": 5,
+          "defeat": 4,
+          "goals": "21:22"
+        },
+        {
+          "date": "31.10.-02.11.2025",
+          "matchday": 9,
+          "home_team": "FC Augsburg",
+          "away_team": "Borussia Dortmund",
+          "win": 5,
+          "draw": 7,
+          "defeat": 16,
+          "goals": "36:68"
+        },
+        {
+          "date": "31.10.-02.11.2025",
+          "matchday": 9,
+          "home_team": "1. FC Heidenheim 1846",
+          "away_team": "Eintracht Frankfurt",
+          "win": 0,
+          "draw": 0,
+          "defeat": 4,
+          "goals": "1:11"
+        },
+        {
+          "date": "31.10.-02.11.2025",
+          "matchday": 9,
+          "home_team": "RB Leipzig",
+          "away_team": "VfB Stuttgart",
+          "win": 9,
+          "draw": 2,
+          "defeat": 3,
+          "goals": "28:14"
+        },
+        {
+          "date": "07.-09.11.2025",
+          "matchday": 10,
+          "home_team": "Hamburger SV",
+          "away_team": "Borussia Dortmund",
+          "win": 36,
+          "draw": 28,
+          "defeat": 38,
+          "goals": "179:184"
+        },
+        {
+          "date": "07.-09.11.2025",
+          "matchday": 10,
+          "home_team": "SV Werder Bremen",
+          "away_team": "VfL Wolfsburg",
+          "win": 21,
+          "draw": 11,
+          "defeat": 22,
+          "goals": "96:97"
+        },
+        {
+          "date": "07.-09.11.2025",
+          "matchday": 10,
+          "home_team": "VfB Stuttgart",
+          "away_team": "FC Augsburg",
+          "win": 15,
+          "draw": 2,
+          "defeat": 11,
+          "goals": "43:42"
+        },
+        {
+          "date": "07.-09.11.2025",
+          "matchday": 10,
+          "home_team": "Borussia Mönchengladbach",
+          "away_team": "1. FC Köln",
+          "win": 53,
+          "draw": 21,
+          "defeat": 28,
+          "goals": "199:139"
+        },
+        {
+          "date": "07.-09.11.2025",
+          "matchday": 10,
+          "home_team": "Eintracht Frankfurt",
+          "away_team": "1. FSV Mainz 05",
+          "win": 12,
+          "draw": 19,
+          "defeat": 11,
+          "goals": "55:53"
+        },
+        {
+          "date": "07.-09.11.2025",
+          "matchday": 10,
+          "home_team": "Bayer 04 Leverkusen",
+          "away_team": "1. FC Heidenheim 1846",
+          "win": 4,
+          "draw": 0,
+          "defeat": 0,
+          "goals": "12:4"
+        },
+        {
+          "date": "07.-09.11.2025",
+          "matchday": 10,
+          "home_team": "Sport-Club Freiburg",
+          "away_team": "FC St. Pauli",
+          "win": 10,
+          "draw": 8,
+          "defeat": 10,
+          "goals": "34:39"
+        },
+        {
+          "date": "07.-09.11.2025",
+          "matchday": 10,
+          "home_team": "1. FC Union Berlin",
+          "away_team": "FC Bayern München",
+          "win": 0,
+          "draw": 4,
+          "defeat": 8,
+          "goals": "8:29"
+        },
+        {
+          "date": "07.-09.11.2025",
+          "matchday": 10,
+          "home_team": "TSG Hoffenheim",
+          "away_team": "RB Leipzig",
+          "win": 4,
+          "draw": 4,
+          "defeat": 10,
+          "goals": "25:32"
+        },
+        {
+          "date": "21.-23.11.2025",
+          "matchday": 11,
+          "home_team": "FC Bayern München",
+          "away_team": "Sport-Club Freiburg",
+          "win": 36,
+          "draw": 10,
+          "defeat": 4,
+          "goals": "115:40"
+        },
+        {
+          "date": "21.-23.11.2025",
+          "matchday": 11,
+          "home_team": "1. FC Köln",
+          "away_team": "Eintracht Frankfurt",
+          "win": 37,
+          "draw": 31,
+          "defeat": 32,
+          "goals": "164:146"
+        },
+        {
+          "date": "21.-23.11.2025",
+          "matchday": 11,
+          "home_team": "Borussia Dortmund",
+          "away_team": "VfB Stuttgart",
+          "win": 41,
+          "draw": 25,
+          "defeat": 44,
+          "goals": "188:185"
+        },
+        {
+          "date": "21.-23.11.2025",
+          "matchday": 11,
+          "home_team": "VfL Wolfsburg",
+          "away_team": "Bayer 04 Leverkusen",
+          "win": 20,
+          "draw": 11,
+          "defeat": 27,
+          "goals": "85:101"
+        },
+        {
+          "date": "21.-23.11.2025",
+          "matchday": 11,
+          "home_team": "FC St. Pauli",
+          "away_team": "1. FC Union Berlin",
+          "win": 7,
+          "draw": 4,
+          "defeat": 11,
+          "goals": "34:36"
+        },
+        {
+          "date": "21.-23.11.2025",
+          "matchday": 11,
+          "home_team": "1. FSV Mainz 05",
+          "away_team": "TSG Hoffenheim",
+          "win": 15,
+          "draw": 9,
+          "defeat": 10,
+          "goals": "59:51"
+        },
+        {
+          "date": "21.-23.11.2025",
+          "matchday": 11,
+          "home_team": "FC Augsburg",
+          "away_team": "Hamburger SV",
+          "win": 8,
+          "draw": 1,
+          "defeat": 5,
+          "goals": "19:13"
+        },
+        {
+          "date": "21.-23.11.2025",
+          "matchday": 11,
+          "home_team": "1. FC Heidenheim 1846",
+          "away_team": "Borussia Mönchengladbach",
+          "win": 0,
+          "draw": 1,
+          "defeat": 3,
+          "goals": "4:9"
+        },
+        {
+          "date": "21.-23.11.2025",
+          "matchday": 11,
+          "home_team": "RB Leipzig",
+          "away_team": "SV Werder Bremen",
+          "win": 10,
+          "draw": 4,
+          "defeat": 2,
+          "goals": "32:16"
+        },
+        {
+          "date": "28.-30.11.2025",
+          "matchday": 12,
+          "home_team": "Hamburger SV",
+          "away_team": "VfB Stuttgart",
+          "win": 45,
+          "draw": 22,
+          "defeat": 39,
+          "goals": "165:167"
+        },
+        {
+          "date": "28.-30.11.2025",
+          "matchday": 12,
+          "home_team": "SV Werder Bremen",
+          "away_team": "1. FC Köln",
+          "win": 37,
+          "draw": 27,
+          "defeat": 36,
+          "goals": "161:168"
+        },
+        {
+          "date": "28.-30.11.2025",
+          "matchday": 12,
+          "home_team": "FC Bayern München",
+          "away_team": "FC St. Pauli",
+          "win": 12,
+          "draw": 4,
+          "defeat": 2,
+          "goals": "34:11"
+        },
+        {
+          "date": "28.-30.11.2025",
+          "matchday": 12,
+          "home_team": "Borussia Mönchengladbach",
+          "away_team": "RB Leipzig",
+          "win": 4,
+          "draw": 4,
+          "defeat": 10,
+          "goals": "19:29"
+        },
+        {
+          "date": "28.-30.11.2025",
+          "matchday": 12,
+          "home_team": "Eintracht Frankfurt",
+          "away_team": "VfL Wolfsburg",
+          "win": 9,
+          "draw": 16,
+          "defeat": 23,
+          "goals": "59:78"
+        },
+        {
+          "date": "28.-30.11.2025",
+          "matchday": 12,
+          "home_team": "Bayer 04 Leverkusen",
+          "away_team": "Borussia Dortmund",
+          "win": 31,
+          "draw": 24,
+          "defeat": 39,
+          "goals": "139:162"
+        },
+        {
+          "date": "28.-30.11.2025",
+          "matchday": 12,
+          "home_team": "Sport-Club Freiburg",
+          "away_team": "1. FSV Mainz 05",
+          "win": 15,
+          "draw": 17,
+          "defeat": 16,
+          "goals": "48:61"
+        },
+        {
+          "date": "28.-30.11.2025",
+          "matchday": 12,
+          "home_team": "1. FC Union Berlin",
+          "away_team": "1. FC Heidenheim 1846",
+          "win": 3,
+          "draw": 3,
+          "defeat": 8,
+          "goals": "15:24"
+        },
+        {
+          "date": "28.-30.11.2025",
+          "matchday": 12,
+          "home_team": "TSG Hoffenheim",
+          "away_team": "FC Augsburg",
+          "win": 16,
+          "draw": 8,
+          "defeat": 6,
+          "goals": "53:29"
+        },
+        {
+          "date": "05.-07.12.2025",
+          "matchday": 13,
+          "home_team": "Hamburger SV",
+          "away_team": "SV Werder Bremen",
+          "win": 35,
+          "draw": 35,
+          "defeat": 40,
+          "goals": "162:160"
+        },
+        {
+          "date": "05.-07.12.2025",
+          "matchday": 13,
+          "home_team": "VfB Stuttgart",
+          "away_team": "FC Bayern München",
+          "win": 19,
+          "draw": 22,
+          "defeat": 71,
+          "goals": "125:238"
+        },
+        {
+          "date": "05.-07.12.2025",
+          "matchday": 13,
+          "home_team": "1. FC Köln",
+          "away_team": "FC St. Pauli",
+          "win": 20,
+          "draw": 6,
+          "defeat": 4,
+          "goals": "61:31"
+        },
+        {
+          "date": "05.-07.12.2025",
+          "matchday": 13,
+          "home_team": "Borussia Dortmund",
+          "away_team": "TSG Hoffenheim",
+          "win": 15,
+          "draw": 11,
+          "defeat": 8,
+          "goals": "55:50"
+        },
+        {
+          "date": "05.-07.12.2025",
+          "matchday": 13,
+          "home_team": "VfL Wolfsburg",
+          "away_team": "1. FC Union Berlin",
+          "win": 5,
+          "draw": 3,
+          "defeat": 4,
+          "goals": "13:12"
+        },
+        {
+          "date": "05.-07.12.2025",
+          "matchday": 13,
+          "home_team": "1. FSV Mainz 05",
+          "away_team": "Borussia Mönchengladbach",
+          "win": 13,
+          "draw": 15,
+          "defeat": 16,
+          "goals": "52:60"
+        },
+        {
+          "date": "05.-07.12.2025",
+          "matchday": 13,
+          "home_team": "FC Augsburg",
+          "away_team": "Bayer 04 Leverkusen",
+          "win": 2,
+          "draw": 7,
+          "defeat": 19,
+          "goals": "23:60"
+        },
+        {
+          "date": "05.-07.12.2025",
+          "matchday": 13,
+          "home_team": "1. FC Heidenheim 1846",
+          "away_team": "Sport-Club Freiburg",
+          "win": 1,
+          "draw": 1,
+          "defeat": 4,
+          "goals": "5:11"
+        },
+        {
+          "date": "05.-07.12.2025",
+          "matchday": 13,
+          "home_team": "RB Leipzig",
+          "away_team": "Eintracht Frankfurt",
+          "win": 5,
+          "draw": 8,
+          "defeat": 5,
+          "goals": "20:25"
+        },
+        {
+          "date": "12.-14.12.2025",
+          "matchday": 14,
+          "home_team": "SV Werder Bremen",
+          "away_team": "VfB Stuttgart",
+          "win": 38,
+          "draw": 35,
+          "defeat": 39,
+          "goals": "189:173"
+        },
+        {
+          "date": "12.-14.12.2025",
+          "matchday": 14,
+          "home_team": "FC Bayern München",
+          "away_team": "1. FSV Mainz 05",
+          "win": 27,
+          "draw": 3,
+          "defeat": 8,
+          "goals": "110:45"
+        },
+        {
+          "date": "12.-14.12.2025",
+          "matchday": 14,
+          "home_team": "Borussia Mönchengladbach",
+          "away_team": "VfL Wolfsburg",
+          "win": 16,
+          "draw": 10,
+          "defeat": 24,
+          "goals": "67:79"
+        },
+        {
+          "date": "12.-14.12.2025",
+          "matchday": 14,
+          "home_team": "Eintracht Frankfurt",
+          "away_team": "FC Augsburg",
+          "win": 8,
+          "draw": 10,
+          "defeat": 8,
+          "goals": "38:32"
+        },
+        {
+          "date": "12.-14.12.2025",
+          "matchday": 14,
+          "home_team": "Bayer 04 Leverkusen",
+          "away_team": "1. FC Köln",
+          "win": 29,
+          "draw": 25,
+          "defeat": 18,
+          "goals": "115:92"
+        },
+        {
+          "date": "12.-14.12.2025",
+          "matchday": 14,
+          "home_team": "Sport-Club Freiburg",
+          "away_team": "Borussia Dortmund",
+          "win": 5,
+          "draw": 11,
+          "defeat": 34,
+          "goals": "48:121"
+        },
+        {
+          "date": "12.-14.12.2025",
+          "matchday": 14,
+          "home_team": "FC St. Pauli",
+          "away_team": "1. FC Heidenheim 1846",
+          "win": 9,
+          "draw": 3,
+          "defeat": 8,
+          "goals": "24:26"
+        },
+        {
+          "date": "12.-14.12.2025",
+          "matchday": 14,
+          "home_team": "1. FC Union Berlin",
+          "away_team": "RB Leipzig",
+          "win": 6,
+          "draw": 3,
+          "defeat": 7,
+          "goals": "16:26"
+        },
+        {
+          "date": "12.-14.12.2025",
+          "matchday": 14,
+          "home_team": "TSG Hoffenheim",
+          "away_team": "Hamburger SV",
+          "win": 8,
+          "draw": 4,
+          "defeat": 8,
+          "goals": "34:23"
+        },
+        {
+          "date": "19.-21.12.2025",
+          "matchday": 15,
+          "home_team": "Hamburger SV",
+          "away_team": "Eintracht Frankfurt",
+          "win": 41,
+          "draw": 25,
+          "defeat": 32,
+          "goals": "161:123"
+        },
+        {
+          "date": "19.-21.12.2025",
+          "matchday": 15,
+          "home_team": "VfB Stuttgart",
+          "away_team": "TSG Hoffenheim",
+          "win": 11,
+          "draw": 11,
+          "defeat": 8,
+          "goals": "52:44"
+        },
+        {
+          "date": "19.-21.12.2025",
+          "matchday": 15,
+          "home_team": "1. FC Köln",
+          "away_team": "1. FC Union Berlin",
+          "win": 6,
+          "draw": 3,
+          "defeat": 9,
+          "goals": "28:22"
+        },
+        {
+          "date": "19.-21.12.2025",
+          "matchday": 15,
+          "home_team": "Borussia Dortmund",
+          "away_team": "Borussia Mönchengladbach",
+          "win": 45,
+          "draw": 29,
+          "defeat": 32,
+          "goals": "195:168"
+        },
+        {
+          "date": "19.-21.12.2025",
+          "matchday": 15,
+          "home_team": "VfL Wolfsburg",
+          "away_team": "Sport-Club Freiburg",
+          "win": 15,
+          "draw": 11,
+          "defeat": 18,
+          "goals": "72:62"
+        },
+        {
+          "date": "19.-21.12.2025",
+          "matchday": 15,
+          "home_team": "1. FSV Mainz 05",
+          "away_team": "FC St. Pauli",
+          "win": 8,
+          "draw": 9,
+          "defeat": 7,
+          "goals": "39:29"
+        },
+        {
+          "date": "19.-21.12.2025",
+          "matchday": 15,
+          "home_team": "FC Augsburg",
+          "away_team": "SV Werder Bremen",
+          "win": 13,
+          "draw": 3,
+          "defeat": 10,
+          "goals": "42:40"
+        },
+        {
+          "date": "19.-21.12.2025",
+          "matchday": 15,
+          "home_team": "1. FC Heidenheim 1846",
+          "away_team": "FC Bayern München",
+          "win": 1,
+          "draw": 0,
+          "defeat": 3,
+          "goals": "7:14"
+        },
+        {
+          "date": "19.-21.12.2025",
+          "matchday": 15,
+          "home_team": "RB Leipzig",
+          "away_team": "Bayer 04 Leverkusen",
+          "win": 8,
+          "draw": 5,
+          "defeat": 5,
+          "goals": "31:28"
+        },
+        {
+          "date": "09.-11.01.2026",
+          "matchday": 16,
+          "home_team": "SV Werder Bremen",
+          "away_team": "TSG Hoffenheim",
+          "win": 12,
+          "draw": 10,
+          "defeat": 10,
+          "goals": "55:57"
+        },
+        {
+          "date": "09.-11.01.2026",
+          "matchday": 16,
+          "home_team": "FC Bayern München",
+          "away_team": "VfL Wolfsburg",
+          "win": 45,
+          "draw": 7,
+          "defeat": 4,
+          "goals": "142:49"
+        },
+        {
+          "date": "09.-11.01.2026",
+          "matchday": 16,
+          "home_team": "Borussia Mönchengladbach",
+          "away_team": "FC Augsburg",
+          "win": 10,
+          "draw": 9,
+          "defeat": 11,
+          "goals": "48:44"
+        },
+        {
+          "date": "09.-11.01.2026",
+          "matchday": 16,
+          "home_team": "Eintracht Frankfurt",
+          "away_team": "Borussia Dortmund",
+          "win": 32,
+          "draw": 21,
+          "defeat": 51,
+          "goals": "139:202"
+        },
+        {
+          "date": "09.-11.01.2026",
+          "matchday": 16,
+          "home_team": "Bayer 04 Leverkusen",
+          "away_team": "VfB Stuttgart",
+          "win": 41,
+          "draw": 24,
+          "defeat": 23,
+          "goals": "156:113"
+        },
+        {
+          "date": "09.-11.01.2026",
+          "matchday": 16,
+          "home_team": "Sport-Club Freiburg",
+          "away_team": "Hamburger SV",
+          "win": 8,
+          "draw": 14,
+          "defeat": 14,
+          "goals": "29:53"
+        },
+        {
+          "date": "09.-11.01.2026",
+          "matchday": 16,
+          "home_team": "FC St. Pauli",
+          "away_team": "RB Leipzig",
+          "win": 3,
+          "draw": 1,
+          "defeat": 2,
+          "goals": "4:6"
+        },
+        {
+          "date": "09.-11.01.2026",
+          "matchday": 16,
+          "home_team": "1. FC Union Berlin",
+          "away_team": "1. FSV Mainz 05",
+          "win": 8,
+          "draw": 5,
+          "defeat": 5,
+          "goals": "28:19"
+        },
+        {
+          "date": "09.-11.01.2026",
+          "matchday": 16,
+          "home_team": "1. FC Heidenheim 1846",
+          "away_team": "1. FC Köln",
+          "win": 1,
+          "draw": 2,
+          "defeat": 1,
+          "goals": "6:5"
+        },
+        {
+          "date": "13.-15.01.2026",
+          "matchday": 17,
+          "home_team": "Hamburger SV",
+          "away_team": "Bayer 04 Leverkusen",
+          "win": 28,
+          "draw": 20,
+          "defeat": 30,
+          "goals": "94:115"
+        },
+        {
+          "date": "13.-15.01.2026",
+          "matchday": 17,
+          "home_team": "VfB Stuttgart",
+          "away_team": "Eintracht Frankfurt",
+          "win": 44,
+          "draw": 23,
+          "defeat": 37,
+          "goals": "188:176"
+        },
+        {
+          "date": "13.-15.01.2026",
+          "matchday": 17,
+          "home_team": "1. FC Köln",
+          "away_team": "FC Bayern München",
+          "win": 23,
+          "draw": 24,
+          "defeat": 53,
+          "goals": "124:204"
+        },
+        {
+          "date": "13.-15.01.2026",
+          "matchday": 17,
+          "home_team": "Borussia Dortmund",
+          "away_team": "SV Werder Bremen",
+          "win": 49,
+          "draw": 21,
+          "defeat": 42,
+          "goals": "182:178"
+        },
+        {
+          "date": "13.-15.01.2026",
+          "matchday": 17,
+          "home_team": "VfL Wolfsburg",
+          "away_team": "FC St. Pauli",
+          "win": 1,
+          "draw": 10,
+          "defeat": 5,
+          "goals": "20:31"
+        },
+        {
+          "date": "13.-15.01.2026",
+          "matchday": 17,
+          "home_team": "1. FSV Mainz 05",
+          "away_team": "1. FC Heidenheim 1846",
+          "win": 1,
+          "draw": 1,
+          "defeat": 2,
+          "goals": "3:4"
+        },
+        {
+          "date": "13.-15.01.2026",
+          "matchday": 17,
+          "home_team": "FC Augsburg",
+          "away_team": "1. FC Union Berlin",
+          "win": 7,
+          "draw": 7,
+          "defeat": 2,
+          "goals": "20:12"
+        },
+        {
+          "date": "13.-15.01.2026",
+          "matchday": 17,
+          "home_team": "TSG Hoffenheim",
+          "away_team": "Borussia Mönchengladbach",
+          "win": 11,
+          "draw": 13,
+          "defeat": 12,
+          "goals": "61:73"
+        },
+        {
+          "date": "13.-15.01.2026",
+          "matchday": 17,
+          "home_team": "RB Leipzig",
+          "away_team": "Sport-Club Freiburg",
+          "win": 11,
+          "draw": 5,
+          "defeat": 4,
+          "goals": "41:20"
+        },
+        {
+          "date": "16.-18.01.2026",
+          "matchday": 18,
+          "home_team": "Hamburger SV",
+          "away_team": "Borussia Mönchengladbach",
+          "win": 40,
+          "draw": 26,
+          "defeat": 34,
+          "goals": "155:154"
+        },
+        {
+          "date": "16.-18.01.2026",
+          "matchday": 18,
+          "home_team": "SV Werder Bremen",
+          "away_team": "Eintracht Frankfurt",
+          "win": 44,
+          "draw": 25,
+          "defeat": 39,
+          "goals": "168:160"
+        },
+        {
+          "date": "16.-18.01.2026",
+          "matchday": 18,
+          "home_team": "VfB Stuttgart",
+          "away_team": "1. FC Union Berlin",
+          "win": 4,
+          "draw": 5,
+          "defeat": 3,
+          "goals": "21:18"
+        },
+        {
+          "date": "16.-18.01.2026",
+          "matchday": 18,
+          "home_team": "1. FC Köln",
+          "away_team": "1. FSV Mainz 05",
+          "win": 10,
+          "draw": 12,
+          "defeat": 12,
+          "goals": "36:48"
+        },
+        {
+          "date": "16.-18.01.2026",
+          "matchday": 18,
+          "home_team": "Borussia Dortmund",
+          "away_team": "FC St. Pauli",
+          "win": 16,
+          "draw": 4,
+          "defeat": 2,
+          "goals": "52:20"
+        },
+        {
+          "date": "16.-18.01.2026",
+          "matchday": 18,
+          "home_team": "VfL Wolfsburg",
+          "away_team": "1. FC Heidenheim 1846",
+          "win": 2,
+          "draw": 1,
+          "defeat": 1,
+          "goals": "6:3"
+        },
+        {
+          "date": "16.-18.01.2026",
+          "matchday": 18,
+          "home_team": "FC Augsburg",
+          "away_team": "Sport-Club Freiburg",
+          "win": 6,
+          "draw": 11,
+          "defeat": 21,
+          "goals": "36:66"
+        },
+        {
+          "date": "16.-18.01.2026",
+          "matchday": 18,
+          "home_team": "TSG Hoffenheim",
+          "away_team": "Bayer 04 Leverkusen",
+          "win": 7,
+          "draw": 6,
+          "defeat": 21,
+          "goals": "44:71"
+        },
+        {
+          "date": "16.-18.01.2026",
+          "matchday": 18,
+          "home_team": "RB Leipzig",
+          "away_team": "FC Bayern München",
+          "win": 2,
+          "draw": 7,
+          "defeat": 9,
+          "goals": "24:38"
+        },
+        {
+          "date": "23.-25.01.2026",
+          "matchday": 19,
+          "home_team": "FC Bayern München",
+          "away_team": "FC Augsburg",
+          "win": 22,
+          "draw": 2,
+          "defeat": 4,
+          "goals": "70:25"
+        },
+        {
+          "date": "23.-25.01.2026",
+          "matchday": 19,
+          "home_team": "Borussia Mönchengladbach",
+          "away_team": "VfB Stuttgart",
+          "win": 32,
+          "draw": 30,
+          "defeat": 44,
+          "goals": "142:175"
+        },
+        {
+          "date": "23.-25.01.2026",
+          "matchday": 19,
+          "home_team": "Eintracht Frankfurt",
+          "away_team": "TSG Hoffenheim",
+          "win": 13,
+          "draw": 9,
+          "defeat": 10,
+          "goals": "51:44"
+        },
+        {
+          "date": "23.-25.01.2026",
+          "matchday": 19,
+          "home_team": "Bayer 04 Leverkusen",
+          "away_team": "SV Werder Bremen",
+          "win": 25,
+          "draw": 35,
+          "defeat": 28,
+          "goals": "144:131"
+        },
+        {
+          "date": "23.-25.01.2026",
+          "matchday": 19,
+          "home_team": "Sport-Club Freiburg",
+          "away_team": "1. FC Köln",
+          "win": 20,
+          "draw": 8,
+          "defeat": 14,
+          "goals": "60:48"
+        },
+        {
+          "date": "23.-25.01.2026",
+          "matchday": 19,
+          "home_team": "FC St. Pauli",
+          "away_team": "Hamburger SV",
+          "win": 7,
+          "draw": 9,
+          "defeat": 12,
+          "goals": "33:46"
+        },
+        {
+          "date": "23.-25.01.2026",
+          "matchday": 19,
+          "home_team": "1. FSV Mainz 05",
+          "away_team": "VfL Wolfsburg",
+          "win": 11,
+          "draw": 17,
+          "defeat": 20,
+          "goals": "64:83"
+        },
+        {
+          "date": "23.-25.01.2026",
+          "matchday": 19,
+          "home_team": "1. FC Union Berlin",
+          "away_team": "Borussia Dortmund",
+          "win": 4,
+          "draw": 0,
+          "defeat": 8,
+          "goals": "14:31"
+        },
+        {
+          "date": "23.-25.01.2026",
+          "matchday": 19,
+          "home_team": "1. FC Heidenheim 1846",
+          "away_team": "RB Leipzig",
+          "win": 1,
+          "draw": 3,
+          "defeat": 4,
+          "goals": "8:12"
+        },
+        {
+          "date": "30.01.-01.02.2026",
+          "matchday": 20,
+          "home_team": "Hamburger SV",
+          "away_team": "FC Bayern München",
+          "win": 19,
+          "draw": 22,
+          "defeat": 65,
+          "goals": "101:247"
+        },
+        {
+          "date": "30.01.-01.02.2026",
+          "matchday": 20,
+          "home_team": "SV Werder Bremen",
+          "away_team": "Borussia Mönchengladbach",
+          "win": 39,
+          "draw": 28,
+          "defeat": 43,
+          "goals": "170:192"
+        },
+        {
+          "date": "30.01.-01.02.2026",
+          "matchday": 20,
+          "home_team": "VfB Stuttgart",
+          "away_team": "Sport-Club Freiburg",
+          "win": 24,
+          "draw": 5,
+          "defeat": 17,
+          "goals": "82:62"
+        },
+        {
+          "date": "30.01.-01.02.2026",
+          "matchday": 20,
+          "home_team": "1. FC Köln",
+          "away_team": "VfL Wolfsburg",
+          "win": 8,
+          "draw": 11,
+          "defeat": 17,
+          "goals": "44:68"
+        },
+        {
+          "date": "30.01.-01.02.2026",
+          "matchday": 20,
+          "home_team": "Borussia Dortmund",
+          "away_team": "1. FC Heidenheim 1846",
+          "win": 2,
+          "draw": 2,
+          "defeat": 0,
+          "goals": "8:5"
+        },
+        {
+          "date": "30.01.-01.02.2026",
+          "matchday": 20,
+          "home_team": "Eintracht Frankfurt",
+          "away_team": "Bayer 04 Leverkusen",
+          "win": 28,
+          "draw": 13,
+          "defeat": 39,
+          "goals": "114:150"
+        },
+        {
+          "date": "30.01.-01.02.2026",
+          "matchday": 20,
+          "home_team": "FC Augsburg",
+          "away_team": "FC St. Pauli",
+          "win": 4,
+          "draw": 2,
+          "defeat": 2,
+          "goals": "12:12"
+        },
+        {
+          "date": "30.01.-01.02.2026",
+          "matchday": 20,
+          "home_team": "TSG Hoffenheim",
+          "away_team": "1. FC Union Berlin",
+          "win": 4,
+          "draw": 2,
+          "defeat": 6,
+          "goals": "19:20"
+        },
+        {
+          "date": "30.01.-01.02.2026",
+          "matchday": 20,
+          "home_team": "RB Leipzig",
+          "away_team": "1. FSV Mainz 05",
+          "win": 8,
+          "draw": 4,
+          "defeat": 6,
+          "goals": "41:26"
+        },
+        {
+          "date": "06.-08.02.2026",
+          "matchday": 21,
+          "home_team": "FC Bayern München",
+          "away_team": "TSG Hoffenheim",
+          "win": 22,
+          "draw": 7,
+          "defeat": 5,
+          "goals": "84:32"
+        },
+        {
+          "date": "06.-08.02.2026",
+          "matchday": 21,
+          "home_team": "Borussia Mönchengladbach",
+          "away_team": "Bayer 04 Leverkusen",
+          "win": 22,
+          "draw": 28,
+          "defeat": 36,
+          "goals": "123:166"
+        },
+        {
+          "date": "06.-08.02.2026",
+          "matchday": 21,
+          "home_team": "1. FC Köln",
+          "away_team": "RB Leipzig",
+          "win": 2,
+          "draw": 5,
+          "defeat": 7,
+          "goals": "15:33"
+        },
+        {
+          "date": "06.-08.02.2026",
+          "matchday": 21,
+          "home_team": "Sport-Club Freiburg",
+          "away_team": "SV Werder Bremen",
+          "win": 14,
+          "draw": 10,
+          "defeat": 24,
+          "goals": "64:93"
+        },
+        {
+          "date": "06.-08.02.2026",
+          "matchday": 21,
+          "home_team": "VfL Wolfsburg",
+          "away_team": "Borussia Dortmund",
+          "win": 10,
+          "draw": 13,
+          "defeat": 35,
+          "goals": "60:125"
+        },
+        {
+          "date": "06.-08.02.2026",
+          "matchday": 21,
+          "home_team": "FC St. Pauli",
+          "away_team": "VfB Stuttgart",
+          "win": 3,
+          "draw": 5,
+          "defeat": 14,
+          "goals": "17:36"
+        },
+        {
+          "date": "06.-08.02.2026",
+          "matchday": 21,
+          "home_team": "1. FSV Mainz 05",
+          "away_team": "FC Augsburg",
+          "win": 15,
+          "draw": 7,
+          "defeat": 14,
+          "goals": "54:48"
+        },
+        {
+          "date": "06.-08.02.2026",
+          "matchday": 21,
+          "home_team": "1. FC Union Berlin",
+          "away_team": "Eintracht Frankfurt",
+          "win": 4,
+          "draw": 6,
+          "defeat": 8,
+          "goals": "20:34"
+        },
+        {
+          "date": "06.-08.02.2026",
+          "matchday": 21,
+          "home_team": "1. FC Heidenheim 1846",
+          "away_team": "Hamburger SV",
+          "win": 3,
+          "draw": 3,
+          "defeat": 4,
+          "goals": "13:16"
+        },
+        {
+          "date": "13.-15.02.2026",
+          "matchday": 22,
+          "home_team": "Hamburger SV",
+          "away_team": "1. FC Union Berlin",
+          "win": 0,
+          "draw": 1,
+          "defeat": 1,
+          "goals": "2:4"
+        },
+        {
+          "date": "13.-15.02.2026",
+          "matchday": 22,
+          "home_team": "SV Werder Bremen",
+          "away_team": "FC Bayern München",
+          "win": 27,
+          "draw": 26,
+          "defeat": 63,
+          "goals": "129:242"
+        },
+        {
+          "date": "13.-15.02.2026",
+          "matchday": 22,
+          "home_team": "VfB Stuttgart",
+          "away_team": "1. FC Köln",
+          "win": 33,
+          "draw": 27,
+          "defeat": 36,
+          "goals": "157:148"
+        },
+        {
+          "date": "13.-15.02.2026",
+          "matchday": 22,
+          "home_team": "Borussia Dortmund",
+          "away_team": "1. FSV Mainz 05",
+          "win": 21,
+          "draw": 10,
+          "defeat": 7,
+          "goals": "64:39"
+        },
+        {
+          "date": "13.-15.02.2026",
+          "matchday": 22,
+          "home_team": "Eintracht Frankfurt",
+          "away_team": "Borussia Mönchengladbach",
+          "win": 38,
+          "draw": 31,
+          "defeat": 33,
+          "goals": "156:152"
+        },
+        {
+          "date": "13.-15.02.2026",
+          "matchday": 22,
+          "home_team": "Bayer 04 Leverkusen",
+          "away_team": "FC St. Pauli",
+          "win": 7,
+          "draw": 8,
+          "defeat": 7,
+          "goals": "31:31"
+        },
+        {
+          "date": "13.-15.02.2026",
+          "matchday": 22,
+          "home_team": "FC Augsburg",
+          "away_team": "1. FC Heidenheim 1846",
+          "win": 3,
+          "draw": 0,
+          "defeat": 1,
+          "goals": "8:7"
+        },
+        {
+          "date": "13.-15.02.2026",
+          "matchday": 22,
+          "home_team": "TSG Hoffenheim",
+          "away_team": "Sport-Club Freiburg",
+          "win": 7,
+          "draw": 12,
+          "defeat": 13,
+          "goals": "49:56"
+        },
+        {
+          "date": "13.-15.02.2026",
+          "matchday": 22,
+          "home_team": "RB Leipzig",
+          "away_team": "VfL Wolfsburg",
+          "win": 8,
+          "draw": 5,
+          "defeat": 5,
+          "goals": "28:19"
+        },
+        {
+          "date": "20.-22.02.2026",
+          "matchday": 23,
+          "home_team": "FC Bayern München",
+          "away_team": "Eintracht Frankfurt",
+          "win": 59,
+          "draw": 24,
+          "defeat": 25,
+          "goals": "222:136"
+        },
+        {
+          "date": "20.-22.02.2026",
+          "matchday": 23,
+          "home_team": "1. FC Köln",
+          "away_team": "TSG Hoffenheim",
+          "win": 7,
+          "draw": 8,
+          "defeat": 13,
+          "goals": "32:56"
+        },
+        {
+          "date": "20.-22.02.2026",
+          "matchday": 23,
+          "home_team": "Sport-Club Freiburg",
+          "away_team": "Borussia Mönchengladbach",
+          "win": 18,
+          "draw": 17,
+          "defeat": 13,
+          "goals": "79:63"
+        },
+        {
+          "date": "20.-22.02.2026",
+          "matchday": 23,
+          "home_team": "VfL Wolfsburg",
+          "away_team": "FC Augsburg",
+          "win": 8,
+          "draw": 10,
+          "defeat": 10,
+          "goals": "33:32"
+        },
+        {
+          "date": "20.-22.02.2026",
+          "matchday": 23,
+          "home_team": "FC St. Pauli",
+          "away_team": "SV Werder Bremen",
+          "win": 1,
+          "draw": 7,
+          "defeat": 12,
+          "goals": "13:35"
+        },
+        {
+          "date": "20.-22.02.2026",
+          "matchday": 23,
+          "home_team": "1. FSV Mainz 05",
+          "away_team": "Hamburger SV",
+          "win": 8,
+          "draw": 8,
+          "defeat": 8,
+          "goals": "30:28"
+        },
+        {
+          "date": "20.-22.02.2026",
+          "matchday": 23,
+          "home_team": "1. FC Union Berlin",
+          "away_team": "Bayer 04 Leverkusen",
+          "win": 1,
+          "draw": 5,
+          "defeat": 6,
+          "goals": "8:21"
+        },
+        {
+          "date": "20.-22.02.2026",
+          "matchday": 23,
+          "home_team": "1. FC Heidenheim 1846",
+          "away_team": "VfB Stuttgart",
+          "win": 3,
+          "draw": 2,
+          "defeat": 3,
+          "goals": "12:14"
+        },
+        {
+          "date": "20.-22.02.2026",
+          "matchday": 23,
+          "home_team": "RB Leipzig",
+          "away_team": "Borussia Dortmund",
+          "win": 8,
+          "draw": 2,
+          "defeat": 8,
+          "goals": "32:29"
+        },
+        {
+          "date": "27.02.-01.03.2026",
+          "matchday": 24,
+          "home_team": "Hamburger SV",
+          "away_team": "RB Leipzig",
+          "win": 1,
+          "draw": 1,
+          "defeat": 2,
+          "goals": "4:7"
+        },
+        {
+          "date": "27.02.-01.03.2026",
+          "matchday": 24,
+          "home_team": "SV Werder Bremen",
+          "away_team": "1. FC Heidenheim 1846",
+          "win": 2,
+          "draw": 1,
+          "defeat": 3,
+          "goals": "14:12"
+        },
+        {
+          "date": "27.02.-01.03.2026",
+          "matchday": 24,
+          "home_team": "VfB Stuttgart",
+          "away_team": "VfL Wolfsburg",
+          "win": 21,
+          "draw": 8,
+          "defeat": 23,
+          "goals": "73:80"
+        },
+        {
+          "date": "27.02.-01.03.2026",
+          "matchday": 24,
+          "home_team": "Borussia Mönchengladbach",
+          "away_team": "1. FC Union Berlin",
+          "win": 3,
+          "draw": 3,
+          "defeat": 6,
+          "goals": "13:16"
+        },
+        {
+          "date": "27.02.-01.03.2026",
+          "matchday": 24,
+          "home_team": "Borussia Dortmund",
+          "away_team": "FC Bayern München",
+          "win": 26,
+          "draw": 32,
+          "defeat": 54,
+          "goals": "138:226"
+        },
+        {
+          "date": "27.02.-01.03.2026",
+          "matchday": 24,
+          "home_team": "Eintracht Frankfurt",
+          "away_team": "Sport-Club Freiburg",
+          "win": 20,
+          "draw": 12,
+          "defeat": 14,
+          "goals": "69:53"
+        },
+        {
+          "date": "27.02.-01.03.2026",
+          "matchday": 24,
+          "home_team": "Bayer 04 Leverkusen",
+          "away_team": "1. FSV Mainz 05",
+          "win": 20,
+          "draw": 6,
+          "defeat": 12,
+          "goals": "62:47"
+        },
+        {
+          "date": "27.02.-01.03.2026",
+          "matchday": 24,
+          "home_team": "FC Augsburg",
+          "away_team": "1. FC Köln",
+          "win": 7,
+          "draw": 9,
+          "defeat": 8,
+          "goals": "26:33"
+        },
+        {
+          "date": "27.02.-01.03.2026",
+          "matchday": 24,
+          "home_team": "TSG Hoffenheim",
+          "away_team": "FC St. Pauli",
+          "win": 1,
+          "draw": 2,
+          "defeat": 3,
+          "goals": "5:9"
+        },
+        {
+          "date": "06.-08.03.2026",
+          "matchday": 25,
+          "home_team": "FC Bayern München",
+          "away_team": "Borussia Mönchengladbach",
+          "win": 55,
+          "draw": 31,
+          "defeat": 28,
+          "goals": "219:143"
+        },
+        {
+          "date": "06.-08.03.2026",
+          "matchday": 25,
+          "home_team": "1. FC Köln",
+          "away_team": "Borussia Dortmund",
+          "win": 29,
+          "draw": 25,
+          "defeat": 42,
+          "goals": "134:167"
+        },
+        {
+          "date": "06.-08.03.2026",
+          "matchday": 25,
+          "home_team": "Sport-Club Freiburg",
+          "away_team": "Bayer 04 Leverkusen",
+          "win": 12,
+          "draw": 15,
+          "defeat": 23,
+          "goals": "57:88"
+        },
+        {
+          "date": "06.-08.03.2026",
+          "matchday": 25,
+          "home_team": "VfL Wolfsburg",
+          "away_team": "Hamburger SV",
+          "win": 16,
+          "draw": 15,
+          "defeat": 11,
+          "goals": "65:53"
+        },
+        {
+          "date": "06.-08.03.2026",
+          "matchday": 25,
+          "home_team": "FC St. Pauli",
+          "away_team": "Eintracht Frankfurt",
+          "win": 5,
+          "draw": 8,
+          "defeat": 7,
+          "goals": "31:38"
+        },
+        {
+          "date": "06.-08.03.2026",
+          "matchday": 25,
+          "home_team": "1. FSV Mainz 05",
+          "away_team": "VfB Stuttgart",
+          "win": 12,
+          "draw": 9,
+          "defeat": 15,
+          "goals": "53:61"
+        },
+        {
+          "date": "06.-08.03.2026",
+          "matchday": 25,
+          "home_team": "1. FC Union Berlin",
+          "away_team": "SV Werder Bremen",
+          "win": 6,
+          "draw": 1,
+          "defeat": 3,
+          "goals": "16:13"
+        },
+        {
+          "date": "06.-08.03.2026",
+          "matchday": 25,
+          "home_team": "1. FC Heidenheim 1846",
+          "away_team": "TSG Hoffenheim",
+          "win": 0,
+          "draw": 3,
+          "defeat": 1,
+          "goals": "4:5"
+        },
+        {
+          "date": "06.-08.03.2026",
+          "matchday": 25,
+          "home_team": "RB Leipzig",
+          "away_team": "FC Augsburg",
+          "win": 10,
+          "draw": 7,
+          "defeat": 1,
+          "goals": "35:15"
+        },
+        {
+          "date": "13.-15.03.2026",
+          "matchday": 26,
+          "home_team": "Hamburger SV",
+          "away_team": "1. FC Köln",
+          "win": 39,
+          "draw": 26,
+          "defeat": 33,
+          "goals": "150:151"
+        },
+        {
+          "date": "13.-15.03.2026",
+          "matchday": 26,
+          "home_team": "SV Werder Bremen",
+          "away_team": "1. FSV Mainz 05",
+          "win": 18,
+          "draw": 7,
+          "defeat": 11,
+          "goals": "58:46"
+        },
+        {
+          "date": "13.-15.03.2026",
+          "matchday": 26,
+          "home_team": "VfB Stuttgart",
+          "away_team": "RB Leipzig",
+          "win": 3,
+          "draw": 2,
+          "defeat": 9,
+          "goals": "14:28"
+        },
+        {
+          "date": "13.-15.03.2026",
+          "matchday": 26,
+          "home_team": "Borussia Mönchengladbach",
+          "away_team": "FC St. Pauli",
+          "win": 12,
+          "draw": 8,
+          "defeat": 4,
+          "goals": "42:26"
+        },
+        {
+          "date": "13.-15.03.2026",
+          "matchday": 26,
+          "home_team": "Borussia Dortmund",
+          "away_team": "FC Augsburg",
+          "win": 16,
+          "draw": 7,
+          "defeat": 5,
+          "goals": "68:36"
+        },
+        {
+          "date": "13.-15.03.2026",
+          "matchday": 26,
+          "home_team": "Eintracht Frankfurt",
+          "away_team": "1. FC Heidenheim 1846",
+          "win": 4,
+          "draw": 0,
+          "defeat": 0,
+          "goals": "11:1"
+        },
+        {
+          "date": "13.-15.03.2026",
+          "matchday": 26,
+          "home_team": "Bayer 04 Leverkusen",
+          "away_team": "FC Bayern München",
+          "win": 20,
+          "draw": 20,
+          "defeat": 52,
+          "goals": "109:174"
+        },
+        {
+          "date": "13.-15.03.2026",
+          "matchday": 26,
+          "home_team": "Sport-Club Freiburg",
+          "away_team": "1. FC Union Berlin",
+          "win": 4,
+          "draw": 5,
+          "defeat": 7,
+          "goals": "22:21"
+        },
+        {
+          "date": "13.-15.03.2026",
+          "matchday": 26,
+          "home_team": "TSG Hoffenheim",
+          "away_team": "VfL Wolfsburg",
+          "win": 10,
+          "draw": 9,
+          "defeat": 15,
+          "goals": "54:64"
+        },
+        {
+          "date": "20.-22.03.2026",
+          "matchday": 27,
+          "home_team": "FC Bayern München",
+          "away_team": "1. FC Union Berlin",
+          "win": 8,
+          "draw": 4,
+          "defeat": 0,
+          "goals": "29:8"
+        },
+        {
+          "date": "20.-22.03.2026",
+          "matchday": 27,
+          "home_team": "1. FC Köln",
+          "away_team": "Borussia Mönchengladbach",
+          "win": 28,
+          "draw": 21,
+          "defeat": 53,
+          "goals": "139:199"
+        },
+        {
+          "date": "20.-22.03.2026",
+          "matchday": 27,
+          "home_team": "Borussia Dortmund",
+          "away_team": "Hamburger SV",
+          "win": 38,
+          "draw": 28,
+          "defeat": 36,
+          "goals": "184:179"
+        },
+        {
+          "date": "20.-22.03.2026",
+          "matchday": 27,
+          "home_team": "VfL Wolfsburg",
+          "away_team": "SV Werder Bremen",
+          "win": 22,
+          "draw": 11,
+          "defeat": 21,
+          "goals": "97:96"
+        },
+        {
+          "date": "20.-22.03.2026",
+          "matchday": 27,
+          "home_team": "FC St. Pauli",
+          "away_team": "Sport-Club Freiburg",
+          "win": 10,
+          "draw": 8,
+          "defeat": 10,
+          "goals": "39:34"
+        },
+        {
+          "date": "20.-22.03.2026",
+          "matchday": 27,
+          "home_team": "1. FSV Mainz 05",
+          "away_team": "Eintracht Frankfurt",
+          "win": 11,
+          "draw": 19,
+          "defeat": 12,
+          "goals": "53:55"
+        },
+        {
+          "date": "20.-22.03.2026",
+          "matchday": 27,
+          "home_team": "FC Augsburg",
+          "away_team": "VfB Stuttgart",
+          "win": 11,
+          "draw": 2,
+          "defeat": 15,
+          "goals": "42:43"
+        },
+        {
+          "date": "20.-22.03.2026",
+          "matchday": 27,
+          "home_team": "1. FC Heidenheim 1846",
+          "away_team": "Bayer 04 Leverkusen",
+          "win": 0,
+          "draw": 0,
+          "defeat": 4,
+          "goals": "4:12"
+        },
+        {
+          "date": "20.-22.03.2026",
+          "matchday": 27,
+          "home_team": "RB Leipzig",
+          "away_team": "TSG Hoffenheim",
+          "win": 10,
+          "draw": 4,
+          "defeat": 4,
+          "goals": "32:25"
+        },
+        {
+          "date": "04./05.04.2026",
+          "matchday": 28,
+          "home_team": "Hamburger SV",
+          "away_team": "FC Augsburg",
+          "win": 5,
+          "draw": 1,
+          "defeat": 8,
+          "goals": "13:19"
+        },
+        {
+          "date": "04./05.04.2026",
+          "matchday": 28,
+          "home_team": "SV Werder Bremen",
+          "away_team": "RB Leipzig",
+          "win": 2,
+          "draw": 4,
+          "defeat": 10,
+          "goals": "16:32"
+        },
+        {
+          "date": "04./05.04.2026",
+          "matchday": 28,
+          "home_team": "VfB Stuttgart",
+          "away_team": "Borussia Dortmund",
+          "win": 44,
+          "draw": 25,
+          "defeat": 41,
+          "goals": "185:188"
+        },
+        {
+          "date": "04./05.04.2026",
+          "matchday": 28,
+          "home_team": "Borussia Mönchengladbach",
+          "away_team": "1. FC Heidenheim 1846",
+          "win": 3,
+          "draw": 1,
+          "defeat": 0,
+          "goals": "9:4"
+        },
+        {
+          "date": "04./05.04.2026",
+          "matchday": 28,
+          "home_team": "Eintracht Frankfurt",
+          "away_team": "1. FC Köln",
+          "win": 32,
+          "draw": 31,
+          "defeat": 37,
+          "goals": "146:164"
+        },
+        {
+          "date": "04./05.04.2026",
+          "matchday": 28,
+          "home_team": "Bayer 04 Leverkusen",
+          "away_team": "VfL Wolfsburg",
+          "win": 27,
+          "draw": 11,
+          "defeat": 20,
+          "goals": "101:85"
+        },
+        {
+          "date": "04./05.04.2026",
+          "matchday": 28,
+          "home_team": "Sport-Club Freiburg",
+          "away_team": "FC Bayern München",
+          "win": 4,
+          "draw": 10,
+          "defeat": 36,
+          "goals": "40:115"
+        },
+        {
+          "date": "04./05.04.2026",
+          "matchday": 28,
+          "home_team": "1. FC Union Berlin",
+          "away_team": "FC St. Pauli",
+          "win": 11,
+          "draw": 4,
+          "defeat": 7,
+          "goals": "36:34"
+        },
+        {
+          "date": "04./05.04.2026",
+          "matchday": 28,
+          "home_team": "TSG Hoffenheim",
+          "away_team": "1. FSV Mainz 05",
+          "win": 10,
+          "draw": 9,
+          "defeat": 15,
+          "goals": "51:59"
+        },
+        {
+          "date": "10.-12.04.2026",
+          "matchday": 29,
+          "home_team": "VfB Stuttgart",
+          "away_team": "Hamburger SV",
+          "win": 39,
+          "draw": 22,
+          "defeat": 45,
+          "goals": "167:165"
+        },
+        {
+          "date": "10.-12.04.2026",
+          "matchday": 29,
+          "home_team": "1. FC Köln",
+          "away_team": "SV Werder Bremen",
+          "win": 36,
+          "draw": 27,
+          "defeat": 37,
+          "goals": "168:161"
+        },
+        {
+          "date": "10.-12.04.2026",
+          "matchday": 29,
+          "home_team": "Borussia Dortmund",
+          "away_team": "Bayer 04 Leverkusen",
+          "win": 39,
+          "draw": 24,
+          "defeat": 31,
+          "goals": "162:139"
+        },
+        {
+          "date": "10.-12.04.2026",
+          "matchday": 29,
+          "home_team": "VfL Wolfsburg",
+          "away_team": "Eintracht Frankfurt",
+          "win": 23,
+          "draw": 16,
+          "defeat": 9,
+          "goals": "78:59"
+        },
+        {
+          "date": "10.-12.04.2026",
+          "matchday": 29,
+          "home_team": "FC St. Pauli",
+          "away_team": "FC Bayern München",
+          "win": 2,
+          "draw": 4,
+          "defeat": 12,
+          "goals": "11:34"
+        },
+        {
+          "date": "10.-12.04.2026",
+          "matchday": 29,
+          "home_team": "1. FSV Mainz 05",
+          "away_team": "Sport-Club Freiburg",
+          "win": 16,
+          "draw": 17,
+          "defeat": 15,
+          "goals": "61:48"
+        },
+        {
+          "date": "10.-12.04.2026",
+          "matchday": 29,
+          "home_team": "FC Augsburg",
+          "away_team": "TSG Hoffenheim",
+          "win": 6,
+          "draw": 8,
+          "defeat": 16,
+          "goals": "29:53"
+        },
+        {
+          "date": "10.-12.04.2026",
+          "matchday": 29,
+          "home_team": "1. FC Heidenheim 1846",
+          "away_team": "1. FC Union Berlin",
+          "win": 8,
+          "draw": 3,
+          "defeat": 3,
+          "goals": "24:15"
+        },
+        {
+          "date": "10.-12.04.2026",
+          "matchday": 29,
+          "home_team": "RB Leipzig",
+          "away_team": "Borussia Mönchengladbach",
+          "win": 10,
+          "draw": 4,
+          "defeat": 4,
+          "goals": "29:19"
+        },
+        {
+          "date": "17.-19.04.2026",
+          "matchday": 30,
+          "home_team": "SV Werder Bremen",
+          "away_team": "Hamburger SV",
+          "win": 40,
+          "draw": 35,
+          "defeat": 35,
+          "goals": "160:162"
+        },
+        {
+          "date": "17.-19.04.2026",
+          "matchday": 30,
+          "home_team": "FC Bayern München",
+          "away_team": "VfB Stuttgart",
+          "win": 71,
+          "draw": 22,
+          "defeat": 19,
+          "goals": "238:125"
+        },
+        {
+          "date": "17.-19.04.2026",
+          "matchday": 30,
+          "home_team": "Borussia Mönchengladbach",
+          "away_team": "1. FSV Mainz 05",
+          "win": 16,
+          "draw": 15,
+          "defeat": 13,
+          "goals": "60:52"
+        },
+        {
+          "date": "17.-19.04.2026",
+          "matchday": 30,
+          "home_team": "Eintracht Frankfurt",
+          "away_team": "RB Leipzig",
+          "win": 5,
+          "draw": 8,
+          "defeat": 5,
+          "goals": "25:20"
+        },
+        {
+          "date": "17.-19.04.2026",
+          "matchday": 30,
+          "home_team": "Bayer 04 Leverkusen",
+          "away_team": "FC Augsburg",
+          "win": 19,
+          "draw": 7,
+          "defeat": 2,
+          "goals": "60:23"
+        },
+        {
+          "date": "17.-19.04.2026",
+          "matchday": 30,
+          "home_team": "Sport-Club Freiburg",
+          "away_team": "1. FC Heidenheim 1846",
+          "win": 4,
+          "draw": 1,
+          "defeat": 1,
+          "goals": "11:5"
+        },
+        {
+          "date": "17.-19.04.2026",
+          "matchday": 30,
+          "home_team": "FC St. Pauli",
+          "away_team": "1. FC Köln",
+          "win": 4,
+          "draw": 6,
+          "defeat": 20,
+          "goals": "31:61"
+        },
+        {
+          "date": "17.-19.04.2026",
+          "matchday": 30,
+          "home_team": "1. FC Union Berlin",
+          "away_team": "VfL Wolfsburg",
+          "win": 4,
+          "draw": 3,
+          "defeat": 5,
+          "goals": "12:13"
+        },
+        {
+          "date": "17.-19.04.2026",
+          "matchday": 30,
+          "home_team": "TSG Hoffenheim",
+          "away_team": "Borussia Dortmund",
+          "win": 8,
+          "draw": 11,
+          "defeat": 15,
+          "goals": "50:55"
+        },
+        {
+          "date": "24.-26.04.2026",
+          "matchday": 31,
+          "home_team": "Hamburger SV",
+          "away_team": "TSG Hoffenheim",
+          "win": 8,
+          "draw": 4,
+          "defeat": 8,
+          "goals": "23:34"
+        },
+        {
+          "date": "24.-26.04.2026",
+          "matchday": 31,
+          "home_team": "VfB Stuttgart",
+          "away_team": "SV Werder Bremen",
+          "win": 39,
+          "draw": 35,
+          "defeat": 38,
+          "goals": "173:189"
+        },
+        {
+          "date": "24.-26.04.2026",
+          "matchday": 31,
+          "home_team": "1. FC Köln",
+          "away_team": "Bayer 04 Leverkusen",
+          "win": 18,
+          "draw": 25,
+          "defeat": 29,
+          "goals": "92:115"
+        },
+        {
+          "date": "24.-26.04.2026",
+          "matchday": 31,
+          "home_team": "Borussia Dortmund",
+          "away_team": "Sport-Club Freiburg",
+          "win": 34,
+          "draw": 11,
+          "defeat": 5,
+          "goals": "121:48"
+        },
+        {
+          "date": "24.-26.04.2026",
+          "matchday": 31,
+          "home_team": "VfL Wolfsburg",
+          "away_team": "Borussia Mönchengladbach",
+          "win": 24,
+          "draw": 10,
+          "defeat": 16,
+          "goals": "79:67"
+        },
+        {
+          "date": "24.-26.04.2026",
+          "matchday": 31,
+          "home_team": "1. FSV Mainz 05",
+          "away_team": "FC Bayern München",
+          "win": 8,
+          "draw": 3,
+          "defeat": 27,
+          "goals": "45:110"
+        },
+        {
+          "date": "24.-26.04.2026",
+          "matchday": 31,
+          "home_team": "FC Augsburg",
+          "away_team": "Eintracht Frankfurt",
+          "win": 8,
+          "draw": 10,
+          "defeat": 8,
+          "goals": "32:38"
+        },
+        {
+          "date": "24.-26.04.2026",
+          "matchday": 31,
+          "home_team": "1. FC Heidenheim 1846",
+          "away_team": "FC St. Pauli",
+          "win": 8,
+          "draw": 3,
+          "defeat": 9,
+          "goals": "26:24"
+        },
+        {
+          "date": "24.-26.04.2026",
+          "matchday": 31,
+          "home_team": "RB Leipzig",
+          "away_team": "1. FC Union Berlin",
+          "win": 7,
+          "draw": 3,
+          "defeat": 6,
+          "goals": "26:16"
+        },
+        {
+          "date": "02./03.05.2026",
+          "matchday": 32,
+          "home_team": "SV Werder Bremen",
+          "away_team": "FC Augsburg",
+          "win": 10,
+          "draw": 3,
+          "defeat": 13,
+          "goals": "40:42"
+        },
+        {
+          "date": "02./03.05.2026",
+          "matchday": 32,
+          "home_team": "FC Bayern München",
+          "away_team": "1. FC Heidenheim 1846",
+          "win": 3,
+          "draw": 0,
+          "defeat": 1,
+          "goals": "14:7"
+        },
+        {
+          "date": "02./03.05.2026",
+          "matchday": 32,
+          "home_team": "Borussia Mönchengladbach",
+          "away_team": "Borussia Dortmund",
+          "win": 32,
+          "draw": 29,
+          "defeat": 45,
+          "goals": "168:195"
+        },
+        {
+          "date": "02./03.05.2026",
+          "matchday": 32,
+          "home_team": "Eintracht Frankfurt",
+          "away_team": "Hamburger SV",
+          "win": 32,
+          "draw": 25,
+          "defeat": 41,
+          "goals": "123:161"
+        },
+        {
+          "date": "02./03.05.2026",
+          "matchday": 32,
+          "home_team": "Bayer 04 Leverkusen",
+          "away_team": "RB Leipzig",
+          "win": 5,
+          "draw": 5,
+          "defeat": 8,
+          "goals": "28:31"
+        },
+        {
+          "date": "02./03.05.2026",
+          "matchday": 32,
+          "home_team": "Sport-Club Freiburg",
+          "away_team": "VfL Wolfsburg",
+          "win": 18,
+          "draw": 11,
+          "defeat": 15,
+          "goals": "62:72"
+        },
+        {
+          "date": "02./03.05.2026",
+          "matchday": 32,
+          "home_team": "FC St. Pauli",
+          "away_team": "1. FSV Mainz 05",
+          "win": 7,
+          "draw": 9,
+          "defeat": 8,
+          "goals": "29:39"
+        },
+        {
+          "date": "02./03.05.2026",
+          "matchday": 32,
+          "home_team": "1. FC Union Berlin",
+          "away_team": "1. FC Köln",
+          "win": 9,
+          "draw": 3,
+          "defeat": 6,
+          "goals": "22:28"
+        },
+        {
+          "date": "02./03.05.2026",
+          "matchday": 32,
+          "home_team": "TSG Hoffenheim",
+          "away_team": "VfB Stuttgart",
+          "win": 8,
+          "draw": 11,
+          "defeat": 11,
+          "goals": "44:52"
+        },
+        {
+          "date": "08.-10.05.2026",
+          "matchday": 33,
+          "home_team": "Hamburger SV",
+          "away_team": "Sport-Club Freiburg",
+          "win": 14,
+          "draw": 14,
+          "defeat": 8,
+          "goals": "53:29"
+        },
+        {
+          "date": "08.-10.05.2026",
+          "matchday": 33,
+          "home_team": "VfB Stuttgart",
+          "away_team": "Bayer 04 Leverkusen",
+          "win": 23,
+          "draw": 24,
+          "defeat": 41,
+          "goals": "113:156"
+        },
+        {
+          "date": "08.-10.05.2026",
+          "matchday": 33,
+          "home_team": "1. FC Köln",
+          "away_team": "1. FC Heidenheim 1846",
+          "win": 1,
+          "draw": 2,
+          "defeat": 1,
+          "goals": "5:6"
+        },
+        {
+          "date": "08.-10.05.2026",
+          "matchday": 33,
+          "home_team": "Borussia Dortmund",
+          "away_team": "Eintracht Frankfurt",
+          "win": 51,
+          "draw": 21,
+          "defeat": 32,
+          "goals": "202:139"
+        },
+        {
+          "date": "08.-10.05.2026",
+          "matchday": 33,
+          "home_team": "VfL Wolfsburg",
+          "away_team": "FC Bayern München",
+          "win": 4,
+          "draw": 7,
+          "defeat": 45,
+          "goals": "49:142"
+        },
+        {
+          "date": "08.-10.05.2026",
+          "matchday": 33,
+          "home_team": "1. FSV Mainz 05",
+          "away_team": "1. FC Union Berlin",
+          "win": 5,
+          "draw": 5,
+          "defeat": 8,
+          "goals": "19:28"
+        },
+        {
+          "date": "08.-10.05.2026",
+          "matchday": 33,
+          "home_team": "FC Augsburg",
+          "away_team": "Borussia Mönchengladbach",
+          "win": 11,
+          "draw": 9,
+          "defeat": 10,
+          "goals": "44:48"
+        },
+        {
+          "date": "08.-10.05.2026",
+          "matchday": 33,
+          "home_team": "TSG Hoffenheim",
+          "away_team": "SV Werder Bremen",
+          "win": 10,
+          "draw": 10,
+          "defeat": 12,
+          "goals": "57:55"
+        },
+        {
+          "date": "08.-10.05.2026",
+          "matchday": 33,
+          "home_team": "RB Leipzig",
+          "away_team": "FC St. Pauli",
+          "win": 2,
+          "draw": 1,
+          "defeat": 3,
+          "goals": "6:4"
+        },
+        {
+          "date": "2026-05-16 15:30:00",
+          "matchday": 34,
+          "home_team": "SV Werder Bremen",
+          "away_team": "Borussia Dortmund",
+          "win": 42,
+          "draw": 21,
+          "defeat": 49,
+          "goals": "178:182"
+        },
+        {
+          "date": "2026-05-16 15:30:00",
+          "matchday": 34,
+          "home_team": "FC Bayern München",
+          "away_team": "1. FC Köln",
+          "win": 53,
+          "draw": 24,
+          "defeat": 23,
+          "goals": "204:124"
+        },
+        {
+          "date": "2026-05-16 15:30:00",
+          "matchday": 34,
+          "home_team": "Borussia Mönchengladbach",
+          "away_team": "TSG Hoffenheim",
+          "win": 12,
+          "draw": 13,
+          "defeat": 11,
+          "goals": "73:61"
+        },
+        {
+          "date": "2026-05-16 15:30:00",
+          "matchday": 34,
+          "home_team": "Eintracht Frankfurt",
+          "away_team": "VfB Stuttgart",
+          "win": 37,
+          "draw": 23,
+          "defeat": 44,
+          "goals": "176:188"
+        },
+        {
+          "date": "2026-05-16 15:30:00",
+          "matchday": 34,
+          "home_team": "Bayer 04 Leverkusen",
+          "away_team": "Hamburger SV",
+          "win": 30,
+          "draw": 20,
+          "defeat": 28,
+          "goals": "115:94"
+        },
+        {
+          "date": "2026-05-16 15:30:00",
+          "matchday": 34,
+          "home_team": "Sport-Club Freiburg",
+          "away_team": "RB Leipzig",
+          "win": 4,
+          "draw": 5,
+          "defeat": 11,
+          "goals": "20:41"
+        },
+        {
+          "date": "2026-05-16 15:30:00",
+          "matchday": 34,
+          "home_team": "FC St. Pauli",
+          "away_team": "VfL Wolfsburg",
+          "win": 5,
+          "draw": 10,
+          "defeat": 1,
+          "goals": "31:20"
+        },
+        {
+          "date": "2026-05-16 15:30:00",
+          "matchday": 34,
+          "home_team": "1. FC Union Berlin",
+          "away_team": "FC Augsburg",
+          "win": 2,
+          "draw": 7,
+          "defeat": 7,
+          "goals": "12:20"
+        },
+        {
+          "date": "2026-05-16 15:30:00",
+          "matchday": 34,
+          "home_team": "1. FC Heidenheim 1846",
+          "away_team": "1. FSV Mainz 05",
+          "win": 2,
+          "draw": 1,
+          "defeat": 1,
+          "goals": "4:3"
+        }
+      ]
+    }
+  ]
+}

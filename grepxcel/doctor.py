@@ -117,17 +117,18 @@ def check_draft_local() -> list[Result]:
 
 def check_draft_cloud() -> list[Result]:
     res: list[Result] = []
-    for name, mod, env in (('claude', 'anthropic', 'ANTHROPIC_API_KEY'),
-                           ('github', 'openai', 'GITHUB_TOKEN')):
-        have, key = _have(mod), bool(os.environ.get(env))
-        if have and key:
-            res.append((OK, f'{name} backend', f'{mod} installed, {env} set'))
-        elif have:
-            res.append((WARN, f'{name} backend', f'{mod} installed but {env} not set'))
-        else:
-            res.append((WARN, f'{name} backend',
-                        f"not configured — pip install 'grepxcel[draft-cloud]' and set {env}"))
+    have, key = _have('anthropic'), bool(os.environ.get('ANTHROPIC_API_KEY'))
+    if have and key:
+        res.append((OK, 'claude backend', 'anthropic installed, ANTHROPIC_API_KEY set'))
+    elif have:
+        res.append((WARN, 'claude backend', 'anthropic installed but ANTHROPIC_API_KEY not set'))
+    else:
+        res.append((WARN, 'claude backend',
+                    "not configured — pip install 'grepxcel[draft-cloud]' and set ANTHROPIC_API_KEY"))
     res.append((WARN, 'gemini backend', 'planned for a future release (disabled)'))
+    res.append((WARN, 'github backend',
+                'currently unavailable — GitHub retired the free-tier Models endpoint '
+                '(HTTP 410 retirement brownout); implementation preserved for future re-enable'))
     return res
 
 

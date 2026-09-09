@@ -1,0 +1,42 @@
+{
+  "po": {
+    "number": "PO-2026",
+    "date": "2026-05-01 00:00:00",
+    "vendor_name": "Acme Supplies",
+    "reference": "ACME001"
+  },
+  "item": [
+    {
+      "_source": {
+        "sheet": "Sheet1",
+        "ref": "A3:E7"
+      },
+      "data": [
+        {
+          "name": "Laptop",
+          "description": "Dell XPS 15",
+          "qty": 2,
+          "unit_price": 1200,
+          "total": 2400
+        },
+        {
+          "name": "X",
+          "description": "Monitor Stand",
+          "qty": 4,
+          "unit_price": 45,
+          "total": 180
+        },
+        {
+          "name": "Dock",
+          "description": "USB-C Hub",
+          "qty": 6,
+          "unit_price": 75,
+          "total": 450
+        }
+      ],
+      "footer": {
+        "grand_total": 3030
+      }
+    }
+  ]
+}

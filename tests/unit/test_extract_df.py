@@ -6,7 +6,7 @@ import sys
 import pytest
 
 import grepxcel
-from tests.conftest import find_pattern_xlsx
+from tests.conftest import find_data_file, find_pattern_xlsx
 
 
 def _can_import(name: str) -> bool:
@@ -18,15 +18,15 @@ def _can_import(name: str) -> bool:
 
 _INVOICE_FIX = os.path.join(os.path.dirname(__file__), '..', 'fixtures', '01_simple_invoice')
 _INVOICE_PAT = find_pattern_xlsx(_INVOICE_FIX)
-_INVOICE_DATA = os.path.join(_INVOICE_FIX, 'data.xlsx')
+_INVOICE_DATA = find_data_file(_INVOICE_FIX)
 
 _CATALOG_FIX = os.path.join(os.path.dirname(__file__), '..', 'fixtures', '02_product_catalog')
 _CATALOG_PAT = find_pattern_xlsx(_CATALOG_FIX)
-_CATALOG_DATA = os.path.join(_CATALOG_FIX, 'data.xlsx')
+_CATALOG_DATA = find_data_file(_CATALOG_FIX)
 
 _EXPENSE_FIX = os.path.join(os.path.dirname(__file__), '..', 'fixtures', '05_expense_report')
 _EXPENSE_PAT = find_pattern_xlsx(_EXPENSE_FIX)
-_EXPENSE_DATA = os.path.join(_EXPENSE_FIX, 'data.xlsx')
+_EXPENSE_DATA = find_data_file(_EXPENSE_FIX)
 
 
 # ── export / importability ────────────────────────────────────────────────────

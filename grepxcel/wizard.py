@@ -183,6 +183,24 @@ class WizardState:
     var_defs: list[tuple[str, str, str]] = field(default_factory=list)
     body_rows: list[list[str]] = field(default_factory=list)
 
+    def to_dict(self) -> dict:
+        """Serialise to a plain JSON-safe dict.  Tuples become lists."""
+        import dataclasses
+        return dataclasses.asdict(self)
+
+    @classmethod
+    def from_dict(cls, d: dict) -> 'WizardState':
+        """Reconstruct from a plain dict (e.g. loaded from JSON)."""
+        return cls(
+            direction=d.get('direction', 'LR'),
+            ignore_case=d.get('ignore_case', False),
+            currency_sign=d.get('currency_sign', '€'),
+            sheet_name=d.get('sheet_name'),
+            lbl_defs=[tuple(t) for t in d.get('lbl_defs', [])],
+            var_defs=[tuple(t) for t in d.get('var_defs', [])],
+            body_rows=[list(r) for r in d.get('body_rows', [])],
+        )
+
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -350,7 +368,8 @@ def _handle_field_label(state: WizardState, value: Any) -> str:
     name = _ask(_c('  Label anchor name', _C.CYAN), default_name)
     if not name:
         name = default_name
-    state.lbl_defs.append((name, 'string', str(value) if value is not None else ''))
+    ltype = _var_type_from_proposal(_propose_type(value))
+    state.lbl_defs.append((name, ltype, str(value) if value is not None else ''))
     state.body_rows.append(['cell:1', name])
     # Derive base for lookahead: strip _label suffix if present
     base = name[:-6] if name.endswith('_label') else name
@@ -366,7 +385,8 @@ def _handle_control_label(state: WizardState, value: Any) -> None:
     name = _ask(_c('  Control label name', _C.CYAN), slug)
     if not name:
         name = slug
-    state.lbl_defs.append((name, 'string', str(value) if value is not None else ''))
+    ltype = _var_type_from_proposal(_propose_type(value))
+    state.lbl_defs.append((name, ltype, str(value) if value is not None else ''))
     state.body_rows.append(['cell:1', name])
 
 
@@ -740,24 +760,60 @@ def _write_pattern(state: WizardState, output_path: str) -> None:
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 
+def _save_state_json(state: WizardState, path: str) -> None:
+    """Write *state* as JSON to *path*."""
+    with open(path, 'w', encoding='utf-8') as fh:
+        json.dump(state.to_dict(), fh, indent=2, ensure_ascii=False)
+    print(_c(f'   State saved → {path}', _C.DIM))
+
+
 def run_wizard(
-    data_file: str,
+    data_file: str | None,
     sheet: str | None = None,
     output: str | None = None,
     no_tui: bool = False,
+    load_state: str | None = None,
+    save_state: str | None = None,
 ) -> int:
     """Interactive wizard: loads *data_file*, walks cells, writes a CSV pattern.
 
     When *textual* is installed and stdout is a TTY the full-screen TUI is used
     by default.  Pass ``no_tui=True`` (or set ``GREPXCEL_NO_TUI=1``) to fall
     back to the sequential terminal wizard.
+
+    ``load_state``
+        Path to a JSON state file previously written by ``--save-state``.
+        Skips the interactive walk and writes the pattern directly.
+    ``save_state``
+        Path to write the wizard session state as JSON after the pattern is saved.
+        Enables replay and scripted testing.
     """
+    # ── load-state mode: JSON → pattern, no interactive walk ─────────────────
+    if load_state:
+        try:
+            with open(load_state, encoding='utf-8') as fh:
+                state = WizardState.from_dict(json.load(fh))
+        except (FileNotFoundError, json.JSONDecodeError, OSError) as exc:
+            print(f'Error loading state file {load_state!r}: {exc}', file=sys.stderr)
+            return 1
+        if not output:
+            stem = os.path.splitext(os.path.basename(load_state))[0]
+            if data_file:
+                stem = os.path.splitext(os.path.basename(data_file))[0]
+            output = f'pattern-{stem}.csv'
+        _write_pattern(state, output)
+        print(_c(f'\n✓  Pattern written to: {output}', _C.BOLD, _C.GREEN))
+        if save_state:
+            _save_state_json(state, save_state)
+        return 0
+
     # Try TUI first — falls back if textual not installed or not a TTY
     _force_seq = no_tui or os.environ.get('GREPXCEL_NO_TUI', '') not in ('', '0')
     if not _force_seq and sys.stdout.isatty():
         try:
             from .wizard_tui import run_wizard_tui
-            rc = run_wizard_tui(data_file, sheet=sheet, output=output)
+            rc = run_wizard_tui(data_file, sheet=sheet, output=output,
+                                save_state=save_state)
             if rc != 2:          # 2 = textual not installed → fall through
                 return rc
         except Exception:
@@ -834,6 +890,24 @@ def run_wizard(
           + (f'  {_c(f"({table_desc})", _C.DIM)}' if table_desc else ''))
     print(_c('─' * 49, _C.DIM))
 
+    # B4: warn on duplicate field names (lbl: and var: names share the same namespace)
+    all_names = [n for n, _, _ in state.lbl_defs] + [n for n, _, _ in state.var_defs]
+    seen: set[str] = set()
+    dups: list[str] = []
+    for n in all_names:
+        if n in seen:
+            dups.append(n)
+        seen.add(n)
+    if dups:
+        dup_list = ', '.join(sorted(set(dups)))
+        print(_c(f'\n⚠  Duplicate field name(s): {dup_list}', _C.YELLOW))
+        print(_c('   Fields with the same name will overwrite each other in the pattern.',
+                 _C.DIM))
+        answer = _ask(_c('   Save anyway?', _C.CYAN), 'no')
+        if answer.lower() not in ('yes', 'y'):
+            print(_c('   Save cancelled.', _C.DIM))
+            return 1
+
     confirmed = _ask(f'\nSave pattern to', output)
     if confirmed:
         output = confirmed
@@ -841,6 +915,8 @@ def run_wizard(
     _write_pattern(state, output)
 
     print(_c(f'\n✓  Pattern written to: {output}', _C.BOLD, _C.GREEN))
+    if save_state:
+        _save_state_json(state, save_state)
     print('\nTry it:')
     print(_c(f'  grepxcel extract -p {output} {data_file}', _C.CYAN))
     print(_c(f'  grepxcel validate-pattern {output}', _C.CYAN))

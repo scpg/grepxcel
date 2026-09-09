@@ -1,0 +1,19 @@
+config:,read.direction,LR
+config:,currency.sign,€
+lbl:,col_product,string,Produkt
+lbl:,col_customer,string,Kunde
+lbl:,col_q1,string,Qrtl 1
+lbl:,col_q2,string,Qrtl 2
+lbl:,col_q3,string,Qrtl 3
+lbl:,col_q4,string,Qrtl 4
+var:,line.product,string,.*
+var:,line.customer,string,[A-Z]+
+var:,line.q1,number,.*
+var:,line.q2,number,.*
+var:,line.q3,number,.*
+var:,line.q4,number,.*
+START:
+table:*
+,HEADER:1,col_product,col_customer,col_q1,col_q2,col_q3,col_q4
+,DATA:*,line.product,line.customer,line.q1,line.q2,line.q3,line.q4
+END:

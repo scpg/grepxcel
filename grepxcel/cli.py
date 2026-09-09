@@ -145,16 +145,25 @@ multiplicities, regex safety, comments) and also flags an empty extraction
 sequence and references to undefined fields. Exits non-zero if any file is
 invalid.
 
+verbosity:
+  (none)  print ✓ VALID / ✗ INVALID + any warnings or errors
+  -q      silent on success; only print warnings / errors (useful in CI)
+  -v      + parsed config, fields, and extraction sequence
+
 examples:
   grepxcel validate-pattern pattern.xlsx
   grepxcel validate-pattern pattern.csv -v        # + parsed fields & steps
   grepxcel validate-pattern a.xlsx b.csv          # validate several
+  grepxcel validate-pattern pattern.xlsx -q       # silent success, CI-friendly
         """,
     )
     p.add_argument('files', nargs='+', metavar='FILE',
                    help='Pattern file(s) to validate (.xlsx or .csv)')
     p.add_argument('-v', '--verbose', action='store_true',
                    help='Print the parsed config, fields, and extraction sequence')
+    p.add_argument('-q', '--quiet', action='store_true',
+                   help='Silent on success — only print warnings or errors; '
+                        'exit code is unchanged')
 
 
 def _add_lint_subparser(sub) -> None:
@@ -357,14 +366,24 @@ examples:
   grepxcel wizard data.xlsx
   grepxcel wizard data.xlsx --sheet Sheet2
   grepxcel wizard data.xlsx -o my-pattern.csv
+  grepxcel wizard data.xlsx --save-state session.json
+  grepxcel wizard --load-state session.json -o my-pattern.csv
         """,
     )
-    p.add_argument('file', metavar='FILE', help='Excel data file to inspect')
+    p.add_argument('file', metavar='FILE', nargs='?',
+                   help='Excel data file to inspect '
+                        '(required unless --load-state is given)')
     p.add_argument('--sheet', metavar='NAME_OR_INDEX',
                    help='Sheet to use (default: active sheet)')
     p.add_argument('-o', '--output', metavar='FILE',
-                   help='Write the pattern CSV to FILE '
+                   help='Write the pattern CSV/XLSX to FILE '
                         '(default: pattern-<stem>.csv next to the data file)')
+    p.add_argument('--load-state', metavar='FILE',
+                   help='Load a saved wizard state (JSON) and write the pattern '
+                        'directly without any interactive session')
+    p.add_argument('--save-state', metavar='FILE',
+                   help='After saving the pattern, also write the wizard session '
+                        'state to FILE as JSON (enables replay and scripted testing)')
 
 
 def _add_quickstart_subparser(sub) -> None:
@@ -390,6 +409,7 @@ def _add_extract_subparser(sub) -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 verbosity:
+  -q      warnings + errors only — no ENGINE START header or summary stats
   (none)  warnings + summary on stderr, extracted JSON on stdout
   -v      + per-field trace: 'field ← B1 = value ✓/✗' for cells and table data
   -vv     + every anchor probe and rejection reason
@@ -398,6 +418,8 @@ verbosity:
 examples:
   grepxcel extract -p pattern.xlsx report.xlsx
   grepxcel extract -p pattern.xlsx jan.xlsx feb.xlsx mar.xlsx
+  grepxcel extract -p pattern.xlsx data.xlsx -q          # clean output
+  grepxcel extract -p pattern.xlsx data.xlsx --format csv -q
   grepxcel extract -p pattern.xlsx data.xlsx -v
   grepxcel extract -p pattern.xlsx data.xlsx --output results/
   grepxcel extract -p pattern.xlsx data.xlsx --log logs/run.log --output results/
@@ -434,6 +456,13 @@ examples:
         '-d', '--debug',
         action='store_true',
         help='Debug output (anchor probes and rejections); equivalent to -vv',
+    )
+    p.add_argument(
+        '-q', '--quiet',
+        action='store_true',
+        help='Suppress the ENGINE START header and summary stats; '
+             'only warnings and errors are printed to stderr. '
+             'Useful when piping output or calling from scripts.',
     )
     p.add_argument(
         '-o', '--output',
@@ -527,16 +556,13 @@ local 'draft' model needs an optional install:
 If a dependency is missing, grepxcel tells you exactly what to install.
 
 backends:
-  local   (default) Run a local GGUF model (Gemma-4-E4B) via llama-cpp-python.
+  local   (default) Run a local GGUF model (Qwen3-8B) via llama-cpp-python.
           Needs:  pip install 'grepxcel[suggest]'
           Model is downloaded automatically on first run (~5 GB).
           No data leaves your machine during inference.
-  github  Send the Excel structure description to GitHub Models (free with a
-          GitHub subscription, quota-limited). Highest draft quality in our eval.
-          Needs GITHUB_TOKEN (Models: read) and pip install 'grepxcel[draft-cloud]'.
-          Choose a model with --github-model (e.g. openai/gpt-4.1, openai/gpt-4o).
   claude  Send the Excel structure description to the Claude API.
           Needs ANTHROPIC_API_KEY and pip install 'grepxcel[draft-cloud]'.
+          Uses claude-sonnet-5 by default — high quality at reasonable cost.
           The raw file is NOT transmitted — only column types, sample
           values, and labels are sent.
   server  Send the Excel structure description to any OpenAI-compatible API
@@ -546,10 +572,11 @@ backends:
           auto-discovered unless --server-model is set. Data stays local
           unless you point --server-url at a remote host.
   gemini  Planned for a future release — not yet available.
+  github  Currently unavailable — GitHub retired the free-tier Models endpoint.
+          The implementation is preserved for when GitHub provides a replacement.
 
 Keys are read from a .env file (current dir or any parent) if present.
-The cloud backends print the per-call token usage; github also prints the
-remaining quota, claude prints the per-call dollar cost.
+Cloud backends print per-call token usage; claude also prints the dollar cost.
 
 model cache (local backend):
   Stored once in the per-user cache (platform-appropriate, via platformdirs):
@@ -606,10 +633,11 @@ def _draft_args(p: argparse.ArgumentParser) -> None:
         choices=['local', 'claude', 'gemini', 'github', 'server'],
         default='local',
         help='Inference backend: local (default, GGUF model), claude (requires '
-             'ANTHROPIC_API_KEY), github (GitHub Models, requires GITHUB_TOKEN '
-             "with 'Models: read'; use --github-model to pick a model), "
+             'ANTHROPIC_API_KEY), '
              'server (any OpenAI-compatible server, e.g. LM Studio / Ollama / '
-             'vLLM; use --server-url). gemini is planned for a future release.',
+             'vLLM; use --server-url). '
+             'gemini is planned for a future release. '
+             'github is currently unavailable (GitHub retired the free-tier endpoint).',
     )
     p.add_argument(
         '--github-model',
@@ -668,6 +696,8 @@ def _resolve_level(args) -> VerbosityLevel:
         return VerbosityLevel.DEBUG
     if args.verbose == 1:
         return VerbosityLevel.VERBOSE
+    if getattr(args, 'quiet', False):
+        return VerbosityLevel.QUIET
     return VerbosityLevel.NORMAL
 
 
@@ -680,7 +710,8 @@ def _process_file(pattern: str, data_file: str, args,
     """
     level = _resolve_level(args)
 
-    if len(args.files) > 1:
+    quiet = getattr(args, 'quiet', False)
+    if len(args.files) > 1 and not quiet:
         print(f'\n{"─" * 62}', file=sys.stderr)
         print(f'  File: {data_file}', file=sys.stderr)
         print(f'{"─" * 62}', file=sys.stderr)
@@ -768,6 +799,18 @@ def _process_file(pattern: str, data_file: str, args,
     stats = logger.last_stats
     if stats:
         issue_fields.extend(stats.get('empty_field_names', []))
+
+    # In quiet mode the Logger emitted nothing to the console; surface any
+    # warnings/errors now as concise one-liners (same text as the ISSUES recap
+    # inside the normal summary block, but without the stats header).
+    if quiet and not ok:
+        color = should_color(sys.stderr)
+        if len(args.files) > 1:
+            print(f'  {data_file}:', file=sys.stderr)
+        for rec in logger.issues():
+            print(colorize_marks('  ' + logger.issue_line(rec), color),
+                  file=sys.stderr)
+
     return ok, issue_fields
 
 
@@ -869,7 +912,9 @@ def _run_lint(args) -> int:
 
 def _run_validate(args) -> int:
     from .pattern_check import run_validate
-    return run_validate(args.files, verbose=getattr(args, 'verbose', False))
+    return run_validate(args.files,
+                        verbose=getattr(args, 'verbose', False),
+                        quiet=getattr(args, 'quiet', False))
 
 
 # ── schema handler ──────────────────────────────────────────────────────────
@@ -1050,6 +1095,18 @@ def _run_draft(args) -> int:
             file=sys.stderr,
         )
         return 1
+    if selected == 'github':
+        # Implemented but disabled — GitHub retired the free-tier Models endpoint
+        # (HTTP 410 "retirement brownout").  The implementation is preserved; flip
+        # _GITHUB_MODELS_ENABLED in drafter.py if GitHub provides a new endpoint.
+        print(
+            '[!] The GitHub Models backend is currently unavailable.\n'
+            '    GitHub retired the free-tier Models endpoint '
+            '(HTTP 410 retirement brownout).\n'
+            '    Use --backend local or --backend claude instead.',
+            file=sys.stderr,
+        )
+        return 1
     if selected == 'claude':
         print("[!] Excel structure description will be sent to Anthropic's API.",
               file=sys.stderr)
@@ -1096,11 +1153,19 @@ def main(argv=None):
         sys.exit(run_quickstart())
 
     if args.command == 'wizard':
+        load_state = getattr(args, 'load_state', None)
+        if not args.file and not load_state:
+            # argparse won't catch this since FILE is nargs='?'
+            print('grepxcel wizard: error: FILE is required unless --load-state is given',
+                  file=sys.stderr)
+            sys.exit(2)
         from .wizard import run_wizard
         sys.exit(run_wizard(
             data_file=args.file,
             sheet=getattr(args, 'sheet', None),
             output=getattr(args, 'output', None),
+            load_state=load_state,
+            save_state=getattr(args, 'save_state', None),
         ))
 
     if args.command == 'draft':
@@ -1198,6 +1263,27 @@ def main(argv=None):
                     f'{data_file}. Use a different -o directory.',
                     should_color(sys.stderr)), file=sys.stderr)
                 sys.exit(2)
+
+    # ── Pattern pre-validation ───────────────────────────────────────────────
+    # Run static checks once before touching any data file.
+    # Errors abort immediately; warnings are printed but extraction continues.
+    from .pattern_check import check_pattern
+    _pv = check_pattern(args.pattern)
+    if not _pv.valid:
+        color = should_color(sys.stderr)
+        print(colorize_marks(
+            f'✗  Pattern invalid: {args.pattern}', color), file=sys.stderr)
+        for err in _pv.errors:
+            print(colorize_marks(f'   ✗ {err}', color), file=sys.stderr)
+        sys.exit(1)
+    if _pv.warnings:
+        color = should_color(sys.stderr)
+        quiet = getattr(args, 'quiet', False)
+        if not quiet:
+            print(colorize_marks(
+                f'⚠  Pattern warnings: {args.pattern}', color), file=sys.stderr)
+        for warn in _pv.warnings:
+            print(colorize_marks(f'   ⚠ {warn}', color), file=sys.stderr)
 
     all_ok = True
     strict = getattr(args, 'strict', False)

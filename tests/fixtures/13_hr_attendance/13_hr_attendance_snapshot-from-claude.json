@@ -1,0 +1,41 @@
+{
+  "employee": {
+    "name": "Sarah Connor",
+    "id": "EMP-0042",
+    "year": 2026
+  },
+  "line": [
+    {
+      "_source": {
+        "sheet": "Sheet1",
+        "ref": "A4:D9"
+      },
+      "data": [
+        {
+          "month": "January",
+          "working_days": 22,
+          "days_absent": 1,
+          "reason": "Sick leave"
+        },
+        {
+          "month": "February",
+          "working_days": 20,
+          "days_absent": 0,
+          "reason": "-"
+        },
+        {
+          "month": "March",
+          "working_days": 23,
+          "days_absent": 2,
+          "reason": "Personal leave"
+        },
+        {
+          "month": "Q1 Total",
+          "working_days": 65,
+          "days_absent": 3,
+          "reason": null
+        }
+      ]
+    }
+  ]
+}

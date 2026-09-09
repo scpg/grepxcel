@@ -1,0 +1,33 @@
+config:,pattern.version,1
+config:,read.direction,LR
+lbl:,supplier_label,string,Supplier:
+lbl:,order_label,string,Order No:
+lbl:,delivery_date_label,string,Delivery Date:
+lbl:,deliver_to_label,string,Deliver To:
+lbl:,col_item,string,Item
+lbl:,col_ordered,string,Ordered
+lbl:,col_delivered,string,Delivered
+lbl:,col_unit,string,Unit
+lbl:,col_notes,string,Notes
+var:,supplier.name,string,.*
+var:,order.number,string,ORD-\d+
+var:,order.delivery_date,datetime
+var:,order.deliver_to,string,.*
+var:,line.item,string,.*
+var:,line.ordered,integer,-?\d+
+var:,line.delivered,integer,-?\d+
+var:,line.unit,string,.*
+var:,line.notes,string,.*
+START:
+cell:next,supplier_label
+cell:next,supplier.name
+cell:next,order_label
+cell:next,order.number
+cell:next,delivery_date_label
+cell:next,order.delivery_date
+cell:next,deliver_to_label
+cell:next,order.deliver_to
+table:*
+,HEADER:1,col_item,col_ordered,col_delivered,col_unit,col_notes
+,DATA:*,line.item,line.ordered,line.delivered,line.unit,line.notes
+END:

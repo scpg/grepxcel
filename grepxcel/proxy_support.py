@@ -2,7 +2,7 @@
 
 grepxcel makes outbound HTTPS in two places: the local-model download
 (``huggingface_hub`` → ``requests``) and the cloud ``draft`` backends
-(Anthropic / OpenAI / Google SDKs → ``httpx``). Behind a corporate intercept
+(Anthropic / OpenAI / Google SDKs → ``httpx2``). Behind a corporate intercept
 proxy (e.g. NetSkope, Zscaler), TLS is re-signed by a company CA that Python's
 bundled ``certifi`` store does not trust, producing::
 
@@ -16,8 +16,10 @@ This module wires up trust for that CA — never by disabling verification:
   the env vars the HTTP libraries read, and (if ``truststore`` is installed) make
   Python trust the OS certificate store, where corporate IT normally installs the
   CA. Fixes both the HF download and the cloud SDKs at once.
-* :func:`make_httpx_client` — an ``httpx.Client`` honoring the CA bundle / OS
-  store, to hand to a cloud SDK constructor.
+* :func:`make_httpx_client` — an ``httpx2.Client`` (or ``httpx.Client`` on older
+  installs) honoring the CA bundle / OS store, to hand to a cloud SDK constructor.
+  ``anthropic >= 1.x`` and ``openai >= 3.x`` both require ``httpx2``; the function
+  prefers ``httpx2`` and falls back to ``httpx`` transparently.
 * :func:`looks_like_cert_error` / :func:`cert_failure_hint` — turn a cryptic SSL
   failure into actionable guidance.
 * :func:`proxy_env` — report active proxy env vars (used by ``grepxcel doctor``).
@@ -27,7 +29,7 @@ This module wires up trust for that CA — never by disabling verification:
    :func:`enable_corporate_tls` prints a one-time caveat when it is in effect.
 
 All third-party imports here are deferred/guarded so a core ``extract``-only
-install (no ``httpx`` / ``truststore`` / ``requests``) is never burdened.
+install (no ``httpx2`` / ``truststore`` / ``requests``) is never burdened.
 """
 from __future__ import annotations
 
@@ -129,26 +131,49 @@ def enable_corporate_tls(ca_bundle: str | None = None, *, announce: bool = True)
     return status
 
 
-def make_httpx_client():
-    """Return an ``httpx.Client`` honoring the resolved CA bundle or the OS trust
-    store, or ``None`` to let the SDK use its default. Verification is ALWAYS on.
+def _import_httpx():
+    """Return the best available httpx-compatible module: httpx2 then httpx.
+
+    ``anthropic >= 1.x`` and ``openai >= 3.x`` both require ``httpx2``.  Older
+    SDK versions used plain ``httpx``.  We prefer ``httpx2`` so the client we
+    hand to the SDK always matches what it expects.
     """
     try:
+        import httpx2
+        return httpx2
+    except ImportError:
+        pass
+    try:
         import httpx
-    except Exception:
+        return httpx
+    except ImportError:
+        return None
+
+
+def make_httpx_client():
+    """Return an ``httpx2.Client`` (or ``httpx.Client`` on older installs)
+    honoring the resolved CA bundle or the OS trust store, or ``None`` to let
+    the SDK use its default. Verification is ALWAYS on.
+
+    ``anthropic >= 1.x`` and ``openai >= 3.x`` both switched from ``httpx`` to
+    ``httpx2``.  This function prefers ``httpx2`` so the returned client is
+    accepted by those SDKs without type errors.
+    """
+    _httpx = _import_httpx()
+    if _httpx is None:
         return None
     import ssl
     ca = resolve_ca_bundle()
     if ca and os.path.isfile(ca):
-        # Build an SSLContext from the bundle (httpx deprecated verify=<str path>).
+        # Build an SSLContext from the bundle (httpx2 deprecated verify=<str path>).
         ctx = ssl.create_default_context(cafile=ca)
-        return httpx.Client(verify=ctx)
+        return _httpx.Client(verify=ctx)
     # No explicit bundle: prefer the OS trust store if truststore is present
-    # (httpx does NOT read REQUESTS_CA_BUNDLE, so this is how we cover it).
+    # (httpx2 does NOT read REQUESTS_CA_BUNDLE, so this is how we cover it).
     try:
         import truststore
         ctx = truststore.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-        return httpx.Client(verify=ctx)
+        return _httpx.Client(verify=ctx)
     except Exception:
         return None  # SDK default (certifi) — correct when there is no proxy
 

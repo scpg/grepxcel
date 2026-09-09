@@ -1,0 +1,57 @@
+{
+  "timesheet": {
+    "employee": "Bob Martin",
+    "week_starting": "2026-05-11 00:00:00",
+    "project": "grepxcel v2"
+  },
+  "line": [
+    {
+      "_source": {
+        "sheet": "Sheet1",
+        "ref": "A5:C14"
+      },
+      "data": [
+        {
+          "day": "Monday",
+          "hours": 8,
+          "task": "Architecture review"
+        },
+        {
+          "day": "Tuesday",
+          "hours": 7.5,
+          "task": "Engine development"
+        },
+        {
+          "day": "Wednesday",
+          "hours": 8,
+          "task": "Engine development"
+        },
+        {
+          "day": "Thursday",
+          "hours": 6,
+          "task": "Code review"
+        },
+        {
+          "day": "Friday",
+          "hours": 7.5,
+          "task": "Testing"
+        },
+        {
+          "day": "Saturday",
+          "hours": 0,
+          "task": "-"
+        },
+        {
+          "day": "Sunday",
+          "hours": 0,
+          "task": "-"
+        },
+        {
+          "day": "Total Hours",
+          "hours": 37,
+          "task": null
+        }
+      ]
+    }
+  ]
+}

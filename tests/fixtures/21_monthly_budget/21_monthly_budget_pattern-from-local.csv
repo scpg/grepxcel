@@ -1,0 +1,74 @@
+config:,pattern.version,1
+config:,read.direction,LR
+config:,currency.sign,$
+config:,ignore.case,no
+lbl:,title_label,string,Create a Personal Monthly Budget in this worksheet. Helpful instructions on how to use this worksheet are in cells in this column. Arrow down to get started.
+lbl:,title_value,string,Title of this worksheet is in cell at right. Next instruction is in cell A4.
+lbl:,header1,string,Projected Monthly Income label is in cell at right. Enter Income 1 in cell E4 and Extra Income in E5 to calculate Total monthly income in E6. Next instruction is in cell A6.
+lbl:,header2,string,PROJECTED MONTHLY INCOME
+lbl:,header3,string,Income 1
+lbl:,header4,string,4300
+lbl:,header5,string,PROJECTED BALANCE (Projected income minus expenses)
+lbl:,header6,string,3405
+lbl:,header7,string,Actual Monthly Income label is in cell at right. Enter Income 1 in cell E8 and Extra Income in E9 to calculate Total monthly income in E10. Next instruction is in cell A12.
+lbl:,header8,string,ACTUAL MONTHLY INCOME
+lbl:,header9,string,Income 1
+lbl:,header10,string,4000
+lbl:,header11,string,DIFFERENCE (Actual minus projected)
+lbl:,header12,string,-341
+lbl:,header13,string,Enter details in Housing table starting in cell at right and in Entertainment table starting in cell G12. Next instruction is in cell A25.
+lbl:,header14,string,HOUSING
+lbl:,header15,string,Projected Cost
+lbl:,header16,string,Actual Cost
+lbl:,header17,string,Difference
+lbl:,header18,string,ENTERTAINMENT
+lbl:,header19,string,Projected Cost
+lbl:,header20,string,Actual Cost
+lbl:,header21,string,Difference
+var:,budget.title,string,.*
+var:,budget.projected_income,string,.*
+var:,budget.income1,string,.*
+var:,budget.projected_income_value,currency,\d+(\.\d{2})?
+var:,budget.projected_balance,string,.*
+var:,budget.projected_balance_value,currency,\d+(\.\d{2})?
+var:,budget.actual_income,string,.*
+var:,budget.actual_income_value,string,.*
+var:,budget.income1_actual,string,.*
+var:,budget.income1_actual_value,currency,\d+(\.\d{2})?
+var:,budget.difference_value,currency,\d+(\.\d{2})?
+var:,budget.housing_details,string,.*
+var:,budget.projected_cost,currency,\d+(\.\d{2})?
+var:,budget.actual_cost,currency,\d+(\.\d{2})?
+var:,budget.difference,currency,\d+(\.\d{2})?
+var:,budget.entertainment_details,string,.*
+var:,budget.entertainment_projected_cost,currency,\d+(\.\d{2})?
+var:,budget.entertainment_actual_cost,currency,\d+(\.\d{2})?
+var:,budget.entertainment_difference,currency,\d+(\.\d{2})?
+START:
+cell:next,title_label
+cell:next,title_value
+cell:next,header1
+cell:next,header2
+cell:next,header3
+cell:next,header4
+cell:next,header5
+cell:next,header6
+cell:next,header7
+cell:next,header8
+cell:next,header9
+cell:next,header10
+cell:next,header11
+cell:next,header12
+cell:next,header13
+cell:next,header14
+cell:next,header15
+cell:next,header16
+cell:next,header17
+cell:next,header18
+cell:next,header19
+cell:next,header20
+cell:next,header21
+table:*
+,HEADER:1,header1,header2,header3,header4,header5,header6,header7,header8,header9,header10,header11,header12,header13,header14,header15,header16,header17,header18,header19,header20,header21
+,DATA:*,budget.projected_income,budget.projected_income_value,budget.income1,budget.projected_income_value,budget.projected_balance,budget.projected_balance_value,budget.actual_income,budget.actual_income_value,budget.income1_actual,budget.income1_actual_value,budget.difference_value,budget.housing_details,budget.projected_cost,budget.actual_cost,budget.difference,budget.entertainment_details,budget.entertainment_projected_cost,budget.entertainment_actual_cost,budget.entertainment_difference
+END:

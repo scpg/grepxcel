@@ -9,7 +9,9 @@ import datetime
 import pytest
 import openpyxl as _openpyxl
 from grepxcel import Engine, Logger, VerbosityLevel
-from tests.conftest import find_pattern_xlsx
+from tests.conftest import (
+    find_data_file, find_pattern_xlsx, find_pattern_csv, find_pattern_for_backend,
+)
 
 FIXTURES = os.path.join(os.path.dirname(__file__), '..', 'fixtures')
 
@@ -27,9 +29,9 @@ def _write_pattern(rows: list) -> str:
 
 
 def run_custom_pattern(pattern_rows: list, fixture_name: str, sheet=None):
-    """Run engine with in-memory pattern against an existing fixture data.xlsx."""
+    """Run engine with in-memory pattern against an existing fixture data file."""
     pat = _write_pattern(pattern_rows)
-    data_file = os.path.join(FIXTURES, fixture_name, 'data.xlsx')
+    data_file = find_data_file(os.path.join(FIXTURES, fixture_name))
     lg = Logger(level=VerbosityLevel.QUIET)
     kwargs = {} if sheet is None else {'sheet': sheet}
     result = Engine().process(pattern_file=pat, data_file=data_file, logger=lg, **kwargs)
@@ -38,12 +40,60 @@ def run_custom_pattern(pattern_rows: list, fixture_name: str, sheet=None):
 
 
 def run(fixture_name: str, sheet=None):
+    """Run the engine using the stable 'draft' baseline pattern.
+
+    All engine test classes assert specific field names that match the
+    programmatic draft patterns (01-14) or the original LLM draft (15-22).
+    Using the best available pattern would cause these assertions to drift as
+    higher-priority patterns (pattern-from-claude, pattern-from-local, …) are
+    added.  Use run_best() explicitly when you want the highest-priority pattern.
+    """
+    folder = os.path.join(FIXTURES, fixture_name)
+    pattern = find_pattern_for_backend(folder, 'draft')
+    if pattern is None:
+        pattern = find_pattern_xlsx(folder)   # fallback for legacy bare names
+    lg = Logger(level=VerbosityLevel.QUIET)
+    kwargs = {} if sheet is None else {'sheet': sheet}
+    result = Engine().process(
+        pattern_file=pattern,
+        data_file=find_data_file(folder),
+        logger=lg,
+        **kwargs,
+    )
+    return result, lg
+
+
+def run_best(fixture_name: str, sheet=None):
+    """Run the engine using the highest-priority available pattern.
+
+    Uses find_pattern_xlsx() (manual > claude > local > draft > bare).
+    Use this when you explicitly want to test with the best pattern, not the
+    stable draft baseline.
+    """
     folder = os.path.join(FIXTURES, fixture_name)
     lg = Logger(level=VerbosityLevel.QUIET)
     kwargs = {} if sheet is None else {'sheet': sheet}
     result = Engine().process(
         pattern_file=find_pattern_xlsx(folder),
-        data_file=os.path.join(folder, 'data.xlsx'),
+        data_file=find_data_file(folder),
+        logger=lg,
+        **kwargs,
+    )
+    return result, lg
+
+
+# Keep run_draft as an explicit alias for callers that prefer the verbose name.
+run_draft = run
+
+
+def run_with_pattern_file(fixture_name: str, pattern_file: str, sheet=None):
+    """Run engine with an explicit pattern file path against a fixture's data file."""
+    folder = os.path.join(FIXTURES, fixture_name)
+    lg = Logger(level=VerbosityLevel.QUIET)
+    kwargs = {} if sheet is None else {'sheet': sheet}
+    result = Engine().process(
+        pattern_file=os.path.join(folder, pattern_file),
+        data_file=find_data_file(folder),
         logger=lg,
         **kwargs,
     )
@@ -51,11 +101,19 @@ def run(fixture_name: str, sheet=None):
 
 
 def run_all_sheets(fixture_name: str):
+    """Run process_all() using the stable 'draft' baseline pattern.
+
+    Mirrors run() — all TestAllSheets assertions use known draft field names,
+    so we pin to draft to stay stable as higher-priority patterns are added.
+    """
     folder = os.path.join(FIXTURES, fixture_name)
+    pattern = find_pattern_for_backend(folder, 'draft')
+    if pattern is None:
+        pattern = find_pattern_xlsx(folder)
     lg = Logger(level=VerbosityLevel.QUIET)
     result = Engine().process_all(
-        pattern_file=find_pattern_xlsx(folder),
-        data_file=os.path.join(folder, 'data.xlsx'),
+        pattern_file=pattern,
+        data_file=find_data_file(folder),
         logger=lg,
     )
     return result, lg
@@ -2073,10 +2131,13 @@ class TestVerboseExtractionTrace:
 
     def _verbose_run(self, fixture_name: str):
         folder = os.path.join(FIXTURES, fixture_name)
+        pattern = find_pattern_for_backend(folder, 'draft')
+        if pattern is None:
+            pattern = find_pattern_xlsx(folder)
         lg = Logger(level=VerbosityLevel.VERBOSE)
         Engine().process(
-            pattern_file=find_pattern_xlsx(folder),
-            data_file=os.path.join(folder, 'data.xlsx'),
+            pattern_file=pattern,
+            data_file=find_data_file(folder),
             logger=lg,
         )
 
@@ -2100,7 +2161,7 @@ class TestVerboseExtractionTrace:
         lg = Logger(level=VerbosityLevel.QUIET)
         Engine().process(
             pattern_file=find_pattern_xlsx(folder),
-            data_file=os.path.join(folder, 'data.xlsx'),
+            data_file=find_data_file(folder),
             logger=lg,
         )
         assert '←' not in capsys.readouterr().err
@@ -2160,3 +2221,55 @@ class TestSeekEngine:
         result, lg = _run(pat, data)
         assert result.get('x') == 'read_c'
         assert not lg.has_errors()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 20: Sales Report  (Quelldaten sheet; pattern-manual.xlsx targets pivot cache
+#     that openpyxl cannot read without Excel refresh — use draft pattern here)
+# ─────────────────────────────────────────────────────────────────────────────
+
+class TestSalesReport:
+    def setup_method(self):
+        folder = os.path.join(FIXTURES, '20_sales_report')
+        # Pin to draft CSV — the comment at the top of this section explains why:
+        # the manual pattern targets a pivot cache openpyxl can't read; draft
+        # targets 'Quelldaten' directly.  find_pattern_csv() would now return the
+        # claude CSV, whose field names differ from the assertions below.
+        pattern = find_pattern_for_backend(folder, 'draft')
+        if pattern is None:
+            pattern = find_pattern_csv(folder)
+        self.lg = Logger(level=VerbosityLevel.QUIET)
+        self.result = Engine().process(
+            pattern_file=pattern,
+            data_file=find_data_file(folder),
+            logger=self.lg,
+            sheet='Quelldaten',
+        )
+
+    def test_no_errors(self):
+        assert not self.lg.has_errors()
+
+    def test_no_warnings(self):
+        assert self.lg.issues() == []
+
+    def test_top_level_key(self):
+        assert list(self.result.keys()) == ['line']
+
+    def test_one_table_instance(self):
+        assert len(self.result['line']) == 1
+
+    def test_data_row_count(self):
+        # Quelldaten has 278 rows: 1 header + 277 data rows
+        assert len(self.result['line'][0]['data']) == 277
+
+    def test_first_row_fields(self):
+        first = self.result['line'][0]['data'][0]
+        assert first['product'] == 'Alice Mutton'
+        assert first['customer'] == 'ANTON'
+        assert first['q2'] == 702
+
+    def test_last_row_fields(self):
+        last = self.result['line'][0]['data'][-1]
+        assert last['product'] == 'Veggie-spread'
+        assert last['customer'] == 'WHITC'
+        assert last['q3'] == pytest.approx(842.88)

@@ -30,8 +30,8 @@ regressions when we change the analysis prompt, we need a repeatable score.
 We never compare pattern *text* (there are many valid ways to write the same
 pattern). Instead we compare what the patterns **produce**:
 
-1. For a fixture that has a hand-written reference `pattern.xlsx`, run the model
-   to draft a candidate pattern from the fixture's `data.xlsx`.
+1. For a fixture that has a hand-written reference pattern (`*_pattern-manual.xlsx`), run the model
+   to draft a candidate pattern from the fixture's `*_data.xlsx`.
 2. Run `extract` twice on the same data — once with the reference pattern, once
    with the candidate.
 3. Compare the two JSON outputs.
@@ -73,46 +73,56 @@ high value-recall is a naming difference, not a defect.
 
 ## Findings (full set — all 17 fixtures, value-recall)
 
+> **Note (2026-08-30):** GitHub Models retired its free-tier endpoint (HTTP 410
+> retirement brownout). The github backend is now disabled in grepxcel; the
+> figures below are historical and cannot be reproduced without a replacement
+> endpoint. The local backend is now the primary free option.
+
 | Rank | Model | Backend | Value-recall | Fixtures ≥99% | $ |
 |---|---|---|---|---|---|
-| 1 | `mistral-ai/codestral-2501` | github | **86%** | 12/17 | free |
-| 1 | `openai/gpt-4.1` | github | **86%** | 12/17 | free |
-| 1 | `openai/gpt-4o` | github | **86%** | 12/17 | free |
-| 4 | `meta/llama-3.3-70b-instruct` | github | 63–81% | 8–12/17 | free |
-| 5 | **gemma-4-e4b** *(default local)* | local | 51% | 8/17 | free |
-| 6 | qwen-coder-7b *(previous default)* | local | 42% | 5/17 | free |
-| — | `deepseek/deepseek-v3-0324` | github | *rate-limited, partial* | — | free |
+| 1 | `mistral-ai/codestral-2501` | github *(retired)* | **86%** | 12/17 | was free |
+| 1 | `openai/gpt-4.1` | github *(retired)* | **86%** | 12/17 | was free |
+| 1 | `openai/gpt-4o` | github *(retired)* | **86%** | 12/17 | was free |
+| 4 | `meta/llama-3.3-70b-instruct` | github *(retired)* | 63–81% | 8–12/17 | was free |
+| 5 | **gemma-4-e4b** *(previous local default)* | local | 51% | 8/17 | free |
+| 6 | qwen-coder-7b *(older local)* | local | 42% | 5/17 | free |
+| — | **Qwen3-8B** *(current local default)* | local | *eval pending* | — | free |
+| — | `deepseek/deepseek-v3-0324` | github *(retired)* | *rate-limited, partial* | — | was free |
 
-The whole benchmark cost **$0.00** (GitHub Models is free with a subscription;
+The original benchmark cost **$0.00** (GitHub Models was free with a subscription;
 local runs on your GPU). Figures are from two full runs; LLM sampling
-(temperature 0.1) gives a few points of run-to-run variance — see the llama note.
+(temperature 0.1) gives a few points of run-to-run variance.
 
-Takeaways:
+Takeaways from the original eval:
 
-- **The free GitHub Models backend wins by a wide margin.** The large GitHub
-  models clearly beat the local models (42–51%), at no dollar cost. For the best
-  quality, use `grepxcel draft --backend github` (`--github-model openai/gpt-4.1`,
-  `openai/gpt-4o`, or `mistral-ai/codestral-2501`).
-- **Three-way tie at the top (86%):** `codestral`, `gpt-4.1`, and `gpt-4o` are
-  indistinguishable — pick any. `codestral` (a code model) tying the GPTs fits,
-  since drafting a structured pattern is a code-like task.
-- **`llama-3.3-70b` is the least consistent** of the GitHub models (≈81% one run,
-  ≈63% another) — run-to-run sampling variance plus occasional throttling. Still
-  well ahead of the local models, but less reliable than the top three.
-- **`gemma-4-e4b` is the best *local* model** (the shipped default), ahead of the
-  previous default `qwen-coder-7b` by ~9 points, at a similar ~5 GB footprint.
-  **Gemma 4 is a generational leap over Gemma 2** (`gemma-2-9b` scored ~0%). Its
-  remaining failures are drafted patterns that over-specify cells (e.g. expecting
-  a cell past the end of the sheet) — a local-model quality limit, not a crash.
-- **`deepseek-v3` is not usable for bulk via GitHub** — its tight quota window
-  throttles rapid runs (`Too many requests`); confirmed across two runs.
-- An earlier 5-fixture subset over-flattered the local models (qwen ~69%) because
-  it excluded the hard fixtures; the full set above is the honest picture.
+- **`gemma-4-e4b` was the best *local* model** (now replaced by Qwen3-8B as the
+  default). `gemma-4-e4b` was ahead of `qwen-coder-7b` by ~9 points, at similar
+  weight size. **Gemma 4 was a generational leap over Gemma 2** (`gemma-2-9b`
+  scored ~0%). Remaining failures were over-specified cell sequences and table
+  syntax errors (e.g. `table:*` placed before `START:`).
+- **GitHub Models free tier is gone.** As of 2026 GitHub retired the free-tier
+  Models endpoint. The `github` backend is disabled in grepxcel (flip
+  `_GITHUB_MODELS_ENABLED` in drafter.py to re-enable for a future replacement).
+- **`claude` backend is the primary quality option** for non-local runs.
+  Default model upgraded to `claude-sonnet-5` (Claude 5, high quality at $3/$15 per 1M tokens).
+  Use `ClaudeBackend(model='claude-opus-5')` for the absolute best quality.
+  A draft costs ~$0.003–0.01 per fixture at Sonnet 5 pricing.
 
-For the hardest real-world tables, the capable cloud/GitHub models extract
-end-to-end where local models stall — e.g. the messy 9-column Bundesliga
-schedule (empty `split` column) is extracted in full by GPT-4o and Claude Opus,
-while local models produce structurally close but non-extracting patterns.
+**2026-08-30 model upgrade**: switched default local model from `gemma-4-E4B-it`
+(51%, 4B params, 4.6 GB Q4_K_M) to `Qwen3-8B` (8B params, 4.7 GB Q4_K_M).
+Qwen3-8B has not yet been benchmarked on the grepxcel fixture set; re-run the
+evaluation harness to update the table.  Reasons for the upgrade:
+- Twice the parameter count in the same VRAM footprint
+- Qwen3 (2025) is a substantially newer generation than Gemma 4
+- Existing gemma-4 failures included `table:*` syntax errors and 4096-token
+  context overflows (now fixed to n_ctx=8192); a stronger model should help both
+- GitHub Models retirement removes the strongest free alternative, raising the
+  importance of local quality
+
+For the hardest real-world tables, the cloud models extract end-to-end where
+local models stall — e.g. the messy 9-column Bundesliga schedule is extracted in
+full by GPT-4o and Claude Opus, while local models produce structurally close but
+non-extracting patterns.
 
 Anthropic `claude` backend (metered) ordering and cost per 1M tokens:
 `claude-opus-4-8` (\$5/\$25) > `claude-sonnet-4-6` (\$3/\$15) ≈ `claude-haiku-4-5`
@@ -140,14 +150,14 @@ two patterns extract the same information?" rather than exact key equality.
 
 ## Practical guidance
 
-- **Best quality, free:** `--backend github --github-model openai/gpt-4.1`
-  (or `openai/gpt-4o`). Free with a GitHub subscription, and the strongest
-  results in this eval. Needs `GITHUB_TOKEN` with `Models: read`.
-- **Fully offline / no account:** the default `local` backend (`gemma-4-e4b`) —
-  best of the local models, runs on your machine, nothing leaves it.
-- **Metered alternative:** `--backend claude` (Opus for the toughest cases) — a
-  few cents per draft; use it if you prefer Anthropic or have no GitHub access.
-- **Avoid for bulk:** `deepseek-v3` via GitHub (rate-limited).
+- **Fully offline / no account:** the default `local` backend (`Qwen3-8B`) —
+  best available local model, runs entirely on your machine, nothing leaves it.
+  On an 8 GB GPU all layers are offloaded; a draft takes ~10–15 s.
+- **Best quality (metered):** `--backend claude` (Haiku for speed/cost, Sonnet
+  or Opus for the toughest fixtures) — a few cents per draft.
+- **GitHub Models (retired 2026):** the `github` backend is disabled.
+  Implementation is preserved; flip `_GITHUB_MODELS_ENABLED` in drafter.py if
+  GitHub provides a new endpoint.
 - **Always expect to rename fields** in the drafted pattern. The model gets the
   structure and values; the names are yours to set.
 - A draft is a *starting point*, not a finished pattern — open it, fix regexes

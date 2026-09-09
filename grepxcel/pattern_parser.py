@@ -29,6 +29,52 @@ MIN_SUPPORTED_PATTERN_VERSION = 1
 _TRUTHY = frozenset({'1', 'true', 'yes', 'on', 'y'})
 _FALSY  = frozenset({'0', 'false', 'no', 'off', 'n', ''})
 
+# Modifier tokens recognised in column-A field rows ('lbl:...' / 'var:...').
+# Mode tokens map to their canonical name; 're' normalises to 'regexp'.
+_MODE_TOKENS = {'literal': 'literal', 'glob': 'glob', 're': 'regexp', 'regexp': 'regexp'}
+_CONSTRAINT_TOKENS = frozenset({'not-null', 'not-empty'})
+
+
+def _parse_col_a_modifiers(col_a: str, row_num: int) -> tuple:
+    """Parse modifier tokens from a 'lbl:...' or 'var:...' column-A cell.
+
+    The cell is split on ':'; the first token is the role (already known by
+    the caller).  Each subsequent token is either a matching-mode name or a
+    constraint keyword.  Order does not matter.
+
+    Returns ``(mode, required)``:
+      * mode     – ``None | 'literal' | 'glob' | 'regexp'``  (normalised;
+                   None means "use the default for this role")
+      * required – ``True`` when ``not-null`` or ``not-empty`` is present.
+
+    Raises ``PatternError`` on unknown tokens or duplicate mode modifiers.
+    """
+    parts = col_a.lower().split(':')
+    mode: str | None = None
+    required = False
+    seen_mode = False
+
+    for token in parts[1:]:
+        if not token:                  # empty segment from trailing / double ':'
+            continue
+        if token in _MODE_TOKENS:
+            if seen_mode:
+                raise PatternError(
+                    f"Duplicate mode modifier in {col_a!r} at pattern row {row_num}. "
+                    f"Use only one of: literal, glob, re, regexp."
+                )
+            mode = _MODE_TOKENS[token]
+            seen_mode = True
+        elif token in _CONSTRAINT_TOKENS:
+            required = True
+        else:
+            raise PatternError(
+                f"Unknown modifier {token!r} in {col_a!r} at pattern row {row_num}. "
+                f"Valid modifiers: literal, glob, re, regexp, not-null, not-empty."
+            )
+
+    return mode, required
+
 # Field types the engine knows how to validate (see utils.validate_type).
 # Keep this in lockstep with that function — a name here that it can't handle
 # would parse cleanly but make every value fail validation.
@@ -147,19 +193,18 @@ class PatternParser:
                 if col_a_l == 'config:':
                     self._apply_global_config(row, global_config)
                     self._check_comment_zone(row, 3, i + 1, 'config:')    # D+ comment
-                elif col_a_l in ('def:', 'var:'):
-                    fd = self._parse_field(row, role='var', row_num=i + 1)
+                elif isinstance(col_a_l, str) and (col_a_l.startswith('var:')
+                                                    or col_a_l.startswith('def:')):
+                    var_mode, required = _parse_col_a_modifiers(col_a_l, i + 1)
+                    fd = self._parse_field(row, role='var', row_num=i + 1,
+                                           var_mode=var_mode, required=required)
                     defs[fd.name] = fd
                     self._check_comment_zone(row, 4, i + 1, col_a_l)      # E+ comment
                 elif isinstance(col_a_l, str) and col_a_l.startswith('lbl:'):
-                    suffix = col_a_l[4:]  # '' | 'literal' | 'glob' | 'regexp'
-                    if suffix and suffix not in LBL_MATCH_MODES:
-                        raise PatternError(
-                            f"Unknown lbl: variant {col_a!r} at pattern row {i + 1}. "
-                            f"Use lbl: (global default), lbl:literal, lbl:glob, or lbl:regexp."
-                        )
+                    lbl_mode, required = _parse_col_a_modifiers(col_a_l, i + 1)
                     fd = self._parse_field(row, role='lbl', row_num=i + 1,
-                                           lbl_match_override=suffix if suffix else None)
+                                           lbl_match_override=lbl_mode, required=required,
+                                           global_lbl_match=global_config.lbl_match)
                     defs[fd.name] = fd
                     self._check_comment_zone(row, 4, i + 1, col_a_l)
                 elif col_a_l in ('doc:', 'info:'):
@@ -561,10 +606,17 @@ class PatternParser:
     def _read_and_validate(self, ws) -> list:
         """
         Read all rows from the pattern worksheet, enforcing that every cell is
-        either empty or a plain string.  Formulas, numbers, dates, and booleans
-        are all rejected — the pattern file is a configuration document, not a
-        spreadsheet.
+        either empty or convertible to a plain string.
+
+        Formulas are rejected outright (security: they can execute code).
+        Dates and times are rejected (ambiguous — no sensible pattern string exists).
+        Numbers, integers, and booleans are silently coerced to their string
+        representation — Excel auto-types cells typed without a leading apostrophe,
+        and rejecting them would be a confusing paper-cut for users (e.g. typing
+        ``1`` for ``pattern.version``).
         """
+        import datetime as _dt
+
         rows = []
         for row in ws.iter_rows():
             row_values = []
@@ -582,12 +634,29 @@ class PatternParser:
                         f'Replace it with a plain text value.'
                     )
 
-                # Only plain strings are accepted
-                if not isinstance(val, str):
+                # Dates/times are ambiguous in a pattern context — reject them.
+                if isinstance(val, (_dt.datetime, _dt.date, _dt.time)):
+                    raise SecurityError(
+                        f'Pattern file cell {cell.coordinate} contains a date/time '
+                        f'value: {val!r}  Format the cell as Text, then re-enter the '
+                        f'value as a plain string.'
+                    )
+
+                # Numbers and booleans are silently coerced to strings.
+                # Excel stores unquoted literals (e.g. ``1``) as numbers; rejecting
+                # them produces confusing errors for common cases like pattern.version.
+                if isinstance(val, bool):
+                    val = str(val)
+                elif isinstance(val, float):
+                    # Represent whole floats without the decimal (1.0 → "1")
+                    val = str(int(val)) if val == int(val) else str(val)
+                elif isinstance(val, int):
+                    val = str(val)
+                elif not isinstance(val, str):
                     raise SecurityError(
                         f'Pattern file cells must contain plain text only. '
-                        f'Cell {cell.coordinate} contains a {type(val).__name__} value: {val!r}  '
-                        f'All values in a pattern file must be strings.'
+                        f'Cell {cell.coordinate} contains an unsupported '
+                        f'{type(val).__name__} value: {val!r}'
                     )
 
                 # Guard against excessively long values
@@ -655,12 +724,18 @@ class PatternParser:
                     f"{', '.join(sorted(LBL_MATCH_MODES))}."
                 )
             config.lbl_match = mode
-        elif key == 'pattern.version' and val is not None:
+        elif key in ('pattern.version', 'version') and val is not None:
             config.pattern_version = _parse_pattern_version(val)
             config.pattern_version_explicit = True
+        elif key:
+            # Unrecognised key — store for the caller to surface as a warning.
+            config.unknown_config_keys.append(key)
 
     def _parse_field(self, row, role: str = 'var', row_num: int | None = None,
-                     lbl_match_override: str | None = None) -> FieldDef:
+                     lbl_match_override: str | None = None,
+                     global_lbl_match: str = 'literal',
+                     var_mode: str | None = None,
+                     required: bool = False) -> FieldDef:
         where = f' at pattern row {row_num}' if row_num is not None else ''
         name  = str(row[1]) if row[1] else ''
         if not name:
@@ -675,12 +750,22 @@ class PatternParser:
                 f"Valid types: {', '.join(sorted(_VALID_FIELD_TYPES))}."
             )
         regex = str(row[3]) if row[3] else '.*'
-        # Skip regex safety check for lbl: fields in non-regexp modes — the
-        # pattern is treated as a literal string or glob, not compiled as a regex.
-        if role != 'lbl' or lbl_match_override not in ('literal', 'glob'):
+
+        # Skip the regex safety check when column D is used as a literal string
+        # or glob pattern — those modes never compile column D as a regex.
+        # For lbl: the effective mode is the per-field override or global default.
+        # For var: the var_mode governs (None / 'regexp' → regex; 'literal'/'glob' → not).
+        if role == 'lbl':
+            effective_lbl_mode = lbl_match_override if lbl_match_override is not None else global_lbl_match
+            is_regex_mode = effective_lbl_mode not in ('literal', 'glob')
+        else:
+            is_regex_mode = var_mode not in ('literal', 'glob')   # None → regexp
+
+        if is_regex_mode:
             check_regex_safety(regex, field_name=name)
+
         return FieldDef(name=name, type=type_, regex=regex, role=role,
-                        lbl_match=lbl_match_override)
+                        lbl_match=lbl_match_override, var_mode=var_mode, required=required)
 
     # backward-compat alias
     def _parse_def(self, row) -> FieldDef:

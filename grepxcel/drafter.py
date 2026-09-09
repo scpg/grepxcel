@@ -49,6 +49,7 @@ In your output, separate columns with ' | ' (space-pipe-space).
    Parentheses, dots, brackets etc. are matched as-is. They will allow you to confirm
    that the analysis and extraction of data is being done correctly and that the file
    being processed respects the structure that has been defined it should have.
+   Optional: use lbl:not-null to assert the label must be present (fatal if missing).
 
 3. Variable definitions — extracted to the output JSON:
    var: | field.name | type | regex
@@ -79,6 +80,14 @@ In your output, separate columns with ' | ' (space-pipe-space).
    Important notes:
      - integers can be negative too — include a leading -? in the regex if needed.
      - same applies for currency amounts — they often can be negative (e.g. credit notes, negative adjustments).
+
+   Optional modifiers on column A (order-independent, colon-separated):
+     var:not-null | field | type |        ← fatal error if the cell is empty
+     var:glob     | field | type | SKU-*  ← column D is a glob pattern, not regex
+     var:literal  | field | type | Active ← column D is an exact string, not regex
+   These can be combined: var:not-null:glob | field | type | SKU-*
+   For lbl:, use lbl:not-null to assert the label must be present.
+   You do NOT need to use these in a basic pattern — they are optional quality gates.
 
 
 4. Extraction sequence between START: and END:
@@ -773,9 +782,13 @@ class LlamaCppClient:
             print("  Hardware: CPU (no GPU detected — set GREPXCEL_GPU_LAYERS to override)",
                   file=sys.stderr)
 
+        # n_ctx = 8192: system+user prompt for complex fixtures can exceed 4096
+        # tokens; 8192 comfortably covers all current fixtures while staying
+        # well within the VRAM budget of an 8 GB GPU (KV cache overhead for
+        # a ~5 GB model is ~400 MB at this window size).
         kwargs: dict = dict(
             model_path   = self.model_path,
-            n_ctx        = 4096,
+            n_ctx        = 8192,
             n_threads    = os.cpu_count() or 4,
             n_gpu_layers = n_gpu_layers,
             verbose      = False,
@@ -806,31 +819,36 @@ class ClaudeBackend:
     Only the Excel structure description (column types, sample values, labels)
     is transmitted — the raw file bytes never leave the machine.
 
-    Pricing (USD per 1M tokens, as of 2025-05):
+    Default model: claude-sonnet-5 (Claude 5, high quality at reasonable cost).
+
+    Pricing (USD per 1M tokens, as of 2026-08):
       claude-haiku-4-5:   input $0.80   output $4.00
-      claude-sonnet-4-5:  input $3.00   output $15.00
-      claude-opus-4-5:    input $15.00  output $75.00
+      claude-sonnet-5:    input $3.00   output $15.00
+      claude-opus-5:      input $15.00  output $75.00
     """
 
     # USD per 1M tokens (source: platform.claude.com/docs/en/about-claude/models/overview)
     _PRICING: dict[str, tuple[float, float]] = {
-        # Current models
-        'claude-opus-4-8':              (5.00,  25.00),
-        'claude-haiku-4-5-20251001':    (1.00,   5.00),
-        'claude-haiku-4-5':             (1.00,   5.00),
-        'claude-sonnet-4-6':            (3.00,  15.00),
-        # Legacy models still available
-        'claude-sonnet-4-5-20250929':   (3.00,  15.00),
-        'claude-sonnet-4-5':            (3.00,  15.00),
-        'claude-opus-4-7':              (5.00,  25.00),
-        'claude-opus-4-6':              (5.00,  25.00),
-        'claude-opus-4-5-20251101':     (5.00,  25.00),
-        'claude-opus-4-5':              (5.00,  25.00),
-        'claude-opus-4-1-20250805':    (15.00,  75.00),
-        'claude-opus-4-1':             (15.00,  75.00),
+        # Claude 5 family (2026)
+        'claude-opus-5':                (15.00,  75.00),
+        'claude-sonnet-5':               (3.00,  15.00),
+        'claude-fable-5':                (3.00,  15.00),
+        'claude-haiku-4-5-20251001':     (1.00,   5.00),
+        'claude-haiku-4-5':              (1.00,   5.00),
+        # Legacy models kept for completeness
+        'claude-opus-4-8':               (5.00,  25.00),
+        'claude-sonnet-4-6':             (3.00,  15.00),
+        'claude-sonnet-4-5-20250929':    (3.00,  15.00),
+        'claude-sonnet-4-5':             (3.00,  15.00),
+        'claude-opus-4-7':               (5.00,  25.00),
+        'claude-opus-4-6':               (5.00,  25.00),
+        'claude-opus-4-5-20251101':      (5.00,  25.00),
+        'claude-opus-4-5':               (5.00,  25.00),
+        'claude-opus-4-1-20250805':     (15.00,  75.00),
+        'claude-opus-4-1':              (15.00,  75.00),
     }
 
-    def __init__(self, model: str = 'claude-haiku-4-5-20251001'):
+    def __init__(self, model: str = 'claude-sonnet-5'):
         self._model     = model
         self._last_cost: CostRecord | None = None
 
@@ -848,16 +866,27 @@ class ClaudeBackend:
             )
             sys.exit(1)
         # Honor a corporate CA bundle / OS trust store behind a TLS-inspection
-        # proxy (httpx ignores REQUESTS_CA_BUNDLE on its own). See proxy_support.
+        # proxy (httpx2 ignores REQUESTS_CA_BUNDLE on its own). See proxy_support.
+        # anthropic >= 1.x requires httpx2; make_httpx_client() returns httpx2.Client.
         from .proxy_support import make_httpx_client
         _http = make_httpx_client()
         _kw = {'http_client': _http} if _http is not None else {}
         client = anthropic.Anthropic(**_kw)  # reads ANTHROPIC_API_KEY from env
+        # Claude 5 models (sonnet-5, opus-5) support extended thinking, which fires
+        # automatically and can consume most of a small max_tokens budget, leaving no
+        # room for the text response.  We don't need thinking for structured pattern
+        # generation — disable it explicitly so all tokens go to the output.
+        _thinking_param: dict = (
+            {'thinking': {'type': 'disabled'}}
+            if self._model in ('claude-sonnet-5', 'claude-opus-5', 'claude-fable-5')
+            else {}
+        )
         msg = client.messages.create(
             model=self._model,
-            max_tokens=2048,
+            max_tokens=4096,
             system=system,
             messages=[{'role': 'user', 'content': user}],
+            **_thinking_param,
         )
         in_tok  = msg.usage.input_tokens
         out_tok = msg.usage.output_tokens
@@ -869,7 +898,11 @@ class ClaudeBackend:
             input_cost_usd=in_tok  * in_p  / 1_000_000,
             output_cost_usd=out_tok * out_p / 1_000_000,
         )
-        return msg.content[0].text
+        # Scan for the first text block (thinking blocks have no .text attribute).
+        for block in msg.content:
+            if hasattr(block, 'text'):
+                return block.text
+        raise ValueError(f'No text block in response content: {msg.content!r}')
 
 
 # ── Gemini API backend ────────────────────────────────────────────────────────
@@ -960,14 +993,31 @@ class GeminiBackend:
 
 # ── GitHub Models backend ─────────────────────────────────────────────────────
 
+# Feature flag: the GitHub Models free-tier endpoint is DISABLED — GitHub
+# announced its retirement via HTTP 410 "retirement brownout" responses
+# (code: github_models_retirement_brownout).  The full implementation is kept
+# intact so it can be re-enabled if GitHub launches a replacement endpoint
+# (e.g. Copilot-gated or paid tier).  To re-enable: flip this to True,
+# update ENDPOINT if the URL changed, and re-enable any skipped tests.
+_GITHUB_MODELS_ENABLED = False
+
+
+class GitHubModelsUnavailableError(RuntimeError):
+    """Raised when the (disabled) GitHub Models backend is invoked programmatically."""
+
+
 class GitHubModelsBackend:
     """Sends inference requests to GitHub Models (OpenAI-compatible endpoint).
 
-    Access is included with a GitHub account / Copilot subscription, so there
-    is no per-token dollar cost — consumption is governed by rate limits
-    instead. Those limits (requests + tokens, with the remaining amounts) are
-    returned in x-ratelimit-* response headers and captured into the
-    CostRecord so usage stays visible.
+    DISABLED — GitHub retired the free-tier Models endpoint (HTTP 410,
+    'github_models_retirement_brownout').  The implementation is preserved in
+    case GitHub provides a replacement endpoint; flip _GITHUB_MODELS_ENABLED
+    to True (and update ENDPOINT if needed) to re-enable it.
+
+    When active, access is included with a GitHub account / Copilot
+    subscription — no per-token dollar cost, governed by rate limits instead.
+    Rate-limit headers (x-ratelimit-*) are captured into CostRecord so usage
+    stays visible.
 
     Requires GITHUB_TOKEN in the environment, with the 'Models: read'
     fine-grained permission. Model ids are namespaced, e.g. 'openai/gpt-4o',
@@ -994,6 +1044,12 @@ class GitHubModelsBackend:
             return None
 
     def chat(self, system: str, user: str) -> str:
+        if not _GITHUB_MODELS_ENABLED:
+            raise GitHubModelsUnavailableError(
+                'The GitHub Models backend is currently unavailable — GitHub '
+                'retired the free-tier endpoint (HTTP 410 retirement brownout). '
+                'Use --backend local or --backend claude instead.'
+            )
         try:
             from openai import OpenAI
         except ImportError:
@@ -1011,6 +1067,7 @@ class GitHubModelsBackend:
                 'and add GITHUB_TOKEN=... to your environment or .env file.'
             )
         # Corporate-proxy CA trust (see proxy_support / ClaudeBackend above).
+        # openai >= 3.x requires httpx2; make_httpx_client() returns httpx2.Client.
         from .proxy_support import make_httpx_client
         _http = make_httpx_client()
         _kw = {'http_client': _http} if _http is not None else {}
@@ -1123,11 +1180,36 @@ class OpenAICompatBackend:
 
 _TABLE_ROW_PREFIXES = ('HEADER:', 'DATA:', 'FOOTER:', 'SPLITTER:', 'SKIP_IF')
 
+# Recognised first-column keywords that mark the start of pattern content.
+_PATTERN_DIRECTIVES = (
+    'config:', 'var:', 'lbl:', 'def:', 'doc:', 'info:', 'start:', 'end:', 'table:',
+    'cell:', 'row:', 'col:', '|',
+)
+
+
+def _trim_prose(llm_text: str) -> str:
+    """Strip any prose preamble the LLM prepended before the pattern content.
+
+    Some models (e.g. claude-sonnet-5) occasionally output a sentence or two
+    before starting the pipe-delimited pattern.  Discard every line that comes
+    before the first line that looks like a pattern directive, so the writer
+    only processes real pattern content.
+    """
+    lines = llm_text.splitlines()
+    for i, line in enumerate(lines):
+        s = line.strip().lower()
+        if not s or s.startswith('```'):
+            continue
+        if any(s.startswith(d) for d in _PATTERN_DIRECTIVES):
+            return '\n'.join(lines[i:])
+    return llm_text  # nothing recognisable found — return as-is and let parser error
+
 
 class PatternWriter:
     """Parses LLM pipe-delimited text and writes a pattern xlsx."""
 
     def write(self, llm_text: str, output_path: str) -> None:
+        llm_text = _trim_prose(llm_text)
         wb = openpyxl.Workbook()
         ws = wb.active
         ws.title  = 'Pattern'

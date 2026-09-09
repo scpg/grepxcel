@@ -152,6 +152,25 @@ Each field can have a **match pattern** that describes what the cell value shoul
 > already know regex, anything from the
 > [Python `re` syntax](https://docs.python.org/3/library/re.html) works.
 
+### Optional quality gates (column A modifiers)
+
+Column A supports **order-independent modifiers** after the `var:` or `lbl:` keyword:
+
+| Column A | What it does |
+|---|---|
+| `var:not-null` | **Fatal error** if value is empty — always, not just with `--strict` |
+| `var:glob` | Column D is a shell glob (`PROD-*` matches `PROD-42`) |
+| `var:literal` | Column D is an exact string — no regex escaping needed |
+| `lbl:not-null` | Fatal error if the anchor label is missing |
+
+Modifiers combine freely: `var:not-null:glob`, `var:literal:not-empty`, etc.
+
+```
+var:not-null   invoice.number   string   INV-\d+   # required regex field
+var:glob       sku              string   PROD-*     # glob match
+var:literal    status           string   Active     # exact string
+```
+
 ---
 
 ## CLI commands

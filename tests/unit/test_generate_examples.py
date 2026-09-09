@@ -10,6 +10,7 @@ import pytest
 import grepxcel
 from grepxcel.cli import main as cli_main
 from grepxcel.examples_generator import EXAMPLES, generate_examples
+from tests.conftest import find_data_file, find_pattern_xlsx
 
 
 FIXTURES_DIR = pathlib.Path(__file__).resolve().parent.parent / 'fixtures'
@@ -140,22 +141,24 @@ class TestBundledExamplesMatchFixtures:
 
     @pytest.mark.parametrize('ex', EXAMPLES, ids=[e['name'] for e in EXAMPLES])
     def test_data_xlsx_matches_fixture(self, ex):
-        fixture_data = FIXTURES_DIR / ex['source_fixture'] / 'data.xlsx'
+        fixture_data = pathlib.Path(find_data_file(str(FIXTURES_DIR / ex['source_fixture'])))
         bundled_data = pathlib.Path(ex['data'])
+        src = ex['source_fixture']
         assert fixture_data.read_bytes() == bundled_data.read_bytes(), (
             f"Bundled {ex['name']}/data.xlsx differs from "
-            f"tests/fixtures/{ex['source_fixture']}/data.xlsx — "
+            f"tests/fixtures/{src}/{src}_data.xlsx — "
             f"copy the updated fixture into grepxcel/examples/{ex['name']}/"
         )
 
     @pytest.mark.parametrize('ex', EXAMPLES, ids=[e['name'] for e in EXAMPLES])
     def test_pattern_xlsx_matches_fixture(self, ex):
-        fixture_pattern = (
-            FIXTURES_DIR / ex['source_fixture'] / 'pattern-from-draft.xlsx'
+        fixture_pattern = pathlib.Path(
+            find_pattern_xlsx(str(FIXTURES_DIR / ex['source_fixture']))
         )
         bundled_pattern = pathlib.Path(ex['pattern'])
+        src = ex['source_fixture']
         assert fixture_pattern.read_bytes() == bundled_pattern.read_bytes(), (
             f"Bundled {ex['name']}/pattern.xlsx differs from "
-            f"tests/fixtures/{ex['source_fixture']}/pattern-from-draft.xlsx — "
+            f"tests/fixtures/{src}/{src}_pattern-from-draft.xlsx — "
             f"copy the updated fixture into grepxcel/examples/{ex['name']}/"
         )

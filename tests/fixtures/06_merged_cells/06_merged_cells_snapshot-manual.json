@@ -1,0 +1,48 @@
+{
+  "report": {
+    "title": "SALES CATALOGUE 2026"
+  },
+  "item": [
+    {
+      "_source": {
+        "sheet": "2026",
+        "ref": "A2:C9"
+      },
+      "data": [
+        {
+          "category": "Hardware",
+          "name": "Laptop 15\"",
+          "price": 1200
+        },
+        {
+          "category": "Hardware",
+          "name": "Wireless Mouse",
+          "price": 29.99
+        },
+        {
+          "category": "Hardware",
+          "name": "Keyboard",
+          "price": 89.99
+        },
+        {
+          "category": "Software",
+          "name": "Office Suite",
+          "price": 300
+        },
+        {
+          "category": "Software",
+          "name": "Design Suite",
+          "price": 600
+        },
+        {
+          "category": "Software",
+          "name": "Dev Tools",
+          "price": 150
+        }
+      ],
+      "footer": {
+        "total": 2369.98
+      }
+    }
+  ]
+}

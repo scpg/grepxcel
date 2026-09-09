@@ -1,0 +1,74 @@
+{
+  "loan": {
+    "amount": 10000,
+    "monthly_rate": "0.5%",
+    "term_months": 6,
+    "start_date": "2026-02-01 00:00:00"
+  },
+  "schedule": [
+    {
+      "_source": {
+        "sheet": "Sheet1",
+        "ref": "A4:F12"
+      },
+      "data": [
+        {
+          "payment_num": 1,
+          "date": "2026-02-01 00:00:00",
+          "payment": 1702,
+          "principal": 1652,
+          "interest": 50,
+          "balance": 8348
+        },
+        {
+          "payment_num": 2,
+          "date": "2026-03-01 00:00:00",
+          "payment": 1702,
+          "principal": 1660.3,
+          "interest": 41.7,
+          "balance": 6687.7
+        },
+        {
+          "payment_num": 3,
+          "date": "2026-04-01 00:00:00",
+          "payment": 1702,
+          "principal": 1668.6,
+          "interest": 33.4,
+          "balance": 5019.1
+        },
+        {
+          "payment_num": 4,
+          "date": "2026-05-01 00:00:00",
+          "payment": 1702,
+          "principal": 1676.9,
+          "interest": 25.1,
+          "balance": 3342.2
+        },
+        {
+          "payment_num": 5,
+          "date": "2026-06-01 00:00:00",
+          "payment": 1702,
+          "principal": 1685.3,
+          "interest": 16.7,
+          "balance": 1656.9
+        },
+        {
+          "payment_num": 6,
+          "date": "2026-07-01 00:00:00",
+          "payment": 1665.2,
+          "principal": 1656.9,
+          "interest": 8.3,
+          "balance": 0
+        },
+        {
+          "payment_num": "Totals",
+          "date": null,
+          "payment": 10175.2,
+          "principal": 10000,
+          "interest": 175.2,
+          "balance": null
+        }
+      ]
+    }
+  ]
+}

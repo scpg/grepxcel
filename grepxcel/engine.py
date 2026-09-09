@@ -45,6 +45,35 @@ def _resolve_lbl_mode(fd, config) -> str:
     return fd.lbl_match if fd.lbl_match is not None else config.lbl_match
 
 
+def _validate_field(fd, value, config, max_cell_len: int) -> bool:
+    """Validate a cell value against a FieldDef.
+
+    Dispatches on ``fd.role`` and ``fd.var_mode``:
+
+    * ``lbl:``           — pattern match (literal/glob/regexp per resolved mode).
+    * ``var:`` (default) — type check + regex in column D via :func:`validate_type`.
+    * ``var:literal``    — type check + exact-string (or case-insensitive) match.
+    * ``var:glob``       — type check + shell-glob match on the string representation.
+
+    Returns True/False; never raises.
+    """
+    if fd.role == 'lbl':
+        return _match_lbl(value, fd.regex, fd.lbl_match or config.lbl_match,
+                          config.ignore_case)
+    # var: field
+    if fd.var_mode in ('literal', 'glob'):
+        # Type check (use '.*' so it always passes the regex part).
+        type_ok, _ = validate_type(value, fd.type, '.*', config.currency_sign,
+                                   max_cell_len, config.ignore_case)
+        if not type_ok:
+            return False
+        return _match_lbl(str(value), fd.regex, fd.var_mode, config.ignore_case)
+    # Default: regexp mode — validate_type handles both type and regex.
+    ok, _ = validate_type(value, fd.type, fd.regex, config.currency_sign,
+                          max_cell_len, config.ignore_case)
+    return ok
+
+
 # ── Data-sheet size limits ──────────────────────────────────────────────────────
 #
 # grepxcel targets normal-sized spreadsheets. Very large sheets are both a
@@ -617,15 +646,19 @@ class Engine:
                 found='no matching def: row in pattern file',
             )
 
+        # Required (not-null/not-empty) check — fatal before any other validation.
+        if fd.required and is_empty(value, config.empty_aliases):
+            logger.fatal(
+                f"Required field {fd.name!r} has an empty/null value",
+                location=cell_ref(row, col, logger.sheet_name),
+                expected=f'a non-empty value for {fd.name!r} (type: {fd.type})',
+                found='empty cell',
+            )
+
         # Validate before tracing so the -v trace can show ✓/✗ per field.
         ok = None
         if value is not None:
-            if fd.role == 'lbl':
-                ok = _match_lbl(value, fd.regex, _resolve_lbl_mode(fd, config),
-                                config.ignore_case)
-            else:
-                ok, _ = validate_type(value, fd.type, fd.regex, config.currency_sign,
-                                      self._max_cell_len, config.ignore_case)
+            ok = _validate_field(fd, value, config, self._max_cell_len)
 
         logger.cell_processed(row, col, instr.field, value, ok=ok, regex=fd.regex)
 
@@ -889,6 +922,14 @@ class Engine:
             fd = defs.get(tmpl_col.field)
 
             if is_empty(val, config.empty_aliases):
+                # required (not-null) check — fatal regardless of strict mode
+                if fd is not None and fd.required:
+                    logger.fatal(
+                        f"Required field {fd.name!r} has an empty/null value",
+                        location=cell_ref(sheet_row, col, logger.sheet_name),
+                        expected=f'a non-empty value for {fd.name!r} (type: {fd.type})',
+                        found='empty cell',
+                    )
                 if strict:
                     return {}, False  # HEADER/FOOTER: missing field = no match
                 fd_type = fd.type if fd else 'unknown'
@@ -908,12 +949,7 @@ class Engine:
                     )
                     trace_ok = False
                 else:
-                    if fd.role == 'lbl':
-                        ok = _match_lbl(val, fd.regex, _resolve_lbl_mode(fd, config),
-                                        config.ignore_case)
-                    else:
-                        ok, _ = validate_type(val, fd.type, fd.regex, config.currency_sign,
-                                              self._max_cell_len, config.ignore_case)
+                    ok = _validate_field(fd, val, config, self._max_cell_len)
                     if not ok:
                         if strict:
                             return {}, False  # HEADER/FOOTER: wrong value = no match
@@ -993,12 +1029,7 @@ class Engine:
                 continue
             if is_empty(val, config.empty_aliases):
                 return False
-            if fd.role == 'lbl':
-                ok = _match_lbl(val, fd.regex, _resolve_lbl_mode(fd, config),
-                                config.ignore_case)
-            else:
-                ok, _ = validate_type(val, fd.type, fd.regex, config.currency_sign,
-                                      self._max_cell_len, config.ignore_case)
+            ok = _validate_field(fd, val, config, self._max_cell_len)
             if not ok:
                 return False
 

@@ -205,22 +205,44 @@ class TestParserSecurityErrors:
         with pytest.raises(SecurityError, match='Formulas'):
             PatternParser().parse(path)
 
-    def test_numeric_value_in_pattern_rejected(self, tmp_path):
+    def test_numeric_value_in_pattern_coerced(self, tmp_path):
+        """Numeric cells are silently coerced to strings, not rejected.
+        Users commonly type 1 for pattern.version and Excel stores it as int."""
         wb = openpyxl.Workbook()
         ws = wb.active
         ws['A1'] = 99
-        path = str(tmp_path / 'bad.xlsx')
+        path = str(tmp_path / 'num.xlsx')
         wb.save(path)
-        with pytest.raises(SecurityError, match='plain text'):
+        try:
             PatternParser().parse(path)
+        except SecurityError:
+            pytest.fail('SecurityError raised for numeric cell — should be coerced')
+        except Exception:
+            pass  # PatternError for empty/invalid sequence is fine
 
-    def test_boolean_value_in_pattern_rejected(self, tmp_path):
+    def test_boolean_value_in_pattern_coerced(self, tmp_path):
+        """Boolean cells are silently coerced to strings, not rejected."""
         wb = openpyxl.Workbook()
         ws = wb.active
         ws['A1'] = False
-        path = str(tmp_path / 'bad.xlsx')
+        path = str(tmp_path / 'bool.xlsx')
         wb.save(path)
-        with pytest.raises(SecurityError, match='plain text'):
+        try:
+            PatternParser().parse(path)
+        except SecurityError:
+            pytest.fail('SecurityError raised for boolean cell — should be coerced')
+        except Exception:
+            pass
+
+    def test_datetime_value_in_pattern_rejected(self, tmp_path):
+        """Date/time cells are still rejected — ambiguous in a pattern context."""
+        import datetime
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws['A1'] = datetime.datetime(2026, 6, 1)
+        path = str(tmp_path / 'date.xlsx')
+        wb.save(path)
+        with pytest.raises(SecurityError, match='date/time'):
             PatternParser().parse(path)
 
 

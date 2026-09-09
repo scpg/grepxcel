@@ -8,6 +8,7 @@ import openpyxl
 import pytest
 
 from grepxcel.cli import main as cli_main
+from tests.conftest import find_data_file, find_pattern_xlsx
 
 FIXTURES = os.path.join(os.path.dirname(__file__), '..', 'fixtures')
 
@@ -49,8 +50,8 @@ class TestStrictMode:
     """--strict causes exit 2 when extraction has issues."""
 
     def test_strict_passes_when_all_fields_populated(self, tmp_path):
-        pattern = _fixture('01_simple_invoice', 'pattern-from-draft.xlsx')
-        data = _fixture('01_simple_invoice', 'data.xlsx')
+        pattern = find_pattern_xlsx(_fixture('01_simple_invoice'))
+        data = find_data_file(_fixture('01_simple_invoice'))
         out_dir = str(tmp_path / 'output')
         with pytest.raises(SystemExit) as exc_info:
             cli_main([

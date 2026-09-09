@@ -1,0 +1,73 @@
+config:,pattern.version,1
+config:,read.direction,LR
+lbl:,lbl_company_name,string,Your Company Name
+lbl:,lbl_street_addr,string,Street Address
+lbl:,lbl_phone_number,string,(413) 555-0190
+lbl:,lbl_addr2,string,Address 2
+lbl:,lbl_fax_number,string,(413) 555-0191
+lbl:,lbl_city_zip,string,"City, ST ZIP Code"
+lbl:,lbl_email_addr,string,someone@example.com
+lbl:,lbl_statement,string,Statement
+lbl:,lbl_statement_no,string,Statement #:
+lbl:,lbl_bill_to,string,Bill To:
+lbl:,lbl_date,string,Date:
+lbl:,lbl_bill_company,string,Company Name
+lbl:,lbl_customer_id,string,Customer ID:
+lbl:,lbl_bill_street,string,Street Address
+lbl:,lbl_bill_addr2,string,Address 2
+lbl:,lbl_bill_city_zip,string,"City, ST ZIP Code"
+lbl:,col_date,string,Date
+lbl:,col_type,string,Type
+lbl:,col_invoice,string,Invoice #
+lbl:,col_description,string,Description
+lbl:,col_amount,string,Amount
+lbl:,col_payment,string,Payment
+lbl:,col_balance,string,Balance
+lbl:,lbl_remit_customer_name,string,Customer Name:
+lbl:,lbl_remit_enter_name,string,Enter customer name
+var:,company.phone,string,.*
+var:,company.fax,string,.*
+var:,company.email,string,.*
+var:,stmt.number,string,.*
+var:,stmt.bill_to_name,string,.*
+var:,stmt.date,date
+var:,stmt.customer_id,string,.*
+var:,line.date,date
+var:,line.type,string,.*
+var:,line.invoice_number,integer,-?\d+
+var:,line.description,string,.*
+var:,line.amount,currency,"-?\d+(\.\d{1,2})?"
+var:,line.payment,currency,"-?\d+(\.\d{1,2})?"
+var:,line.balance,currency,"-?\d+(\.\d{1,2})?"
+var:,remittance.value,string,.*
+START:
+cell:next,lbl_company_name
+cell:next,lbl_street_addr
+cell:next,company.phone
+cell:next,lbl_phone_number
+cell:next,lbl_addr2
+cell:next,company.fax
+cell:next,lbl_fax_number
+cell:next,lbl_city_zip
+cell:next,company.email
+cell:next,lbl_email_addr
+cell:next,lbl_statement
+cell:next,lbl_statement_no
+cell:next,stmt.number
+cell:next,lbl_bill_to
+cell:next,stmt.bill_to_name
+cell:next,lbl_date
+cell:next,stmt.date
+cell:next,lbl_bill_company
+cell:next,lbl_customer_id
+cell:next,stmt.customer_id
+cell:next,lbl_bill_street
+cell:next,lbl_bill_addr2
+cell:next,lbl_bill_city_zip
+table:*
+,HEADER:1,col_date,col_type,col_invoice,col_description,col_amount,col_payment,col_balance
+,DATA:*,line.date,line.type,line.invoice_number,line.description,line.amount,line.payment,line.balance
+cell:next,lbl_remit_customer_name
+cell:next,remittance.value
+cell:next,lbl_remit_enter_name
+END:

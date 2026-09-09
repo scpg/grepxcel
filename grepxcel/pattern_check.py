@@ -91,19 +91,33 @@ def check_pattern(path: str) -> CheckResult:
     for name in sorted(set(defs) - referenced):
         result.warnings.append(f"Field {name!r} is defined but never used.")
 
+    for key in config.unknown_config_keys:
+        result.warnings.append(
+            f"Unknown config key {key!r} — ignored. "
+            f"Valid keys: pattern.version (or version), read.direction, "
+            f"currency.sign, ignore.case, lbl.match, empty.aliases."
+        )
+
     for name, fd in defs.items():
-        if fd.role != 'lbl':
-            continue
-        effective_mode = fd.lbl_match if fd.lbl_match is not None else config.lbl_match
-        if effective_mode != 'regexp' and _REGEX_TELL.search(fd.regex):
-            plain = re.sub(r'\\(.)', r'\1', fd.regex)
-            result.warnings.append(
-                f"lbl: field {name!r} pattern {fd.regex!r} looks like a regex "
-                f"but lbl.match mode is {effective_mode!r}. "
-                f"In literal/glob mode backslash-escapes are matched literally. "
-                f"Did you mean {plain!r}? "
-                f"Add lbl:regexp or set config: | lbl.match | regexp to use regex."
-            )
+        if fd.role == 'lbl':
+            effective_mode = fd.lbl_match if fd.lbl_match is not None else config.lbl_match
+            if effective_mode != 'regexp' and _REGEX_TELL.search(fd.regex):
+                plain = re.sub(r'\\(.)', r'\1', fd.regex)
+                result.warnings.append(
+                    f"lbl: field {name!r} pattern {fd.regex!r} looks like a regex "
+                    f"but lbl.match mode is {effective_mode!r}. "
+                    f"In literal/glob mode backslash-escapes are matched literally. "
+                    f"Did you mean {plain!r}? "
+                    f"Add lbl:regexp or set config: | lbl.match | regexp to use regex."
+                )
+        elif fd.role == 'var' and fd.var_mode in ('literal', 'glob'):
+            # glob/literal without a pattern is a no-op — warn so the author notices.
+            if fd.regex in ('', '.*'):
+                result.warnings.append(
+                    f"var: field {name!r} has mode {fd.var_mode!r} but column D is "
+                    f"empty (pattern '.*'). Add a {fd.var_mode} pattern in column D "
+                    f"or change to plain var: for type-only validation."
+                )
 
     result.valid = not result.errors
     return result
@@ -165,7 +179,14 @@ def render_result(result: CheckResult, verbose: bool = False, out=None) -> None:
         print(f'     lbl.match       {cfg.lbl_match}', file=out)
         print('   fields:', file=out)
         for name, fd in result.defs.items():
-            mode_tag = f' [{fd.lbl_match}]' if fd.lbl_match is not None else ''
+            tags = []
+            if fd.role == 'lbl' and fd.lbl_match is not None:
+                tags.append(fd.lbl_match)
+            if fd.role == 'var' and fd.var_mode is not None:
+                tags.append(fd.var_mode)
+            if fd.required:
+                tags.append('not-null')
+            mode_tag = f' [{", ".join(tags)}]' if tags else ''
             print(f'     {fd.role:<4} {name:<24} {fd.type:<10} /{fd.regex}/{mode_tag}', file=out)
         print('   extraction sequence:', file=out)
         for instr in (result.sequence or []):
@@ -181,14 +202,23 @@ def render_result(result: CheckResult, verbose: bool = False, out=None) -> None:
                 _render_table_grid(instr.rows, out)
 
 
-def run_validate(paths: list[str], verbose: bool = False, out=None) -> int:
-    """Validate each pattern file; return 0 if all valid, 1 otherwise."""
+def run_validate(paths: list[str], verbose: bool = False, quiet: bool = False,
+                 out=None) -> int:
+    """Validate each pattern file; return 0 if all valid, 1 otherwise.
+
+    quiet=True suppresses the '✓ VALID' confirmation line; warnings and errors
+    are still printed so the caller knows what failed.  Exit code is unchanged.
+    """
     out = out or sys.stderr
     all_valid = True
     for idx, path in enumerate(paths):
         if idx:
             print('', file=out)
         result = check_pattern(path)
-        render_result(result, verbose=verbose, out=out)
+        if quiet and result.valid and not result.warnings:
+            # Silent on clean success — only surface problems.
+            pass
+        else:
+            render_result(result, verbose=verbose, out=out)
         all_valid = all_valid and result.valid
     return 0 if all_valid else 1
