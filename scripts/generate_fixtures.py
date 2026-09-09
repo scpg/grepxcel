@@ -46,8 +46,12 @@ def save(name: str, pattern_wb: Workbook, data_wb: Workbook):
     pattern_path = os.path.join(folder, f'{name}_pattern-from-draft.xlsx')
     pattern_wb.save(pattern_path)
     colorize_pattern_file(pattern_path)
-    data_wb.save(os.path.join(folder, f'{name}_data.xlsx'))
-    print(f'  {name}/')
+    data_path = os.path.join(folder, f'{name}_data.xlsx')
+    if not os.path.exists(data_path):
+        data_wb.save(data_path)
+        print(f'  {name}/  (data.xlsx created)')
+    else:
+        print(f'  {name}/  (data.xlsx preserved)')
 
 
 # ─────────────────────────────────────────────────────────────────────────────
