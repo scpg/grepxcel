@@ -99,18 +99,25 @@ def check_pattern(path: str) -> CheckResult:
         )
 
     for name, fd in defs.items():
-        if fd.role != 'lbl':
-            continue
-        effective_mode = fd.lbl_match if fd.lbl_match is not None else config.lbl_match
-        if effective_mode != 'regexp' and _REGEX_TELL.search(fd.regex):
-            plain = re.sub(r'\\(.)', r'\1', fd.regex)
-            result.warnings.append(
-                f"lbl: field {name!r} pattern {fd.regex!r} looks like a regex "
-                f"but lbl.match mode is {effective_mode!r}. "
-                f"In literal/glob mode backslash-escapes are matched literally. "
-                f"Did you mean {plain!r}? "
-                f"Add lbl:regexp or set config: | lbl.match | regexp to use regex."
-            )
+        if fd.role == 'lbl':
+            effective_mode = fd.lbl_match if fd.lbl_match is not None else config.lbl_match
+            if effective_mode != 'regexp' and _REGEX_TELL.search(fd.regex):
+                plain = re.sub(r'\\(.)', r'\1', fd.regex)
+                result.warnings.append(
+                    f"lbl: field {name!r} pattern {fd.regex!r} looks like a regex "
+                    f"but lbl.match mode is {effective_mode!r}. "
+                    f"In literal/glob mode backslash-escapes are matched literally. "
+                    f"Did you mean {plain!r}? "
+                    f"Add lbl:regexp or set config: | lbl.match | regexp to use regex."
+                )
+        elif fd.role == 'var' and fd.var_mode in ('literal', 'glob'):
+            # glob/literal without a pattern is a no-op — warn so the author notices.
+            if fd.regex in ('', '.*'):
+                result.warnings.append(
+                    f"var: field {name!r} has mode {fd.var_mode!r} but column D is "
+                    f"empty (pattern '.*'). Add a {fd.var_mode} pattern in column D "
+                    f"or change to plain var: for type-only validation."
+                )
 
     result.valid = not result.errors
     return result
@@ -172,7 +179,14 @@ def render_result(result: CheckResult, verbose: bool = False, out=None) -> None:
         print(f'     lbl.match       {cfg.lbl_match}', file=out)
         print('   fields:', file=out)
         for name, fd in result.defs.items():
-            mode_tag = f' [{fd.lbl_match}]' if fd.lbl_match is not None else ''
+            tags = []
+            if fd.role == 'lbl' and fd.lbl_match is not None:
+                tags.append(fd.lbl_match)
+            if fd.role == 'var' and fd.var_mode is not None:
+                tags.append(fd.var_mode)
+            if fd.required:
+                tags.append('not-null')
+            mode_tag = f' [{", ".join(tags)}]' if tags else ''
             print(f'     {fd.role:<4} {name:<24} {fd.type:<10} /{fd.regex}/{mode_tag}', file=out)
         print('   extraction sequence:', file=out)
         for instr in (result.sequence or []):

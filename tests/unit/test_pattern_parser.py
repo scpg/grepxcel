@@ -910,7 +910,7 @@ class TestLblMatchMode:
         assert defs['h'].lbl_match == 'regexp'
 
     def test_lbl_unknown_suffix_raises(self, tmp_path):
-        with pytest.raises(PatternError, match='Unknown lbl: variant'):
+        with pytest.raises(PatternError, match='Unknown modifier'):
             self._parse(self._base('Hello', 'lbl:fuzzy'), tmp_path)
 
     def test_config_lbl_match_sets_global(self, tmp_path):
@@ -944,3 +944,103 @@ class TestLblMatchMode:
         """In regexp mode the ReDoS guard still applies."""
         with pytest.raises((PatternError, Exception), match='[Rr]e[Dd]o[Ss]|catastrophic|backtrack'):
             self._parse(self._base(r'(a+)+$', 'lbl:regexp'), tmp_path)
+
+    # ── New order-independent modifier syntax ─────────────────────────────────
+
+    def test_lbl_re_alias_normalises_to_regexp(self, tmp_path):
+        """lbl:re is a short alias for lbl:regexp."""
+        _, defs, _ = self._parse(self._base(r'Hello \w+', 'lbl:re'), tmp_path)
+        assert defs['h'].lbl_match == 'regexp'
+
+    def test_lbl_not_null_sets_required(self, tmp_path):
+        _, defs, _ = self._parse(self._base('Hello', 'lbl:not-null'), tmp_path)
+        assert defs['h'].required is True
+        assert defs['h'].lbl_match is None  # mode stays default (literal)
+
+    def test_lbl_not_empty_synonym(self, tmp_path):
+        _, defs, _ = self._parse(self._base('Hello', 'lbl:not-empty'), tmp_path)
+        assert defs['h'].required is True
+
+    def test_lbl_glob_not_null_order_independent(self, tmp_path):
+        """'lbl:glob:not-null' and 'lbl:not-null:glob' both set glob + required."""
+        _, defs1, _ = self._parse(self._base('Hello*', 'lbl:glob:not-null'), tmp_path)
+        _, defs2, _ = self._parse(self._base('Hello*', 'lbl:not-null:glob'), tmp_path)
+        assert defs1['h'].lbl_match == 'glob' and defs1['h'].required is True
+        assert defs2['h'].lbl_match == 'glob' and defs2['h'].required is True
+
+    def test_lbl_re_not_empty(self, tmp_path):
+        _, defs, _ = self._parse(self._base(r'Hello \w+', 'lbl:re:not-empty'), tmp_path)
+        assert defs['h'].lbl_match == 'regexp'
+        assert defs['h'].required is True
+
+    def test_lbl_duplicate_mode_raises(self, tmp_path):
+        with pytest.raises(PatternError, match='Duplicate mode'):
+            self._parse(self._base('x', 'lbl:glob:literal'), tmp_path)
+
+    def test_var_not_null(self, tmp_path):
+        rows = [
+            ['var:not-null', 'amount', 'currency', r'\d+\.?\d*'],
+            ['START:'], ['cell:1', 'amount'], ['END:'],
+        ]
+        _, defs, _ = self._parse(rows, tmp_path)
+        assert defs['amount'].required is True
+        assert defs['amount'].var_mode is None  # still default (regexp)
+
+    def test_var_glob_mode(self, tmp_path):
+        rows = [
+            ['var:glob', 'code', 'string', 'PROD-*'],
+            ['START:'], ['cell:1', 'code'], ['END:'],
+        ]
+        _, defs, _ = self._parse(rows, tmp_path)
+        assert defs['code'].var_mode == 'glob'
+        assert defs['code'].required is False
+
+    def test_var_glob_not_null(self, tmp_path):
+        rows = [
+            ['var:not-null:glob', 'code', 'string', 'PROD-*'],
+            ['START:'], ['cell:1', 'code'], ['END:'],
+        ]
+        _, defs, _ = self._parse(rows, tmp_path)
+        assert defs['code'].var_mode == 'glob'
+        assert defs['code'].required is True
+
+    def test_var_re_explicit(self, tmp_path):
+        rows = [
+            ['var:re', 'amount', 'currency', r'\d+'],
+            ['START:'], ['cell:1', 'amount'], ['END:'],
+        ]
+        _, defs, _ = self._parse(rows, tmp_path)
+        assert defs['amount'].var_mode == 'regexp'
+
+    def test_var_regexp_not_empty_backward_compat(self, tmp_path):
+        rows = [
+            ['var:regexp:not-empty', 'v', 'string', r'[A-Z]+'],
+            ['START:'], ['cell:1', 'v'], ['END:'],
+        ]
+        _, defs, _ = self._parse(rows, tmp_path)
+        assert defs['v'].var_mode == 'regexp'
+        assert defs['v'].required is True
+
+    def test_var_glob_skips_regex_safety_check(self, tmp_path):
+        """glob patterns are not compiled as regexes — no safety check."""
+        rows = [
+            ['var:glob', 'code', 'string', '(((bad-regex'],
+            ['START:'], ['cell:1', 'code'], ['END:'],
+        ]
+        self._parse(rows, tmp_path)  # no raise
+
+    def test_var_literal_skips_regex_safety_check(self, tmp_path):
+        rows = [
+            ['var:literal', 'status', 'string', 'Active (primary)'],
+            ['START:'], ['cell:1', 'status'], ['END:'],
+        ]
+        self._parse(rows, tmp_path)  # no raise
+
+    def test_def_alias_still_works(self, tmp_path):
+        """def: is a backward-compat alias for var: and keeps working."""
+        rows = [
+            ['def:', 'v', 'string', '.*'],
+            ['START:'], ['cell:1', 'v'], ['END:'],
+        ]
+        _, defs, _ = self._parse(rows, tmp_path)
+        assert defs['v'].role == 'var'

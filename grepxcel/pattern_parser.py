@@ -29,6 +29,52 @@ MIN_SUPPORTED_PATTERN_VERSION = 1
 _TRUTHY = frozenset({'1', 'true', 'yes', 'on', 'y'})
 _FALSY  = frozenset({'0', 'false', 'no', 'off', 'n', ''})
 
+# Modifier tokens recognised in column-A field rows ('lbl:...' / 'var:...').
+# Mode tokens map to their canonical name; 're' normalises to 'regexp'.
+_MODE_TOKENS = {'literal': 'literal', 'glob': 'glob', 're': 'regexp', 'regexp': 'regexp'}
+_CONSTRAINT_TOKENS = frozenset({'not-null', 'not-empty'})
+
+
+def _parse_col_a_modifiers(col_a: str, row_num: int) -> tuple:
+    """Parse modifier tokens from a 'lbl:...' or 'var:...' column-A cell.
+
+    The cell is split on ':'; the first token is the role (already known by
+    the caller).  Each subsequent token is either a matching-mode name or a
+    constraint keyword.  Order does not matter.
+
+    Returns ``(mode, required)``:
+      * mode     – ``None | 'literal' | 'glob' | 'regexp'``  (normalised;
+                   None means "use the default for this role")
+      * required – ``True`` when ``not-null`` or ``not-empty`` is present.
+
+    Raises ``PatternError`` on unknown tokens or duplicate mode modifiers.
+    """
+    parts = col_a.lower().split(':')
+    mode: str | None = None
+    required = False
+    seen_mode = False
+
+    for token in parts[1:]:
+        if not token:                  # empty segment from trailing / double ':'
+            continue
+        if token in _MODE_TOKENS:
+            if seen_mode:
+                raise PatternError(
+                    f"Duplicate mode modifier in {col_a!r} at pattern row {row_num}. "
+                    f"Use only one of: literal, glob, re, regexp."
+                )
+            mode = _MODE_TOKENS[token]
+            seen_mode = True
+        elif token in _CONSTRAINT_TOKENS:
+            required = True
+        else:
+            raise PatternError(
+                f"Unknown modifier {token!r} in {col_a!r} at pattern row {row_num}. "
+                f"Valid modifiers: literal, glob, re, regexp, not-null, not-empty."
+            )
+
+    return mode, required
+
 # Field types the engine knows how to validate (see utils.validate_type).
 # Keep this in lockstep with that function — a name here that it can't handle
 # would parse cleanly but make every value fail validation.
@@ -147,19 +193,17 @@ class PatternParser:
                 if col_a_l == 'config:':
                     self._apply_global_config(row, global_config)
                     self._check_comment_zone(row, 3, i + 1, 'config:')    # D+ comment
-                elif col_a_l in ('def:', 'var:'):
-                    fd = self._parse_field(row, role='var', row_num=i + 1)
+                elif isinstance(col_a_l, str) and (col_a_l.startswith('var:')
+                                                    or col_a_l.startswith('def:')):
+                    var_mode, required = _parse_col_a_modifiers(col_a_l, i + 1)
+                    fd = self._parse_field(row, role='var', row_num=i + 1,
+                                           var_mode=var_mode, required=required)
                     defs[fd.name] = fd
                     self._check_comment_zone(row, 4, i + 1, col_a_l)      # E+ comment
                 elif isinstance(col_a_l, str) and col_a_l.startswith('lbl:'):
-                    suffix = col_a_l[4:]  # '' | 'literal' | 'glob' | 'regexp'
-                    if suffix and suffix not in LBL_MATCH_MODES:
-                        raise PatternError(
-                            f"Unknown lbl: variant {col_a!r} at pattern row {i + 1}. "
-                            f"Use lbl: (global default), lbl:literal, lbl:glob, or lbl:regexp."
-                        )
+                    lbl_mode, required = _parse_col_a_modifiers(col_a_l, i + 1)
                     fd = self._parse_field(row, role='lbl', row_num=i + 1,
-                                           lbl_match_override=suffix if suffix else None,
+                                           lbl_match_override=lbl_mode, required=required,
                                            global_lbl_match=global_config.lbl_match)
                     defs[fd.name] = fd
                     self._check_comment_zone(row, 4, i + 1, col_a_l)
@@ -689,7 +733,9 @@ class PatternParser:
 
     def _parse_field(self, row, role: str = 'var', row_num: int | None = None,
                      lbl_match_override: str | None = None,
-                     global_lbl_match: str = 'literal') -> FieldDef:
+                     global_lbl_match: str = 'literal',
+                     var_mode: str | None = None,
+                     required: bool = False) -> FieldDef:
         where = f' at pattern row {row_num}' if row_num is not None else ''
         name  = str(row[1]) if row[1] else ''
         if not name:
@@ -704,14 +750,22 @@ class PatternParser:
                 f"Valid types: {', '.join(sorted(_VALID_FIELD_TYPES))}."
             )
         regex = str(row[3]) if row[3] else '.*'
-        # Skip regex safety check for lbl: fields in non-regexp modes — the
-        # pattern is treated as a literal string or glob, not compiled as a regex.
-        # Effective mode: per-field override if set, else global default.
-        effective_lbl_match = lbl_match_override if lbl_match_override is not None else global_lbl_match
-        if role != 'lbl' or effective_lbl_match not in ('literal', 'glob'):
+
+        # Skip the regex safety check when column D is used as a literal string
+        # or glob pattern — those modes never compile column D as a regex.
+        # For lbl: the effective mode is the per-field override or global default.
+        # For var: the var_mode governs (None / 'regexp' → regex; 'literal'/'glob' → not).
+        if role == 'lbl':
+            effective_lbl_mode = lbl_match_override if lbl_match_override is not None else global_lbl_match
+            is_regex_mode = effective_lbl_mode not in ('literal', 'glob')
+        else:
+            is_regex_mode = var_mode not in ('literal', 'glob')   # None → regexp
+
+        if is_regex_mode:
             check_regex_safety(regex, field_name=name)
+
         return FieldDef(name=name, type=type_, regex=regex, role=role,
-                        lbl_match=lbl_match_override)
+                        lbl_match=lbl_match_override, var_mode=var_mode, required=required)
 
     # backward-compat alias
     def _parse_def(self, row) -> FieldDef:

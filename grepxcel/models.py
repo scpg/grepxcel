@@ -1,6 +1,7 @@
 from dataclasses import dataclass, field
 
 # Valid values for lbl: match mode (global config and per-field override).
+# 're' is a short alias for 'regexp' — normalised to 'regexp' by the parser.
 LBL_MATCH_MODES = frozenset({'literal', 'glob', 'regexp'})
 
 
@@ -21,8 +22,11 @@ class FieldDef:
     name: str
     type: str        # string | integer | currency | date | datetime | timestamp
     regex: str
-    role: str = 'var'          # 'var' (extract → output) or 'lbl' (anchor only, never output)
-    lbl_match: str | None = None  # per-field override; None = use Config.lbl_match
+    role: str = 'var'              # 'var' (extract → output) or 'lbl' (anchor only, never output)
+    lbl_match: str | None = None   # per-field lbl mode override; None = use Config.lbl_match
+    var_mode: str | None = None    # per-field var mode; None/'regexp' = regex (default);
+                                   # 'literal' | 'glob' = non-regex pattern in column D
+    required: bool = False         # True → not-null/not-empty: fatal if value is empty/null
 
 
 @dataclass
