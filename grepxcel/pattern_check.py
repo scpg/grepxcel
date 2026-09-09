@@ -91,6 +91,13 @@ def check_pattern(path: str) -> CheckResult:
     for name in sorted(set(defs) - referenced):
         result.warnings.append(f"Field {name!r} is defined but never used.")
 
+    for key in config.unknown_config_keys:
+        result.warnings.append(
+            f"Unknown config key {key!r} — ignored. "
+            f"Valid keys: read.direction, currency.sign, ignore.case, lbl.match, "
+            f"empty.aliases, pattern.version."
+        )
+
     for name, fd in defs.items():
         if fd.role != 'lbl':
             continue

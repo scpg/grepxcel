@@ -683,6 +683,9 @@ class PatternParser:
         elif key == 'pattern.version' and val is not None:
             config.pattern_version = _parse_pattern_version(val)
             config.pattern_version_explicit = True
+        elif key:
+            # Unrecognised key — store for the caller to surface as a warning.
+            config.unknown_config_keys.append(key)
 
     def _parse_field(self, row, role: str = 'var', row_num: int | None = None,
                      lbl_match_override: str | None = None,

@@ -13,6 +13,7 @@ class Config:
     pattern_version: int = 1   # pattern-format/semantics generation (absent ⇒ 1)
     pattern_version_explicit: bool = False  # True if the pattern declared it
     lbl_match: str = 'literal'  # how lbl: patterns are matched: literal | glob | regexp
+    unknown_config_keys: list = field(default_factory=list)  # unrecognised config: keys
 
 
 @dataclass
