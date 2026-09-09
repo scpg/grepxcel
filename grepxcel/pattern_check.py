@@ -94,8 +94,8 @@ def check_pattern(path: str) -> CheckResult:
     for key in config.unknown_config_keys:
         result.warnings.append(
             f"Unknown config key {key!r} — ignored. "
-            f"Valid keys: read.direction, currency.sign, ignore.case, lbl.match, "
-            f"empty.aliases, pattern.version."
+            f"Valid keys: pattern.version (or version), read.direction, "
+            f"currency.sign, ignore.case, lbl.match, empty.aliases."
         )
 
     for name, fd in defs.items():

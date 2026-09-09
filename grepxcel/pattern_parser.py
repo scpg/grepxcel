@@ -680,7 +680,7 @@ class PatternParser:
                     f"{', '.join(sorted(LBL_MATCH_MODES))}."
                 )
             config.lbl_match = mode
-        elif key == 'pattern.version' and val is not None:
+        elif key in ('pattern.version', 'version') and val is not None:
             config.pattern_version = _parse_pattern_version(val)
             config.pattern_version_explicit = True
         elif key:
