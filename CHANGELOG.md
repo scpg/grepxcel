@@ -9,6 +9,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Features
 
+- **Column A modifiers for `lbl:` and `var:`** — order-independent colon-separated
+  tokens in column A extend both anchor and variable rows with optional quality gates:
+  - **`not-null` / `not-empty`** (synonyms) — fatal error if the extracted value is
+    empty or null, always, regardless of `--strict`. Example: `var:not-null`.
+  - **`var:glob`** — column D is matched as a shell-style glob (`*`, `?`) against the
+    string representation of the value. Type check still runs first. Example:
+    `var:glob | sku | string | PROD-*`.
+  - **`var:literal`** — column D is matched as an exact string. Special regex characters
+    are treated as literals. Example: `var:literal | status | string | Active`.
+  - **`var:re`** — explicit alias for the default regex mode.
+  - **`lbl:re`** — short alias for `lbl:regexp`.
+  - Modifiers are order-independent and composable: `var:not-null:glob`,
+    `lbl:not-null`, `var:literal:not-empty`, etc.
+  - Backward-compatible: bare `var:` with a non-empty column D continues to use regex.
 - **`wizard` command** — `grepxcel wizard data.xlsx` walks the spreadsheet
   cell by cell and asks whether each value is a label, variable, or skip.
   Produces a ready-to-run `.csv` pattern file without requiring knowledge of

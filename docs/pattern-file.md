@@ -76,10 +76,12 @@ referenced in the `START:` section, or documents the pattern.
 
 | Column A | Column B      | Column C   | Column D              | Role |
 |----------|---------------|------------|-----------------------|------|
-| `lbl:`   | `FieldName`   | type       | match pattern         | **Anchor** — matched for position only; **never written to output JSON** |
-| `var:`   | `field.name`  | type       | regex                 | **Variable** — extracted and written to output JSON |
+| `lbl:` *[modifiers]* | `FieldName` | type | match pattern | **Anchor** — matched for position only; **never written to output JSON** |
+| `var:` *[modifiers]* | `field.name` | type | pattern/regex | **Variable** — extracted and written to output JSON |
 | `doc:`   | (free text)   |            |                       | **Comment** — ignored by the engine |
 | `def:`   | `FieldName`   | type       | regex                 | Backward-compatible alias for `var:` |
+
+Column A supports **order-independent colon-separated modifiers** (see [Column A modifiers](#column-a-modifiers) below).
 
 - **`lbl:`** — use for literal text that marks *where* a value lives: labels like
   `Invoice No:` or column headers like `Product`, `Qty`. Matched but stripped
@@ -87,14 +89,53 @@ referenced in the `START:` section, or documents the pattern.
   - **`literal`** (default) — exact string match. Write the label text as-is.
   - **`glob`** — shell wildcards (`*`, `?`).
   - **`regexp`** — full Python `re.search`.
-  - Per-field override: use `lbl:literal`, `lbl:glob`, or `lbl:regexp` in column A.
+  - Per-field override: use `lbl:literal`, `lbl:glob`, `lbl:regexp`, or `lbl:re` (alias for `regexp`) in column A.
+  - Constraint: add `not-null` to make a missing/empty label a fatal error (e.g. `lbl:not-null`).
 - **`var:`** — use for every value you want to capture. **Dot notation creates
   nested JSON**: `po.number` → `{"po": {"number": …}}`. In a table, the group
   prefix (`line` in `line.qty`) becomes the output array key.
+  - Default: column D is a Python `re.fullmatch` regex. Use `.*` to accept anything.
+  - `var:glob` — column D is a shell-style glob (`*`, `?`). Type check still runs first.
+  - `var:literal` — column D is an exact string match. Special regex characters are literal.
+  - `var:re` — explicit alias for the default regex mode.
+  - Constraint: add `not-null` or `not-empty` (synonyms) to make an empty/null value a **fatal error**, always, regardless of `--strict`.
 - **FieldName** — a unique plain-text identifier.
 - **regex** (for `var:` / `def:`) — a Python `re.fullmatch` pattern applied to
   the string representation of the cell value. Use `.*` to accept anything.
   Nested unbounded quantifiers (e.g. `(a+)+`) are rejected as unsafe (ReDoS guard).
+
+---
+
+### Column A modifiers
+
+Modifiers are colon-separated tokens after the row keyword. They are **order-independent** and can be combined freely:
+
+| Example column A | Meaning |
+|------------------|---------|
+| `lbl:` | Anchor, literal match (default) |
+| `lbl:glob` | Anchor, glob match for this field |
+| `lbl:regexp` / `lbl:re` | Anchor, regex match for this field |
+| `lbl:not-null` | Anchor, literal match; fatal if the cell is empty |
+| `lbl:not-null:glob` | Anchor, glob match, required |
+| `var:` | Variable, regex match (default) |
+| `var:re` | Variable, explicit regex mode |
+| `var:glob` | Variable, glob match in column D |
+| `var:literal` | Variable, exact string match in column D |
+| `var:not-null` | Variable, required — fatal error if value is empty/null |
+| `var:not-null:glob` | Variable, glob match, required (order-independent) |
+| `var:literal:not-empty` | Variable, literal match, required |
+
+**`not-null` / `not-empty` are synonyms.** Both trigger a fatal error (not a warning) when the extracted value is empty or null — regardless of whether `--strict` is used. This is stronger than the default behaviour where missing values are silently set to `null`.
+
+**`var:glob` and `var:literal`** apply the type check first (column C), then match column D against the string representation of the value. The regex safety guard does not apply (column D is never compiled as a regex). Special characters in column D (`(`, `)`, `*`, `.`, etc.) are interpreted literally in `var:literal` mode, and as glob wildcards in `var:glob` mode.
+
+```
+var:not-null     invoice.number  string   INV-\d+   ← regex, required
+var:glob         sku             string   PROD-*    ← glob, optional
+var:literal      status          string   Active    ← exact match, optional
+var:not-null:literal  currency   string   EUR       ← exact match, required
+lbl:not-null     inv_label       string   Invoice:  ← anchor must be present
+```
 
 ### Supported types
 

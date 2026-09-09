@@ -161,6 +161,19 @@ class DocsGenerator:
         row(['var:', 'footer.value', 'currency', '.*',              'FOOTER value field.'], 'var')
         blank()
 
+        # ── Column A modifier examples ──────────────────────────────────────────
+        row(['doc:', '', '', '', 'Column A modifiers — order-independent, colon-separated. Add after var: or lbl:'], 'doc')
+        row(['doc:', '', '', '', 'not-null / not-empty (synonyms): fatal error if value is empty/null (always, not just with --strict)'], 'doc')
+        row(['doc:', '', '', '', 'var:glob → column D is a shell glob (PROD-* matches PROD-42); type check still runs'], 'doc')
+        row(['doc:', '', '', '', 'var:literal → column D is exact string (special chars are literal, not regex)'], 'doc')
+        row(['doc:', '', '', '', 'var:re → explicit alias for default regex mode; lbl:re → alias for lbl:regexp'], 'doc')
+        row(['doc:', '', '', '', 'Modifiers combine freely: var:not-null:glob, lbl:not-null, var:literal:not-empty'], 'doc')
+        row(['var:not-null',   'invoice.number', 'string', r'INV-\d+', 'Required regex field — fatal if empty.'], 'var')
+        row(['var:glob',       'sku',            'string', 'PROD-*',   'Glob match: PROD-42, PROD-XYZ, ...'], 'var')
+        row(['var:literal',    'status',         'string', 'Active',   'Exact string match — "Active" only.'], 'var')
+        row(['lbl:not-null',   'inv_label',      'string', 'Invoice:', 'Anchor must be present or fatal.'], 'lbl')
+        blank()
+
         # ── START section ──────────────────────────────────────────────────────
         row(['doc:', '', '', '', 'Everything between START: and END: defines the extraction order.'], 'doc')
         row(['doc:', '', '', '', 'cell:next  reads the next non-empty cell (alias: cell:1). Scans in read.direction order.'], 'doc')
