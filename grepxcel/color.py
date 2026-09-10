@@ -19,10 +19,11 @@ import os
 
 _RESET = '\033[0m'
 _CODES = {
-    'green':  '\033[32m',
-    'red':    '\033[31m',
-    'yellow': '\033[33m',
-    'cyan':   '\033[36m',
+    'green':  '\033[92m',   # bright green  (vivid success signal)
+    'red':    '\033[91m',   # bright red    (vivid error/failure)
+    'yellow': '\033[93m',   # bright yellow (vivid warning/anchor)
+    'cyan':   '\033[96m',   # bright cyan   (vivid label/field)
+
     'dim':    '\033[2m',
     'bold':   '\033[1m',
 }
