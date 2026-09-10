@@ -16,6 +16,15 @@ The public surface is deliberately small:
   * ``paint(text, colour, enabled)`` — wrap a span in one colour.
   * ``colorize_marks(text, enabled)`` — no-op kept for call-site compatibility;
     emoji circles are self-coloured and need no ANSI wrapping.
+
+Palette notes
+-------------
+We use 256-colour extended codes (``\\033[38;5;Nm``) instead of the 16-colour
+high-intensity variants (90–97) for all semantic colours.  High-intensity codes
+rely on the terminal's configurable 16-colour palette, which many themes remap
+to unexpected or near-invisible hues.  256-colour codes address a fixed cube
+that is immune to palette remapping and supported by every modern terminal
+(gnome-terminal, xterm, iTerm2, Windows Terminal, …).
 """
 import os
 
@@ -27,16 +36,18 @@ MARK_INFO = '🔵'   # informational / neutral
 
 _RESET = '\033[0m'
 _CODES = {
-    'green':      '\033[92m',   # bright green  (vivid success signal)
-    'red':        '\033[91m',   # bright red    (vivid error/failure)
-    'yellow':     '\033[93m',   # bright yellow (vivid warning/anchor)
-    'cyan':       '\033[96m',   # bright cyan   (vivid label/field)
-    'dim':        '\033[2m',
-    'bold':       '\033[1m',
-    # Combined codes for verdict words — use standard (30-37) not bright (90-97)
-    # so they stay a true saturated hue regardless of the terminal's palette theme.
-    'bold_green': '\033[1;32m', # bold + standard green → VALID
-    'bold_red':   '\033[1;31m', # bold + standard red   → INVALID
+    # 256-colour palette — immune to terminal theme remapping of the 16-colour
+    # high-intensity range (90–97).  Indices from the standard xterm-256 cube.
+    'green':      '\033[38;5;82m',    # vivid lime-green  — extracted data / var role
+    'red':        '\033[38;5;196m',   # vivid red         — errors / failures
+    'yellow':     '\033[38;5;220m',   # vivid amber       — anchors / warnings / lbl role
+    'cyan':       '\033[38;5;51m',    # vivid cyan        — field names / structural labels
+    # Standard SGR codes (no palette dependency)
+    'dim':        '\033[2m',          # secondary / metadata
+    'bold':       '\033[1m',          # headings / filenames
+    # Combined: verdict words need maximum contrast — bold + fixed hue
+    'bold_green': '\033[1;38;5;82m',  # bold vivid green  — VALID
+    'bold_red':   '\033[1;38;5;196m', # bold vivid red    — INVALID
 }
 
 # Emoji marks are self-coloured; _GLYPH_COLOR is kept empty so colorize_marks()
