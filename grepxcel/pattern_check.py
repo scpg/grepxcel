@@ -188,10 +188,10 @@ def render_result(result: CheckResult, verbose: bool = False, out=None) -> None:
     if result.valid:
         stats = paint(f'({result.n_fields} field(s), {result.n_steps} extraction step(s))',
                       'dim', color)
-        valid = paint(paint('VALID', 'green', color), 'bold', color)
+        valid = paint('VALID', 'bold_green', color)
         print(colorize_marks(f'{_MARK_OK}  {fpath}  —  {valid} {stats}', color), file=out)
     else:
-        invalid = paint(paint('INVALID', 'red', color), 'bold', color)
+        invalid = paint('INVALID', 'bold_red', color)
         print(colorize_marks(f'{_MARK_FAIL}  {fpath}  —  {invalid}', color), file=out)
     for err in result.errors:
         print(colorize_marks(f'   {_MARK_FAIL} {paint(err, "red", color)}', color), file=out)

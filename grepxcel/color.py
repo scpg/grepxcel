@@ -27,12 +27,16 @@ MARK_INFO = '🔵'   # informational / neutral
 
 _RESET = '\033[0m'
 _CODES = {
-    'green':  '\033[92m',   # bright green  (vivid success signal)
-    'red':    '\033[91m',   # bright red    (vivid error/failure)
-    'yellow': '\033[93m',   # bright yellow (vivid warning/anchor)
-    'cyan':   '\033[96m',   # bright cyan   (vivid label/field)
-    'dim':    '\033[2m',
-    'bold':   '\033[1m',
+    'green':      '\033[92m',   # bright green  (vivid success signal)
+    'red':        '\033[91m',   # bright red    (vivid error/failure)
+    'yellow':     '\033[93m',   # bright yellow (vivid warning/anchor)
+    'cyan':       '\033[96m',   # bright cyan   (vivid label/field)
+    'dim':        '\033[2m',
+    'bold':       '\033[1m',
+    # Combined codes for verdict words — use standard (30-37) not bright (90-97)
+    # so they stay a true saturated hue regardless of the terminal's palette theme.
+    'bold_green': '\033[1;32m', # bold + standard green → VALID
+    'bold_red':   '\033[1;31m', # bold + standard red   → INVALID
 }
 
 # Emoji marks are self-coloured; _GLYPH_COLOR is kept empty so colorize_marks()
