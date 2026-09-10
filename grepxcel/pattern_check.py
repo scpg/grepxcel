@@ -95,7 +95,7 @@ def check_pattern(path: str) -> CheckResult:
         result.warnings.append(
             f"Unknown config key {key!r} — ignored. "
             f"Valid keys: pattern.version (or version), read.direction, "
-            f"currency.sign, ignore.case, lbl.match, empty.aliases."
+            f"currency.sign, ignore.case, trim.whitespace, lbl.match, var.match, empty.aliases."
         )
 
     for name, fd in defs.items():
@@ -172,11 +172,15 @@ def render_result(result: CheckResult, verbose: bool = False, out=None) -> None:
         ver = (f'{cfg.pattern_version}' if cfg.pattern_version_explicit
                else f'{cfg.pattern_version} (defaulted — no pattern.version declared)')
         print('\n   config:', file=out)
+        aliases_val = ', '.join(cfg.empty_aliases) if cfg.empty_aliases else '(none)'
         print(f'     pattern.version {ver}', file=out)
         print(f'     read.direction  {cfg.read_direction}', file=out)
         print(f'     currency.sign   {cfg.currency_sign}', file=out)
         print(f'     ignore.case     {cfg.ignore_case}', file=out)
+        print(f'     trim.whitespace {cfg.trim_whitespace}', file=out)
         print(f'     lbl.match       {cfg.lbl_match}', file=out)
+        print(f'     var.match       {cfg.var_match}', file=out)
+        print(f'     empty.aliases   {aliases_val}', file=out)
         print('   fields:', file=out)
         for name, fd in result.defs.items():
             tags = []

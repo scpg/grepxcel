@@ -221,3 +221,128 @@ def test_verbose_shows_per_field_mode_tag(tmp_path):
     buf = io.StringIO()
     run_validate([_write(_lbl_base('Hello *', 'lbl:glob'), tmp_path)], verbose=True, out=buf)
     assert '[glob]' in buf.getvalue()
+
+
+# ── verbose config: complete defaults ────────────────────────────────────────
+
+def _run_verbose(rows, tmp_path):
+    """Write pattern rows, run validate-pattern -v, return output string."""
+    buf = io.StringIO()
+    run_validate([_write(rows, tmp_path)], verbose=True, out=buf)
+    return buf.getvalue()
+
+
+def test_verbose_config_shows_all_eight_keys(tmp_path):
+    """All 8 config keys must appear in verbose output for any valid pattern."""
+    out = _run_verbose(_VALID, tmp_path)
+    for key in ('pattern.version', 'read.direction', 'currency.sign',
+                'ignore.case', 'trim.whitespace', 'lbl.match', 'var.match',
+                'empty.aliases'):
+        assert key in out, f'Missing config key in -v output: {key!r}'
+
+
+def test_verbose_config_defaults_pattern_version(tmp_path):
+    """pattern.version without an explicit declaration shows the 'defaulted' note."""
+    out = _run_verbose(_VALID, tmp_path)
+    assert 'defaulted' in out
+
+
+def test_verbose_config_default_read_direction(tmp_path):
+    out = _run_verbose(_VALID, tmp_path)
+    assert 'read.direction  LR' in out
+
+
+def test_verbose_config_default_currency_sign(tmp_path):
+    out = _run_verbose(_VALID, tmp_path)
+    assert 'currency.sign   €' in out
+
+
+def test_verbose_config_default_ignore_case(tmp_path):
+    out = _run_verbose(_VALID, tmp_path)
+    assert 'ignore.case     False' in out
+
+
+def test_verbose_config_default_trim_whitespace(tmp_path):
+    """trim.whitespace defaults to False and must appear in verbose output."""
+    out = _run_verbose(_VALID, tmp_path)
+    assert 'trim.whitespace False' in out
+
+
+def test_verbose_config_default_lbl_match(tmp_path):
+    out = _run_verbose(_VALID, tmp_path)
+    assert 'lbl.match       literal' in out
+
+
+def test_verbose_config_default_var_match(tmp_path):
+    """var.match defaults to regexp and must appear in verbose output."""
+    out = _run_verbose(_VALID, tmp_path)
+    assert 'var.match       regexp' in out
+
+
+def test_verbose_config_default_empty_aliases_none(tmp_path):
+    """empty.aliases shows (none) when no aliases are configured."""
+    out = _run_verbose(_VALID, tmp_path)
+    assert 'empty.aliases   (none)' in out
+
+
+def test_verbose_config_section_key_order(tmp_path):
+    """Config keys must appear in the documented order in -v output."""
+    out = _run_verbose(_VALID, tmp_path)
+    keys = ('pattern.version', 'read.direction', 'currency.sign',
+            'ignore.case', 'trim.whitespace', 'lbl.match', 'var.match',
+            'empty.aliases')
+    positions = [out.index(k) for k in keys]
+    assert positions == sorted(positions), (
+        f'Config keys out of order. Positions: {list(zip(keys, positions))}'
+    )
+
+
+# ── verbose config: non-default values ───────────────────────────────────────
+
+def _cfg_pattern(config_rows, tmp_path):
+    """Build a pattern with the given config rows prepended to _VALID fields."""
+    rows = config_rows + list(_VALID)
+    return _run_verbose(rows, tmp_path)
+
+
+def test_verbose_config_trim_whitespace_true(tmp_path):
+    out = _cfg_pattern([['config:', 'trim.whitespace', 'yes']], tmp_path)
+    assert 'trim.whitespace True' in out
+
+
+def test_verbose_config_var_match_glob(tmp_path):
+    out = _cfg_pattern([['config:', 'var.match', 'glob']], tmp_path)
+    assert 'var.match       glob' in out
+
+
+def test_verbose_config_var_match_literal(tmp_path):
+    out = _cfg_pattern([['config:', 'var.match', 'literal']], tmp_path)
+    assert 'var.match       literal' in out
+
+
+def test_verbose_config_empty_aliases_single(tmp_path):
+    out = _cfg_pattern([['config:', 'empty.aliases', 'N/A']], tmp_path)
+    assert 'empty.aliases   N/A' in out
+
+
+def test_verbose_config_empty_aliases_multiple(tmp_path):
+    """Multiple empty.aliases config rows are shown comma-separated."""
+    rows = [
+        ['config:', 'empty.aliases', 'N/A'],
+        ['config:', 'empty.aliases', 'TBD'],
+        ['config:', 'empty.aliases', '-'],
+    ]
+    out = _cfg_pattern(rows, tmp_path)
+    assert 'N/A' in out and 'TBD' in out and '-' in out
+
+
+def test_verbose_config_ignore_case_true(tmp_path):
+    out = _cfg_pattern([['config:', 'ignore.case', 'yes']], tmp_path)
+    assert 'ignore.case     True' in out
+
+
+def test_verbose_config_pattern_version_explicit(tmp_path):
+    """Explicitly declared pattern.version must NOT show the 'defaulted' note."""
+    out = _cfg_pattern([['config:', 'pattern.version', '1']], tmp_path)
+    assert 'pattern.version 1' in out
+    assert 'defaulted' not in out
