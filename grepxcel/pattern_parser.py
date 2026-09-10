@@ -32,7 +32,7 @@ _FALSY  = frozenset({'0', 'false', 'no', 'off', 'n', ''})
 # Modifier tokens recognised in column-A field rows ('lbl:...' / 'var:...').
 # Mode tokens map to their canonical name; 're' normalises to 'regexp'.
 _MODE_TOKENS = {'literal': 'literal', 'glob': 'glob', 're': 'regexp', 'regexp': 'regexp'}
-_CONSTRAINT_TOKENS = frozenset({'not-null', 'not-empty'})
+_CONSTRAINT_TOKENS = frozenset({'not-null', 'not-empty', 'trim-whitespace'})
 
 
 def _parse_col_a_modifiers(col_a: str, row_num: int) -> tuple:
@@ -42,16 +42,18 @@ def _parse_col_a_modifiers(col_a: str, row_num: int) -> tuple:
     the caller).  Each subsequent token is either a matching-mode name or a
     constraint keyword.  Order does not matter.
 
-    Returns ``(mode, required)``:
-      * mode     – ``None | 'literal' | 'glob' | 'regexp'``  (normalised;
-                   None means "use the default for this role")
-      * required – ``True`` when ``not-null`` or ``not-empty`` is present.
+    Returns ``(mode, required, trim_whitespace)``:
+      * mode            – ``None | 'literal' | 'glob' | 'regexp'``  (normalised;
+                          None means "use the default for this role")
+      * required        – ``True`` when ``not-null`` or ``not-empty`` is present.
+      * trim_whitespace – ``True`` when ``trim-whitespace`` is present.
 
     Raises ``PatternError`` on unknown tokens or duplicate mode modifiers.
     """
     parts = col_a.lower().split(':')
     mode: str | None = None
     required = False
+    trim_whitespace = False
     seen_mode = False
 
     for token in parts[1:]:
@@ -66,14 +68,18 @@ def _parse_col_a_modifiers(col_a: str, row_num: int) -> tuple:
             mode = _MODE_TOKENS[token]
             seen_mode = True
         elif token in _CONSTRAINT_TOKENS:
-            required = True
+            if token == 'trim-whitespace':
+                trim_whitespace = True
+            else:
+                required = True
         else:
             raise PatternError(
                 f"Unknown modifier {token!r} in {col_a!r} at pattern row {row_num}. "
-                f"Valid modifiers: literal, glob, re, regexp, not-null, not-empty."
+                f"Valid modifiers: literal, glob, re, regexp, not-null, not-empty, "
+                f"trim-whitespace."
             )
 
-    return mode, required
+    return mode, required, trim_whitespace
 
 # Field types the engine knows how to validate (see utils.validate_type).
 # Keep this in lockstep with that function — a name here that it can't handle
@@ -195,16 +201,18 @@ class PatternParser:
                     self._check_comment_zone(row, 3, i + 1, 'config:')    # D+ comment
                 elif isinstance(col_a_l, str) and (col_a_l.startswith('var:')
                                                     or col_a_l.startswith('def:')):
-                    var_mode, required = _parse_col_a_modifiers(col_a_l, i + 1)
+                    var_mode, required, trim_ws = _parse_col_a_modifiers(col_a_l, i + 1)
                     fd = self._parse_field(row, role='var', row_num=i + 1,
-                                           var_mode=var_mode, required=required)
+                                           var_mode=var_mode, required=required,
+                                           trim_whitespace=trim_ws)
                     defs[fd.name] = fd
                     self._check_comment_zone(row, 4, i + 1, col_a_l)      # E+ comment
                 elif isinstance(col_a_l, str) and col_a_l.startswith('lbl:'):
-                    lbl_mode, required = _parse_col_a_modifiers(col_a_l, i + 1)
+                    lbl_mode, required, trim_ws = _parse_col_a_modifiers(col_a_l, i + 1)
                     fd = self._parse_field(row, role='lbl', row_num=i + 1,
                                            lbl_match_override=lbl_mode, required=required,
-                                           global_lbl_match=global_config.lbl_match)
+                                           global_lbl_match=global_config.lbl_match,
+                                           trim_whitespace=trim_ws)
                     defs[fd.name] = fd
                     self._check_comment_zone(row, 4, i + 1, col_a_l)
                 elif col_a_l in ('doc:', 'info:'):
@@ -716,6 +724,8 @@ class PatternParser:
             config.empty_aliases.append(str(val))
         elif key == 'ignore.case' and val is not None:
             config.ignore_case = _truthy(val)
+        elif key == 'trim.whitespace' and val is not None:
+            config.trim_whitespace = _truthy(val)
         elif key == 'lbl.match' and val is not None:
             mode = str(val).strip().lower()
             if mode not in LBL_MATCH_MODES:
@@ -735,7 +745,8 @@ class PatternParser:
                      lbl_match_override: str | None = None,
                      global_lbl_match: str = 'literal',
                      var_mode: str | None = None,
-                     required: bool = False) -> FieldDef:
+                     required: bool = False,
+                     trim_whitespace: bool = False) -> FieldDef:
         where = f' at pattern row {row_num}' if row_num is not None else ''
         name  = str(row[1]) if row[1] else ''
         if not name:
@@ -765,7 +776,8 @@ class PatternParser:
             check_regex_safety(regex, field_name=name)
 
         return FieldDef(name=name, type=type_, regex=regex, role=role,
-                        lbl_match=lbl_match_override, var_mode=var_mode, required=required)
+                        lbl_match=lbl_match_override, var_mode=var_mode, required=required,
+                        trim_whitespace=trim_whitespace)
 
     # backward-compat alias
     def _parse_def(self, row) -> FieldDef:

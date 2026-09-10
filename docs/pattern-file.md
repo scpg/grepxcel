@@ -43,6 +43,7 @@ Optional. Placed before `START:`. Each `config:` row sets one global option.
 | `config:` | `currency.sign`    | e.g. `€` or `$`                   | Default: `€`                 |
 | `config:` | `empty.aliases`    | e.g. `N/A`                        | Repeat the row for each alias|
 | `config:` | `ignore.case`      | `true` or `false`                  | Default: `false`             |
+| `config:` | `trim.whitespace`  | `true` or `false`                  | Default: `false`             |
 | `config:` | `lbl.match`        | `literal`, `glob`, or `regexp`     | Default: `literal`           |
 | `config:` | `pattern.version`  | integer (e.g. `1`)                 | Default: `1`                 |
 
@@ -56,6 +57,8 @@ Optional. Placed before `START:`. Each `config:` row sets one global option.
 **`empty.aliases`** lists strings that should be treated as empty cells (e.g. `N/A`, `-`, `—`). Add one alias per row.
 
 **`ignore.case`** makes all regex matching case-insensitive (applies to both `lbl:` and `var:` fields).
+
+**`trim.whitespace`** strips leading and trailing whitespace from every cell value before matching and before writing to the JSON output. Off by default (opt-in). Per-field override: add `trim-whitespace` to the column-A modifiers. See [Whitespace handling](#whitespace-handling) below.
 
 **`lbl.match`** controls how `lbl:` field values are matched against data cells:
 
@@ -91,14 +94,16 @@ Column A supports **order-independent colon-separated modifiers** (see [Column A
   - **`regexp`** — full Python `re.search`.
   - Per-field override: use `lbl:literal`, `lbl:glob`, `lbl:regexp`, or `lbl:re` (alias for `regexp`) in column A.
   - Constraint: add `not-null` to make a missing/empty label a fatal error (e.g. `lbl:not-null`).
+  - Whitespace: add `trim-whitespace` to strip cell spaces before matching (e.g. `lbl:trim-whitespace`).
 - **`var:`** — use for every value you want to capture. **Dot notation creates
   nested JSON**: `po.number` → `{"po": {"number": …}}`. In a table, the group
   prefix (`line` in `line.qty`) becomes the output array key.
   - Default: column D is a Python `re.fullmatch` regex. Use `.*` to accept anything.
   - `var:glob` — column D is a shell-style glob (`*`, `?`). Type check still runs first.
   - `var:literal` — column D is an exact string match. Special regex characters are literal.
-  - `var:re` — explicit alias for the default regex mode.
+  - `var:re` / `var:regexp` — explicit alias for the default regex mode.
   - Constraint: add `not-null` or `not-empty` (synonyms) to make an empty/null value a **fatal error**, always, regardless of `--strict`.
+  - Whitespace: add `trim-whitespace` to strip leading/trailing spaces before matching and in the extracted JSON value.
 - **FieldName** — a unique plain-text identifier.
 - **regex** (for `var:` / `def:`) — a Python `re.fullmatch` pattern applied to
   the string representation of the cell value. Use `.*` to accept anything.
@@ -113,29 +118,78 @@ Modifiers are colon-separated tokens after the row keyword. They are **order-ind
 | Example column A | Meaning |
 |------------------|---------|
 | `lbl:` | Anchor, literal match (default) |
+| `lbl:literal` | Anchor, explicit literal match |
 | `lbl:glob` | Anchor, glob match for this field |
 | `lbl:regexp` / `lbl:re` | Anchor, regex match for this field |
 | `lbl:not-null` | Anchor, literal match; fatal if the cell is empty |
 | `lbl:not-null:glob` | Anchor, glob match, required |
-| `var:` | Variable, regex match (default) |
-| `var:re` | Variable, explicit regex mode |
+| `lbl:not-null:regexp` | Anchor, regex match, required |
+| `lbl:trim-whitespace` | Anchor — strip cell spaces before matching |
+| `lbl:not-null:trim-whitespace` | Anchor — required + strip spaces |
+| `var:` | Variable, regex match in column D (default) |
+| `var:re` / `var:regexp` | Variable, explicit regex mode (same as default) |
 | `var:glob` | Variable, glob match in column D |
 | `var:literal` | Variable, exact string match in column D |
 | `var:not-null` | Variable, required — fatal error if value is empty/null |
+| `var:not-empty` | Synonym for `var:not-null` |
+| `var:not-null:re` | Variable, required, explicit regex |
 | `var:not-null:glob` | Variable, glob match, required (order-independent) |
 | `var:literal:not-empty` | Variable, literal match, required |
+| `var:trim-whitespace` | Variable — strip cell spaces before matching and in extracted JSON |
+| `var:not-null:trim-whitespace` | Variable — required + strip spaces |
+| `var:glob:trim-whitespace` | Variable — glob match + strip spaces |
+| `var:literal:trim-whitespace` | Variable — literal match + strip spaces |
 
 **`not-null` / `not-empty` are synonyms.** Both trigger a fatal error (not a warning) when the extracted value is empty or null — regardless of whether `--strict` is used. This is stronger than the default behaviour where missing values are silently set to `null`.
 
 **`var:glob` and `var:literal`** apply the type check first (column C), then match column D against the string representation of the value. The regex safety guard does not apply (column D is never compiled as a regex). Special characters in column D (`(`, `)`, `*`, `.`, etc.) are interpreted literally in `var:literal` mode, and as glob wildcards in `var:glob` mode.
 
+**`trim-whitespace`** strips leading and trailing whitespace from the cell value before matching and, for `var:` fields, before writing to the JSON output. This is **opt-in** — off by default. Apply it per-field (column A) or globally with `config: | trim.whitespace | yes`.
+
 ```
-var:not-null     invoice.number  string   INV-\d+   ← regex, required
-var:glob         sku             string   PROD-*    ← glob, optional
-var:literal      status          string   Active    ← exact match, optional
-var:not-null:literal  currency   string   EUR       ← exact match, required
-lbl:not-null     inv_label       string   Invoice:  ← anchor must be present
+var:not-null          invoice.number  string  INV-\d+    ← regex, required
+var:glob              sku             string  PROD-*     ← glob, optional
+var:literal           status          string  Active     ← exact match, optional
+var:not-null:literal  currency        string  EUR        ← exact match, required
+var:trim-whitespace   company         string  .*         ← strip " Acme Corp  " → "Acme Corp"
+var:not-null:re       code            string  [A-Z]{3}   ← explicit regex, required
+lbl:not-null          inv_label       string  Invoice:   ← anchor must be present
+lbl:trim-whitespace   header          string  Date       ← strip spaces before matching
 ```
+
+---
+
+### Whitespace handling
+
+Excel cells occasionally contain invisible leading or trailing spaces — typed accidentally, pasted from another source, or left by a formula. These are **not stripped by default**: the raw cell value is matched and extracted as-is.
+
+**When whitespace causes a mismatch, grepxcel tells you.** The validation warning for a mismatched field includes a targeted hint:
+
+```
+⚠  B3  [company / string]
+   Found:    ' Acme Corp  '
+   Expected: matches /\w+/
+   → The cell value has leading or trailing whitespace.
+     The trimmed value 'Acme Corp' DOES match /\w+/.
+     Add 'trim-whitespace' to this field (e.g. 'var:trim-whitespace') or set
+     'config: | trim.whitespace | yes' to strip whitespace globally.
+```
+
+**To fix it, use `trim-whitespace`** (opt-in, not the default):
+
+| Scope | Syntax | Effect |
+|-------|--------|--------|
+| Per field | `var:trim-whitespace` | Strip before matching and in extracted JSON |
+| Per label | `lbl:trim-whitespace` | Strip before matching the anchor (never in output) |
+| Whole pattern | `config: \| trim.whitespace \| yes` | Strip all fields globally |
+
+**What trim-whitespace does:**
+- Strips **leading and trailing** whitespace only (Python `str.strip()`).
+- For `var:` fields: the **extracted JSON value** is the trimmed string.
+- For `lbl:` fields: only the matching comparison is trimmed; labels are never in output anyway.
+- Applies to `string`/`text` cells only. Numeric, date, and boolean cells are Python objects — no whitespace to strip.
+
+**Why it is opt-in:** Most patterns expect exact values. Automatically stripping could silently change the extracted data, breaking downstream consumers that rely on the raw cell text. Making it explicit keeps behaviour predictable and puts the author in control.
 
 ### Supported types
 

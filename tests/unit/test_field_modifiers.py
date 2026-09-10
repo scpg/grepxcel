@@ -1,9 +1,11 @@
-"""Unit tests for the col-A modifier system (not-null, var:glob, var:literal, var:re).
+"""Unit tests for the col-A modifier system (not-null, var:glob, var:literal, var:re,
+trim-whitespace).
 
 These tests verify:
 1. Parser: modifier tokens produce the correct FieldDef attributes.
 2. Engine: _validate_field dispatches correctly for each var_mode.
 3. Engine: required (not-null) check fires a fatal error when the value is empty.
+4. Engine: trim-whitespace strips leading/trailing spaces before matching and extraction.
 """
 from pathlib import Path
 
@@ -189,3 +191,180 @@ class TestRequiredEnforcement:
     def test_not_null_with_glob_logs_fatal_on_empty(self, tmp_path):
         _, lg = _run(_req_rows('var:not-null:glob', 'hello*'), {}, tmp_path)
         assert lg.has_errors()
+
+
+# ── trim-whitespace modifier ──────────────────────────────────────────────────
+
+class TestTrimWhitespaceParser:
+    """Parser correctly sets trim_whitespace on FieldDef and Config."""
+
+    def test_var_trim_sets_field_flag(self, tmp_path):
+        path = _write_pattern([
+            ['var:trim-whitespace', 'v', 'string', '.*'],
+            ['START:'],
+            ['cell:A1', 'v'],
+            ['END:'],
+        ], tmp_path)
+        _, defs, _ = PatternParser().parse(path)
+        assert defs['v'].trim_whitespace is True
+
+    def test_plain_var_trim_whitespace_is_false(self, tmp_path):
+        path = _write_pattern([
+            ['var:', 'v', 'string', '.*'],
+            ['START:'],
+            ['cell:A1', 'v'],
+            ['END:'],
+        ], tmp_path)
+        _, defs, _ = PatternParser().parse(path)
+        assert defs['v'].trim_whitespace is False
+
+    def test_lbl_trim_sets_field_flag(self, tmp_path):
+        path = _write_pattern([
+            ['lbl:trim-whitespace', 'lbl', 'string', 'Invoice:'],
+            ['var:', 'v', 'string', '.*'],
+            ['START:'],
+            ['cell:A1', 'lbl'],
+            ['cell:next', 'v'],
+            ['END:'],
+        ], tmp_path)
+        _, defs, _ = PatternParser().parse(path)
+        assert defs['lbl'].trim_whitespace is True
+
+    def test_trim_whitespace_combines_with_not_null(self, tmp_path):
+        path = _write_pattern([
+            ['var:not-null:trim-whitespace', 'v', 'string', '.*'],
+            ['START:'],
+            ['cell:A1', 'v'],
+            ['END:'],
+        ], tmp_path)
+        _, defs, _ = PatternParser().parse(path)
+        assert defs['v'].trim_whitespace is True
+        assert defs['v'].required is True
+
+    def test_trim_whitespace_combines_with_glob(self, tmp_path):
+        path = _write_pattern([
+            ['var:glob:trim-whitespace', 'v', 'string', 'hello*'],
+            ['START:'],
+            ['cell:A1', 'v'],
+            ['END:'],
+        ], tmp_path)
+        _, defs, _ = PatternParser().parse(path)
+        assert defs['v'].trim_whitespace is True
+        assert defs['v'].var_mode == 'glob'
+
+    def test_global_config_trim_whitespace(self, tmp_path):
+        path = _write_pattern([
+            ['config:', 'trim.whitespace', 'yes'],
+            ['var:', 'v', 'string', '.*'],
+            ['START:'],
+            ['cell:A1', 'v'],
+            ['END:'],
+        ], tmp_path)
+        cfg, _, _ = PatternParser().parse(path)
+        assert cfg.trim_whitespace is True
+
+    def test_global_config_trim_whitespace_false(self, tmp_path):
+        path = _write_pattern([
+            ['config:', 'trim.whitespace', 'no'],
+            ['var:', 'v', 'string', '.*'],
+            ['START:'],
+            ['cell:A1', 'v'],
+            ['END:'],
+        ], tmp_path)
+        cfg, _, _ = PatternParser().parse(path)
+        assert cfg.trim_whitespace is False
+
+
+class TestTrimWhitespaceEngine:
+    """Engine strips whitespace before matching and stores the trimmed value."""
+
+    def _trim_rows(self, col_a='var:trim-whitespace', regex='.*') -> list:
+        return [
+            [col_a, 'v', 'string', regex],
+            ['START:'],
+            ['cell:A1', 'v'],
+            ['END:'],
+        ]
+
+    def test_no_trim_by_default_whitespace_stored_raw(self, tmp_path):
+        """Without trim-whitespace, raw value (with spaces) is stored."""
+        result, lg = _run(
+            [['var:', 'v', 'string', r'\S+'], ['START:'], ['cell:A1', 'v'], ['END:']],
+            {'A1': ' hello '},
+            tmp_path,
+        )
+        # '\S+' does NOT match ' hello ' — warning expected, raw value stored
+        assert result.get('v') == ' hello '
+        assert lg.has_warnings()  # validation warning because of spaces
+
+    def test_trim_removes_leading_trailing_spaces(self, tmp_path):
+        result, lg = _run(self._trim_rows(), {'A1': '  hello  '}, tmp_path)
+        assert not lg.has_errors()
+        assert result.get('v') == 'hello'
+
+    def test_trim_enables_regex_match_that_would_fail_raw(self, tmp_path):
+        result, lg = _run(self._trim_rows(regex=r'\w+'), {'A1': ' world '}, tmp_path)
+        assert not lg.has_errors()
+        assert result.get('v') == 'world'
+
+    def test_trim_glob_mode(self, tmp_path):
+        result, lg = _run(
+            self._trim_rows(col_a='var:glob:trim-whitespace', regex='hello*'),
+            {'A1': '  hello world  '},
+            tmp_path,
+        )
+        assert not lg.has_errors()
+        assert result.get('v') == 'hello world'
+
+    def test_trim_literal_mode(self, tmp_path):
+        result, lg = _run(
+            self._trim_rows(col_a='var:literal:trim-whitespace', regex='Active'),
+            {'A1': '  Active  '},
+            tmp_path,
+        )
+        assert not lg.has_errors()
+        assert result.get('v') == 'Active'
+
+    def test_global_trim_config_applies_to_all_fields(self, tmp_path):
+        """config: | trim.whitespace | yes trims all fields without per-field modifier."""
+        rows = [
+            ['config:', 'trim.whitespace', 'yes'],
+            ['var:', 'v', 'string', r'\w+'],
+            ['START:'],
+            ['cell:A1', 'v'],
+            ['END:'],
+        ]
+        result, lg = _run(rows, {'A1': '  trimmed  '}, tmp_path)
+        assert not lg.has_errors()
+        assert result.get('v') == 'trimmed'
+
+    def test_trim_does_not_affect_non_string_types(self, tmp_path):
+        """Numeric values are Python objects — trim has no effect."""
+        result, lg = _run(
+            self._trim_rows(col_a='var:trim-whitespace', regex='.*'),
+            {'A1': 42.5},
+            tmp_path,
+        )
+        assert not lg.has_errors()
+        assert result.get('v') == 42.5  # numeric value unchanged
+
+
+class TestTrimWhitespaceWarning:
+    """Logger emits a targeted hint when whitespace causes a validation mismatch."""
+
+    def test_whitespace_hint_shown_when_trimming_fixes_mismatch(self, tmp_path):
+        """When the raw value fails but trimmed value would pass, the warning says so."""
+        rows = [
+            ['var:', 'v', 'string', r'\w+'],  # no trim-whitespace
+            ['START:'],
+            ['cell:A1', 'v'],
+            ['END:'],
+        ]
+        result, lg = _run(rows, {'A1': ' hello '}, tmp_path)
+        issues = lg.issues()
+        assert issues  # a validation warning must have fired
+        # The hint in the warning record must mention whitespace / trim-whitespace
+        hints = [i.hint for i in issues if hasattr(i, 'hint') and i.hint]
+        assert any('trim-whitespace' in h for h in hints), (
+            f'Expected whitespace hint in warnings; got hints: {hints}'
+        )

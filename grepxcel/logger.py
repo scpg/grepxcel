@@ -14,10 +14,13 @@ Verbosity levels:
 """
 
 from __future__ import annotations
+import re as _re_stdlib
 from dataclasses import dataclass, field as dc_field
 from datetime import datetime, timezone
 from enum import IntEnum
 from typing import Optional, NoReturn
+
+from .utils import _safe_match, _MAX_REGEX_INPUT_LEN
 import hashlib
 import json
 import os
@@ -767,6 +770,24 @@ class Logger:
             self._file.flush()
 
     def _hint_validation(self, field_type: str, regex: str, value) -> str:
+        # Leading/trailing whitespace — most actionable when trimming fixes the mismatch.
+        if isinstance(value, str) and value != value.strip():
+            trimmed = value.strip()
+            if trimmed and _safe_match(regex, trimmed, _re_stdlib.DOTALL, _MAX_REGEX_INPUT_LEN):
+                return (
+                    f"The cell value has leading or trailing whitespace. "
+                    f"The trimmed value {trimmed!r} DOES match /{regex}/. "
+                    f"Add 'trim-whitespace' to this field in column A "
+                    f"(e.g. 'var:trim-whitespace') or set "
+                    f"'config: | trim.whitespace | yes' to strip whitespace globally."
+                )
+            elif trimmed:
+                return (
+                    f"The cell value {value!r} has leading or trailing whitespace — "
+                    f"trimmed to {trimmed!r}, which still does not match /{regex}/. "
+                    f"The mismatch is not caused solely by whitespace."
+                )
+
         if isinstance(value, str):
             if '\n' in value or '\r' in value:
                 if '.*' not in regex and r'[\s\S]' not in regex and r'\n' not in regex:

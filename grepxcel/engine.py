@@ -45,6 +45,15 @@ def _resolve_lbl_mode(fd, config) -> str:
     return fd.lbl_match if fd.lbl_match is not None else config.lbl_match
 
 
+def _apply_trim(value, fd, config):
+    """Strip leading/trailing whitespace from a string cell value when trim-whitespace
+    is active — either per-field (``fd.trim_whitespace``) or globally via
+    ``config.trim_whitespace``.  Non-string values are returned unchanged."""
+    if isinstance(value, str) and (fd.trim_whitespace or config.trim_whitespace):
+        return value.strip()
+    return value
+
+
 def _validate_field(fd, value, config, max_cell_len: int) -> bool:
     """Validate a cell value against a FieldDef.
 
@@ -624,10 +633,18 @@ class Engine:
         else:
             row, col = scanner.advance_to_next()
             if row is None:
+                # Give an extra whitespace hint when a lbl: anchor can't be found —
+                # invisible leading/trailing spaces in the source are a common cause.
+                fd_check = defs.get(instr.field)
+                ws_tip = (
+                    " Tip: if the label cell has invisible leading/trailing whitespace "
+                    "in the source file, add 'lbl:trim-whitespace' to this field."
+                    if fd_check and fd_check.role == 'lbl' else ''
+                )
                 logger.fatal(
                     f'Expected cell:{instr.multiplicity} ({instr.field!r}) but sheet is exhausted',
                     expected=f'a cell containing field {instr.field!r}',
-                    found='no more non-empty cells on the sheet',
+                    found=f'no more non-empty cells on the sheet.{ws_tip}',
                 )
             value = scanner.cell_value(row, col)
             scanner.consume(row, col)
@@ -645,6 +662,9 @@ class Engine:
                 expected=f'a def: entry named {instr.field!r}',
                 found='no matching def: row in pattern file',
             )
+
+        # Apply trim-whitespace before required check, validation, logging, and storage.
+        value = _apply_trim(value, fd, config)
 
         # Required (not-null/not-empty) check — fatal before any other validation.
         if fd.required and is_empty(value, config.empty_aliases):
@@ -949,6 +969,8 @@ class Engine:
                     )
                     trace_ok = False
                 else:
+                    # Apply trim-whitespace before validation and storage.
+                    val = _apply_trim(val, fd, config)
                     ok = _validate_field(fd, val, config, self._max_cell_len)
                     if not ok:
                         if strict:
@@ -1029,7 +1051,7 @@ class Engine:
                 continue
             if is_empty(val, config.empty_aliases):
                 return False
-            ok = _validate_field(fd, val, config, self._max_cell_len)
+            ok = _validate_field(fd, _apply_trim(val, fd, config), config, self._max_cell_len)
             if not ok:
                 return False
 

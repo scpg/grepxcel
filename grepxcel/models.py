@@ -11,6 +11,7 @@ class Config:
     currency_sign: str = '€'
     empty_aliases: list = field(default_factory=list)
     ignore_case: bool = False  # when True, all regex/literal/glob matching is case-insensitive
+    trim_whitespace: bool = False  # when True, strip leading/trailing spaces before matching/extraction
     pattern_version: int = 1   # pattern-format/semantics generation (absent ⇒ 1)
     pattern_version_explicit: bool = False  # True if the pattern declared it
     lbl_match: str = 'literal'  # how lbl: patterns are matched: literal | glob | regexp
@@ -27,6 +28,7 @@ class FieldDef:
     var_mode: str | None = None    # per-field var mode; None/'regexp' = regex (default);
                                    # 'literal' | 'glob' = non-regex pattern in column D
     required: bool = False         # True → not-null/not-empty: fatal if value is empty/null
+    trim_whitespace: bool = False  # True → strip leading/trailing whitespace before match/extract
 
 
 @dataclass
