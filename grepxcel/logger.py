@@ -9,7 +9,7 @@ Verbosity levels:
   0  QUIET   — no console output during processing
   1  NORMAL  — summary + ISSUES recap (one line per problem cell) (default)
   2  VERBOSE — + detailed per-cell warnings (Found/Expected/→) + per-field
-                trace (field ← cell = value ✓/✗), tables matched
+                trace (🟢/🔴 field ← cell = value), tables matched
   3  DEBUG   — + every anchor attempted and why it was accepted or rejected
 """
 
@@ -316,6 +316,29 @@ class Logger:
             min_level=VerbosityLevel.NORMAL,
         )
 
+    def config_verbose(self, config) -> None:
+        """Print the active pattern config at VERBOSE level (shown with extract -v).
+
+        Uses the same 8-key layout as validate-pattern -v so config is readable
+        in both commands.  Only emitted when verbosity >= VERBOSE.
+        """
+        def _key(k):   return paint(k, 'dim', self._color)
+        def _faint(v): return paint(str(v), 'dim', self._color)
+        aliases_val = (', '.join(config.empty_aliases)
+                       if config.empty_aliases else _faint('(none)'))
+        lines = [
+            f'   {_faint("config:")}',
+            f'     {_key("pattern.version")} {config.pattern_version}',
+            f'     {_key("read.direction")}  {config.read_direction}',
+            f'     {_key("currency.sign")}   {config.currency_sign}',
+            f'     {_key("ignore.case")}     {config.ignore_case}',
+            f'     {_key("trim.whitespace")} {config.trim_whitespace}',
+            f'     {_key("lbl.match")}       {config.lbl_match}',
+            f'     {_key("var.match")}       {config.var_match}',
+            f'     {_key("empty.aliases")}   {aliases_val}',
+        ]
+        self._write(VerbosityLevel.VERBOSE, '\n'.join(lines))
+
     def begin_summary_scope(self) -> None:
         """Mark the start of a new sheet's records.
 
@@ -363,6 +386,8 @@ class Logger:
             lines.append(paint('ISSUES (cell — reason):', 'bold', self._color))
             for rec in issues:
                 lines.append('  ' + self.issue_line(rec))
+                if getattr(rec, 'hint', ''):
+                    lines.append('       ' + paint(f'→ {rec.hint}', 'dim', self._color))
             lines.append(div)
         self._write(VerbosityLevel.NORMAL, '\n'.join(lines))
 
@@ -485,12 +510,21 @@ class Logger:
     def _trace_line(self, field: str, location: str, value,
                     ok: Optional[bool] = None, regex: str = '',
                     kind: str = 'CELL') -> str:
-        """Render one per-field extraction-trace line."""
-        mark = '' if ok is None else (f' {MARK_OK}' if ok else f' {MARK_FAIL}')
+        """Render one per-field extraction-trace line.
+
+        Layout: 🟢/🔴 [KIND] field ← Sheet!ref = value   (reason if any)
+        The status mark is leftmost so the eye can scan the left edge for pass/fail.
+        """
         bracket = paint(f'[{kind}]', 'dim', self._color)
         fname   = paint(f'{field:<20}', 'cyan', self._color)
         loc     = paint(f'{location:<10}', 'dim', self._color)
-        line = f'  {bracket} {fname} ← {loc} = {repr(value)}{mark}'
+        if ok is True:
+            mark = f'{MARK_OK} '
+        elif ok is False:
+            mark = f'{MARK_FAIL} '
+        else:
+            mark = '   '          # 3 spaces: emoji width (2) + separator (1)
+        line = f'  {mark}{bracket} {fname} ← {loc} = {repr(value)}'
         if ok is False and regex:
             line += paint(f'   (does not match /{regex}/)', 'dim', self._color)
         return line

@@ -563,6 +563,7 @@ class Engine:
         _expand_merged_cells(ws)
         _warn_uncached_formulas(ws, logger)
         logger.sheet_info(ws.title, ws.max_row, ws.max_column, global_config.read_direction)
+        logger.config_verbose(global_config)
 
         scanner = SheetScanner(ws, global_config)
         table_index = 0

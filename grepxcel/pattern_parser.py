@@ -223,6 +223,28 @@ class PatternParser:
                         f"(before START:). Expected config:, var:, lbl:, def:, "
                         f"doc:, info:, or START:."
                     )
+                elif row[1] is not None and str(row[1]).strip():
+                    # Column A is empty but column B has content — likely a
+                    # config: row where the author forgot to add 'config:' in A.
+                    _KNOWN_CFG = frozenset({
+                        'pattern.version', 'version', 'read.direction',
+                        'currency.sign', 'ignore.case', 'trim.whitespace',
+                        'lbl.match', 'var.match', 'empty.aliases',
+                    })
+                    col_b = str(row[1]).strip()
+                    if col_b.lower() in _KNOWN_CFG:
+                        raise PatternError(
+                            f"Pattern row {i + 1}: column A is empty but column B "
+                            f"contains config key {col_b!r}. Add 'config:' in column A "
+                            f"so the parser reads this as a config row "
+                            f"(same as row with 'config: | {col_b} | <value>')."
+                        )
+                    raise PatternError(
+                        f"Pattern row {i + 1}: column A is empty but column B "
+                        f"contains {row[1]!r}. Each row before START: must begin "
+                        f"with a recognised marker in column A "
+                        f"(config:, var:, lbl:, def:, doc:, info:, or START:)."
+                    )
                 i += 1
                 continue
 
