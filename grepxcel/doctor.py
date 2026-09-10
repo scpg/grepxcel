@@ -25,10 +25,10 @@ import urllib.parse
 import urllib.request
 
 from . import proxy_support
-from .color import colorize_marks, paint, should_color
+from .color import MARK_FAIL, MARK_OK, MARK_WARN, colorize_marks, paint, should_color
 
 OK, WARN, FAIL = 'ok', 'warn', 'fail'
-_MARK = {OK: '✓', WARN: '⚠', FAIL: '✗'}
+_MARK = {OK: MARK_OK, WARN: MARK_WARN, FAIL: MARK_FAIL}
 
 # A single check result: (status, name, detail/hint).
 Result = tuple
@@ -284,9 +284,9 @@ def run_doctor(area: str = 'all', probe: bool = True, out=None,
 
     print('\n' + '─' * 62, file=out)
     if any_fail:
-        msg = paint('Not ready', 'red', color) + ' — resolve the ✗ items above.'
-        print(colorize_marks(f'  ✗ {msg}', color), file=out)
+        msg = paint('Not ready', 'red', color) + f' — resolve the {MARK_FAIL} items above.'
+        print(f'  {MARK_FAIL} {msg}', file=out)
     else:
-        msg = paint('Ready.', 'green', color) + ' (⚠ items are optional / situational.)'
-        print(colorize_marks(f'  ✓ {msg}', color), file=out)
+        msg = paint('Ready.', 'green', color) + f' ({MARK_WARN} items are optional / situational.)'
+        print(f'  {MARK_OK} {msg}', file=out)
     return 1 if any_fail else 0

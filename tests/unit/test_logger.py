@@ -299,7 +299,7 @@ def test_issue_line_marks_error_vs_warning():
     lg = Logger(level=VerbosityLevel.QUIET)
     warn = lg.warn_validation(1, 1, 'f', 'string', '.*', 'v')
     line = lg._issue_line(warn)
-    assert line.startswith('⚠')
+    assert line.startswith('🟡')
 
 
 def test_summary_scope_excludes_prior_sheet_issues(capsys):
@@ -328,14 +328,14 @@ def test_cell_trace_shows_pass_mark(capsys):
     assert 'po.number' in out
     assert 'Sheet1!B1' in out
     assert '←' in out
-    assert '✓' in out
+    assert '🟢' in out
 
 
 def test_cell_trace_shows_fail_mark_and_regex(capsys):
     lg = Logger(level=VerbosityLevel.VERBOSE, sheet_name='Sheet1')
     lg.cell_processed(1, 1, 'code', 'bad', ok=False, regex=r'[A-Z]{3}')
     out = capsys.readouterr().err
-    assert '✗' in out
+    assert '🔴' in out
     assert 'does not match /[A-Z]{3}/' in out
 
 
@@ -344,7 +344,7 @@ def test_cell_trace_no_mark_when_ok_none(capsys):
     lg = Logger(level=VerbosityLevel.VERBOSE)
     lg.cell_processed(1, 1, 'x', None, ok=None)
     out = capsys.readouterr().err
-    assert '✓' not in out and '✗' not in out
+    assert '🟢' not in out and '🔴' not in out
 
 
 def test_trace_suppressed_below_verbose(capsys):
@@ -369,7 +369,7 @@ def test_trace_field_returns_line_without_emitting(capsys):
     lg = Logger(level=VerbosityLevel.VERBOSE, sheet_name='S')
     line = lg.trace_field(4, 1, 'row.item', 'Laptop', ok=True)
     assert capsys.readouterr().err == ''     # building a trace does not print
-    assert 'row.item' in line and 'S!A4' in line and '✓' in line
+    assert 'row.item' in line and 'S!A4' in line and '🟢' in line
 
 
 # ─── #34 sentinel: prove no Excel cell data appears in structured logs ────────

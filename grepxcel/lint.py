@@ -19,10 +19,10 @@ import os
 import sys
 import zipfile
 
-from .color import colorize_marks, should_color
+from .color import MARK_FAIL, MARK_INFO, MARK_OK, MARK_WARN, colorize_marks, should_color
 
 OK, WARN, FAIL, INFO = 'ok', 'warn', 'fail', 'info'
-_MARK = {OK: '✓', WARN: '⚠', FAIL: '✗', INFO: 'ℹ'}
+_MARK = {OK: MARK_OK, WARN: MARK_WARN, FAIL: MARK_FAIL, INFO: MARK_INFO}
 
 # OLE Compound Document magic (D0 CF 11 E0 A1 B1 1A E1)
 _OLE_MAGIC = b'\xd0\xcf\x11\xe0'

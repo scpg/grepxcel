@@ -9,13 +9,21 @@ everywhere. File logs and piped/redirected output stay plain text.
 
 The public surface is deliberately small:
 
+  * ``MARK_OK / MARK_WARN / MARK_FAIL / MARK_INFO`` — canonical status emoji.
+    Import these instead of bare Unicode glyphs; one change here updates the
+    whole CLI consistently.
   * ``should_color(stream)`` — decide whether to colour for a given stream.
   * ``paint(text, colour, enabled)`` — wrap a span in one colour.
-  * ``colorize_marks(text, enabled)`` — colour the status glyphs (✓ ✗ ⚠) found
-    anywhere in a line. Call sites keep emitting plain glyphs; colouring is
-    applied once at the output boundary, so the file log never sees ANSI codes.
+  * ``colorize_marks(text, enabled)`` — no-op kept for call-site compatibility;
+    emoji circles are self-coloured and need no ANSI wrapping.
 """
 import os
+
+# ── Status emoji (self-coloured; no ANSI needed) ─────────────────────────────
+MARK_OK   = '🟢'   # success / VALID / extraction match
+MARK_WARN = '🟡'   # warning / lbl-anchor / conditional
+MARK_FAIL = '🔴'   # error / INVALID / fatal
+MARK_INFO = '🔵'   # informational / neutral
 
 _RESET = '\033[0m'
 _CODES = {
@@ -23,14 +31,13 @@ _CODES = {
     'red':    '\033[91m',   # bright red    (vivid error/failure)
     'yellow': '\033[93m',   # bright yellow (vivid warning/anchor)
     'cyan':   '\033[96m',   # bright cyan   (vivid label/field)
-
     'dim':    '\033[2m',
     'bold':   '\033[1m',
 }
 
-# Status glyphs → semantic colour. Any line carrying a mark is coloured the same
-# way regardless of which subsystem emitted it.
-_GLYPH_COLOR = {'✓': 'green', '✗': 'red', '⚠': 'yellow'}
+# Emoji marks are self-coloured; _GLYPH_COLOR is kept empty so colorize_marks()
+# is a harmless pass-through after the switch to emoji.
+_GLYPH_COLOR: dict = {}
 
 
 def should_color(stream) -> bool:
@@ -51,10 +58,10 @@ def paint(text: str, color: str, enabled: bool = True) -> str:
 
 
 def colorize_marks(text: str, enabled: bool = True) -> str:
-    """Colour each status glyph (✓ ✗ ⚠) in ``text`` with its semantic colour."""
-    if not enabled:
-        return text
-    for glyph, color in _GLYPH_COLOR.items():
-        if glyph in text:
-            text = text.replace(glyph, f'{_CODES[color]}{glyph}{_RESET}')
+    """Pass-through kept for call-site compatibility.
+
+    Previously coloured ``✓ ✗ ⚠`` glyphs with ANSI codes; those glyphs have
+    been replaced with self-coloured emoji (🟢 🔴 🟡 🔵) that need no ANSI
+    wrapping.  Call sites that still pass the ``enabled`` flag are unaffected.
+    """
     return text

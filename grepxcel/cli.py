@@ -16,7 +16,7 @@ import json
 import os
 import sys
 
-from .color import colorize_marks, should_color
+from .color import MARK_FAIL, MARK_OK, MARK_WARN, colorize_marks, should_color
 from .engine import Engine
 from .logger import Logger, VerbosityLevel
 
@@ -754,7 +754,7 @@ def _process_file(pattern: str, data_file: str, args,
             )
     except Exception as exc:
         print(colorize_marks(
-            f'\n  ✗  Unexpected error processing {data_file}: {exc}',
+            f'\n  {MARK_FAIL}  Unexpected error processing {data_file}: {exc}',
             should_color(sys.stderr)), file=sys.stderr)
         return False, []
     finally:
@@ -866,7 +866,7 @@ def _expand_files(paths: list[str], recursive: bool = False,
             result.append(p)
 
     if symlinks_found:
-        print(f'  ⚠  Skipped {len(symlinks_found)} symlink(s) '
+        print(f'  {MARK_WARN}  Skipped {len(symlinks_found)} symlink(s) '
               f'(not followed for safety):',
               file=sys.stderr)
         for s in symlinks_found[:5]:
@@ -1227,7 +1227,7 @@ def main(argv=None):
 
     if fmt in ('csv', 'xlsx') and getattr(args, 'all_sheets', False):
         print(colorize_marks(
-            f'\n  ✗  --format {fmt} does not support --all-sheets '
+            f'\n  {MARK_FAIL}  --format {fmt} does not support --all-sheets '
             f'(a flat {fmt} cannot represent multiple sheets). '
             f'Use --sheet to pick one sheet, or --format nested for all sheets.',
             should_color(sys.stderr)), file=sys.stderr)
@@ -1238,7 +1238,7 @@ def main(argv=None):
         n_tables = count_table_instructions(args.pattern)
         if n_tables > 1:
             print(colorize_marks(
-                f'\n  ✗  --format csv requires at most one table: block, '
+                f'\n  {MARK_FAIL}  --format csv requires at most one table: block, '
                 f'but this pattern has {n_tables}. '
                 f'Use --format nested (JSON) for multi-table patterns.',
                 should_color(sys.stderr)), file=sys.stderr)
@@ -1247,7 +1247,7 @@ def main(argv=None):
     if fmt == 'xlsx':
         if not args.output:
             print(colorize_marks(
-                '\n  ✗  --format xlsx requires -o / --output (cannot write '
+                f'\n  {MARK_FAIL}  --format xlsx requires -o / --output (cannot write '
                 'binary Excel to stdout).',
                 should_color(sys.stderr)), file=sys.stderr)
             sys.exit(2)
@@ -1259,7 +1259,7 @@ def main(argv=None):
             )
             if os.path.abspath(data_file) == os.path.abspath(out_path):
                 print(colorize_marks(
-                    f'\n  ✗  --format xlsx would overwrite the source file '
+                    f'\n  {MARK_FAIL}  --format xlsx would overwrite the source file '
                     f'{data_file}. Use a different -o directory.',
                     should_color(sys.stderr)), file=sys.stderr)
                 sys.exit(2)
@@ -1272,18 +1272,18 @@ def main(argv=None):
     if not _pv.valid:
         color = should_color(sys.stderr)
         print(colorize_marks(
-            f'✗  Pattern invalid: {args.pattern}', color), file=sys.stderr)
+            f'{MARK_FAIL}  Pattern invalid: {args.pattern}', color), file=sys.stderr)
         for err in _pv.errors:
-            print(colorize_marks(f'   ✗ {err}', color), file=sys.stderr)
+            print(colorize_marks(f'   {MARK_FAIL} {err}', color), file=sys.stderr)
         sys.exit(1)
     if _pv.warnings:
         color = should_color(sys.stderr)
         quiet = getattr(args, 'quiet', False)
         if not quiet:
             print(colorize_marks(
-                f'⚠  Pattern warnings: {args.pattern}', color), file=sys.stderr)
+                f'{MARK_WARN}  Pattern warnings: {args.pattern}', color), file=sys.stderr)
         for warn in _pv.warnings:
-            print(colorize_marks(f'   ⚠ {warn}', color), file=sys.stderr)
+            print(colorize_marks(f'   {MARK_WARN} {warn}', color), file=sys.stderr)
 
     all_ok = True
     strict = getattr(args, 'strict', False)
@@ -1299,7 +1299,7 @@ def main(argv=None):
     if strict_failures:
         color = should_color(sys.stderr)
         print(colorize_marks(
-            '\n  ✗  --strict: missing fields detected',
+            f'\n  {MARK_FAIL}  --strict: missing fields detected',
             color), file=sys.stderr)
         for data_file, fields in strict_failures:
             if len(expanded) > 1:

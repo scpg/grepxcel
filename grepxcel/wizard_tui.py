@@ -2834,7 +2834,7 @@ def run_wizard_tui(
         return 1
 
     _write_pattern(result, output)
-    print(f'\n✓  Pattern written: {output}')
+    print(f'\n🟢  Pattern written: {output}')
     if save_state:
         from .wizard import _save_state_json
         _save_state_json(result, save_state)

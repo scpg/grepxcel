@@ -479,7 +479,7 @@ def _run_cell_walk(ws, state: WizardState, data_file: str,
         print(line2)
 
         if ref in seen:
-            print(_c('  ⚠  Already classified this session'
+            print(_c('  🟡  Already classified this session'
                      ' — reclassifying adds a duplicate instruction.', _C.YELLOW))
 
         print(sep)
@@ -802,7 +802,7 @@ def run_wizard(
                 stem = os.path.splitext(os.path.basename(data_file))[0]
             output = f'pattern-{stem}.csv'
         _write_pattern(state, output)
-        print(_c(f'\n✓  Pattern written to: {output}', _C.BOLD, _C.GREEN))
+        print(_c(f'\n🟢  Pattern written to: {output}', _C.BOLD, _C.GREEN))
         if save_state:
             _save_state_json(state, save_state)
         return 0
@@ -900,7 +900,7 @@ def run_wizard(
         seen.add(n)
     if dups:
         dup_list = ', '.join(sorted(set(dups)))
-        print(_c(f'\n⚠  Duplicate field name(s): {dup_list}', _C.YELLOW))
+        print(_c(f'\n🟡  Duplicate field name(s): {dup_list}', _C.YELLOW))
         print(_c('   Fields with the same name will overwrite each other in the pattern.',
                  _C.DIM))
         answer = _ask(_c('   Save anyway?', _C.CYAN), 'no')

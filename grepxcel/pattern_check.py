@@ -13,7 +13,7 @@ import re
 import sys
 from dataclasses import dataclass, field
 
-from .color import colorize_marks, paint, should_color
+from .color import MARK_FAIL, MARK_OK, MARK_WARN, colorize_marks, paint, should_color
 from .models import CellInstruction, TableInstruction, SeekInstruction, DirectionInstruction
 from .pattern_parser import PatternError, PatternParser
 from .security import SecurityError
@@ -21,7 +21,7 @@ from .security import SecurityError
 # Patterns that strongly suggest regex intent (backslash-escapes, lookahead)
 _REGEX_TELL = re.compile(r'\\[()[\]{}|+*.?^$]|[(][?]')
 
-_MARK_OK, _MARK_WARN, _MARK_FAIL = '✓', '⚠', '✗'
+_MARK_OK, _MARK_WARN, _MARK_FAIL = MARK_OK, MARK_WARN, MARK_FAIL
 
 
 @dataclass

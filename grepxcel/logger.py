@@ -93,7 +93,7 @@ def render_json(event_dict: dict) -> str:
     return d
 
 
-from .color import colorize_marks, paint, should_color
+from .color import MARK_FAIL, MARK_OK, MARK_WARN, colorize_marks, paint, should_color
 
 
 # ---------------------------------------------------------------------------
@@ -451,7 +451,7 @@ class Logger:
         Used both in the NORMAL-level summary block and by --quiet mode, which
         suppresses the summary header/stats but still surfaces each issue.
         """
-        mark = '✗' if rec.severity == Severity.ERROR else '⚠'
+        mark = MARK_FAIL if rec.severity == Severity.ERROR else MARK_WARN
         where = rec.location or '(no cell)'
         field = f' [{rec.field}]' if rec.field else ''
         if rec.found and rec.expected:
@@ -486,7 +486,7 @@ class Logger:
                     ok: Optional[bool] = None, regex: str = '',
                     kind: str = 'CELL') -> str:
         """Render one per-field extraction-trace line."""
-        mark = '' if ok is None else (' ✓' if ok else ' ✗')
+        mark = '' if ok is None else (f' {MARK_OK}' if ok else f' {MARK_FAIL}')
         bracket = paint(f'[{kind}]', 'dim', self._color)
         fname   = paint(f'{field:<20}', 'cyan', self._color)
         loc     = paint(f'{location:<10}', 'dim', self._color)
@@ -614,7 +614,7 @@ class Logger:
             hint=hint,
         )
         lines = [
-            f'\n  ⚠  [DATA min not reached]',
+            f'\n  {MARK_WARN}  [DATA min not reached]',
             f'     Found:    {found} physical row(s)',
             f'     Expected: ≥{min_rows} row(s)',
             f'     → {hint}',
@@ -659,7 +659,7 @@ class Logger:
         if value is not None:
             rec.value_len, rec.value_sha8 = _value_fingerprint(value)
         lines = [
-            f'\n  ⚠  {location}  [{field} / {field_type}]',
+            f'\n  {MARK_WARN}  {location}  [{field} / {field_type}]',
             f'     Found:    {found_repr}',
             f'     Expected: matches /{regex}/',
         ]
@@ -693,7 +693,7 @@ class Logger:
             event='empty_required',
         )
         lines = [
-            f'\n  ⚠  {location}  [{field} / {field_type}]',
+            f'\n  {MARK_WARN}  {location}  [{field} / {field_type}]',
             f'     Found:    empty cell',
             f'     Expected: non-empty {field_type} value',
             f'     → {hint}',
@@ -731,7 +731,7 @@ class Logger:
             event='undefined_field',
         )
         lines = [
-            f'\n  ⚠  {location}  [{field} / undefined]',
+            f'\n  {MARK_WARN}  {location}  [{field} / undefined]',
             f'     Field {field!r} is not defined in the pattern def: section.',
             f'     → Add a def: row to the pattern file for this field name.',
         ]
@@ -745,7 +745,7 @@ class Logger:
             'Open the file in Excel or LibreOffice, save it, and re-run grepxcel '
             'to ensure formula results are available.'
         )
-        self._write(VerbosityLevel.NORMAL, f'\n  ⚠  {msg}')
+        self._write(VerbosityLevel.NORMAL, f'\n  {MARK_WARN}  {msg}')
 
     def fatal(self, message: str, location: str = '',
               expected: str = '', found: str = '') -> NoReturn:
@@ -761,7 +761,7 @@ class Logger:
         self._store(rec)
 
         label = paint('FATAL ERROR', 'bold', self._color)
-        lines = [f'\n  ✗  {label}: {message}']
+        lines = [f'\n  {MARK_FAIL}  {label}: {message}']
         if location:
             lines.append(f'     Location: {location}')
         if expected:
