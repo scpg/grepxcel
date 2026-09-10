@@ -93,7 +93,7 @@ def render_json(event_dict: dict) -> str:
     return d
 
 
-from .color import colorize_marks, should_color
+from .color import colorize_marks, paint, should_color
 
 
 # ---------------------------------------------------------------------------
@@ -298,18 +298,20 @@ class Logger:
     # --- Engine lifecycle ---------------------------------------------------
 
     def engine_start(self, pattern_file: str, data_file: str):
+        pf = paint(os.path.basename(pattern_file), 'cyan', self._color)
+        df = paint(os.path.basename(data_file), 'cyan', self._color)
         self._emit(
             Severity.INFO, Category.ENGINE,
-            f'Pattern: {os.path.basename(pattern_file)} | '
-            f'Data: {os.path.basename(data_file)}',
+            f'Pattern: {pf} | Data: {df}',
             min_level=VerbosityLevel.NORMAL,
             prefix='ENGINE START',
         )
 
     def sheet_info(self, sheet_name: str, max_row: int, max_col: int, direction: str):
+        sname = paint(sheet_name, 'bold', self._color)
         self._emit(
             Severity.INFO, Category.ENGINE,
-            f'Sheet: {sheet_name}  |  {max_row} rows × {max_col} cols  |  '
+            f'Sheet: {sname}  |  {max_row} rows × {max_col} cols  |  '
             f'Scan direction: {direction}',
             min_level=VerbosityLevel.NORMAL,
         )
@@ -336,26 +338,32 @@ class Logger:
         warnings = [r for r in scoped if r.severity == Severity.WARNING]
         errors = [r for r in scoped if r.severity == Severity.ERROR]
 
+        div     = paint('─' * 62, 'dim', self._color)
+        header  = paint('EXTRACTION SUMMARY', 'bold', self._color)
+        n_warn  = len(warnings)
+        n_err   = len(errors)
+        w_count = paint(str(n_warn), 'yellow', self._color) if n_warn else str(n_warn)
+        e_count = paint(str(n_err),  'red',    self._color) if n_err  else str(n_err)
         lines = [
             '',
-            '─' * 62,
-            'EXTRACTION SUMMARY',
+            div,
+            header,
             f'  Cells extracted   : {cells_count}',
             f'  Mini-tables found : {sum(by_group.values())}',
         ]
         for idx, count in sorted(by_group.items()):
             lines.append(f'    Table group {idx}   : {count} instance(s)')
         lines += [
-            f'  Warnings          : {len(warnings)}',
-            f'  Errors            : {len(errors)}',
-            '─' * 62,
+            f'  Warnings          : {w_count}',
+            f'  Errors            : {e_count}',
+            div,
         ]
         issues = warnings + errors
         if issues:
-            lines.append('ISSUES (cell — reason):')
+            lines.append(paint('ISSUES (cell — reason):', 'bold', self._color))
             for rec in issues:
                 lines.append('  ' + self.issue_line(rec))
-            lines.append('─' * 62)
+            lines.append(div)
         self._write(VerbosityLevel.NORMAL, '\n'.join(lines))
 
         self._last_stats = self.build_stats(result)
@@ -479,9 +487,12 @@ class Logger:
                     kind: str = 'CELL') -> str:
         """Render one per-field extraction-trace line."""
         mark = '' if ok is None else (' ✓' if ok else ' ✗')
-        line = f'  [{kind}] {field:<20} ← {location:<10} = {repr(value)}{mark}'
+        bracket = paint(f'[{kind}]', 'dim', self._color)
+        fname   = paint(f'{field:<20}', 'cyan', self._color)
+        loc     = paint(f'{location:<10}', 'dim', self._color)
+        line = f'  {bracket} {fname} ← {loc} = {repr(value)}{mark}'
         if ok is False and regex:
-            line += f'   (does not match /{regex}/)'
+            line += paint(f'   (does not match /{regex}/)', 'dim', self._color)
         return line
 
     def trace_field(self, row: int, col: int, field: str, value,
@@ -502,22 +513,26 @@ class Logger:
         rec = LogRecord(Severity.INFO, Category.ENGINE,
                         f'IGNORE: {repr(value)}', location=location)
         self._store(rec)
+        bracket = paint('[CELL]', 'dim', self._color)
+        loc     = paint(f'{location:<12}', 'dim', self._color)
         self._write(VerbosityLevel.VERBOSE,
-                    f'  [CELL]  {location:<12} IGNORE  →  {repr(value)}')
+                    f'  {bracket}  {loc} IGNORE  →  {repr(value)}')
 
     def direction_changed(self, direction: str):
         rec = LogRecord(Severity.INFO, Category.ENGINE,
                         f'Scan direction changed to {direction}')
         self._store(rec)
+        bracket = paint('[DIR]', 'dim', self._color)
         self._write(VerbosityLevel.VERBOSE,
-                    f'  [DIR]   scan direction → {direction}')
+                    f'  {bracket}   scan direction → {direction}')
 
     def table_group_start(self, table_index: int, direction: str):
         rec = LogRecord(Severity.INFO, Category.ENGINE,
                         f'Table group {table_index}: scanning (direction: {direction})')
         self._store(rec)
+        label = paint(f'[TABLE {table_index}]', 'cyan', self._color)
         self._write(VerbosityLevel.VERBOSE,
-                    f'\n  [TABLE {table_index}]  Scanning for mini-tables  '
+                    f'\n  {label}  Scanning for mini-tables  '
                     f'(direction: {direction})')
 
     def table_group_done(self, table_index: int, count: int):
@@ -525,8 +540,9 @@ class Logger:
                if count else f'Table group {table_index}: no instances found')
         rec = LogRecord(Severity.INFO, Category.ENGINE, msg)
         self._store(rec)
-        text = (f'  [TABLE {table_index}]  {count} instance(s) extracted'
-                if count else f'  [TABLE {table_index}]  No instances found')
+        label = paint(f'[TABLE {table_index}]', 'cyan', self._color)
+        text = (f'  {label}  {count} instance(s) extracted'
+                if count else f'  {label}  No instances found')
         self._write(VerbosityLevel.VERBOSE, text)
 
     def mini_table_matched(self, table_index: int, instance: int,
@@ -539,8 +555,9 @@ class Logger:
                         f'Mini-table matched at {anchor}, span {span}',
                         location=anchor)
         self._store(rec)
+        label = paint('[MATCH]', 'cyan', self._color)
         self._write(VerbosityLevel.VERBOSE,
-                    f'    [MATCH]  instance {instance}  anchor {anchor}  '
+                    f'    {label}  instance {instance}  anchor {anchor}  '
                     f'span {span}')
 
     # --- Debug probes (DEBUG) -----------------------------------------------
@@ -551,30 +568,34 @@ class Logger:
                         f'Probing anchor {location}: {repr(value)}',
                         location=location)
         self._store(rec)
+        label = paint('[PROBE]', 'dim', self._color)
         self._write(VerbosityLevel.DEBUG,
-                    f'    [PROBE]  {location}: {repr(value)}')
+                    f'    {label}  {location}: {repr(value)}')
 
     def anchor_rejected(self, row: int, col: int, reason: str):
         location = cell_ref(row, col, self.sheet_name)
         rec = LogRecord(Severity.DEBUG, Category.ENGINE,
                         f'Anchor rejected: {reason}', location=location)
         self._store(rec)
+        label = paint('[REJECT]', 'dim', self._color)
         self._write(VerbosityLevel.DEBUG,
-                    f'    [REJECT] {location}: {reason}')
+                    f'    {label} {location}: {reason}')
 
     def data_row(self, row: int, col_count: int):
         rec = LogRecord(Severity.DEBUG, Category.ENGINE,
                         f'Data row {row}: {col_count} column(s)')
         self._store(rec)
+        label = paint('[DATA]', 'dim', self._color)
         self._write(VerbosityLevel.DEBUG,
-                    f'      [DATA]  row {row}: {col_count} column(s)')
+                    f'      {label}  row {row}: {col_count} column(s)')
 
     def data_row_skipped(self, row: int):
         rec = LogRecord(Severity.DEBUG, Category.ENGINE,
                         f'Data row {row}: skipped (matches SKIP_IF)')
         self._store(rec)
+        label = paint('[SKIP]', 'dim', self._color)
         self._write(VerbosityLevel.DEBUG,
-                    f'      [SKIP]  row {row}: matches SKIP_IF — skipped')
+                    f'      {label}  row {row}: matches SKIP_IF — skipped')
 
     def warn_data_min_not_reached(self, min_rows: int, found: int) -> LogRecord:
         """Warn when a DATA:{n,m} section has fewer physical rows than declared minimum."""
@@ -607,8 +628,9 @@ class Logger:
                         f'Footer detected at {location}: {repr(value)}',
                         location=location)
         self._store(rec)
+        label = paint('[FOOTER]', 'dim', self._color)
         self._write(VerbosityLevel.DEBUG,
-                    f'    [FOOTER] {location}: {repr(value)} — ending DATA section')
+                    f'    {label} {location}: {repr(value)} — ending DATA section')
 
     # --- Validation warnings (NORMAL) ---------------------------------------
 
@@ -738,7 +760,8 @@ class Logger:
         )
         self._store(rec)
 
-        lines = [f'\n  ✗  FATAL ERROR: {message}']
+        label = paint('FATAL ERROR', 'bold', self._color)
+        lines = [f'\n  ✗  {label}: {message}']
         if location:
             lines.append(f'     Location: {location}')
         if expected:
@@ -757,7 +780,11 @@ class Logger:
               prefix: str = ''):
         rec = LogRecord(severity=severity, category=category, message=message)
         self._store(rec)
-        text = f'[{prefix}] {message}' if prefix else message
+        if prefix:
+            tag = paint(f'[{prefix}]', 'bold', self._color)
+            text = f'{tag} {message}'
+        else:
+            text = message
         self._write(min_level, text)
 
     def _write(self, min_level: VerbosityLevel, text: str):

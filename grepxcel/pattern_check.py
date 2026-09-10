@@ -13,7 +13,7 @@ import re
 import sys
 from dataclasses import dataclass, field
 
-from .color import colorize_marks, should_color
+from .color import colorize_marks, paint, should_color
 from .models import CellInstruction, TableInstruction, SeekInstruction, DirectionInstruction
 from .pattern_parser import PatternError, PatternParser
 from .security import SecurityError
@@ -156,12 +156,13 @@ def render_result(result: CheckResult, verbose: bool = False, out=None) -> None:
     """Print a human-readable report for one CheckResult."""
     out = out or sys.stderr
     color = should_color(out)
+    fpath = paint(result.path, 'bold', color)
     if result.valid:
-        print(colorize_marks(f'{_MARK_OK}  {result.path}  —  VALID '
-              f'({result.n_fields} field(s), {result.n_steps} extraction step(s))',
-              color), file=out)
+        stats = paint(f'({result.n_fields} field(s), {result.n_steps} extraction step(s))',
+                      'dim', color)
+        print(colorize_marks(f'{_MARK_OK}  {fpath}  —  VALID {stats}', color), file=out)
     else:
-        print(colorize_marks(f'{_MARK_FAIL}  {result.path}  —  INVALID', color), file=out)
+        print(colorize_marks(f'{_MARK_FAIL}  {fpath}  —  INVALID', color), file=out)
     for err in result.errors:
         print(colorize_marks(f'   {_MARK_FAIL} {err}', color), file=out)
     for warn in result.warnings:
@@ -169,19 +170,30 @@ def render_result(result: CheckResult, verbose: bool = False, out=None) -> None:
 
     if verbose and result.defs is not None:
         cfg = result.config
-        ver = (f'{cfg.pattern_version}' if cfg.pattern_version_explicit
-               else f'{cfg.pattern_version} (defaulted — no pattern.version declared)')
-        print('\n   config:', file=out)
-        aliases_val = ', '.join(cfg.empty_aliases) if cfg.empty_aliases else '(none)'
-        print(f'     pattern.version {ver}', file=out)
-        print(f'     read.direction  {cfg.read_direction}', file=out)
-        print(f'     currency.sign   {cfg.currency_sign}', file=out)
-        print(f'     ignore.case     {cfg.ignore_case}', file=out)
-        print(f'     trim.whitespace {cfg.trim_whitespace}', file=out)
-        print(f'     lbl.match       {cfg.lbl_match}', file=out)
-        print(f'     var.match       {cfg.var_match}', file=out)
-        print(f'     empty.aliases   {aliases_val}', file=out)
-        print('   fields:', file=out)
+        # ── helpers ──────────────────────────────────────────────────────────
+        def _key(k):   return paint(f'{k}', 'dim', color)
+        def _sec(s):   return paint(s, 'dim', color)
+        def _faint(v): return paint(str(v), 'dim', color)
+
+        # ── config block ──────────────────────────────────────────────────────
+        if cfg.pattern_version_explicit:
+            ver = str(cfg.pattern_version)
+        else:
+            ver = f'{cfg.pattern_version} {_faint("(defaulted — no pattern.version declared)")}'
+        aliases_val = (', '.join(cfg.empty_aliases)
+                       if cfg.empty_aliases else _faint('(none)'))
+        print(f'\n   {_sec("config:")}', file=out)
+        print(f'     {_key("pattern.version")} {ver}', file=out)
+        print(f'     {_key("read.direction")}  {cfg.read_direction}', file=out)
+        print(f'     {_key("currency.sign")}   {cfg.currency_sign}', file=out)
+        print(f'     {_key("ignore.case")}     {cfg.ignore_case}', file=out)
+        print(f'     {_key("trim.whitespace")} {cfg.trim_whitespace}', file=out)
+        print(f'     {_key("lbl.match")}       {cfg.lbl_match}', file=out)
+        print(f'     {_key("var.match")}       {cfg.var_match}', file=out)
+        print(f'     {_key("empty.aliases")}   {aliases_val}', file=out)
+
+        # ── fields block ──────────────────────────────────────────────────────
+        print(f'   {_sec("fields:")}', file=out)
         for name, fd in result.defs.items():
             tags = []
             if fd.role == 'lbl' and fd.lbl_match is not None:
@@ -190,19 +202,30 @@ def render_result(result: CheckResult, verbose: bool = False, out=None) -> None:
                 tags.append(fd.var_mode)
             if fd.required:
                 tags.append('not-null')
-            mode_tag = f' [{", ".join(tags)}]' if tags else ''
-            print(f'     {fd.role:<4} {name:<24} {fd.type:<10} /{fd.regex}/{mode_tag}', file=out)
-        print('   extraction sequence:', file=out)
+            mode_tag = _faint(f' [{", ".join(tags)}]') if tags else ''
+            role_color = 'yellow' if fd.role == 'lbl' else 'cyan'
+            role  = paint(f'{fd.role:<4}', role_color, color)
+            fname = paint(f'{name:<24}', 'cyan', color)
+            ftype = _faint(f'{fd.type:<10}')
+            regex = _faint(f'/{fd.regex}/')
+            print(f'     {role} {fname} {ftype} {regex}{mode_tag}', file=out)
+
+        # ── extraction sequence ───────────────────────────────────────────────
+        print(f'   {_sec("extraction sequence:")}', file=out)
         for instr in (result.sequence or []):
             if isinstance(instr, CellInstruction):
-                tgt = instr.target or instr.multiplicity
-                print(f'     cell:{tgt:<6} -> {instr.field}', file=out)
+                tgt   = instr.target or instr.multiplicity
+                step  = paint(f'cell:{tgt:<6}', 'cyan', color)
+                print(f'     {step} -> {instr.field}', file=out)
             elif isinstance(instr, SeekInstruction):
-                print(f'     seek:{instr.target}', file=out)
+                step = paint(f'seek:{instr.target}', 'cyan', color)
+                print(f'     {step}', file=out)
             elif isinstance(instr, DirectionInstruction):
-                print(f'     dir:{instr.direction}', file=out)
+                step = paint(f'dir:{instr.direction}', 'cyan', color)
+                print(f'     {step}', file=out)
             elif isinstance(instr, TableInstruction):
-                print(f'     table:{instr.multiplicity}', file=out)
+                step = paint(f'table:{instr.multiplicity}', 'cyan', color)
+                print(f'     {step}', file=out)
                 _render_table_grid(instr.rows, out)
 
 
