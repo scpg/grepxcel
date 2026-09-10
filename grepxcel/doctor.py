@@ -25,7 +25,7 @@ import urllib.parse
 import urllib.request
 
 from . import proxy_support
-from .color import colorize_marks, should_color
+from .color import colorize_marks, paint, should_color
 
 OK, WARN, FAIL = 'ok', 'warn', 'fail'
 _MARK = {OK: '✓', WARN: '⚠', FAIL: '✗'}
@@ -284,7 +284,9 @@ def run_doctor(area: str = 'all', probe: bool = True, out=None,
 
     print('\n' + '─' * 62, file=out)
     if any_fail:
-        print(colorize_marks('  ✗ Not ready — resolve the ✗ items above.', color), file=out)
+        msg = paint('Not ready', 'red', color) + ' — resolve the ✗ items above.'
+        print(colorize_marks(f'  ✗ {msg}', color), file=out)
     else:
-        print(colorize_marks('  ✓ Ready. (⚠ items are optional / situational.)', color), file=out)
+        msg = paint('Ready.', 'green', color) + ' (⚠ items are optional / situational.)'
+        print(colorize_marks(f'  ✓ {msg}', color), file=out)
     return 1 if any_fail else 0
