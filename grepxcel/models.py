@@ -31,6 +31,7 @@ class FieldDef:
                                    # 'literal' | 'glob' = non-regex pattern in column D
     required: bool = False         # True → not-null/not-empty: fatal if value is empty/null
     trim_whitespace: bool = False  # True → strip leading/trailing whitespace before match/extract
+    nullable: bool = False         # True → empty/null accepted silently (no warning); var: fields only
 
 
 @dataclass

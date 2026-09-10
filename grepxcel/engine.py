@@ -677,7 +677,12 @@ class Engine:
                 found='empty cell',
             )
 
-        # Validate before tracing so the -v trace can show ✓/✗ per field.
+        # nullable: empty (or empty-after-trim) is silently accepted — normalise to
+        # None so that validation is skipped and no warning is generated.
+        if fd.nullable and is_empty(value, config.empty_aliases, config.ignore_case):
+            value = None
+
+        # Validate before tracing so the -v trace can show 🟢/🔴 per field.
         ok = None
         if value is not None:
             ok = _validate_field(fd, value, config, self._max_cell_len)
@@ -954,10 +959,12 @@ class Engine:
                     )
                 if strict:
                     return {}, False  # HEADER/FOOTER: missing field = no match
-                fd_type = fd.type if fd else 'unknown'
-                local_warnings.append(
-                    logger.warn_empty_field(sheet_row, col, tmpl_col.field, fd_type)
-                )
+                # nullable: accept null silently — no warning, no emoji on the trace line
+                if fd is None or not fd.nullable:
+                    fd_type = fd.type if fd else 'unknown'
+                    local_warnings.append(
+                        logger.warn_empty_field(sheet_row, col, tmpl_col.field, fd_type)
+                    )
                 row_data[tmpl_col.field] = None
                 local_traces.append(
                     logger.trace_field(sheet_row, col, tmpl_col.field, None, ok=None)
