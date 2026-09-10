@@ -368,3 +368,131 @@ class TestTrimWhitespaceWarning:
         assert any('trim-whitespace' in h for h in hints), (
             f'Expected whitespace hint in warnings; got hints: {hints}'
         )
+
+
+# ── var.match global config ───────────────────────────────────────────────────
+
+class TestVarMatchGlobalConfig:
+    """config: | var.match | ... sets the default var: column-D matching mode."""
+
+    def _var_match_rows(self, var_match_val: str, col_d: str = 'Active') -> list:
+        return [
+            ['config:', 'var.match', var_match_val],
+            ['var:', 'v', 'string', col_d],
+            ['START:'],
+            ['cell:A1', 'v'],
+            ['END:'],
+        ]
+
+    def test_default_is_regexp(self, tmp_path):
+        """Without var.match, plain var: uses regexp (regex) mode."""
+        rows = [
+            ['var:', 'v', 'string', r'\d+'],
+            ['START:'], ['cell:A1', 'v'], ['END:'],
+        ]
+        result, lg = _run(rows, {'A1': '42'}, tmp_path)
+        assert not lg.has_errors()
+        assert result.get('v') == '42'
+
+    def test_var_match_glob_matches(self, tmp_path):
+        result, lg = _run(self._var_match_rows('glob', 'Act*'), {'A1': 'Active'}, tmp_path)
+        assert not lg.has_errors()
+        assert result.get('v') == 'Active'
+
+    def test_var_match_glob_no_match_warns(self, tmp_path):
+        _, lg = _run(self._var_match_rows('glob', 'Inv*'), {'A1': 'Active'}, tmp_path)
+        assert lg.has_warnings()
+
+    def test_var_match_literal_matches(self, tmp_path):
+        result, lg = _run(self._var_match_rows('literal', 'Active'), {'A1': 'Active'}, tmp_path)
+        assert not lg.has_errors()
+        assert result.get('v') == 'Active'
+
+    def test_var_match_literal_no_match_warns(self, tmp_path):
+        _, lg = _run(self._var_match_rows('literal', 'Active'), {'A1': 'active'}, tmp_path)
+        assert lg.has_warnings()
+
+    def test_var_match_regexp_explicit(self, tmp_path):
+        result, lg = _run(self._var_match_rows('regexp', r'[A-Z][a-z]+'), {'A1': 'Active'}, tmp_path)
+        assert not lg.has_errors()
+        assert result.get('v') == 'Active'
+
+    def test_per_field_overrides_global_var_match(self, tmp_path):
+        """A per-field var:literal modifier overrides config: | var.match | glob."""
+        rows = [
+            ['config:', 'var.match', 'glob'],
+            ['var:literal', 'v', 'string', 'Active'],
+            ['START:'], ['cell:A1', 'v'], ['END:'],
+        ]
+        result, lg = _run(rows, {'A1': 'Active'}, tmp_path)
+        assert not lg.has_errors()
+        assert result.get('v') == 'Active'
+
+    def test_invalid_var_match_raises(self, tmp_path):
+        from grepxcel.pattern_parser import PatternError
+        path = _write_pattern(self._var_match_rows('fuzzy'), tmp_path)
+        with pytest.raises(PatternError, match='Invalid var.match'):
+            PatternParser().parse(path)
+
+
+# ── ignore.case + empty.aliases case-insensitive matching ────────────────────
+
+class TestIgnoreCaseEmptyAliases:
+    """ignore.case makes empty.aliases matching case-insensitive.
+
+    empty.aliases affect two behaviors:
+      1. cell:next skips alias-matched cells (they are treated as empty in the scan).
+      2. In table DATA rows, alias-matched cells are stored as None (same as a blank cell).
+
+    For absolute cell: references the raw value is always read and stored — the alias
+    only affects whether the cell is considered 'empty' for scan ordering and required checks.
+    """
+
+    def test_alias_case_insensitive_skips_cell_in_scan(self, tmp_path):
+        """'n/a' treated as empty → cell:next skips it → picks up next non-empty cell."""
+        rows = [
+            ['config:', 'ignore.case', 'yes'],
+            ['config:', 'empty.aliases', 'N/A'],
+            ['var:', 'v', 'string', '.*'],
+            ['START:'], ['cell:next', 'v'], ['END:'],
+        ]
+        # A1='n/a' is skipped (empty alias, case-insensitive); A2='hello' is picked up.
+        result, lg = _run(rows, {'A1': 'n/a', 'A2': 'hello'}, tmp_path)
+        assert not lg.has_errors()
+        assert result.get('v') == 'hello'
+
+    def test_alias_case_sensitive_does_not_skip(self, tmp_path):
+        """Without ignore.case, 'n/a' does NOT match alias 'N/A' → cell is NOT skipped."""
+        rows = [
+            ['config:', 'empty.aliases', 'N/A'],
+            ['var:', 'v', 'string', '.*'],
+            ['START:'], ['cell:next', 'v'], ['END:'],
+        ]
+        # 'n/a' is NOT treated as empty (case-sensitive) → cell:next picks it up
+        result, lg = _run(rows, {'A1': 'n/a', 'A2': 'hello'}, tmp_path)
+        assert not lg.has_errors()
+        assert result.get('v') == 'n/a'
+
+    def test_alias_mixed_case_skips(self, tmp_path):
+        """'N/a' (mixed) also skipped when alias 'N/A' + ignore.case is on."""
+        rows = [
+            ['config:', 'ignore.case', 'yes'],
+            ['config:', 'empty.aliases', 'N/A'],
+            ['var:', 'v', 'string', '.*'],
+            ['START:'], ['cell:next', 'v'], ['END:'],
+        ]
+        result, lg = _run(rows, {'A1': 'N/a', 'A2': 'ok'}, tmp_path)
+        assert not lg.has_errors()
+        assert result.get('v') == 'ok'
+
+    def test_alias_with_surrounding_spaces_case_insensitive(self, tmp_path):
+        """'  TBD  ' → stripped to 'TBD' → matches alias 'tbd' case-insensitively → skipped."""
+        rows = [
+            ['config:', 'ignore.case', 'yes'],
+            ['config:', 'empty.aliases', 'tbd'],
+            ['var:', 'v', 'string', '.*'],
+            ['START:'], ['cell:next', 'v'], ['END:'],
+        ]
+        result, lg = _run(rows, {'A1': '  TBD  ', 'A2': 'real'}, tmp_path)
+        assert not lg.has_errors()
+        assert result.get('v') == 'real'

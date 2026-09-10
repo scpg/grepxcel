@@ -6,7 +6,7 @@ import openpyxl
 from openpyxl.utils import get_column_letter
 from openpyxl.utils.cell import coordinate_to_tuple
 
-from .models import Config, FieldDef, TemplateColumn, TemplateRow, CellInstruction, TableInstruction, SeekInstruction, DirectionInstruction, LBL_MATCH_MODES
+from .models import Config, FieldDef, TemplateColumn, TemplateRow, CellInstruction, TableInstruction, SeekInstruction, DirectionInstruction, LBL_MATCH_MODES, VAR_MATCH_MODES
 from .security import check_regex_safety, SecurityError
 
 _MAX_PATTERN_CELL_LEN = 1_000  # max characters in any pattern file cell value
@@ -734,6 +734,14 @@ class PatternParser:
                     f"{', '.join(sorted(LBL_MATCH_MODES))}."
                 )
             config.lbl_match = mode
+        elif key == 'var.match' and val is not None:
+            mode = str(val).strip().lower()
+            if mode not in VAR_MATCH_MODES:
+                raise PatternError(
+                    f"Invalid var.match value {val!r}. Valid values: "
+                    f"{', '.join(sorted(VAR_MATCH_MODES))}."
+                )
+            config.var_match = mode
         elif key in ('pattern.version', 'version') and val is not None:
             config.pattern_version = _parse_pattern_version(val)
             config.pattern_version_explicit = True

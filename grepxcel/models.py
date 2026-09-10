@@ -1,8 +1,9 @@
 from dataclasses import dataclass, field
 
-# Valid values for lbl: match mode (global config and per-field override).
+# Valid values for lbl: / var: match mode (global config and per-field override).
 # 're' is a short alias for 'regexp' — normalised to 'regexp' by the parser.
 LBL_MATCH_MODES = frozenset({'literal', 'glob', 'regexp'})
+VAR_MATCH_MODES = frozenset({'literal', 'glob', 'regexp'})
 
 
 @dataclass
@@ -15,6 +16,7 @@ class Config:
     pattern_version: int = 1   # pattern-format/semantics generation (absent ⇒ 1)
     pattern_version_explicit: bool = False  # True if the pattern declared it
     lbl_match: str = 'literal'  # how lbl: patterns are matched: literal | glob | regexp
+    var_match: str = 'regexp'  # default var: column-D mode: regexp | glob | literal
     unknown_config_keys: list = field(default_factory=list)  # unrecognised config: keys
 
 

@@ -39,13 +39,14 @@ Optional. Placed before `START:`. Each `config:` row sets one global option.
 
 | Column A  | Column B           | Column C                          | Notes                        |
 |-----------|--------------------|-----------------------------------|------------------------------|
+| `config:` | `pattern.version`  | integer (e.g. `1`)                 | Default: `1`                 |
 | `config:` | `read.direction`   | `LR` or `TD`                      | Default: `LR`                |
 | `config:` | `currency.sign`    | e.g. `€` or `$`                   | Default: `€`                 |
-| `config:` | `empty.aliases`    | e.g. `N/A`                        | Repeat the row for each alias|
 | `config:` | `ignore.case`      | `true` or `false`                  | Default: `false`             |
 | `config:` | `trim.whitespace`  | `true` or `false`                  | Default: `false`             |
 | `config:` | `lbl.match`        | `literal`, `glob`, or `regexp`     | Default: `literal`           |
-| `config:` | `pattern.version`  | integer (e.g. `1`)                 | Default: `1`                 |
+| `config:` | `var.match`        | `glob`, or `regexp`               | Default: `glob`              |
+| `config:` | `empty.aliases`    | e.g. `N/A`                        | Repeat the row for each alias|
 
 **`read.direction`** controls how the data sheet is scanned for `cell:` instructions:
 
