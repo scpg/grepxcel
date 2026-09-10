@@ -123,17 +123,21 @@ def check_pattern(path: str) -> CheckResult:
     return result
 
 
-def _render_table_grid(rows, out) -> None:
+def _render_table_grid(rows, out, color: bool = False) -> None:
     """Render table rows as a columnar grid: one column-position per line,
     row types side by side so you can see what each position maps to."""
     if not rows:
         return
+
+    # ── build plain-text header labels ────────────────────────────────────────
     headers = []
     for trow in rows:
         if trow.row_type == 'SKIP_IF':
             headers.append('SKIP_IF')
         else:
             headers.append(f'{trow.row_type}:{trow.multiplicity}')
+
+    # ── column widths (plain text only — ANSI codes must not inflate these) ───
     n_cols = max(len(trow.columns) for trow in rows)
     widths = []
     for ri, trow in enumerate(rows):
@@ -142,13 +146,37 @@ def _render_table_grid(rows, out) -> None:
             if ci < len(trow.columns):
                 w = max(w, len(trow.columns[ci].field))
         widths.append(w)
-    parts = [f'{h:<{widths[i]}}' for i, h in enumerate(headers)]
+
+    # ── color helpers — pad FIRST (plain length), then paint ──────────────────
+    _ROW_COLOR = {
+        'HEADER': 'cyan', 'DATA': 'green', 'FOOTER': 'dim', 'SKIP_IF': 'yellow',
+    }
+    _SENTINEL_FIELDS = {'EMPTY', 'IGNORE'}
+
+    def _pad_paint(plain: str, color_name: str, width: int) -> str:
+        """Right-pad *plain* to *width*, then apply color (preserving alignment)."""
+        padded = f'{plain:<{width}}'
+        return paint(padded, color_name, color)
+
+    # ── header row ─────────────────────────────────────────────────────────────
+    parts = []
+    for i, h in enumerate(headers):
+        row_type = h.split(':')[0]
+        c = _ROW_COLOR.get(row_type, 'cyan')
+        parts.append(_pad_paint(h, c, widths[i]))
     print(f'        {"  ".join(parts)}', file=out)
+
+    # ── column rows (one per column position) ─────────────────────────────────
     for ci in range(n_cols):
         parts = []
         for ri, trow in enumerate(rows):
             val = trow.columns[ci].field if ci < len(trow.columns) else ''
-            parts.append(f'{val:<{widths[ri]}}')
+            if val in _SENTINEL_FIELDS:
+                parts.append(_pad_paint(val, 'dim', widths[ri]))
+            elif val:
+                parts.append(_pad_paint(val, 'cyan', widths[ri]))
+            else:
+                parts.append(' ' * widths[ri])
         print(f'        {"  ".join(parts)}', file=out)
 
 
@@ -162,11 +190,12 @@ def render_result(result: CheckResult, verbose: bool = False, out=None) -> None:
                       'dim', color)
         print(colorize_marks(f'{_MARK_OK}  {fpath}  —  VALID {stats}', color), file=out)
     else:
-        print(colorize_marks(f'{_MARK_FAIL}  {fpath}  —  INVALID', color), file=out)
+        invalid = paint('INVALID', 'red', color)
+        print(colorize_marks(f'{_MARK_FAIL}  {fpath}  —  {invalid}', color), file=out)
     for err in result.errors:
-        print(colorize_marks(f'   {_MARK_FAIL} {err}', color), file=out)
+        print(colorize_marks(f'   {_MARK_FAIL} {paint(err, "red", color)}', color), file=out)
     for warn in result.warnings:
-        print(colorize_marks(f'   {_MARK_WARN} {warn}', color), file=out)
+        print(colorize_marks(f'   {_MARK_WARN} {paint(warn, "yellow", color)}', color), file=out)
 
     if verbose and result.defs is not None:
         cfg = result.config
@@ -203,7 +232,7 @@ def render_result(result: CheckResult, verbose: bool = False, out=None) -> None:
             if fd.required:
                 tags.append('not-null')
             mode_tag = _faint(f' [{", ".join(tags)}]') if tags else ''
-            role_color = 'yellow' if fd.role == 'lbl' else 'cyan'
+            role_color = 'yellow' if fd.role == 'lbl' else 'green'
             role  = paint(f'{fd.role:<4}', role_color, color)
             fname = paint(f'{name:<24}', 'cyan', color)
             ftype = _faint(f'{fd.type:<10}')
@@ -212,21 +241,23 @@ def render_result(result: CheckResult, verbose: bool = False, out=None) -> None:
 
         # ── extraction sequence ───────────────────────────────────────────────
         print(f'   {_sec("extraction sequence:")}', file=out)
+        arrow = paint('->', 'dim', color)
         for instr in (result.sequence or []):
             if isinstance(instr, CellInstruction):
                 tgt   = instr.target or instr.multiplicity
                 step  = paint(f'cell:{tgt:<6}', 'cyan', color)
-                print(f'     {step} -> {instr.field}', file=out)
+                fname = paint(instr.field, 'cyan', color)
+                print(f'     {step} {arrow} {fname}', file=out)
             elif isinstance(instr, SeekInstruction):
-                step = paint(f'seek:{instr.target}', 'cyan', color)
+                step = paint(f'seek:{instr.target}', 'yellow', color)
                 print(f'     {step}', file=out)
             elif isinstance(instr, DirectionInstruction):
-                step = paint(f'dir:{instr.direction}', 'cyan', color)
+                step = paint(f'dir:{instr.direction}', 'dim', color)
                 print(f'     {step}', file=out)
             elif isinstance(instr, TableInstruction):
-                step = paint(f'table:{instr.multiplicity}', 'cyan', color)
+                step = paint(f'table:{instr.multiplicity}', 'green', color)
                 print(f'     {step}', file=out)
-                _render_table_grid(instr.rows, out)
+                _render_table_grid(instr.rows, out, color)
 
 
 def run_validate(paths: list[str], verbose: bool = False, quiet: bool = False,
