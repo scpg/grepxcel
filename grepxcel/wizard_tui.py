@@ -395,6 +395,326 @@ def _fd_to_col_a_extra(fd) -> str:
     return ':'.join(parts)
 
 
+def _lbl_cell_matches(cell_value, pattern: str, mode: str, ignore_case: bool) -> bool:
+    """Return True if *cell_value* matches *pattern* under *mode*.
+
+    Mirrors engine._match_lbl but is self-contained (no engine import) so it
+    can be used in the TUI preload helpers without circular imports.
+    """
+    import fnmatch as _fnmatch, re as _re2
+    if not pattern:
+        return True
+    text = str(cell_value) if cell_value is not None else ''
+    if mode == 'literal':
+        return (text.lower() == pattern.lower()) if ignore_case else (text == pattern)
+    if mode == 'glob':
+        flags = _re2.DOTALL | (_re2.IGNORECASE if ignore_case else 0)
+        return bool(_re2.match(_fnmatch.translate(pattern), text, flags))
+    # regexp
+    flags = _re2.IGNORECASE if ignore_case else 0
+    try:
+        return bool(_re2.search(pattern, text[:2000], flags))
+    except Exception:
+        return False
+
+
+def _preload_table(
+    ws,
+    instr,          # TableInstruction
+    defs: dict,
+    global_config,
+    choices: dict,
+    claimed: set,
+    max_row: int,
+    max_col: int,
+) -> list[str]:
+    """Pre-populate *choices* with T / T-HEAD / T-DATA entries for one table.
+
+    Locates the table in *ws* by scanning for the header row text, then builds
+    the same meta structure that ``action_act_T`` / ``_commit_all`` produces.
+
+    Returns a list of human-readable warnings (empty on success).
+    """
+    from .models import TemplateRow  # import here to avoid module-level cycle
+
+    warnings: list[str] = []
+
+    # ── Separate template rows by type ────────────────────────────────────────
+    header_tmpl  = [r for r in instr.rows if r.row_type == 'HEADER']
+    data_tmpl    = [r for r in instr.rows if r.row_type == 'DATA']
+    footer_tmpl  = [r for r in instr.rows if r.row_type == 'FOOTER']
+
+    # Collect all field names for error messages
+    all_fields = []
+    for tr in instr.rows:
+        for tc in tr.columns:
+            fn = tc.field if hasattr(tc, 'field') else str(tc)
+            if fn not in ('IGNORE', 'EMPTY', ''):
+                all_fields.append(fn)
+
+    if not header_tmpl:
+        shown = ', '.join(all_fields[:5]) + (f' (+{len(all_fields)-5} more)' if len(all_fields) > 5 else '')
+        warnings.append(
+            f'TABLE has no HEADER rows — cannot auto-locate: {shown or "(no fields)"}'
+        )
+        return warnings
+
+    first_h_tmpl = header_tmpl[0]
+    num_cols = len(first_h_tmpl.columns)
+    if num_cols == 0:
+        warnings.append('TABLE HEADER row has no columns — cannot locate')
+        return warnings
+
+    # ── Build scan targets: (col_offset, fd) for lbl-role columns ────────────
+    scan_targets: list[tuple] = []   # (col_offset, fd)
+    for col_idx, tmpl_col in enumerate(first_h_tmpl.columns):
+        field = tmpl_col.field if hasattr(tmpl_col, 'field') else str(tmpl_col)
+        if field in ('IGNORE', 'EMPTY', ''):
+            continue
+        fd = defs.get(field)
+        if fd and fd.role == 'lbl' and fd.regex:
+            scan_targets.append((col_idx, fd))
+
+    if not scan_targets:
+        shown = ', '.join(all_fields[:5])
+        warnings.append(
+            f'TABLE header has no label columns with fixed text '
+            f'(fields: {shown or "(none)"}) — cannot auto-locate; '
+            f'press T on the header cell to classify manually'
+        )
+        return warnings
+
+    first_offset, first_fd = scan_targets[0]
+    ic      = global_config.ignore_case
+    mode    = first_fd.lbl_match or global_config.lbl_match
+
+    # ── Scan for the header row ───────────────────────────────────────────────
+    header_row_num: int | None = None
+    start_col:      int | None = None
+
+    for r in range(1, max_row + 1):
+        for c in range(1, max_col + 1):
+            v = ws.cell(row=r, column=c).value
+            if v is None:
+                continue
+            if not _lbl_cell_matches(v, first_fd.regex, mode, ic):
+                continue
+            # Candidate: first lbl column is at (r, c); table starts at
+            # (r, c - first_offset)
+            cand_start = c - first_offset
+            if cand_start < 1:
+                continue
+            # Skip already-claimed anchor (handles multiple tables with the
+            # same header text — each successive table finds the next row)
+            cand_anchor = _cell_ref(r, cand_start)
+            if cand_anchor in claimed:
+                continue
+            # Verify remaining scan targets
+            ok = True
+            for other_off, other_fd in scan_targets[1:]:
+                tc = cand_start + other_off
+                if tc < 1 or tc > max_col:
+                    ok = False
+                    break
+                other_v = ws.cell(row=r, column=tc).value
+                other_mode = other_fd.lbl_match or global_config.lbl_match
+                if not _lbl_cell_matches(other_v, other_fd.regex, other_mode, ic):
+                    ok = False
+                    break
+            if ok:
+                header_row_num = r
+                start_col      = cand_start
+                break
+        if header_row_num is not None:
+            break
+
+    if header_row_num is None:
+        probe_texts = [fd.regex for _, fd in scan_targets[:3]]
+        warnings.append(
+            f'TABLE header row not found in sheet '
+            f'(looking for: {", ".join(repr(t) for t in probe_texts)}) — '
+            f'press T on the header cell to classify manually'
+        )
+        return warnings
+
+    # ── Build header_rows structure ───────────────────────────────────────────
+    h_rows_sheet: list[dict] = []
+    for hi, h_tmpl in enumerate(header_tmpl):
+        sheet_r = header_row_num + hi
+        if sheet_r > max_row:
+            break
+        hcols: list[dict] = []
+        for ci, tmpl_col in enumerate(h_tmpl.columns):
+            sheet_c = start_col + ci
+            if sheet_c > max_col:
+                break
+            field = tmpl_col.field if hasattr(tmpl_col, 'field') else str(tmpl_col)
+            fd    = defs.get(field) if field not in ('IGNORE', 'EMPTY', '') else None
+            val   = ws.cell(row=sheet_r, column=sheet_c).value
+            val_s = str(val) if val is not None else ''
+            slug_v = _slugify(val_s) if val_s else _col_label(sheet_c).lower()
+
+            if field in ('IGNORE', 'EMPTY', '') or fd is None:
+                hcols.append({
+                    'ref':        _cell_ref(sheet_r, sheet_c),
+                    'row':        sheet_r, 'col': sheet_c,
+                    'cell_value': val_s,
+                    'role':       'ignore',
+                    'lbl_name':   'IGNORE', 'lbl_type': 'string', 'lbl_match': val_s,
+                    'var_name':   'IGNORE', 'var_type': 'string', 'var_match': '.*',
+                    'notes':      '',
+                })
+            elif fd.role == 'lbl':
+                hcols.append({
+                    'ref':        _cell_ref(sheet_r, sheet_c),
+                    'row':        sheet_r, 'col': sheet_c,
+                    'cell_value': val_s,
+                    'role':       'label',
+                    'lbl_name':   field, 'lbl_type': fd.type, 'lbl_match': fd.regex,
+                    'var_name':   'IGNORE', 'var_type': 'string', 'var_match': '.*',
+                    'lbl_mode':   fd.lbl_match or '',
+                    'notes':      '',
+                })
+            else:  # var in header position (uncommon but valid)
+                hcols.append({
+                    'ref':        _cell_ref(sheet_r, sheet_c),
+                    'row':        sheet_r, 'col': sheet_c,
+                    'cell_value': val_s,
+                    'role':       'var',
+                    'lbl_name':   'IGNORE', 'lbl_type': 'string', 'lbl_match': val_s,
+                    'var_name':   field, 'var_type': fd.type, 'var_match': fd.regex,
+                    'notes':      '',
+                    'col_a_extra': _fd_to_col_a_extra(fd),
+                })
+        h_rows_sheet.append({'row': sheet_r, 'cols': hcols})
+
+    last_h_row = header_row_num + len(h_rows_sheet) - 1
+
+    # ── Find data rows (scan until fully-empty row or max 200 rows) ───────────
+    d_rows_sheet: list[int] = []
+    for r in range(last_h_row + 1, min(last_h_row + 201, max_row + 1)):
+        has_data = any(
+            ws.cell(row=r, column=start_col + ci).value is not None
+            for ci in range(num_cols)
+            if start_col + ci <= max_col
+        )
+        if has_data:
+            d_rows_sheet.append(r)
+        else:
+            break  # Stop at first completely empty table row
+
+    # ── Build data_vars from the DATA template row ────────────────────────────
+    data_vars: list[dict] = []
+    d_tmpl_row = data_tmpl[0] if data_tmpl else None
+    for ci in range(num_cols):
+        if d_tmpl_row and ci < len(d_tmpl_row.columns):
+            tmpl_col = d_tmpl_row.columns[ci]
+            field = tmpl_col.field if hasattr(tmpl_col, 'field') else str(tmpl_col)
+        else:
+            field = 'IGNORE'
+        fd = defs.get(field) if field not in ('IGNORE', 'EMPTY', '') else None
+
+        if field in ('IGNORE', 'EMPTY', '') or fd is None:
+            data_vars.append({
+                'role': 'ignore', 'var_name': 'IGNORE',
+                'var_type': 'string', 'var_match': '.*',
+                'lbl_name': 'IGNORE', 'lbl_type': 'string', 'lbl_match': '.*',
+                'notes': '', 'col_a_extra': '',
+            })
+        elif fd.role == 'lbl':
+            data_vars.append({
+                'role': 'label', 'var_name': 'IGNORE',
+                'var_type': 'string', 'var_match': '.*',
+                'lbl_name': field, 'lbl_type': fd.type, 'lbl_match': fd.regex,
+                'notes': '', 'col_a_extra': '',
+            })
+        else:
+            data_vars.append({
+                'role': 'var', 'var_name': field,
+                'var_type': fd.type, 'var_match': fd.regex,
+                'lbl_name': 'IGNORE', 'lbl_type': 'string', 'lbl_match': '.*',
+                'notes': '', 'col_a_extra': _fd_to_col_a_extra(fd),
+            })
+
+    # ── Skip_if rows (Phase 2: detect S rows in the row_types scan) ──────────
+    skip_rows: list[int] = []   # Phase 2: detect SKIP_IF rows from template
+
+    # ── Build row_types dict ──────────────────────────────────────────────────
+    row_types: dict[int, str] = {}
+    for hd in h_rows_sheet:
+        row_types[hd['row']] = 'H'
+    for r in d_rows_sheet:
+        row_types[r] = 'D'
+
+    # ── Anchor / range ────────────────────────────────────────────────────────
+    end_row    = d_rows_sheet[-1] if d_rows_sheet else last_h_row
+    end_col    = start_col + num_cols - 1
+    anchor_ref = _cell_ref(header_row_num, start_col)
+    range_str  = f'{anchor_ref}:{_cell_ref(header_row_num, end_col)}'
+
+    # Table name: derive from the first lbl field, strip common suffixes
+    raw_name   = first_fd.name
+    table_name = _slugify(
+        raw_name.removesuffix('_lbl').removesuffix('_label')
+                .removesuffix('_header').removesuffix('_col')
+    ) or _slugify(raw_name)
+
+    # ── Guard: anchor must not be already claimed ─────────────────────────────
+    if anchor_ref in claimed:
+        warnings.append(
+            f'TABLE anchor {anchor_ref} already claimed by another field; '
+            f'table not pre-loaded'
+        )
+        return warnings
+
+    # ── Write anchor T entry ──────────────────────────────────────────────────
+    meta: dict = {
+        'choice':      'T',
+        'name':        table_name,
+        'mult':        instr.multiplicity,
+        'range':       range_str,
+        'start_row':   header_row_num,
+        'end_row':     end_row,
+        'start_col':   start_col,
+        'end_col':     end_col,
+        'header_rows': h_rows_sheet,
+        'footer_rows': [],          # footer detection is Phase 3
+        'data_vars':   data_vars,
+        'skip_rows':   skip_rows,
+        'row_types':   row_types,
+    }
+    choices[anchor_ref] = meta
+    claimed.add(anchor_ref)
+
+    # ── Write T-HEAD for all header / footer cells (except anchor) ────────────
+    for hd in h_rows_sheet:
+        for col_dict in hd['cols']:
+            ref = col_dict['ref']
+            if ref != anchor_ref and ref not in claimed:
+                choices[ref] = {'choice': 'T-HEAD', 'anchor': anchor_ref}
+                claimed.add(ref)
+
+    # ── Write T-DATA for data row cells ──────────────────────────────────────
+    for r in d_rows_sheet:
+        for ci in range(num_cols):
+            ref = _cell_ref(r, start_col + ci)
+            if ref not in claimed:
+                choices[ref] = {'choice': 'T-DATA', 'anchor': anchor_ref}
+                claimed.add(ref)
+
+    n_h = len(h_rows_sheet)
+    n_d = len(d_rows_sheet)
+    var_names = [dv['var_name'] for dv in data_vars if dv['var_name'] != 'IGNORE']
+    # Informational notice when data rows were limited
+    if n_d == 200:
+        warnings.append(
+            f'TABLE {table_name!r}: data rows capped at 200 for pre-load; '
+            f'adjust the range with T if needed'
+        )
+
+    return warnings
+
+
 def _preload_from_pattern(ws, pattern_path: str) -> tuple[dict, dict, list[str]]:
     """Parse an existing pattern file and scan *ws* to locate matching cells.
 
@@ -456,31 +776,15 @@ def _preload_from_pattern(ws, pattern_path: str) -> tuple[dict, dict, list[str]]
 
     def _find_lbl_pos(fd) -> tuple | None:
         """Scan ws for the first unclaimed cell matching fd under its lbl mode."""
-        import fnmatch, re as _re
         mode = fd.lbl_match or global_config.lbl_match
-        pattern = fd.regex
-        ic = global_config.ignore_case
+        ic   = global_config.ignore_case
         for r in range(1, max_row + 1):
             for c in range(1, max_col + 1):
                 ref = _cell_ref(r, c)
                 if ref in claimed:
                     continue
                 v = ws.cell(row=r, column=c).value
-                if v is None:
-                    continue
-                text = str(v)
-                if mode == 'literal':
-                    match = (text.lower() == pattern.lower()) if ic else (text == pattern)
-                elif mode == 'glob':
-                    flags = _re.DOTALL | (_re.IGNORECASE if ic else 0)
-                    match = bool(_re.match(fnmatch.translate(pattern), text, flags))
-                else:  # regexp
-                    flags = _re.IGNORECASE if ic else 0
-                    try:
-                        match = bool(_re.search(pattern, text, flags))
-                    except Exception:
-                        match = False
-                if match:
+                if v is not None and _lbl_cell_matches(v, fd.regex, mode, ic):
                     return (r, c)
         return None
 
@@ -527,21 +831,13 @@ def _preload_from_pattern(ws, pattern_path: str) -> tuple[dict, dict, list[str]]
             continue
 
         if isinstance(instr, TableInstruction):
-            # Collect field names for the warning message
-            table_field_names: list[str] = []
-            for trow in instr.rows:
-                for tcol in trow.columns:
-                    fname = tcol.field if hasattr(tcol, 'field') else str(tcol)
-                    if fname not in ('IGNORE', 'EMPTY', ''):
-                        table_field_names.append(fname)
-            if table_field_names:
-                shown = ', '.join(table_field_names[:6])
-                suffix = f' (+{len(table_field_names)-6} more)' if len(table_field_names) > 6 else ''
-                warnings.append(
-                    f'TABLE fields not auto-located: {shown}{suffix} — '
-                    f'press T on the table header cell to classify'
-                )
-            last_lbl_pos = None   # table breaks adjacency tracking
+            # Delegate to _preload_table — populates choices with T/T-HEAD/T-DATA
+            tbl_warns = _preload_table(
+                ws, instr, defs, global_config,
+                choices, claimed, max_row, max_col,
+            )
+            warnings.extend(tbl_warns)
+            last_lbl_pos = None   # table breaks scalar adjacency tracking
             continue
 
         if not isinstance(instr, CellInstruction):

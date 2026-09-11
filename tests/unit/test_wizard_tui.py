@@ -1481,6 +1481,433 @@ class TestPreloadFromPattern:
         assert 'version'  in var_names
 
 
+# ── TestPreloadTable ──────────────────────────────────────────────────────────
+
+class TestPreloadTable:
+    """Tests for TABLE pre-population via _preload_from_pattern.
+
+    Exercises _preload_table end-to-end by calling _preload_from_pattern with
+    patterns that contain TABLE instructions backed by lbl: header columns.
+
+    Layout used by most tests (2-column table):
+        Row 1: 'Date'  | 'Amount'   ← header (date_lbl lbl, amount_lbl lbl)
+        Row 2: data    | data       ← DATA row (date var, amount var)
+        Row 3: data    | data
+    """
+
+    # ── Shared factories ──────────────────────────────────────────────────────
+
+    @staticmethod
+    def _simple_ws():
+        """2-column, 2-data-row worksheet."""
+        return _make_ws({
+            (1, 1): 'Date',       (1, 2): 'Amount',
+            (2, 1): '2026-01-01', (2, 2): 100,
+            (3, 1): '2026-01-02', (3, 2): 200,
+        })
+
+    @staticmethod
+    def _write_simple_pattern(path):
+        """table:* with 2 lbl header cols and 2 var data cols."""
+        _write_pattern_csv(path, [
+            ['lbl:', 'date_lbl',   'string',   'Date'],
+            ['lbl:', 'amount_lbl', 'string',   'Amount'],
+            ['var:', 'date',       'string',   '.*'],
+            ['var:', 'amount',     'currency', r'\d+'],
+            ['START:'],
+            ['table:*', ''],
+            ['', 'HEADER:1', 'date_lbl', 'amount_lbl'],
+            ['', 'DATA:*',   'date',     'amount'],
+            ['END:'],
+        ])
+
+    # ── Anchor T entry ────────────────────────────────────────────────────────
+
+    def test_table_anchor_t_in_choices(self, tmp_path):
+        """Table with lbl: header found → T entry at the anchor ref."""
+        ws  = self._simple_ws()
+        pat = tmp_path / 'p.csv'
+        self._write_simple_pattern(pat)
+
+        choices, _, warns = _preload_from_pattern(ws, str(pat))
+
+        assert not warns, f'Unexpected warnings: {warns}'
+        assert 'A1' in choices, f'Expected A1 (T anchor); got: {sorted(choices)}'
+        assert choices['A1']['choice'] == 'T'
+
+    def test_table_anchor_meta_required_keys(self, tmp_path):
+        """T anchor carries all required meta keys."""
+        ws  = self._simple_ws()
+        pat = tmp_path / 'p.csv'
+        self._write_simple_pattern(pat)
+
+        choices, _, _ = _preload_from_pattern(ws, str(pat))
+
+        meta = choices['A1']
+        for key in ('choice', 'name', 'mult', 'range',
+                    'start_row', 'end_row', 'start_col', 'end_col',
+                    'header_rows', 'footer_rows', 'data_vars', 'skip_rows',
+                    'row_types'):
+            assert key in meta, f'Missing key {key!r} in T anchor meta'
+
+    def test_table_anchor_coord_fields(self, tmp_path):
+        """T anchor start_row/start_col/end_col/range match the located header."""
+        ws  = self._simple_ws()
+        pat = tmp_path / 'p.csv'
+        self._write_simple_pattern(pat)
+
+        choices, _, _ = _preload_from_pattern(ws, str(pat))
+
+        meta = choices['A1']
+        assert meta['start_row'] == 1
+        assert meta['start_col'] == 1
+        assert meta['end_col']   == 2
+        assert meta['range']     == 'A1:B1'
+        assert meta['mult']      == '*'
+
+    def test_table_name_derived_from_lbl_field(self, tmp_path):
+        """Table name strips _lbl/_col suffixes from the first lbl field name."""
+        ws  = self._simple_ws()
+        pat = tmp_path / 'p.csv'
+        self._write_simple_pattern(pat)
+
+        choices, _, _ = _preload_from_pattern(ws, str(pat))
+
+        # first_fd.name = 'date_lbl' → remove '_lbl' → 'date' → slugify
+        assert choices['A1']['name'] == 'date'
+
+    # ── T-HEAD entries ────────────────────────────────────────────────────────
+
+    def test_table_thead_for_non_anchor_header_cell(self, tmp_path):
+        """Non-anchor header cells get T-HEAD pointing to the anchor."""
+        ws  = self._simple_ws()
+        pat = tmp_path / 'p.csv'
+        self._write_simple_pattern(pat)
+
+        choices, _, warns = _preload_from_pattern(ws, str(pat))
+
+        assert not warns
+        assert 'B1' in choices, f'Expected B1 (T-HEAD); got: {sorted(choices)}'
+        assert choices['B1']['choice'] == 'T-HEAD'
+        assert choices['B1']['anchor'] == 'A1'
+
+    def test_table_anchor_is_not_t_head(self, tmp_path):
+        """Anchor cell itself must be classified T, not T-HEAD."""
+        ws  = self._simple_ws()
+        pat = tmp_path / 'p.csv'
+        self._write_simple_pattern(pat)
+
+        choices, _, _ = _preload_from_pattern(ws, str(pat))
+
+        assert choices['A1']['choice'] == 'T'
+
+    # ── T-DATA entries ────────────────────────────────────────────────────────
+
+    def test_table_tdata_for_data_rows(self, tmp_path):
+        """All cells in detected data rows get T-DATA pointing to the anchor."""
+        ws  = self._simple_ws()
+        pat = tmp_path / 'p.csv'
+        self._write_simple_pattern(pat)
+
+        choices, _, warns = _preload_from_pattern(ws, str(pat))
+
+        assert not warns
+        for ref in ('A2', 'B2', 'A3', 'B3'):
+            assert ref in choices, f'Expected {ref} (T-DATA); got: {sorted(choices)}'
+            assert choices[ref]['choice'] == 'T-DATA', f'{ref} choice should be T-DATA'
+            assert choices[ref]['anchor'] == 'A1'
+
+    def test_table_data_rows_stop_at_empty_row(self, tmp_path):
+        """Data scan stops at the first fully-empty row; later rows are excluded."""
+        ws = _make_ws({
+            (1, 1): 'Date',       (1, 2): 'Amount',
+            (2, 1): '2026-01-01', (2, 2): 100,
+            # row 3: empty gap → scan stops
+            (4, 1): '2026-01-03', (4, 2): 300,   # must NOT be pre-loaded
+        })
+        pat = tmp_path / 'p.csv'
+        self._write_simple_pattern(pat)
+
+        choices, _, _ = _preload_from_pattern(ws, str(pat))
+
+        assert 'A2' in choices and choices['A2']['choice'] == 'T-DATA'
+        assert 'A4' not in choices, 'Row 4 is after an empty row — must not be pre-loaded'
+
+    # ── row_types ─────────────────────────────────────────────────────────────
+
+    def test_table_row_types_h_and_d(self, tmp_path):
+        """row_types maps header rows to 'H' and data rows to 'D'."""
+        ws  = self._simple_ws()
+        pat = tmp_path / 'p.csv'
+        self._write_simple_pattern(pat)
+
+        choices, _, _ = _preload_from_pattern(ws, str(pat))
+
+        rt = choices['A1']['row_types']
+        assert rt.get(1) == 'H'
+        assert rt.get(2) == 'D'
+        assert rt.get(3) == 'D'
+
+    # ── header_rows structure ─────────────────────────────────────────────────
+
+    def test_table_header_rows_entry_count(self, tmp_path):
+        """header_rows has one entry (matching the one HEADER template row)."""
+        ws  = self._simple_ws()
+        pat = tmp_path / 'p.csv'
+        self._write_simple_pattern(pat)
+
+        choices, _, _ = _preload_from_pattern(ws, str(pat))
+
+        hr = choices['A1']['header_rows']
+        assert len(hr) == 1
+        assert hr[0]['row'] == 1
+        assert len(hr[0]['cols']) == 2
+
+    def test_table_header_rows_lbl_col_fields(self, tmp_path):
+        """First header col (lbl role) carries role, lbl_name, cell_value, ref."""
+        ws  = self._simple_ws()
+        pat = tmp_path / 'p.csv'
+        self._write_simple_pattern(pat)
+
+        choices, _, _ = _preload_from_pattern(ws, str(pat))
+
+        col0 = choices['A1']['header_rows'][0]['cols'][0]
+        assert col0['role']       == 'label'
+        assert col0['lbl_name']   == 'date_lbl'
+        assert col0['cell_value'] == 'Date'
+        assert col0['ref']        == 'A1'
+
+    # ── data_vars ─────────────────────────────────────────────────────────────
+
+    def test_table_data_vars_count_and_roles(self, tmp_path):
+        """data_vars has one entry per DATA template column, all var role."""
+        ws  = self._simple_ws()
+        pat = tmp_path / 'p.csv'
+        self._write_simple_pattern(pat)
+
+        choices, _, _ = _preload_from_pattern(ws, str(pat))
+
+        dvars = choices['A1']['data_vars']
+        assert len(dvars) == 2
+        assert dvars[0]['role']     == 'var'
+        assert dvars[0]['var_name'] == 'date'
+        assert dvars[1]['role']     == 'var'
+        assert dvars[1]['var_name'] == 'amount'
+        assert dvars[1]['var_type'] == 'currency'
+
+    def test_table_nullable_var_col_a_extra(self, tmp_path):
+        """A nullable var in DATA produces col_a_extra='nullable' in data_vars."""
+        ws = _make_ws({
+            (1, 1): 'Date', (1, 2): 'Amount',
+            (2, 1): '2026-01-01', (2, 2): None,
+        })
+        pat = tmp_path / 'p.csv'
+        _write_pattern_csv(pat, [
+            ['lbl:', 'date_lbl',   'string',   'Date'],
+            ['lbl:', 'amount_lbl', 'string',   'Amount'],
+            ['var:', 'date',       'string',   '.*'],
+            ['var:nullable', 'amount', 'currency', r'\d+'],
+            ['START:'],
+            ['table:*', ''],
+            ['', 'HEADER:1', 'date_lbl', 'amount_lbl'],
+            ['', 'DATA:*',   'date',     'amount'],
+            ['END:'],
+        ])
+
+        choices, _, warns = _preload_from_pattern(ws, str(pat))
+
+        assert not warns
+        dvars = choices['A1']['data_vars']
+        amount_dv = next((d for d in dvars if d.get('var_name') == 'amount'), None)
+        assert amount_dv is not None
+        assert 'nullable' in amount_dv['col_a_extra']
+
+    # ── Header not found ──────────────────────────────────────────────────────
+
+    def test_table_header_not_found_warning(self, tmp_path):
+        """When the lbl header text is absent, emit a 'not found' warning."""
+        ws = _make_ws({
+            (1, 1): 'Product', (1, 2): 'Price',   # different headers
+            (2, 1): 'Widget',  (2, 2): 9.99,
+        })
+        pat = tmp_path / 'p.csv'
+        self._write_simple_pattern(pat)   # looks for 'Date' / 'Amount'
+
+        choices, _, warns = _preload_from_pattern(ws, str(pat))
+
+        assert any(
+            'not found' in w.lower() or 'header' in w.lower()
+            for w in warns
+        ), f'Expected header-not-found warning; got: {warns}'
+        # No T anchor should be placed
+        assert all(
+            v.get('choice') != 'T' for v in choices.values()
+        ), f'No T anchor expected when header is absent; choices: {list(choices)}'
+
+    # ── Multi-table same header ───────────────────────────────────────────────
+
+    def test_multi_table_same_header_distinct_anchors(self, tmp_path):
+        """3 table:* blocks with the same header text → 3 distinct anchors."""
+        ws = _make_ws({
+            # Table 1: rows 1-2
+            (1, 1): 'Date',       (1, 2): 'Amount',
+            (2, 1): '2026-01-01', (2, 2): 100,
+            # row 3: empty separator
+            # Table 2: rows 4-5
+            (4, 1): 'Date',       (4, 2): 'Amount',
+            (5, 1): '2026-02-01', (5, 2): 200,
+            # row 6: empty separator
+            # Table 3: rows 7-8
+            (7, 1): 'Date',       (7, 2): 'Amount',
+            (8, 1): '2026-03-01', (8, 2): 300,
+        })
+        pat = tmp_path / 'p.csv'
+        _write_pattern_csv(pat, [
+            ['lbl:', 'date_lbl',   'string',   'Date'],
+            ['lbl:', 'amount_lbl', 'string',   'Amount'],
+            ['var:', 'date',       'string',   '.*'],
+            ['var:', 'amount',     'currency', r'\d+'],
+            ['START:'],
+            # Table 1
+            ['table:*', ''],
+            ['', 'HEADER:1', 'date_lbl', 'amount_lbl'],
+            ['', 'DATA:*',   'date',     'amount'],
+            # Table 2 (identical fields)
+            ['table:*', ''],
+            ['', 'HEADER:1', 'date_lbl', 'amount_lbl'],
+            ['', 'DATA:*',   'date',     'amount'],
+            # Table 3 (identical fields)
+            ['table:*', ''],
+            ['', 'HEADER:1', 'date_lbl', 'amount_lbl'],
+            ['', 'DATA:*',   'date',     'amount'],
+            ['END:'],
+        ])
+
+        choices, _, warns = _preload_from_pattern(ws, str(pat))
+
+        t_anchors = {ref for ref, meta in choices.items() if meta.get('choice') == 'T'}
+        assert 'A1' in t_anchors, f'Table 1 anchor missing; T anchors: {t_anchors}'
+        assert 'A4' in t_anchors, f'Table 2 anchor missing; T anchors: {t_anchors}'
+        assert 'A7' in t_anchors, f'Table 3 anchor missing; T anchors: {t_anchors}'
+        assert len(t_anchors) == 3, f'Expected exactly 3 T anchors; got: {t_anchors}'
+
+    def test_multi_table_data_rows_isolated_per_anchor(self, tmp_path):
+        """Each table's T-DATA entries reference only their own anchor."""
+        ws = _make_ws({
+            (1, 1): 'Date',       (1, 2): 'Amount',
+            (2, 1): '2026-01-01', (2, 2): 100,
+            # row 3: empty separator
+            (4, 1): 'Date',       (4, 2): 'Amount',
+            (5, 1): '2026-02-01', (5, 2): 200,
+        })
+        pat = tmp_path / 'p.csv'
+        _write_pattern_csv(pat, [
+            ['lbl:', 'date_lbl',   'string',   'Date'],
+            ['lbl:', 'amount_lbl', 'string',   'Amount'],
+            ['var:', 'date',       'string',   '.*'],
+            ['var:', 'amount',     'currency', r'\d+'],
+            ['START:'],
+            ['table:*', ''],
+            ['', 'HEADER:1', 'date_lbl', 'amount_lbl'],
+            ['', 'DATA:*',   'date',     'amount'],
+            ['table:*', ''],
+            ['', 'HEADER:1', 'date_lbl', 'amount_lbl'],
+            ['', 'DATA:*',   'date',     'amount'],
+            ['END:'],
+        ])
+
+        choices, _, warns = _preload_from_pattern(ws, str(pat))
+
+        assert not warns, f'Unexpected warnings: {warns}'
+        # Table 1 data rows → anchor A1
+        assert choices.get('A2', {}).get('anchor') == 'A1'
+        assert choices.get('B2', {}).get('anchor') == 'A1'
+        # Table 2 data rows → anchor A4
+        assert choices.get('A5', {}).get('anchor') == 'A4'
+        assert choices.get('B5', {}).get('anchor') == 'A4'
+
+
+# ── TestPreloadTableTUI (Textual pilot) ──────────────────────────────────────
+
+@_skip_no_textual
+class TestPreloadTableTUI:
+    """Pilot tests: preloaded TABLE choices survive the full TUI lifecycle."""
+
+    def test_preloaded_table_survives_save(self, tmp_path):
+        """_preload_from_pattern (table) → TUI → save → WizardState has table data."""
+        # Build data file
+        xlsx_path = str(tmp_path / 'data.xlsx')
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = 'Sheet1'
+        for (r, c), v in {
+            (1, 1): 'Date', (1, 2): 'Amount',
+            (2, 1): '2026-01-01', (2, 2): 100,
+            (3, 1): '2026-01-02', (3, 2): 200,
+        }.items():
+            ws.cell(row=r, column=c, value=v)
+        wb.save(xlsx_path)
+
+        # Write pattern
+        pat_path = str(tmp_path / 'p.csv')
+        _write_pattern_csv(tmp_path / 'p.csv', [
+            ['lbl:', 'date_lbl',   'string',   'Date'],
+            ['lbl:', 'amount_lbl', 'string',   'Amount'],
+            ['var:', 'date',       'string',   '.*'],
+            ['var:', 'amount',     'currency', r'\d+'],
+            ['START:'],
+            ['table:*', ''],
+            ['', 'HEADER:1', 'date_lbl', 'amount_lbl'],
+            ['', 'DATA:*',   'date',     'amount'],
+            ['END:'],
+        ])
+
+        # Pre-populate choices from pattern
+        wb2 = openpyxl.load_workbook(xlsx_path, data_only=True)
+        ws2 = wb2.active
+        load_choices, preload_cfg, warns = _preload_from_pattern(ws2, pat_path)
+        assert not warns, f'Pre-load should succeed; got: {warns}'
+        assert any(v.get('choice') == 'T' for v in load_choices.values()), \
+            f'Expected at least one T anchor in preloaded choices; got: {list(load_choices)}'
+
+        # Launch TUI with preloaded choices
+        state = WizardState(sheet_name=ws2.title)
+        app = WizardTUIApp(ws2, state, xlsx_path,
+                           load_choices=load_choices,
+                           preload_config=preload_cfg)
+
+        async def _run():
+            async with app.run_test(headless=True, size=(120, 40)) as pilot:
+                await pilot.pause()
+                await pilot.press('enter')  # accept config
+                await pilot.pause()
+                await pilot.press('e')       # End & Save
+                await pilot.pause()
+
+        asyncio.run(_run())
+
+        result = app._return_value
+        assert result is not None, 'Expected a WizardState after pressing e'
+        assert isinstance(result, WizardState)
+
+        # body_rows must contain a table: row
+        tbl_body = [r for r in result.body_rows if r and r[0].startswith('table:')]
+        assert tbl_body, f'Expected table: row in body_rows; got:\n{result.body_rows}'
+
+        # lbl_defs must include the header lbl columns
+        lbl_names = {t[0] for t in result.lbl_defs}
+        assert 'date_lbl'   in lbl_names, f'date_lbl missing; lbl_defs: {result.lbl_defs}'
+        assert 'amount_lbl' in lbl_names, f'amount_lbl missing; lbl_defs: {result.lbl_defs}'
+
+        # _build_state_from_choices namespaces DATA var names with the table name
+        # (table_name='date' from 'date_lbl') → 'date.date', 'date.amount'
+        var_names = {t[0] for t in result.var_defs}
+        assert any('date' in vn for vn in var_names), \
+            f'Expected a "date"-containing var; var_defs: {result.var_defs}'
+        assert any('amount' in vn for vn in var_names), \
+            f'Expected an "amount"-containing var; var_defs: {result.var_defs}'
+
+
 # ── TestPreloadPatternTUI (Textual pilot) ─────────────────────────────────────
 
 @_skip_no_textual
