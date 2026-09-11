@@ -368,6 +368,7 @@ examples:
   grepxcel wizard data.xlsx -o my-pattern.csv
   grepxcel wizard data.xlsx --save-state session.json
   grepxcel wizard --load-state session.json -o my-pattern.csv
+  grepxcel wizard data.xlsx --load-pattern existing-pattern.csv
         """,
     )
     p.add_argument('file', metavar='FILE', nargs='?',
@@ -384,6 +385,10 @@ examples:
     p.add_argument('--save-state', metavar='FILE',
                    help='After saving the pattern, also write the wizard session '
                         'state to FILE as JSON (enables replay and scripted testing)')
+    p.add_argument('--load-pattern', metavar='FILE',
+                   help='Pre-populate the TUI from an existing pattern file '
+                        '(.xlsx or .csv) — opens the wizard with field classifications '
+                        'already filled in so you can review and adjust')
 
 
 def _add_quickstart_subparser(sub) -> None:
@@ -1166,6 +1171,7 @@ def main(argv=None):
             output=getattr(args, 'output', None),
             load_state=load_state,
             save_state=getattr(args, 'save_state', None),
+            load_pattern=getattr(args, 'load_pattern', None),
         ))
 
     if args.command == 'draft':

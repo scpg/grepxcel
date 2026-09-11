@@ -375,6 +375,247 @@ def _col_a_extra_to_parts(col_a_extra: str) -> tuple[str, str]:
     return var_mode_raw, modifiers_raw
 
 
+def _fd_to_col_a_extra(fd) -> str:
+    """Reconstruct col_a_extra string from a FieldDef (for pre-population).
+
+    Mirrors the logic in _col_a_extra_from_parts but works from FieldDef
+    attributes rather than UI dropdown values.
+    """
+    parts: list[str] = []
+    # Var mode (literal/glob only — 'regexp' is the default, omit it)
+    if fd.var_mode and fd.var_mode not in ('regexp', 're'):
+        parts.append(fd.var_mode)
+    # Constraint modifiers (mutually exclusive: not-null vs nullable)
+    if fd.required:
+        parts.append('not-null')
+    elif fd.nullable:
+        parts.append('nullable')
+    if fd.trim_whitespace:
+        parts.append('trim-whitespace')
+    return ':'.join(parts)
+
+
+def _preload_from_pattern(ws, pattern_path: str) -> tuple[dict, dict, list[str]]:
+    """Parse an existing pattern file and scan *ws* to locate matching cells.
+
+    Returns
+    -------
+    choices      dict[cell_ref, meta_dict]
+                 Pre-populated ``_choices`` for ``WizardTUIApp``.  Same
+                 structure as what ``action_act_L`` / ``action_act_V`` write.
+    preload_cfg  dict
+                 Pre-populated config values for ``_ConfigModal`` (direction,
+                 lbl_match, var_match, …).  Empty dict on parse error.
+    warnings     list[str]
+                 Human-readable notices for fields that could not be located
+                 automatically (table fields, unmatched labels, etc.).
+    """
+    from .pattern_parser import PatternParser
+    from .models import (CellInstruction, TableInstruction,
+                         SeekInstruction, DirectionInstruction)
+
+    # ── Parse the pattern ─────────────────────────────────────────────────────
+    try:
+        parser = PatternParser()
+        global_config, defs, start_sequence = parser.parse(pattern_path)
+    except Exception as exc:
+        return {}, {}, [f'Could not parse pattern file: {exc}']
+
+    # ── Config preload ────────────────────────────────────────────────────────
+    # Only emit non-default values so the ConfigModal keeps sensible defaults
+    preload_cfg: dict = {
+        'direction':     global_config.read_direction,
+        'ignore_case':   global_config.ignore_case,
+        'trim_whitespace': global_config.trim_whitespace,
+        'currency_sign': global_config.currency_sign,
+        # Omit lbl_match / var_match when they equal the engine default so the
+        # ConfigModal doesn't emit a redundant config: row on save.
+        'lbl_match': global_config.lbl_match if global_config.lbl_match != 'literal' else '',
+        'var_match': global_config.var_match if global_config.var_match != 'regexp' else '',
+        'empty_aliases': list(global_config.empty_aliases),
+    }
+
+    # ── Build value → [(row, col)] index for label scanning ──────────────────
+    from collections import defaultdict
+    val_to_cells: dict[str, list[tuple]] = defaultdict(list)
+    claimed: set[str] = set()          # refs already assigned in choices
+    max_row = ws.max_row or 1
+    max_col = ws.max_column or 1
+    for r in range(1, max_row + 1):
+        for c in range(1, max_col + 1):
+            v = ws.cell(row=r, column=c).value
+            if v is not None:
+                val_to_cells[str(v)].append((r, c))
+
+    choices: dict[str, dict] = {}
+    warnings: list[str] = []
+    direction = global_config.read_direction   # may be updated by dir: instructions
+    last_lbl_pos: tuple | None = None          # (row, col) of the last matched lbl cell
+
+    # ── Helpers ───────────────────────────────────────────────────────────────
+
+    def _find_lbl_pos(fd) -> tuple | None:
+        """Scan ws for the first unclaimed cell matching fd under its lbl mode."""
+        import fnmatch, re as _re
+        mode = fd.lbl_match or global_config.lbl_match
+        pattern = fd.regex
+        ic = global_config.ignore_case
+        for r in range(1, max_row + 1):
+            for c in range(1, max_col + 1):
+                ref = _cell_ref(r, c)
+                if ref in claimed:
+                    continue
+                v = ws.cell(row=r, column=c).value
+                if v is None:
+                    continue
+                text = str(v)
+                if mode == 'literal':
+                    match = (text.lower() == pattern.lower()) if ic else (text == pattern)
+                elif mode == 'glob':
+                    flags = _re.DOTALL | (_re.IGNORECASE if ic else 0)
+                    match = bool(_re.match(fnmatch.translate(pattern), text, flags))
+                else:  # regexp
+                    flags = _re.IGNORECASE if ic else 0
+                    try:
+                        match = bool(_re.search(pattern, text, flags))
+                    except Exception:
+                        match = False
+                if match:
+                    return (r, c)
+        return None
+
+    def _adjacent(pos: tuple) -> tuple:
+        r, c = pos
+        return (r, c + 1) if direction == 'LR' else (r + 1, c)
+
+    def _record_lbl(ref: str, fd) -> None:
+        choices[ref] = {
+            'choice': 'L',
+            'name':     fd.name,
+            'ltype':    fd.type,
+            'lmatch':   fd.regex,
+            'lbl_mode': fd.lbl_match or '',
+        }
+        claimed.add(ref)
+
+    def _record_var(ref: str, fd) -> None:
+        choices[ref] = {
+            'choice':      'V',
+            'name':        fd.name,
+            'ftype':       fd.type,
+            'match':       fd.regex,
+            'col_a_extra': _fd_to_col_a_extra(fd),
+        }
+        claimed.add(ref)
+
+    # ── Walk start_sequence ───────────────────────────────────────────────────
+    for instr in start_sequence:
+
+        if isinstance(instr, DirectionInstruction):
+            direction = instr.direction
+            continue
+
+        if isinstance(instr, SeekInstruction):
+            # seek: moves the scanner cursor absolutely; we can't track that
+            # without running the engine.  Reset adjacency so we don't place
+            # the next var at the wrong cell.
+            last_lbl_pos = None
+            warnings.append(
+                f'seek:{instr.target} — var fields after a seek: instruction '
+                f'cannot be auto-located; classify them manually'
+            )
+            continue
+
+        if isinstance(instr, TableInstruction):
+            # Collect field names for the warning message
+            table_field_names: list[str] = []
+            for trow in instr.rows:
+                for tcol in trow.columns:
+                    fname = tcol.field if hasattr(tcol, 'field') else str(tcol)
+                    if fname not in ('IGNORE', 'EMPTY', ''):
+                        table_field_names.append(fname)
+            if table_field_names:
+                shown = ', '.join(table_field_names[:6])
+                suffix = f' (+{len(table_field_names)-6} more)' if len(table_field_names) > 6 else ''
+                warnings.append(
+                    f'TABLE fields not auto-located: {shown}{suffix} — '
+                    f'press T on the table header cell to classify'
+                )
+            last_lbl_pos = None   # table breaks adjacency tracking
+            continue
+
+        if not isinstance(instr, CellInstruction):
+            continue
+
+        name = instr.field
+        if name in ('IGNORE', 'EMPTY', ''):
+            # IGNORE resets adjacency: the engine skips a cell, so the next
+            # var is no longer adjacent to the last lbl.
+            last_lbl_pos = None
+            continue
+
+        fd = defs.get(name)
+        if fd is None:
+            warnings.append(f'Field {name!r} referenced in body but not defined above START:')
+            last_lbl_pos = None
+            continue
+
+        # ── Absolute reference (cell:B5) — position is fully known ───────────
+        if instr.multiplicity == 'abs':
+            try:
+                from openpyxl.utils.cell import coordinate_to_tuple
+                r, c = coordinate_to_tuple(instr.target)
+            except Exception:
+                warnings.append(f'Could not parse absolute ref {instr.target!r} for {name!r}')
+                continue
+            ref = _cell_ref(r, c)
+            if fd.role == 'lbl':
+                _record_lbl(ref, fd)
+            else:
+                _record_var(ref, fd)
+            last_lbl_pos = (r, c)
+            continue
+
+        # ── cell:1 / cell:next — position inferred from data content ─────────
+        if fd.role == 'lbl':
+            pos = _find_lbl_pos(fd)
+            if pos is None:
+                warnings.append(
+                    f'Label {name!r} (pattern: {fd.regex!r}) not found in sheet'
+                )
+                last_lbl_pos = None
+            else:
+                ref = _cell_ref(*pos)
+                _record_lbl(ref, fd)
+                last_lbl_pos = pos
+
+        else:  # var field — place adjacent to last matched lbl
+            if last_lbl_pos is None:
+                warnings.append(
+                    f'Var {name!r}: no preceding label was matched — '
+                    f'cannot determine cell position; classify manually'
+                )
+            else:
+                ar, ac = _adjacent(last_lbl_pos)
+                if 1 <= ar <= max_row and 1 <= ac <= max_col:
+                    ref = _cell_ref(ar, ac)
+                    if ref in claimed:
+                        warnings.append(
+                            f'Var {name!r}: adjacent cell {ref} is already '
+                            f'claimed by another field; classify manually'
+                        )
+                    else:
+                        _record_var(ref, fd)
+                        last_lbl_pos = (ar, ac)
+                else:
+                    warnings.append(
+                        f'Var {name!r}: adjacent cell ({ar}, {ac}) is outside '
+                        f'the sheet bounds; classify manually'
+                    )
+
+    return choices, preload_cfg, warnings
+
+
 if _TEXTUAL_OK:
 
     # ── Modals ─────────────────────────────────────────────────────────────────
@@ -593,19 +834,26 @@ if _TEXTUAL_OK:
         _ConfigModal Label.hint   { color: $text-muted; margin-top: 1; }
         """
 
-        def __init__(self, is_template: bool) -> None:
+        def __init__(self, is_template: bool,
+                     preload_config: dict | None = None) -> None:
             super().__init__()
             self._is_template = is_template
+            # Optional: pre-fill defaults from an existing pattern (--load-pattern)
+            self._pc = preload_config or {}
 
         def compose(self) -> ComposeResult:
+            pc = self._pc
+            loaded = bool(pc)
             note = '  [yellow]⚑ template detected[/yellow]' if self._is_template else ''
+            if loaded:
+                note += '  [cyan]⟳ pattern loaded[/cyan]'
             with Vertical(id='dialog'):
                 yield Label(f'Wizard configuration{note}', classes='title')
                 yield Label('Scan direction', classes='sect')
                 yield Label('In which direction does the data read?', classes='desc')
                 yield Select(
                     options=[('Left → Right  (LR)', 'LR'), ('Top → Down  (TD)', 'TD')],
-                    value='LR', id='dir',
+                    value=pc.get('direction', 'LR'), id='dir',
                 )
                 yield Label('Template mode', classes='sect')
                 yield Label('Empty cells after labels are treated as variable slots',
@@ -621,7 +869,7 @@ if _TEXTUAL_OK:
                 yield Select(
                     options=[('No  (case-sensitive, default)', 'no'),
                               ('Yes — ignore case when matching', 'yes')],
-                    value='no', id='ic',
+                    value='yes' if pc.get('ignore_case') else 'no', id='ic',
                 )
                 yield Label('Trim whitespace globally', classes='sect')
                 yield Label('Strip leading/trailing spaces before matching all fields',
@@ -629,18 +877,18 @@ if _TEXTUAL_OK:
                 yield Select(
                     options=[('No  (default)', 'no'),
                               ('Yes — trim all fields', 'yes')],
-                    value='no', id='trim_ws',
+                    value='yes' if pc.get('trim_whitespace') else 'no', id='trim_ws',
                 )
                 yield Label('Currency symbol', classes='sect')
                 yield Label('Symbol used in currency-typed fields', classes='desc')
-                yield Input(value='€', id='cur', placeholder='€')
+                yield Input(value=pc.get('currency_sign', '€'), id='cur', placeholder='€')
                 yield Label('Global label match mode', classes='sect')
                 yield Label('How lbl: anchor patterns compare to cell text', classes='desc')
                 yield Select(
                     options=[('Literal (default) — exact text match', 'literal'),
                               ('Glob — wildcards with * and ?', 'glob'),
                               ('Regexp — full regular expression', 'regexp')],
-                    value='literal', id='lbl_match',
+                    value=pc.get('lbl_match') or 'literal', id='lbl_match',
                 )
                 yield Label('Global var match mode', classes='sect')
                 yield Label('Default matching mode for var: fields (column D pattern)',
@@ -649,12 +897,13 @@ if _TEXTUAL_OK:
                     options=[('Regexp (default) — full regular expression', 'regexp'),
                               ('Literal — exact text match', 'literal'),
                               ('Glob — wildcards with * and ?', 'glob')],
-                    value='regexp', id='var_match',
+                    value=pc.get('var_match') or 'regexp', id='var_match',
                 )
                 yield Label('Empty aliases', classes='sect')
                 yield Label('Comma-separated values treated as empty (e.g. N/A, -, n/a)',
                             classes='desc')
-                yield Input(value='', id='aliases', placeholder='N/A, -, n/a')
+                aliases_val = ', '.join(pc.get('empty_aliases', []))
+                yield Input(value=aliases_val, id='aliases', placeholder='N/A, -, n/a')
                 yield Label('ENTER = start  •  Tab = next field  •  ESC = cancel',
                             classes='hint')
 
@@ -1208,7 +1457,10 @@ if _TEXTUAL_OK:
             Binding('f12',    'show_log',           'Session log',     show=False),
         ]
 
-        def __init__(self, ws, state: WizardState, data_file: str) -> None:
+        def __init__(self, ws, state: WizardState, data_file: str,
+                     load_choices: dict | None = None,
+                     preload_config: dict | None = None,
+                     preload_warnings: list | None = None) -> None:
             super().__init__()
             self._ws        = ws
             self._state     = state   # used for direction / sheet_name only; pattern built at save
@@ -1218,8 +1470,12 @@ if _TEXTUAL_OK:
             self._max_col = ws.max_column or 1
 
             self._history  = _load_history(data_file)
-            # Primary state: all classifications live here
-            self._choices: dict[str, dict] = {}
+            # Primary state: all classifications live here.
+            # Seeded from --load-pattern when provided.
+            self._choices: dict[str, dict] = dict(load_choices) if load_choices else {}
+            # Config and warnings forwarded from _preload_from_pattern
+            self._preload_config: dict | None = preload_config
+            self._preload_warnings: list[str] = list(preload_warnings) if preload_warnings else []
             self._last_label_base: str | None = None
             self._current_prefix: str = ''  # dot-notation prefix for variable names
 
@@ -1343,7 +1599,10 @@ if _TEXTUAL_OK:
             fname = os.path.basename(self._data_file)
             self.title = f'grepxcel wizard — {fname} ({self._state.sheet_name})'
             is_tpl = _detect_template(self._ws, self._data_file)
-            self.push_screen(_ConfigModal(is_tpl), self._on_config_done)
+            self.push_screen(
+                _ConfigModal(is_tpl, preload_config=self._preload_config),
+                self._on_config_done,
+            )
 
         def _on_config_done(self, cfg: dict | None) -> None:
             if cfg is None:
@@ -1374,6 +1633,27 @@ if _TEXTUAL_OK:
                       f'  sheet={self._state.sheet_name}'
                       f'  cells={self._total_nonempty} non-empty')
             self._populate_table()
+            # ── Restyle cells pre-loaded from an existing pattern ──────────────
+            if self._choices:
+                for ref in self._choices:
+                    parts = _parse_cell_ref(ref)
+                    if parts:
+                        self._restyle_cell(*parts)
+                n = len(self._choices)
+                self._log('PRELOAD', f'{n} cells pre-populated from --load-pattern')
+            # ── Show any pre-load warnings as a non-blocking toast ─────────────
+            if self._preload_warnings:
+                # One toast per warning (Textual queues them)
+                for w in self._preload_warnings:
+                    self.notify(w, severity='warning', timeout=8)
+            elif self._choices:
+                n = len(self._choices)
+                self.notify(
+                    f'{n} field{"s" if n != 1 else ""} pre-loaded — '
+                    f'review highlights, adjust as needed, then press e to save.',
+                    severity='information',
+                    timeout=6,
+                )
             first = _find_next_nonempty(self._cells, self._ws, 0)
             if first is not None:
                 r, c = self._cells[first]
@@ -2931,6 +3211,7 @@ def run_wizard_tui(
     sheet: str | None = None,
     output: str | None = None,
     save_state: str | None = None,
+    load_pattern: str | None = None,
 ) -> int:
     """Run the TUI wizard.
 
@@ -2943,6 +3224,11 @@ def run_wizard_tui(
     ``save_state``
         If given, write the final WizardState to this JSON path after saving
         the pattern.  Enables replay, scripted testing, and ``--load-state``.
+
+    ``load_pattern``
+        Path to an existing pattern file (.xlsx or .csv).  Its field
+        definitions are matched against the data sheet and pre-populate the
+        TUI so the user can review and adjust rather than start from scratch.
     """
     if not _TEXTUAL_OK:
         return 2
@@ -2978,8 +3264,25 @@ def run_wizard_tui(
             f'pattern-{stem}.csv',
         )
 
+    # ── Pre-populate from existing pattern (optional) ─────────────────────────
+    preload_choices: dict = {}
+    preload_config: dict | None = None
+    preload_warnings: list[str] = []
+    if load_pattern:
+        preload_choices, preload_config, preload_warnings = _preload_from_pattern(
+            ws, load_pattern
+        )
+        if preload_warnings and not preload_choices:
+            # Pattern could not be parsed at all — abort with a clear message
+            for w in preload_warnings:
+                print(f'grepxcel wizard: {w}', file=sys.stderr)
+            return 1
+
     state  = WizardState(sheet_name=ws.title)
-    app    = WizardTUIApp(ws, state, data_file)
+    app    = WizardTUIApp(ws, state, data_file,
+                          load_choices=preload_choices,
+                          preload_config=preload_config,
+                          preload_warnings=preload_warnings)
     result = app.run()
 
     if result is None:

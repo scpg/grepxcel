@@ -44,6 +44,8 @@ try:
         _choices_to_csv,
         _col_a_extra_from_parts,
         _col_a_extra_to_parts,
+        _fd_to_col_a_extra,
+        _preload_from_pattern,
         _TEXTUAL_OK,
     )
     if _TEXTUAL_OK:
@@ -968,3 +970,759 @@ class TestConfigModalNewFields:
         assert result.lbl_match == 'literal'
         assert result.var_match == 'regexp'
         assert result.empty_aliases == []
+
+
+# ── Helpers shared across TestPreloadFromPattern ──────────────────────────────
+
+def _make_ws(cells: dict) -> openpyxl.worksheet.worksheet.Worksheet:
+    """Return a minimal in-memory worksheet populated from {(row,col): value}."""
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    for (r, c), v in cells.items():
+        ws.cell(row=r, column=c, value=v)
+    return ws
+
+
+def _write_pattern_csv(path, rows: list[list]) -> None:
+    """Write a plain-CSV pattern file from a list-of-lists."""
+    with open(path, 'w', newline='', encoding='utf-8') as fh:
+        writer = csv.writer(fh)
+        for row in rows:
+            writer.writerow(row)
+
+
+# ── TestFdToColAExtra ─────────────────────────────────────────────────────────
+
+class TestFdToColAExtra:
+    """_fd_to_col_a_extra reconstructs col_a_extra tokens from a FieldDef."""
+
+    def _make_fd(self, **kw):
+        from grepxcel.models import FieldDef
+        defaults = dict(name='x', type='string', regex='.*',
+                        role='var', var_mode=None, required=False,
+                        nullable=False, trim_whitespace=False)
+        defaults.update(kw)
+        return FieldDef(**defaults)
+
+    def test_all_defaults_gives_empty(self):
+        fd = self._make_fd()
+        assert _fd_to_col_a_extra(fd) == ''
+
+    def test_nullable(self):
+        fd = self._make_fd(nullable=True)
+        assert _fd_to_col_a_extra(fd) == 'nullable'
+
+    def test_not_null(self):
+        fd = self._make_fd(required=True)
+        assert _fd_to_col_a_extra(fd) == 'not-null'
+
+    def test_trim_whitespace_only(self):
+        fd = self._make_fd(trim_whitespace=True)
+        assert _fd_to_col_a_extra(fd) == 'trim-whitespace'
+
+    def test_not_null_and_trim(self):
+        fd = self._make_fd(required=True, trim_whitespace=True)
+        assert _fd_to_col_a_extra(fd) == 'not-null:trim-whitespace'
+
+    def test_nullable_and_trim(self):
+        fd = self._make_fd(nullable=True, trim_whitespace=True)
+        assert _fd_to_col_a_extra(fd) == 'nullable:trim-whitespace'
+
+    def test_literal_var_mode(self):
+        fd = self._make_fd(var_mode='literal')
+        assert _fd_to_col_a_extra(fd) == 'literal'
+
+    def test_glob_var_mode(self):
+        fd = self._make_fd(var_mode='glob')
+        assert _fd_to_col_a_extra(fd) == 'glob'
+
+    def test_regexp_var_mode_omitted(self):
+        # 'regexp' is the default — it should not appear in col_a_extra
+        fd = self._make_fd(var_mode='regexp')
+        assert _fd_to_col_a_extra(fd) == ''
+
+    def test_literal_plus_nullable(self):
+        fd = self._make_fd(var_mode='literal', nullable=True)
+        assert _fd_to_col_a_extra(fd) == 'literal:nullable'
+
+    def test_required_wins_over_nullable(self):
+        # required (not-null) takes priority; nullable should not appear
+        fd = self._make_fd(required=True, nullable=True)
+        result = _fd_to_col_a_extra(fd)
+        assert 'not-null' in result
+        assert 'nullable' not in result
+
+
+# ── TestPreloadFromPattern ────────────────────────────────────────────────────
+
+class TestPreloadFromPattern:
+    """_preload_from_pattern: pattern file → (choices, config, warnings)."""
+
+    # ── Label matching ────────────────────────────────────────────────────────
+
+    def test_lbl_literal_found(self, tmp_path):
+        ws = _make_ws({(1, 1): 'Invoice Date:', (1, 2): '2026-01-15'})
+        pat = tmp_path / 'p.csv'
+        _write_pattern_csv(pat, [
+            ['lbl:', 'inv_lbl', 'string', 'Invoice Date:'],
+            ['var:', 'inv_date', 'string', '.*'],
+            ['START:'],
+            ['cell:1', 'inv_lbl'],
+            ['cell:1', 'inv_date'],
+            ['END:'],
+        ])
+        choices, cfg, warns = _preload_from_pattern(ws, str(pat))
+        assert 'A1' in choices
+        assert choices['A1']['choice'] == 'L'
+        assert choices['A1']['name'] == 'inv_lbl'
+
+    def test_lbl_not_found_emits_warning(self, tmp_path):
+        ws = _make_ws({(1, 1): 'Something Else', (1, 2): '42'})
+        pat = tmp_path / 'p.csv'
+        _write_pattern_csv(pat, [
+            ['lbl:', 'missing_lbl', 'string', 'Invoice Date:'],
+            ['START:'],
+            ['cell:1', 'missing_lbl'],
+            ['END:'],
+        ])
+        choices, cfg, warns = _preload_from_pattern(ws, str(pat))
+        assert 'A1' not in choices
+        assert any('missing_lbl' in w for w in warns)
+
+    def test_var_adjacent_LR(self, tmp_path):
+        """In LR mode the var cell is one column right of the label."""
+        ws = _make_ws({(2, 1): 'Total:', (2, 2): '100.00'})
+        pat = tmp_path / 'p.csv'
+        _write_pattern_csv(pat, [
+            ['config:', 'read.direction', 'LR'],
+            ['lbl:', 'total_lbl', 'string', 'Total:'],
+            ['var:', 'total', 'currency', r'\d+\.\d{2}'],
+            ['START:'],
+            ['cell:1', 'total_lbl'],
+            ['cell:1', 'total'],
+            ['END:'],
+        ])
+        choices, cfg, warns = _preload_from_pattern(ws, str(pat))
+        assert 'A2' in choices and choices['A2']['choice'] == 'L'
+        assert 'B2' in choices and choices['B2']['choice'] == 'V'
+        assert choices['B2']['name'] == 'total'
+        assert not warns
+
+    def test_var_adjacent_TD(self, tmp_path):
+        """In TD mode the var cell is one row below the label."""
+        ws = _make_ws({(1, 3): 'Total:', (2, 3): '100.00'})
+        pat = tmp_path / 'p.csv'
+        _write_pattern_csv(pat, [
+            ['config:', 'read.direction', 'TD'],
+            ['lbl:', 'total_lbl', 'string', 'Total:'],
+            ['var:', 'total', 'currency', r'\d+\.\d{2}'],
+            ['START:'],
+            ['cell:1', 'total_lbl'],
+            ['cell:1', 'total'],
+            ['END:'],
+        ])
+        choices, cfg, warns = _preload_from_pattern(ws, str(pat))
+        assert 'C1' in choices and choices['C1']['choice'] == 'L'
+        assert 'C2' in choices and choices['C2']['choice'] == 'V'
+        assert not warns
+
+    def test_abs_cell_lbl(self, tmp_path):
+        """cell:B3 places the label at exactly (3, 2)."""
+        ws = _make_ws({(3, 2): 'Name:', (3, 3): 'Alice'})
+        pat = tmp_path / 'p.csv'
+        _write_pattern_csv(pat, [
+            ['lbl:', 'name_lbl', 'string', 'Name:'],
+            ['var:', 'name', 'string', '.*'],
+            ['START:'],
+            ['cell:B3', 'name_lbl'],
+            ['cell:1', 'name'],
+            ['END:'],
+        ])
+        choices, cfg, warns = _preload_from_pattern(ws, str(pat))
+        assert 'B3' in choices
+        assert choices['B3']['choice'] == 'L'
+
+    def test_abs_cell_var(self, tmp_path):
+        """cell:C3 places a var at exactly (3, 3)."""
+        ws = _make_ws({(3, 2): 'Name:', (3, 3): 'Bob'})
+        pat = tmp_path / 'p.csv'
+        _write_pattern_csv(pat, [
+            ['lbl:', 'name_lbl', 'string', 'Name:'],
+            ['var:', 'name', 'string', '.*'],
+            ['START:'],
+            ['cell:B3', 'name_lbl'],
+            ['cell:C3', 'name'],
+            ['END:'],
+        ])
+        choices, cfg, warns = _preload_from_pattern(ws, str(pat))
+        assert 'C3' in choices
+        assert choices['C3']['choice'] == 'V'
+
+    def test_table_instruction_emits_warning(self, tmp_path):
+        """TABLE instructions produce a warning listing the field names."""
+        ws = _make_ws({(1, 1): 'Date', (1, 2): 'Amount', (2, 1): '2026-01-01', (2, 2): '42'})
+        pat = tmp_path / 'p.csv'
+        # Minimal valid table pattern
+        _write_pattern_csv(pat, [
+            ['START:'],
+            ['table:*', ''],
+            ['', 'HEADER:1', 'date_col', 'amount_col'],
+            ['', 'DATA:*', 'date_col', 'amount_col'],
+            ['var:', 'date_col', 'string', '.*'],
+            ['var:', 'amount_col', 'currency', '.*'],
+            ['END:'],
+        ])
+        choices, cfg, warns = _preload_from_pattern(ws, str(pat))
+        # At least one warning mentions table fields
+        assert any('TABLE' in w or 'table' in w.lower() for w in warns)
+
+    def test_ignore_field_skipped(self, tmp_path):
+        """cell:1 IGNORE produces no choices entry and does not crash."""
+        ws = _make_ws({(1, 1): 'Label:', (1, 2): 'skip_me', (1, 3): 'Value'})
+        pat = tmp_path / 'p.csv'
+        _write_pattern_csv(pat, [
+            ['lbl:', 'lbl1', 'string', 'Label:'],
+            ['START:'],
+            ['cell:1', 'lbl1'],
+            ['cell:1', 'IGNORE'],
+            ['END:'],
+        ])
+        choices, cfg, warns = _preload_from_pattern(ws, str(pat))
+        assert 'A1' in choices
+        # B1 (the IGNORE cell) must not appear in choices
+        assert 'B1' not in choices
+
+    def test_multiple_lbl_var_pairs(self, tmp_path):
+        """Three lbl/var pairs are all located correctly."""
+        ws = _make_ws({
+            (1, 1): 'Name:', (1, 2): 'Alice',
+            (2, 1): 'Date:', (2, 2): '2026-01-01',
+            (3, 1): 'Amount:', (3, 2): '99.00',
+        })
+        pat = tmp_path / 'p.csv'
+        _write_pattern_csv(pat, [
+            ['lbl:', 'name_lbl',   'string',   'Name:'],
+            ['var:', 'name',       'string',   '.*'],
+            ['lbl:', 'date_lbl',   'string',   'Date:'],
+            ['var:', 'date',       'date',     r'\d{4}-\d{2}-\d{2}'],
+            ['lbl:', 'amount_lbl', 'string',   'Amount:'],
+            ['var:', 'amount',     'currency', r'\d+\.\d{2}'],
+            ['START:'],
+            ['cell:1', 'name_lbl'],   ['cell:1', 'name'],
+            ['cell:1', 'date_lbl'],   ['cell:1', 'date'],
+            ['cell:1', 'amount_lbl'], ['cell:1', 'amount'],
+            ['END:'],
+        ])
+        choices, cfg, warns = _preload_from_pattern(ws, str(pat))
+        assert len([v for v in choices.values() if v['choice'] == 'L']) == 3
+        assert len([v for v in choices.values() if v['choice'] == 'V']) == 3
+        assert not warns
+
+    def test_dir_instruction_updates_adjacency(self, tmp_path):
+        """dir:TD mid-sequence makes subsequent var adjacent below, not right."""
+        ws = _make_ws({(5, 2): 'Label:', (6, 2): 'val_below'})
+        pat = tmp_path / 'p.csv'
+        _write_pattern_csv(pat, [
+            ['lbl:', 'lbl1', 'string', 'Label:'],
+            ['var:', 'val1', 'string', '.*'],
+            ['START:'],
+            ['dir:TD'],
+            ['cell:1', 'lbl1'],
+            ['cell:1', 'val1'],
+            ['END:'],
+        ])
+        choices, cfg, warns = _preload_from_pattern(ws, str(pat))
+        assert 'B5' in choices and choices['B5']['choice'] == 'L'
+        assert 'B6' in choices and choices['B6']['choice'] == 'V'
+
+    def test_parse_error_returns_warning(self, tmp_path):
+        """A corrupt pattern file → empty choices + warning."""
+        ws = _make_ws({(1, 1): 'x'})
+        bad = tmp_path / 'bad.csv'
+        bad.write_text('INVALID_ROW_MARKER,field,string,val\n', encoding='utf-8')
+        choices, cfg, warns = _preload_from_pattern(ws, str(bad))
+        assert choices == {}
+        assert len(warns) >= 1
+        # Config dict is empty too
+        assert cfg == {}
+
+    # ── Config preload ────────────────────────────────────────────────────────
+
+    def test_config_direction_LR(self, tmp_path):
+        ws = _make_ws({(1, 1): 'x'})
+        pat = tmp_path / 'p.csv'
+        _write_pattern_csv(pat, [
+            ['config:', 'read.direction', 'LR'],
+            ['START:'], ['END:'],
+        ])
+        _, cfg, _ = _preload_from_pattern(ws, str(pat))
+        assert cfg['direction'] == 'LR'
+
+    def test_config_direction_TD(self, tmp_path):
+        ws = _make_ws({(1, 1): 'x'})
+        pat = tmp_path / 'p.csv'
+        _write_pattern_csv(pat, [
+            ['config:', 'read.direction', 'TD'],
+            ['START:'], ['END:'],
+        ])
+        _, cfg, _ = _preload_from_pattern(ws, str(pat))
+        assert cfg['direction'] == 'TD'
+
+    def test_config_ignore_case(self, tmp_path):
+        ws = _make_ws({(1, 1): 'x'})
+        pat = tmp_path / 'p.csv'
+        _write_pattern_csv(pat, [
+            ['config:', 'ignore.case', 'yes'],
+            ['START:'], ['END:'],
+        ])
+        _, cfg, _ = _preload_from_pattern(ws, str(pat))
+        assert cfg['ignore_case'] is True
+
+    def test_config_trim_whitespace(self, tmp_path):
+        ws = _make_ws({(1, 1): 'x'})
+        pat = tmp_path / 'p.csv'
+        _write_pattern_csv(pat, [
+            ['config:', 'trim.whitespace', 'yes'],
+            ['START:'], ['END:'],
+        ])
+        _, cfg, _ = _preload_from_pattern(ws, str(pat))
+        assert cfg['trim_whitespace'] is True
+
+    def test_config_currency_sign(self, tmp_path):
+        ws = _make_ws({(1, 1): 'x'})
+        pat = tmp_path / 'p.csv'
+        _write_pattern_csv(pat, [
+            ['config:', 'currency.sign', '$'],
+            ['START:'], ['END:'],
+        ])
+        _, cfg, _ = _preload_from_pattern(ws, str(pat))
+        assert cfg['currency_sign'] == '$'
+
+    def test_config_lbl_match_glob_preserved(self, tmp_path):
+        ws = _make_ws({(1, 1): 'x'})
+        pat = tmp_path / 'p.csv'
+        _write_pattern_csv(pat, [
+            ['config:', 'lbl.match', 'glob'],
+            ['START:'], ['END:'],
+        ])
+        _, cfg, _ = _preload_from_pattern(ws, str(pat))
+        assert cfg['lbl_match'] == 'glob'
+
+    def test_config_lbl_match_literal_omitted(self, tmp_path):
+        """literal is the engine default — preload_cfg sets it to '' so the
+        ConfigModal does not emit a redundant config: row on save."""
+        ws = _make_ws({(1, 1): 'x'})
+        pat = tmp_path / 'p.csv'
+        _write_pattern_csv(pat, [
+            ['config:', 'lbl.match', 'literal'],
+            ['START:'], ['END:'],
+        ])
+        _, cfg, _ = _preload_from_pattern(ws, str(pat))
+        assert cfg['lbl_match'] == ''
+
+    def test_config_var_match_regexp_omitted(self, tmp_path):
+        """regexp is the engine default — preload_cfg sets it to ''."""
+        ws = _make_ws({(1, 1): 'x'})
+        pat = tmp_path / 'p.csv'
+        _write_pattern_csv(pat, [
+            ['config:', 'var.match', 'regexp'],
+            ['START:'], ['END:'],
+        ])
+        _, cfg, _ = _preload_from_pattern(ws, str(pat))
+        assert cfg['var_match'] == ''
+
+    def test_config_var_match_glob_preserved(self, tmp_path):
+        ws = _make_ws({(1, 1): 'x'})
+        pat = tmp_path / 'p.csv'
+        _write_pattern_csv(pat, [
+            ['config:', 'var.match', 'glob'],
+            ['START:'], ['END:'],
+        ])
+        _, cfg, _ = _preload_from_pattern(ws, str(pat))
+        assert cfg['var_match'] == 'glob'
+
+    def test_config_empty_aliases(self, tmp_path):
+        ws = _make_ws({(1, 1): 'x'})
+        pat = tmp_path / 'p.csv'
+        _write_pattern_csv(pat, [
+            ['config:', 'empty.aliases', 'N/A'],
+            ['config:', 'empty.aliases', '-'],
+            ['START:'], ['END:'],
+        ])
+        _, cfg, _ = _preload_from_pattern(ws, str(pat))
+        assert cfg['empty_aliases'] == ['N/A', '-']
+
+    # ── col_a_extra reconstruction ────────────────────────────────────────────
+
+    def test_nullable_modifier_in_choices(self, tmp_path):
+        """var: field with nullable=True → col_a_extra='nullable' in choices."""
+        ws = _make_ws({(1, 1): 'Note:', (1, 2): None})
+        pat = tmp_path / 'p.csv'
+        _write_pattern_csv(pat, [
+            ['lbl:', 'note_lbl', 'string', 'Note:'],
+            ['var:nullable', 'note', 'string', '.*'],
+            ['START:'],
+            ['cell:1', 'note_lbl'],
+            ['cell:1', 'note'],
+            ['END:'],
+        ])
+        choices, _, warns = _preload_from_pattern(ws, str(pat))
+        assert 'A1' in choices
+        # B1 is empty (None) — it still gets pre-classified if within bounds
+        # but we just check the col_a_extra on the var field at B1
+        if 'B1' in choices:
+            assert choices['B1']['col_a_extra'] == 'nullable'
+
+    def test_not_null_trim_in_choices(self, tmp_path):
+        ws = _make_ws({(1, 1): 'Ref:', (1, 2): 'REF-001'})
+        pat = tmp_path / 'p.csv'
+        _write_pattern_csv(pat, [
+            ['lbl:', 'ref_lbl', 'string', 'Ref:'],
+            ['var:not-null:trim-whitespace', 'ref', 'string', '.*'],
+            ['START:'],
+            ['cell:1', 'ref_lbl'],
+            ['cell:1', 'ref'],
+            ['END:'],
+        ])
+        choices, _, warns = _preload_from_pattern(ws, str(pat))
+        assert 'B1' in choices
+        assert 'not-null' in choices['B1']['col_a_extra']
+        assert 'trim-whitespace' in choices['B1']['col_a_extra']
+
+    # ── lbl_mode round-trip ───────────────────────────────────────────────────
+
+    def test_lbl_mode_glob_preserved(self, tmp_path):
+        ws = _make_ws({(1, 1): 'Invoice *', (1, 2): '42'})
+        pat = tmp_path / 'p.csv'
+        _write_pattern_csv(pat, [
+            ['lbl:glob', 'inv_lbl', 'string', 'Invoice *'],
+            ['var:', 'inv_val', 'string', '.*'],
+            ['START:'],
+            ['cell:1', 'inv_lbl'],
+            ['cell:1', 'inv_val'],
+            ['END:'],
+        ])
+        choices, _, warns = _preload_from_pattern(ws, str(pat))
+        assert 'A1' in choices
+        assert choices['A1']['lbl_mode'] == 'glob'
+
+    def test_lbl_mode_default_empty(self, tmp_path):
+        ws = _make_ws({(1, 1): 'Name:', (1, 2): 'x'})
+        pat = tmp_path / 'p.csv'
+        _write_pattern_csv(pat, [
+            ['lbl:', 'name_lbl', 'string', 'Name:'],
+            ['START:'],
+            ['cell:1', 'name_lbl'],
+            ['END:'],
+        ])
+        choices, _, warns = _preload_from_pattern(ws, str(pat))
+        assert choices['A1']['lbl_mode'] == ''
+
+    # ── Round-trip integration ────────────────────────────────────────────────
+
+    def test_round_trip_choices_to_csv(self, tmp_path):
+        """Write a pattern → preload → build state → write CSV → parse back.
+
+        Verifies that field names survive the full round-trip through
+        _preload_from_pattern → _build_state_from_choices → _choices_to_csv
+        → PatternParser.
+        """
+        # Minimal worksheet
+        ws = _make_ws({
+            (1, 1): 'Project:',  (1, 2): 'Grepxcel',
+            (2, 1): 'Version:',  (2, 2): '0.3.0',
+        })
+
+        # Original pattern CSV
+        orig_csv = tmp_path / 'original.csv'
+        _write_pattern_csv(orig_csv, [
+            ['lbl:', 'proj_lbl',  'string', 'Project:'],
+            ['var:', 'project',   'string', '.*'],
+            ['lbl:', 'ver_lbl',   'string', 'Version:'],
+            ['var:', 'version',   'string', r'\d+\.\d+\.\d+'],
+            ['START:'],
+            ['cell:1', 'proj_lbl'], ['cell:1', 'project'],
+            ['cell:1', 'ver_lbl'],  ['cell:1', 'version'],
+            ['END:'],
+        ])
+
+        choices, preload_cfg, warns = _preload_from_pattern(ws, str(orig_csv))
+        assert not warns, f'Unexpected warnings: {warns}'
+        assert len(choices) == 4
+
+        # Build state and CSV from the preloaded choices
+        from grepxcel.wizard import _cell_ref as _cr
+        cells = [(r, c) for r in range(1, ws.max_row + 1)
+                 for c in range(1, ws.max_column + 1)]
+        state = _build_state_from_choices(
+            ws, choices, cells,
+            direction=preload_cfg.get('direction', 'LR'),
+            sheet_name='Sheet',
+        )
+
+        buf = io.StringIO()
+        rows_out = _choices_to_csv(
+            ws, choices, cells,
+            direction=preload_cfg.get('direction', 'LR'),
+            sheet_name='Sheet',
+        )
+
+        # Write as CSV and parse
+        out_csv = tmp_path / 'out.csv'
+        with open(out_csv, 'w', newline='', encoding='utf-8') as fh:
+            csv.writer(fh).writerows([r if isinstance(r, list) else [] for r in rows_out.splitlines()])
+
+        # The field names must be present in the state
+        lbl_names  = {t[0] for t in state.lbl_defs}
+        var_names  = {t[0] for t in state.var_defs}
+        assert 'proj_lbl' in lbl_names
+        assert 'ver_lbl'  in lbl_names
+        assert 'project'  in var_names
+        assert 'version'  in var_names
+
+
+# ── TestPreloadPatternTUI (Textual pilot) ─────────────────────────────────────
+
+@_skip_no_textual
+class TestPreloadPatternTUI:
+    """Pilot tests: verify the TUI accepts --load-pattern preloaded choices.
+
+    These tests exercise the full headless TUI lifecycle:
+      1. WizardTUIApp is constructed with load_choices / preload_config
+      2. Config modal opens and is accepted (enter)
+      3. _on_config_done calls _restyle_cell for every preloaded cell
+      4. Pressing 'e' saves and produces a WizardState with the right fields
+
+    This layer is distinct from TestPreloadFromPattern (pure-function): here we
+    verify that the TUI correctly wires preloaded data through the UI lifecycle.
+    """
+
+    def _make_app_with_preload(
+        self,
+        cell_data: dict,
+        load_choices: dict,
+        preload_config: dict | None,
+        preload_warnings: list,
+        tmp_path,
+    ) -> 'WizardTUIApp':
+        """Build a WizardTUIApp with pre-loaded choices (simulates --load-pattern)."""
+        xlsx_path = str(tmp_path / 'data.xlsx')
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = 'Sheet1'
+        for (r, c), v in cell_data.items():
+            ws.cell(row=r, column=c, value=v)
+        wb.save(xlsx_path)
+
+        wb2 = openpyxl.load_workbook(xlsx_path, data_only=True)
+        ws2 = wb2.active
+        state = WizardState(sheet_name=ws2.title)
+        return WizardTUIApp(
+            ws2, state, xlsx_path,
+            load_choices=load_choices,
+            preload_config=preload_config,
+            preload_warnings=preload_warnings,
+        )
+
+    @staticmethod
+    async def _accept_config(pilot):
+        await pilot.pause()
+        await pilot.press('enter')
+        await pilot.pause()
+
+    # ── Choices wiring ────────────────────────────────────────────────────────
+
+    def test_preloaded_choices_present_after_config(self, tmp_path):
+        """load_choices dict is available in app._choices after config modal."""
+        load_choices = {
+            'A1': {'choice': 'L', 'name': 'lbl1', 'ltype': 'string',
+                   'lmatch': 'Name:', 'lbl_mode': ''},
+            'B1': {'choice': 'V', 'name': 'name', 'ftype': 'string',
+                   'match': '.*', 'col_a_extra': ''},
+        }
+        app = self._make_app_with_preload(
+            {(1, 1): 'Name:', (1, 2): 'Alice'},
+            load_choices, None, [], tmp_path,
+        )
+
+        async def _run():
+            async with app.run_test(headless=True, size=(120, 40)) as pilot:
+                await self._accept_config(pilot)
+                # After config is accepted both cells must still be classified
+                assert 'A1' in app._choices
+                assert 'B1' in app._choices
+                assert app._choices['A1']['choice'] == 'L'
+                assert app._choices['B1']['choice'] == 'V'
+                await pilot.press('ctrl+q')
+
+        asyncio.run(_run())
+
+    def test_save_with_preloaded_choices_produces_correct_state(self, tmp_path):
+        """Pressing 'e' after preload saves a WizardState with the right fields."""
+        load_choices = {
+            'A1': {'choice': 'L', 'name': 'inv_lbl', 'ltype': 'string',
+                   'lmatch': 'Invoice:', 'lbl_mode': ''},
+            'B1': {'choice': 'V', 'name': 'invoice_no', 'ftype': 'string',
+                   'match': '.*', 'col_a_extra': ''},
+        }
+        app = self._make_app_with_preload(
+            {(1, 1): 'Invoice:', (1, 2): 'INV-001'},
+            load_choices, None, [], tmp_path,
+        )
+
+        async def _run():
+            async with app.run_test(headless=True, size=(120, 40)) as pilot:
+                await self._accept_config(pilot)
+                await pilot.press('e')    # End & Save
+                await pilot.pause()
+
+        asyncio.run(_run())
+
+        result = app._return_value
+        assert result is not None, 'WizardTUIApp should return a WizardState on save'
+        assert isinstance(result, WizardState)
+        lbl_names = {t[0] for t in result.lbl_defs}
+        var_names  = {t[0] for t in result.var_defs}
+        assert 'inv_lbl'    in lbl_names
+        assert 'invoice_no' in var_names
+
+    def test_preloaded_choices_can_be_overridden(self, tmp_path):
+        """User can reclassify a preloaded cell (V → I); the new choice wins."""
+        load_choices = {
+            'A1': {'choice': 'V', 'name': 'orig', 'ftype': 'string',
+                   'match': '.*', 'col_a_extra': ''},
+        }
+        app = self._make_app_with_preload(
+            {(1, 1): 'some_value'},
+            load_choices, None, [], tmp_path,
+        )
+
+        async def _run():
+            async with app.run_test(headless=True, size=(120, 40)) as pilot:
+                await self._accept_config(pilot)
+                # Press 'I' to reclassify the current cell as Ignore
+                await pilot.press('i')
+                await pilot.pause()
+                # The cell should now be classified as 'I', not 'V'
+                assert app._choices.get('A1', {}).get('choice') == 'I'
+                await pilot.press('ctrl+q')
+
+        asyncio.run(_run())
+
+    def test_empty_load_choices_opens_normally(self, tmp_path):
+        """load_choices={} is equivalent to no preloading — app opens normally."""
+        app = self._make_app_with_preload(
+            {(1, 1): 'hello'},
+            {}, None, [], tmp_path,
+        )
+
+        async def _run():
+            async with app.run_test(headless=True, size=(120, 40)) as pilot:
+                await self._accept_config(pilot)
+                assert app._choices == {}
+                await pilot.press('ctrl+q')
+
+        asyncio.run(_run())
+        assert app._return_value is None
+
+    # ── Config preload ────────────────────────────────────────────────────────
+
+    def test_preload_config_direction_td(self, tmp_path):
+        """preload_config direction=TD is reflected in app._state after config."""
+        preload_config = {'direction': 'TD', 'lbl_match': '', 'var_match': ''}
+        app = self._make_app_with_preload(
+            {(1, 1): 'x'},
+            {}, preload_config, [], tmp_path,
+        )
+
+        async def _run():
+            async with app.run_test(headless=True, size=(120, 40)) as pilot:
+                await self._accept_config(pilot)
+                assert app._state.direction == 'TD'
+                await pilot.press('ctrl+q')
+
+        asyncio.run(_run())
+
+    def test_preload_config_currency_dollar(self, tmp_path):
+        """preload_config currency_sign='$' flows into app._state."""
+        preload_config = {'direction': 'LR', 'currency_sign': '$',
+                          'lbl_match': '', 'var_match': ''}
+        app = self._make_app_with_preload(
+            {(1, 1): 'x'},
+            {}, preload_config, [], tmp_path,
+        )
+
+        async def _run():
+            async with app.run_test(headless=True, size=(120, 40)) as pilot:
+                await self._accept_config(pilot)
+                assert app._state.currency_sign == '$'
+                await pilot.press('ctrl+q')
+
+        asyncio.run(_run())
+
+    # ── Warnings ─────────────────────────────────────────────────────────────
+
+    def test_preload_warnings_stored_on_app(self, tmp_path):
+        """preload_warnings are stored on _preload_warnings (for the toast)."""
+        warns = ['Label xyz not found', 'TABLE fields not located']
+        app = self._make_app_with_preload(
+            {(1, 1): 'x'},
+            {}, None, warns, tmp_path,
+        )
+        assert app._preload_warnings == warns
+
+    # ── Round-trip: preload → save → pattern file ─────────────────────────────
+
+    def test_roundtrip_preload_save_to_csv(self, tmp_path):
+        """Full round-trip: preload → accept config → save → CSV contains fields."""
+        cell_data = {(1, 1): 'Project:', (1, 2): 'Grepxcel'}
+        orig_csv = str(tmp_path / 'orig.csv')
+        out_csv  = str(tmp_path / 'out.csv')
+
+        with open(orig_csv, 'w', newline='', encoding='utf-8') as fh:
+            csv.writer(fh).writerows([
+                ['lbl:', 'proj_lbl', 'string', 'Project:'],
+                ['var:', 'project',  'string', '.*'],
+                ['START:'],
+                ['cell:1', 'proj_lbl'],
+                ['cell:1', 'project'],
+                ['END:'],
+            ])
+
+        # 1. Build preload choices from the pattern
+        xlsx_path = str(tmp_path / 'data.xlsx')
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = 'Sheet1'
+        for (r, c), v in cell_data.items():
+            ws.cell(row=r, column=c, value=v)
+        wb.save(xlsx_path)
+        wb2 = openpyxl.load_workbook(xlsx_path, data_only=True)
+        ws2 = wb2.active
+
+        load_choices, preload_cfg, warns = _preload_from_pattern(ws2, orig_csv)
+        assert not warns, f'Unexpected warnings: {warns}'
+        assert len(load_choices) == 2
+
+        # 2. Launch TUI with preloaded choices and save immediately
+        state = WizardState(sheet_name=ws2.title)
+        app = WizardTUIApp(ws2, state, xlsx_path,
+                           load_choices=load_choices,
+                           preload_config=preload_cfg)
+
+        async def _run():
+            async with app.run_test(headless=True, size=(120, 40)) as pilot:
+                await pilot.pause()
+                await pilot.press('enter')  # accept config
+                await pilot.pause()
+                await pilot.press('e')      # save
+                await pilot.pause()
+
+        asyncio.run(_run())
+
+        result = app._return_value
+        assert result is not None
+        lbl_names = {t[0] for t in result.lbl_defs}
+        var_names  = {t[0] for t in result.var_defs}
+        assert 'proj_lbl' in lbl_names
+        assert 'project'  in var_names

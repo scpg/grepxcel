@@ -802,6 +802,7 @@ def run_wizard(
     no_tui: bool = False,
     load_state: str | None = None,
     save_state: str | None = None,
+    load_pattern: str | None = None,
 ) -> int:
     """Interactive wizard: loads *data_file*, walks cells, writes a CSV pattern.
 
@@ -815,6 +816,11 @@ def run_wizard(
     ``save_state``
         Path to write the wizard session state as JSON after the pattern is saved.
         Enables replay and scripted testing.
+    ``load_pattern``
+        Path to an existing pattern file (.xlsx or .csv).  Pre-populates the
+        TUI with field classifications from that pattern so the user can review
+        and adjust rather than start from scratch.  Ignored in ``--no-tui``
+        / sequential mode.
     """
     # ── load-state mode: JSON → pattern, no interactive walk ─────────────────
     if load_state:
@@ -841,7 +847,8 @@ def run_wizard(
         try:
             from .wizard_tui import run_wizard_tui
             rc = run_wizard_tui(data_file, sheet=sheet, output=output,
-                                save_state=save_state)
+                                save_state=save_state,
+                                load_pattern=load_pattern)
             if rc != 2:          # 2 = textual not installed → fall through
                 return rc
         except Exception:
