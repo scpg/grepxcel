@@ -179,9 +179,19 @@ class WizardState:
     ignore_case: bool = False
     currency_sign: str = '€'
     sheet_name: str | None = None
-    lbl_defs: list[tuple[str, str, str]] = field(default_factory=list)
-    var_defs: list[tuple[str, str, str]] = field(default_factory=list)
+    # Each lbl_def is a 4-tuple: (name, type, match, lbl_mode)
+    # lbl_mode: '' = use global lbl.match; 'glob' or 'regexp' = per-field override
+    lbl_defs: list[tuple] = field(default_factory=list)
+    # Each var_def is a 4-tuple: (name, type, match, col_a_extra)
+    # col_a_extra: '' = bare var:; otherwise colon-joined modifier tokens,
+    # e.g. 'nullable', 'not-null:trim-whitespace', 'literal', 'glob:nullable'
+    var_defs: list[tuple] = field(default_factory=list)
     body_rows: list[list[str]] = field(default_factory=list)
+    # ── New global config fields ───────────────────────────────────────────
+    trim_whitespace: bool = False      # config: trim.whitespace yes
+    lbl_match: str = ''               # config: lbl.match ('' = omit / use default)
+    var_match: str = ''               # config: var.match ('' = omit / use default)
+    empty_aliases: list[str] = field(default_factory=list)  # config: empty.aliases
 
     def to_dict(self) -> dict:
         """Serialise to a plain JSON-safe dict.  Tuples become lists."""
@@ -199,6 +209,10 @@ class WizardState:
             lbl_defs=[tuple(t) for t in d.get('lbl_defs', [])],
             var_defs=[tuple(t) for t in d.get('var_defs', [])],
             body_rows=[list(r) for r in d.get('body_rows', [])],
+            trim_whitespace=d.get('trim_whitespace', False),
+            lbl_match=d.get('lbl_match', ''),
+            var_match=d.get('var_match', ''),
+            empty_aliases=list(d.get('empty_aliases', [])),
         )
 
 
@@ -369,7 +383,7 @@ def _handle_field_label(state: WizardState, value: Any) -> str:
     if not name:
         name = default_name
     ltype = _var_type_from_proposal(_propose_type(value))
-    state.lbl_defs.append((name, ltype, str(value) if value is not None else ''))
+    state.lbl_defs.append((name, ltype, str(value) if value is not None else '', ''))
     state.body_rows.append(['cell:1', name])
     # Derive base for lookahead: strip _label suffix if present
     base = name[:-6] if name.endswith('_label') else name
@@ -386,7 +400,7 @@ def _handle_control_label(state: WizardState, value: Any) -> None:
     if not name:
         name = slug
     ltype = _var_type_from_proposal(_propose_type(value))
-    state.lbl_defs.append((name, ltype, str(value) if value is not None else ''))
+    state.lbl_defs.append((name, ltype, str(value) if value is not None else '', ''))
     state.body_rows.append(['cell:1', name])
 
 
@@ -405,7 +419,7 @@ def _handle_variable(state: WizardState, value: Any, proposal: str,
     type_default = _var_type_from_proposal(proposal)
     ftype = _ask(_c('  Type', _C.CYAN), type_default) or type_default
     match = _ask(_c('  Match pattern', _C.CYAN), '.*') or '.*'
-    state.var_defs.append((name, ftype, match))
+    state.var_defs.append((name, ftype, match, ''))
     state.body_rows.append(['cell:1', name])
 
 
@@ -621,8 +635,8 @@ def _run_table_subflow(ws, state: WizardState,
     print(f'\n  {_c(f"--- Table columns (header row {start_row}) ---", _C.DIM)}')
     header_lbl_names: list[str] = []
     header_var_names: list[str] = []
-    new_lbl_defs: list[tuple[str, str, str]] = []
-    new_var_defs: list[tuple[str, str, str]] = []
+    new_lbl_defs: list[tuple] = []
+    new_var_defs: list[tuple] = []
     max_col = ws.max_column or 1
 
     for col in range(start_col, max_col + 1):
@@ -660,8 +674,8 @@ def _run_table_subflow(ws, state: WizardState,
         var_type = _ask(_c('    Type', _C.CYAN), type_proposal) or type_proposal
         var_match = _ask(_c('    Match pattern', _C.CYAN), '.*') or '.*'
 
-        new_lbl_defs.append((col_lbl, 'string', str(value)))
-        new_var_defs.append((var_name, var_type, var_match))
+        new_lbl_defs.append((col_lbl, 'string', str(value), ''))
+        new_var_defs.append((var_name, var_type, var_match, ''))
         header_lbl_names.append(col_lbl)
         header_var_names.append(var_name)
 
@@ -695,7 +709,7 @@ def _run_table_subflow(ws, state: WizardState,
                     default_name,
                 )
                 footer_fields.append(name)
-                new_var_defs.append((name, 'string', '.*'))
+                new_var_defs.append((name, 'string', '.*', ''))
         footer_row_vals = footer_fields
 
     state.lbl_defs.extend(new_lbl_defs)
@@ -728,11 +742,25 @@ def _pattern_rows(state: WizardState) -> list[list]:
     rows.append(['config:', 'read.direction', state.direction])
     if state.ignore_case:
         rows.append(['config:', 'ignore.case', 'yes'])
+    if state.trim_whitespace:
+        rows.append(['config:', 'trim.whitespace', 'yes'])
     rows.append(['config:', 'currency.sign', state.currency_sign])
-    for name, ltype, value in state.lbl_defs:
-        rows.append(['lbl:', name, ltype, value])
-    for name, vtype, match in state.var_defs:
-        rows.append(['var:', name, vtype, match])
+    if state.lbl_match:
+        rows.append(['config:', 'lbl.match', state.lbl_match])
+    if state.var_match:
+        rows.append(['config:', 'var.match', state.var_match])
+    for alias in state.empty_aliases:
+        rows.append(['config:', 'empty.aliases', alias])
+    for t in state.lbl_defs:
+        name, ltype, value = t[0], t[1], t[2]
+        lbl_mode = t[3] if len(t) > 3 else ''
+        col_a = f'lbl:{lbl_mode}' if lbl_mode else 'lbl:'
+        rows.append([col_a, name, ltype, value])
+    for t in state.var_defs:
+        name, vtype, match = t[0], t[1], t[2]
+        col_a_extra = t[3] if len(t) > 3 else ''
+        col_a = f'var:{col_a_extra}' if col_a_extra else 'var:'
+        rows.append([col_a, name, vtype, match])
     rows.append(['START:'])
     for row in state.body_rows:
         rows.append(row)
@@ -891,7 +919,7 @@ def run_wizard(
     print(_c('─' * 49, _C.DIM))
 
     # B4: warn on duplicate field names (lbl: and var: names share the same namespace)
-    all_names = [n for n, _, _ in state.lbl_defs] + [n for n, _, _ in state.var_defs]
+    all_names = [t[0] for t in state.lbl_defs] + [t[0] for t in state.var_defs]
     seen: set[str] = set()
     dups: list[str] = []
     for n in all_names:

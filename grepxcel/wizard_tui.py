@@ -43,6 +43,7 @@ from .wizard import (
     WizardState,
     _slugify,
     _propose_type,
+    _pattern_rows,
     _write_pattern,
     _build_cell_order,
     _cell_ref,
@@ -145,6 +146,10 @@ def _build_state_from_choices(
     sheet_name: str,
     ignore_case: bool = False,
     currency_sign: str = '€',
+    trim_whitespace: bool = False,
+    lbl_match: str = '',
+    var_match: str = '',
+    empty_aliases: list | None = None,
 ) -> WizardState:
     """Build a WizardState from the choices dict, in cell-scan order.
 
@@ -160,6 +165,10 @@ def _build_state_from_choices(
         sheet_name=sheet_name,
         ignore_case=ignore_case,
         currency_sign=currency_sign,
+        trim_whitespace=trim_whitespace,
+        lbl_match=lbl_match,
+        var_match=var_match,
+        empty_aliases=list(empty_aliases) if empty_aliases else [],
     )
     seen_t_anchors: set[str] = set()
     for r, c in cells:
@@ -173,15 +182,19 @@ def _build_state_from_choices(
         if choice == 'L':
             state.lbl_defs.append((name,
                                    meta.get('ltype', 'string'),
-                                   meta.get('lmatch', str(value) if value is not None else '')))
+                                   meta.get('lmatch', str(value) if value is not None else ''),
+                                   meta.get('lbl_mode', '')))
             state.body_rows.append(['cell:1', name])
         elif choice == 'C':
             state.lbl_defs.append((name,
                                    meta.get('ltype', 'string'),
-                                   meta.get('lmatch', str(value) if value is not None else '')))
+                                   meta.get('lmatch', str(value) if value is not None else ''),
+                                   meta.get('lbl_mode', '')))
             state.body_rows.append(['cell:1', name])
         elif choice == 'V':
-            state.var_defs.append((name, meta.get('ftype', 'string'), meta.get('match', '.*')))
+            state.var_defs.append((name, meta.get('ftype', 'string'),
+                                   meta.get('match', '.*'),
+                                   meta.get('col_a_extra', '')))
             state.body_rows.append(['cell:1', name])
         elif choice == 'T':
             # Each table is emitted once from its anchor cell; T-HEAD cells are skipped.
@@ -211,6 +224,7 @@ def _build_state_from_choices(
                                     vn,
                                     col.get('var_type', 'string'),
                                     col.get('var_match', '.*'),
+                                    col.get('col_a_extra', ''),
                                 ))
                         else:  # label (default for H/F)
                             ln = col.get('lbl_name', 'IGNORE')
@@ -220,6 +234,7 @@ def _build_state_from_choices(
                                     ln,
                                     col.get('lbl_type', 'string'),
                                     col.get('lbl_match', col.get('cell_value', '')),
+                                    col.get('lbl_mode', ''),
                                 ))
                     row_list.append(['', row_label] + col_names)
 
@@ -255,18 +270,20 @@ def _build_state_from_choices(
                                     ln,
                                     item.get('lbl_type', 'string'),
                                     item.get('lbl_match', '.*'),
+                                    item.get('lbl_mode', ''),
                                 ))
                         else:  # var
                             vn    = item.get('var_name', 'IGNORE')
                             vtype = item.get('var_type', 'string')
                             vmatch= item.get('var_match', '.*')
+                            vcol_a = item.get('col_a_extra', '')
                             # Auto-prefix with table name unless already namespaced
                             if (table_name and vn and vn != 'IGNORE'
                                     and not vn.startswith(table_name + '.')):
                                 vn = f'{table_name}.{vn}'
                             var_names.append(vn)
                             if vn and vn != 'IGNORE':
-                                state.var_defs.append((vn, vtype, vmatch))
+                                state.var_defs.append((vn, vtype, vmatch, vcol_a))
                     else:
                         vn = item
                         vtype, vmatch = 'string', '.*'
@@ -275,7 +292,7 @@ def _build_state_from_choices(
                             vn = f'{table_name}.{vn}'
                         var_names.append(vn)
                         if vn and vn != 'IGNORE':
-                            state.var_defs.append((vn, vtype, vmatch))
+                            state.var_defs.append((vn, vtype, vmatch, ''))
                 state.body_rows.append(['', f'DATA:{mult}'] + var_names)
 
                 # SPLITTER between data and footer
@@ -294,9 +311,9 @@ def _build_state_from_choices(
                     lbl_name  = col.get('lbl_name', 'IGNORE')
                     var_name  = col.get('var_name', 'IGNORE')
                     cell_val  = col.get('cell_value', '')
-                    state.lbl_defs.append((lbl_name, 'string', cell_val))
+                    state.lbl_defs.append((lbl_name, 'string', cell_val, ''))
                     state.var_defs.append((var_name, col.get('var_type', 'string'),
-                                           col.get('var_match', '.*')))
+                                           col.get('var_match', '.*'), ''))
                     lbl_names.append(lbl_name)
                     var_names.append(var_name)
                 state.body_rows.append(['', 'HEADER:1'] + lbl_names)
@@ -309,26 +326,53 @@ def _build_state_from_choices(
 
 
 def _choices_to_csv(ws, choices, cells, direction, sheet_name,
-                    ignore_case: bool = False, currency_sign: str = '€') -> str:
+                    ignore_case: bool = False, currency_sign: str = '€',
+                    trim_whitespace: bool = False, lbl_match: str = '',
+                    var_match: str = '', empty_aliases: list | None = None) -> str:
     state = _build_state_from_choices(
         ws, choices, cells, direction, sheet_name,
         ignore_case=ignore_case, currency_sign=currency_sign,
+        trim_whitespace=trim_whitespace, lbl_match=lbl_match,
+        var_match=var_match, empty_aliases=empty_aliases,
     )
     buf = io.StringIO()
     w   = csv.writer(buf)
-    w.writerow(['config:', 'read.direction', state.direction])
-    if state.ignore_case:
-        w.writerow(['config:', 'ignore.case', 'yes'])
-    w.writerow(['config:', 'currency.sign', state.currency_sign])
-    for name, typ, text in state.lbl_defs:
-        w.writerow(['lbl:', name, typ, text])
-    for name, typ, match in state.var_defs:
-        w.writerow(['var:', name, typ, match])
-    w.writerow(['START:'])
-    for row in state.body_rows:
+    for row in _pattern_rows(state):
         w.writerow(row)
-    w.writerow(['END:'])
     return buf.getvalue()
+
+
+# ── col_a_extra helpers (module-level so they're importable without Textual) ──
+
+def _col_a_extra_from_parts(var_mode_raw: str, modifiers_raw: str) -> str:
+    """Build col_a_extra string from separate mode + modifier selections.
+
+    var_mode_raw: '(default)' | 'literal' | 'glob'
+    modifiers_raw: 'none' | 'nullable' | 'not-null' | 'trim-whitespace' |
+                   'nullable:trim-whitespace' | 'not-null:trim-whitespace'
+    Returns colon-joined tokens for after 'var:' in col A ('' if all default).
+    """
+    mode = '' if var_mode_raw == '(default)' else var_mode_raw
+    mods = '' if modifiers_raw == 'none' else modifiers_raw
+    parts = [p for p in ([mode] + mods.split(':')) if p]
+    return ':'.join(parts)
+
+
+def _col_a_extra_to_parts(col_a_extra: str) -> tuple[str, str]:
+    """Split col_a_extra back into (var_mode_raw, modifiers_raw) for UI pre-fill.
+
+    Returns ('(default)', 'none') when col_a_extra is empty.
+    """
+    _MODE_TOKENS = frozenset({'literal', 'glob', 'regexp', 're'})
+    _MOD_TOKENS  = frozenset({'nullable', 'not-null', 'not-empty', 'trim-whitespace'})
+    if not col_a_extra:
+        return '(default)', 'none'
+    tokens = col_a_extra.split(':')
+    mode_parts = [t for t in tokens if t in _MODE_TOKENS]
+    mod_parts  = [t for t in tokens if t in _MOD_TOKENS]
+    var_mode_raw  = mode_parts[0] if mode_parts else '(default)'
+    modifiers_raw = ':'.join(mod_parts) if mod_parts else 'none'
+    return var_mode_raw, modifiers_raw
 
 
 if _TEXTUAL_OK:
@@ -338,6 +382,20 @@ if _TEXTUAL_OK:
     _TYPE_OPTIONS = [
         'string', 'integer', 'number', 'currency', 'percentage',
         'boolean', 'date', 'datetime', 'time', 'duration',
+    ]
+
+    # var: match-mode override options (col A prefix modifier)
+    _VAR_MODE_OPTIONS = ['(default)', 'literal', 'glob']
+    # lbl: match-mode override options (col A prefix modifier)
+    _LBL_MODE_OPTIONS = ['(default)', 'glob', 'regexp']
+    # var: field modifier combinations
+    _VAR_MODIFIER_OPTIONS = [
+        'none',
+        'nullable',
+        'not-null',
+        'trim-whitespace',
+        'nullable:trim-whitespace',
+        'not-null:trim-whitespace',
     ]
 
     # (pattern, short_label) pairs — cycled with F4 in any Match/pattern Input
@@ -525,12 +583,13 @@ if _TEXTUAL_OK:
         DEFAULT_CSS = """
         _ConfigModal              { align: center middle; }
         _ConfigModal > #dialog    { background: $surface; border: thick $primary;
-                                    width: 72; height: auto; padding: 1 3; }
+                                    width: 72; height: auto; max-height: 90vh;
+                                    padding: 1 3; overflow-y: auto; }
         _ConfigModal Label.title  { text-style: bold; margin-bottom: 1; }
         _ConfigModal Label.sect   { text-style: bold; margin-top: 1; }
         _ConfigModal Label.desc   { color: $text-muted; margin-bottom: 1; }
         _ConfigModal Select       { margin-bottom: 1; }
-        _ConfigModal Input        { width: 16; margin-bottom: 1; }
+        _ConfigModal Input        { margin-bottom: 1; }
         _ConfigModal Label.hint   { color: $text-muted; margin-top: 1; }
         """
 
@@ -564,26 +623,67 @@ if _TEXTUAL_OK:
                               ('Yes — ignore case when matching', 'yes')],
                     value='no', id='ic',
                 )
+                yield Label('Trim whitespace globally', classes='sect')
+                yield Label('Strip leading/trailing spaces before matching all fields',
+                            classes='desc')
+                yield Select(
+                    options=[('No  (default)', 'no'),
+                              ('Yes — trim all fields', 'yes')],
+                    value='no', id='trim_ws',
+                )
                 yield Label('Currency symbol', classes='sect')
                 yield Label('Symbol used in currency-typed fields', classes='desc')
-                yield Input(value='€', id='cur')
-                yield Label('ENTER = start  •  ESC = cancel', classes='hint')
+                yield Input(value='€', id='cur', placeholder='€')
+                yield Label('Global label match mode', classes='sect')
+                yield Label('How lbl: anchor patterns compare to cell text', classes='desc')
+                yield Select(
+                    options=[('Literal (default) — exact text match', 'literal'),
+                              ('Glob — wildcards with * and ?', 'glob'),
+                              ('Regexp — full regular expression', 'regexp')],
+                    value='literal', id='lbl_match',
+                )
+                yield Label('Global var match mode', classes='sect')
+                yield Label('Default matching mode for var: fields (column D pattern)',
+                            classes='desc')
+                yield Select(
+                    options=[('Regexp (default) — full regular expression', 'regexp'),
+                              ('Literal — exact text match', 'literal'),
+                              ('Glob — wildcards with * and ?', 'glob')],
+                    value='regexp', id='var_match',
+                )
+                yield Label('Empty aliases', classes='sect')
+                yield Label('Comma-separated values treated as empty (e.g. N/A, -, n/a)',
+                            classes='desc')
+                yield Input(value='', id='aliases', placeholder='N/A, -, n/a')
+                yield Label('ENTER = start  •  Tab = next field  •  ESC = cancel',
+                            classes='hint')
 
         def on_key(self, event) -> None:
             if event.key == 'enter':
                 try:
-                    direction    = str(self.query_one('#dir', Select).value)
-                    template     = str(self.query_one('#tpl', Select).value) == 'yes'
-                    ignore_case  = str(self.query_one('#ic',  Select).value) == 'yes'
+                    direction     = str(self.query_one('#dir',       Select).value)
+                    template      = str(self.query_one('#tpl',       Select).value) == 'yes'
+                    ignore_case   = str(self.query_one('#ic',        Select).value) == 'yes'
+                    trim_ws       = str(self.query_one('#trim_ws',   Select).value) == 'yes'
                     currency_sign = self.query_one('#cur', Input).value.strip() or '€'
+                    lbl_match_v   = str(self.query_one('#lbl_match', Select).value)
+                    var_match_v   = str(self.query_one('#var_match', Select).value)
+                    aliases_raw   = self.query_one('#aliases', Input).value.strip()
+                    aliases       = [a.strip() for a in aliases_raw.split(',')
+                                     if a.strip()]
                 except Exception:
                     direction, template = 'LR', self._is_template
-                    ignore_case, currency_sign = False, '€'
+                    ignore_case, trim_ws, currency_sign = False, False, '€'
+                    lbl_match_v, var_match_v, aliases = 'literal', 'regexp', []
                 self.dismiss({
-                    'direction':     direction,
-                    'template':      template,
-                    'ignore_case':   ignore_case,
-                    'currency_sign': currency_sign,
+                    'direction':        direction,
+                    'template':         template,
+                    'ignore_case':      ignore_case,
+                    'trim_whitespace':  trim_ws,
+                    'currency_sign':    currency_sign,
+                    'lbl_match':        lbl_match_v,
+                    'var_match':        var_match_v,
+                    'empty_aliases':    aliases,
                 })
             elif event.key == 'escape':
                 self.dismiss(None)
@@ -1249,19 +1349,28 @@ if _TEXTUAL_OK:
             if cfg is None:
                 self.exit(result=None)
                 return
-            self._state.direction    = cfg['direction']
-            self._state.ignore_case  = cfg.get('ignore_case', False)
-            self._state.currency_sign = cfg.get('currency_sign', '€')
-            self._is_template        = cfg['template']
-            self._cells              = _build_cell_order(self._ws, self._state.direction)
-            self._total_nonempty     = sum(
+            self._state.direction       = cfg['direction']
+            self._state.ignore_case     = cfg.get('ignore_case', False)
+            self._state.trim_whitespace = cfg.get('trim_whitespace', False)
+            self._state.currency_sign   = cfg.get('currency_sign', '€')
+            self._state.lbl_match       = cfg.get('lbl_match', '')
+            self._state.var_match       = cfg.get('var_match', '')
+            self._state.empty_aliases   = cfg.get('empty_aliases', [])
+            self._is_template           = cfg['template']
+            self._cells                 = _build_cell_order(self._ws, self._state.direction)
+            self._total_nonempty        = sum(
                 1 for r, c in self._cells
                 if self._ws.cell(row=r, column=c).value is not None
             )
+            aliases_str = ', '.join(self._state.empty_aliases) or '—'
             self._log('CONFIG',
                       f'direction={cfg["direction"]}  template={cfg["template"]}'
                       f'  ignore_case={cfg.get("ignore_case", False)}'
+                      f'  trim_ws={cfg.get("trim_whitespace", False)}'
                       f'  currency={cfg.get("currency_sign", "€")}'
+                      f'  lbl_match={cfg.get("lbl_match", "literal")}'
+                      f'  var_match={cfg.get("var_match", "regexp")}'
+                      f'  aliases=[{aliases_str}]'
                       f'  sheet={self._state.sheet_name}'
                       f'  cells={self._total_nonempty} non-empty')
             self._populate_table()
@@ -1687,10 +1796,14 @@ if _TEXTUAL_OK:
                     elif ex_role == 'ignore':
                         n_def = 'IGNORE'
                     # else var: n_def already set
+                ex_col_a_extra = existing.get('col_a_extra', '') if existing else ''
+                ex_var_mode_d, ex_modifiers_d = _col_a_extra_to_parts(ex_col_a_extra)
                 fields = [
                     ('Name  (plain = variable · lbl:name = label · empty/IGNORE = skip)', n_def),
                     ('Type', t_def, _TYPE_OPTIONS),
+                    ('Match mode  (col A prefix)', ex_var_mode_d, _VAR_MODE_OPTIONS),
                     ('Match pattern  (F4 cycles presets)', m_def, None, _MATCH_PRESETS),
+                    ('Modifiers  (for var: only)', ex_modifiers_d, _VAR_MODIFIER_OPTIONS),
                     ('Notes  (written to session log — optional)', note_def),
                 ]
                 row_label = 'DATA'
@@ -1736,8 +1849,18 @@ if _TEXTUAL_OK:
                     return
                 raw_name   = values[0].strip()
                 type_val   = values[1].strip() or 'string'
-                match_val  = values[2].strip()
-                notes_val  = values[3].strip()
+                if mode == 'DATA':
+                    # DATA fields: name, type, var_mode, match, modifiers, notes
+                    var_mode_raw  = values[2] if len(values) > 2 else '(default)'
+                    match_val     = values[3].strip() if len(values) > 3 else '.*'
+                    modifiers_raw = values[4] if len(values) > 4 else 'none'
+                    notes_val     = values[5].strip() if len(values) > 5 else ''
+                    col_a_extra = _col_a_extra_from_parts(var_mode_raw, modifiers_raw)
+                else:
+                    # HEADER/FOOTER fields: name, type, match, notes
+                    match_val  = values[2].strip() if len(values) > 2 else ''
+                    notes_val  = values[3].strip() if len(values) > 3 else ''
+                    col_a_extra = ''
 
                 if mode == 'DATA':
                     if not raw_name or raw_name.upper() == 'IGNORE':
@@ -1759,6 +1882,7 @@ if _TEXTUAL_OK:
                             'role': 'var', 'var_name': raw_name,
                             'var_type': type_val,
                             'var_match': match_val or '.*',
+                            'col_a_extra': col_a_extra,
                             'notes': notes_val,
                         }
                 else:  # HEADER / FOOTER
@@ -2029,20 +2153,26 @@ if _TEXTUAL_OK:
             default_match = str(value) if value is not None else ''
             existing_meta = self._choices.get(ref, {})
             existing_note = self._notes.get(ref, '')
+            existing_lbl_mode = existing_meta.get('lbl_mode', '(default)')
+            if existing_lbl_mode not in ('(default)', 'glob', 'regexp'):
+                existing_lbl_mode = '(default)'
 
             def _done(result: list[str] | None) -> None:
                 self._clear_highlights()
                 if result is None:
                     self._log('LABEL-X', f'{ref}  cancelled')
                     return
-                name, ltype, lmatch, notes = (result[0], result[1],
-                                              result[2], result[3].strip())
+                name, ltype, lbl_mode_raw, lmatch, notes = (
+                    result[0], result[1], result[2], result[3], result[4].strip()
+                )
+                lbl_mode = '' if lbl_mode_raw == '(default)' else lbl_mode_raw
                 old  = self._choices.get(ref, {}).get('choice')
                 self._push_undo(ref)
                 base = name[:-6] if name.endswith('_label') else name
                 self._last_label_base = base
                 self._commit(ref, {'choice': 'L', 'name': name,
-                                   'ltype': ltype, 'lmatch': lmatch})
+                                   'ltype': ltype, 'lmatch': lmatch,
+                                   'lbl_mode': lbl_mode})
                 if notes:
                     self._notes[ref] = notes
                     self._log('NOTE', f'{ref}: {notes}')
@@ -2050,8 +2180,9 @@ if _TEXTUAL_OK:
                     del self._notes[ref]
                 reclassify = f'  (was {old})' if old else ''
                 rawval = '' if value is None else f'  "{str(value)[:30]}"'
+                mode_tag = f':{lbl_mode}' if lbl_mode else ''
                 self._log('LABEL',
-                          f'{ref}{rawval}  →  {name}  [{ltype}, {lmatch}]{reclassify}')
+                          f'{ref}{rawval}  →  {name}  [{ltype}{mode_tag}, {lmatch}]{reclassify}')
                 self._refresh_panel()
                 if self._is_template:
                     self._advance_adjacent()
@@ -2062,8 +2193,12 @@ if _TEXTUAL_OK:
                 _FieldsModal(
                     '[bold green]Label[/bold green] — text that identifies a nearby value',
                     [('Label anchor name', existing_meta.get('name', default_name)),
-                     ('Type', existing_meta.get('ltype', _infer_cell_type(self._ws.cell(row=self._ws_row, column=self._ws_col))), _TYPE_OPTIONS),
-                     ('Match  (exact text · lbl:regexp for regex · F4 cycles presets)', existing_meta.get('lmatch', default_match), None, _MATCH_PRESETS),
+                     ('Type', existing_meta.get('ltype', _infer_cell_type(
+                         self._ws.cell(row=self._ws_row, column=self._ws_col))),
+                      _TYPE_OPTIONS),
+                     ('Match mode  (col A override)', existing_lbl_mode, _LBL_MODE_OPTIONS),
+                     ('Match  (exact text · F4 cycles presets)',
+                      existing_meta.get('lmatch', default_match), None, _MATCH_PRESETS),
                      ('Notes  (written to session log — optional)', existing_note)],
                 ),
                 _done,
@@ -2110,19 +2245,25 @@ if _TEXTUAL_OK:
 
             existing_meta = self._choices.get(ref, {})
             existing_note = self._notes.get(ref, '')
+            ex_col_a_extra = existing_meta.get('col_a_extra', '')
+            ex_var_mode, ex_modifiers = _col_a_extra_to_parts(ex_col_a_extra)
 
             def _done(result: list[str] | None) -> None:
                 self._clear_highlights()
                 if result is None:
                     self._log('VALUE-X', f'{ref}  cancelled')
                     return
-                name, ftype, match, notes = result[0], result[1], result[2], result[3].strip()
+                name, ftype, var_mode_raw, match, modifiers_raw, notes = (
+                    result[0], result[1], result[2], result[3], result[4], result[5].strip()
+                )
+                col_a_extra = _col_a_extra_from_parts(var_mode_raw, modifiers_raw)
                 old  = self._choices.get(ref, {}).get('choice')
                 self._push_undo(ref)
                 self._last_label_base = None
                 self._update_prefix(name)
                 self._commit(ref, {'choice': 'V', 'name': name,
-                                   'ftype': ftype, 'match': match})
+                                   'ftype': ftype, 'match': match,
+                                   'col_a_extra': col_a_extra})
                 if notes:
                     self._notes[ref] = notes
                     self._log('NOTE', f'{ref}: {notes}')
@@ -2130,8 +2271,9 @@ if _TEXTUAL_OK:
                     del self._notes[ref]
                 reclassify = f'  (was {old})' if old else ''
                 rawval = '(empty)' if value is None else f'"{str(value)[:30]}"'
+                mod_tag = f'  [{col_a_extra}]' if col_a_extra else ''
                 self._log('VALUE',
-                          f'{ref}  {rawval}  →  {name}  [{ftype}, {match}]{reclassify}')
+                          f'{ref}  {rawval}  →  {name}  [{ftype}, {match}]{mod_tag}{reclassify}')
                 self._refresh_panel()
                 self._advance()
 
@@ -2140,7 +2282,10 @@ if _TEXTUAL_OK:
                     '[bold bright_yellow]Value[/bold bright_yellow] — extract this cell\'s content',
                     [('Field name', existing_meta.get('name', default_name)),
                      ('Type',       existing_meta.get('ftype', default_type), _TYPE_OPTIONS),
-                     ('Match', existing_meta.get('match', '.*'), None, _MATCH_PRESETS),
+                     ('Match mode  (col A prefix)', ex_var_mode, _VAR_MODE_OPTIONS),
+                     ('Match pattern  (F4 cycles presets)',
+                      existing_meta.get('match', '.*'), None, _MATCH_PRESETS),
+                     ('Modifiers', ex_modifiers, _VAR_MODIFIER_OPTIONS),
                      ('Notes  (written to session log — optional)', existing_note)],
                 ),
                 _done,
@@ -2637,6 +2782,10 @@ if _TEXTUAL_OK:
                 self._state.direction, self._state.sheet_name,
                 ignore_case=self._state.ignore_case,
                 currency_sign=self._state.currency_sign,
+                trim_whitespace=self._state.trim_whitespace,
+                lbl_match=self._state.lbl_match,
+                var_match=self._state.var_match,
+                empty_aliases=self._state.empty_aliases,
             )
             self.push_screen(_PreviewModal(csv_text), lambda _: None)
 
@@ -2662,12 +2811,16 @@ if _TEXTUAL_OK:
                 self._state.direction, self._state.sheet_name,
                 ignore_case=self._state.ignore_case,
                 currency_sign=self._state.currency_sign,
+                trim_whitespace=self._state.trim_whitespace,
+                lbl_match=self._state.lbl_match,
+                var_match=self._state.var_match,
+                empty_aliases=self._state.empty_aliases,
             )
 
             # Detect duplicate lbl: names
             seen: set[str] = set()
             duplicates: list[str] = []
-            for name, _, _ in state.lbl_defs:
+            for name, *_ in state.lbl_defs:
                 if name in seen and name not in duplicates:
                     duplicates.append(name)
                 seen.add(name)

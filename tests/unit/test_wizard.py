@@ -314,8 +314,8 @@ class TestWizardState:
             currency_sign='$',
             sheet_name='Sheet2',
         )
-        original.lbl_defs.append(('dept_lbl', 'string', 'Department:'))
-        original.var_defs.append(('dept', 'string', r'[A-Z]+'))
+        original.lbl_defs.append(('dept_lbl', 'string', 'Department:', ''))
+        original.var_defs.append(('dept', 'string', r'[A-Z]+', ''))
         original.body_rows.append(['cell:1', 'dept'])
 
         restored = WizardState.from_dict(original.to_dict())
@@ -323,8 +323,8 @@ class TestWizardState:
         assert restored.ignore_case is True
         assert restored.currency_sign == '$'
         assert restored.sheet_name == 'Sheet2'
-        assert restored.lbl_defs == [('dept_lbl', 'string', 'Department:')]
-        assert restored.var_defs == [('dept', 'string', r'[A-Z]+')]
+        assert restored.lbl_defs == [('dept_lbl', 'string', 'Department:', '')]
+        assert restored.var_defs == [('dept', 'string', r'[A-Z]+', '')]
         assert restored.body_rows == [['cell:1', 'dept']]
 
     def test_from_dict_uses_defaults_for_missing_keys(self):
@@ -339,12 +339,12 @@ class TestWizardState:
 
     def test_round_trip_via_json_string(self):
         s = WizardState(direction='LR', currency_sign='£')
-        s.lbl_defs.append(('total_lbl', 'currency', 'Total:'))
+        s.lbl_defs.append(('total_lbl', 'currency', 'Total:', ''))
         s.body_rows.append(['table:*'])
         restored = WizardState.from_dict(json.loads(json.dumps(s.to_dict())))
         assert restored.direction == 'LR'
         assert restored.currency_sign == '£'
-        assert restored.lbl_defs == [('total_lbl', 'currency', 'Total:')]
+        assert restored.lbl_defs == [('total_lbl', 'currency', 'Total:', '')]
         assert restored.body_rows == [['table:*']]
 
 
@@ -382,8 +382,8 @@ FIXTURE_DIR = os.path.join(os.path.dirname(__file__), '..', 'fixtures')
 def _make_state_json(tmp_path, name='invoice') -> str:
     """Write a minimal WizardState JSON file and return its path."""
     state = WizardState(direction='LR', currency_sign='€')
-    state.lbl_defs.append(('inv_lbl', 'string', 'Invoice No:'))
-    state.var_defs.append(('inv.number', 'string', r'[A-Z]+\d+'))
+    state.lbl_defs.append(('inv_lbl', 'string', 'Invoice No:', ''))
+    state.var_defs.append(('inv.number', 'string', r'[A-Z]+\d+', ''))
     state.body_rows.append(['cell:1', 'inv_lbl'])
     state.body_rows.append(['cell:1', 'inv.number'])
     path = str(tmp_path / f'{name}.json')
@@ -473,5 +473,5 @@ class TestRunWizardSaveState:
                    output=out_pattern, save_state=out_state)
         with open(out_state, encoding='utf-8') as fh:
             restored = WizardState.from_dict(json.load(fh))
-        assert restored.lbl_defs == [('inv_lbl', 'string', 'Invoice No:')]
-        assert any(n == 'inv.number' for n, _, _ in restored.var_defs)
+        assert restored.lbl_defs == [('inv_lbl', 'string', 'Invoice No:', '')]
+        assert any(t[0] == 'inv.number' for t in restored.var_defs)
