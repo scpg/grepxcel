@@ -1379,21 +1379,21 @@ if _TEXTUAL_OK:
         _HELP = """\
 [bold cyan]CLASSIFY[/bold cyan]
 
-  [bold green]L[/bold green]  [bold]Label[/bold]    — Cell whose text identifies a nearby value (e.g. "Invoice No:").
-              In template mode, cursor jumps to the adjacent value cell next.
+  [bold green]L[/bold green]  [bold]Label[/bold]    — Cell whose text identifies a nearby value ("Invoice No:").
+                In template mode, cursor jumps to adjacent value cell.
 
-  [bold blue]C[/bold blue]  [bold]Header[/bold]   — Section title or structural marker; no value follows it.
+  [bold blue]C[/bold blue]  [bold]Header[/bold]   — Section title or structural marker; no value follows.
 
   [bold bright_yellow]V[/bold bright_yellow]  [bold]Value[/bold]    — Extract this cell's content as a named variable.
 
-  [bold magenta]T[/bold magenta]  [bold]Table[/bold]    — Define a repeating block (mini-table). A 3-step wizard opens:
-              step 1 — set name, multiplicity, and row range;
-              step 2 — classify each row as Header / Data / Footer / Skip;
-              step 3 — name each column per row type.
+  [bold magenta]T[/bold magenta]  [bold]Table[/bold]    — Define a repeating data block (mini-table):
+                  step 1 — set name, multiplicity, and row range;
+                  step 2 — classify rows: Header / Data / Footer / Skip;
+                  step 3 — name each column per row type.
 
-  [dim]I[/dim]  [bold]Ignore[/bold]   — Skip this cell; it produces no pattern entry.
+  [dim]I[/dim]  [bold]Ignore[/bold]   — Skip this cell; no pattern entry is produced.
 
-  [bold]R[/bold]  [bold]Remove[/bold]   — Clear the current cell's classification so you can redo it.
+  [bold]R[/bold]  [bold]Remove[/bold]   — Clear the current cell's classification to redo it.
 
 [bold cyan]NAVIGATE[/bold cyan]
 
@@ -1403,14 +1403,14 @@ if _TEXTUAL_OK:
 
 [bold cyan]OTHER[/bold cyan]
 
-  [bold]ENTER[/bold]      Auto-accept proposed classification (no modal, uses defaults)
-  [bold]Space[/bold]      Zoom — view full untruncated cell content
-  [bold]F4[/bold]          Settings — re-open config (direction, case, currency…) [dim](S also works)[/dim]
-  [bold]F1 / ?[/bold]     This help screen
-  [bold]F3[/bold]         Preview current pattern
-  [bold]F2[/bold]         Add internal note to current cell
-  [bold]Ctrl+Z[/bold]     Undo last classification
-  [bold]E[/bold]          End wizard and save pattern file
+  [bold]ENTER[/bold]       Auto-accept proposed classification (uses defaults)
+  [bold]Space[/bold]       Zoom — view full untruncated cell content
+  [bold]F4 / S[/bold]      Settings — re-open config (direction, case, currency…)
+  [bold]F1 / ?[/bold]      This help screen
+  [bold]F3[/bold]          Preview current pattern
+  [bold]F2[/bold]          Add internal note to current cell
+  [bold]Ctrl+Z[/bold]      Undo last classification
+  [bold]E[/bold]           End wizard and save pattern file
   [bold]Q / Ctrl+Q[/bold]  Cancel without saving (no pattern written)
 
 [bold cyan]LEGEND[/bold cyan]
@@ -1819,7 +1819,7 @@ if _TEXTUAL_OK:
         }
 
         _Panel {
-            width: 46;
+            width: 50;
             height: 1fr;
             border-left: solid $primary-darken-1;
             padding: 0 1;
@@ -1841,6 +1841,7 @@ if _TEXTUAL_OK:
             Binding('p', 'nav_prev',  'Prev',      show=True),
             Binding('g', 'nav_goto',  'Goto',      show=True),
             Binding('e', 'end_save',  'End & Save', show=True),
+            Binding('q', 'cancel',    'Quit',       show=True),
             # Classify extras (hidden, discoverable via ^P palette)
             Binding('r',      'act_R',             'Remove classif.', show=False),
             # Navigate extras (hidden)
@@ -1851,12 +1852,11 @@ if _TEXTUAL_OK:
             Binding('space',  'zoom',               'Zoom cell',       show=False),
             Binding('f4', 'open_settings', 'Settings (F4)', show=False),
             Binding('s',  'open_settings', 'Settings',     show=False),
-            Binding('f1',             'show_help', 'Help (F1/?)', show=True),
-            Binding('question_mark',  'show_help', 'Help',       show=False),
+            Binding('f1',             'show_help', 'Help',  show=True),
+            Binding('question_mark',  'show_help', 'Help',  show=False),
             Binding('f3',     'preview',            'Pattern preview', show=False),
             Binding('ctrl+z', 'undo',               'Undo',            show=False),
             Binding('ctrl+q', 'cancel',             'Cancel',          show=False),
-            Binding('q',      'cancel',             'Quit',            show=False),
             # Debug / support hotkeys (hidden)
             Binding('f2',     'add_note',           'Cell note',       show=False),
             Binding('semicolon', 'add_comment',     'Comment',         show=False),
@@ -2241,7 +2241,7 @@ if _TEXTUAL_OK:
 
             note = self._notes.get(ref, '')
             lines: list[str] = [
-                f'[bold cyan]─ {ref} {"─" * (40 - len(ref))}[/bold cyan]',
+                f'[bold cyan]─ {ref} {"─" * (45 - len(ref))}[/bold cyan]',
                 f'  {val_line}',
                 f'  Proposal:  {prop_line}',
                 f'  Status:    {status}',
@@ -2257,7 +2257,7 @@ if _TEXTUAL_OK:
 
             # ── Zone 2 — CLASSIFY ─────────────────────────────────────────────
             lines += [
-                f'[bold cyan]─ Classify {"─" * 32}[/bold cyan]',
+                f'[bold cyan]─ Classify {"─" * 37}[/bold cyan]',
                 '  [dim]ENTER[/dim]  auto-accept proposal',
                 '  [bold green]L[/bold green]  Label  — text anchors a value',
                 '  [bold blue]C[/bold blue]  Header — section title only',
@@ -2270,17 +2270,27 @@ if _TEXTUAL_OK:
 
             # ── Zone 3 — NAVIGATE ─────────────────────────────────────────────
             lines += [
-                f'[bold cyan]─ Navigate {"─" * 32}[/bold cyan]',
+                f'[bold cyan]─ Navigate {"─" * 37}[/bold cyan]',
                 '  [bold]N[/bold]  Next non-empty',
                 '  [bold]P[/bold]  Prev non-empty',
                 '  [bold]U[/bold]  Next unclassified',
                 '  [bold]G[/bold]  Go to cell (e.g. D11)',
                 '  [bold red]E[/bold red]  End & save pattern',
                 '',
-                '  [dim]Space[/dim] Zoom  [dim]F3[/dim] Preview  [dim]F1[/dim] Help',
-                '  [dim]F4[/dim] Settings  [dim]H[/dim] Highlight  [dim]^Z[/dim] Undo',
-                '  [dim]Q/^Q[/dim] Quit  [dim]^D[/dim] Dark/light  [dim]^P[/dim] Palette',
-                '  [dim]F2[/dim] Cell note  [dim];[/dim] Comment  [dim]F11[/dim] Screenshot  [dim]F12[/dim] View log',
+            ]
+
+            # ── Zone 3b — KEYS REFERENCE (2-column, ≤ 44 chars each) ──────────
+            # Columns: key(col 2-8, 7 wide) + desc(col 9-20, 12 wide)
+            #          key2(col 21-25, 5 wide) + desc2(col 26+)
+            lines += [
+                f'[bold cyan]─ Keys {"─" * 41}[/bold cyan]',
+                '  [dim]F1/?[/dim]   Help        [dim]F3[/dim]   Preview',
+                '  [dim]F2[/dim]     Cell note   [dim]F4/S[/dim] Settings',
+                '  [dim]F11[/dim]    Screenshot  [dim]F12[/dim]  View log',
+                '  [dim]Space[/dim]  Zoom        [dim]H[/dim]    Highlight',
+                '  [dim]^Z[/dim]     Undo        [dim]^D[/dim]   Dark/light',
+                '  [dim]^P[/dim]     Palette     [dim];[/dim]    Comment',
+                '  [dim]Q/^Q[/dim]   Quit without saving',
                 '',
             ]
 
@@ -2295,14 +2305,14 @@ if _TEXTUAL_OK:
             pct     = int(done / total * 100) if total else 0
 
             lines += [
-                f'[bold cyan]─ Legend {"─" * 34}[/bold cyan]',
+                f'[bold cyan]─ Legend {"─" * 39}[/bold cyan]',
                 '  [bold green]●[/bold green] green   = Label (L)',
-                '  [bold bright_yellow]●[/bold bright_yellow] bright_yellow = Value (V)',
+                '  [bold bright_yellow]●[/bold bright_yellow] yellow  = Value (V)',
                 '  [bold blue]●[/bold blue] blue    = Header (C)',
                 '  [bold magenta]●[/bold magenta] magenta = Table (T)',
-                '  [dim]○[/dim] dim     = Ignore (I)',
+                '  [dim]○[/dim] grey    = Ignore (I)',
                 '',
-                f'[bold cyan]─ Stats {"─" * 35}[/bold cyan]',
+                f'[bold cyan]─ Stats {"─" * 40}[/bold cyan]',
                 f'  Sheet:  {self._max_row} rows × {self._max_col} cols',
                 f'  Done:   [bold]{done}[/bold] / {total} non-empty  ({pct}%)',
                 f'  Labels: {counts.get("L", 0)}   Values: {counts.get("V", 0)}'

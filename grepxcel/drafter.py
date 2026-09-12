@@ -1154,7 +1154,7 @@ class NvidiaBackend:
     """
 
     ENDPOINT = 'https://integrate.api.nvidia.com/v1'
-    DEFAULT_MODEL = 'z-ai/glm-5.3-flash'
+    DEFAULT_MODEL = 'mistralai/mistral-nemotron'  # benchmark winner (22/22 parse, 12s/call)
 
     def __init__(self, model: str = DEFAULT_MODEL):
         self._model     = model

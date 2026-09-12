@@ -580,8 +580,8 @@ backends:
           values, and labels are sent.
   nvidia  Send the Excel structure description to NVIDIA NIM (free-tier cloud).
           Needs NVIDIA_API_KEY (free key at build.nvidia.com) and pip install openai.
-          Default model: z-ai/glm-5.3-flash (override with --nvidia-model).
-          Other examples: mistralai/mistral-nemotron, nvidia/nemotron-3-super-120b-a12b
+          Default model: mistralai/mistral-nemotron (override with --nvidia-model).
+          Other examples: nvidia/nemotron-3-super-120b-a12b, z-ai/glm-5.3-flash
           The raw file is NOT transmitted — only column types, sample
           values, and labels are sent.
   server  Send the Excel structure description to any OpenAI-compatible API
@@ -660,10 +660,10 @@ def _draft_args(p: argparse.ArgumentParser) -> None:
     )
     p.add_argument(
         '--nvidia-model',
-        default=os.environ.get('GREPXCEL_NVIDIA_MODEL', 'z-ai/glm-5.3-flash'),
+        default=os.environ.get('GREPXCEL_NVIDIA_MODEL', 'mistralai/mistral-nemotron'),
         help="NVIDIA NIM model id when --backend nvidia, e.g. "
-             "'nvidia/nemotron-3-super-120b-a12b', 'openai/gpt-oss-20b' "
-             "(default: z-ai/glm-5.3-flash). "
+             "'nvidia/nemotron-3-super-120b-a12b', 'z-ai/glm-5.3-flash' "
+             "(default: mistralai/mistral-nemotron — benchmark winner). "
              "Available models vary by account tier — run `grepxcel doctor draft` to check. "
              "Also via GREPXCEL_NVIDIA_MODEL.",
     )
