@@ -554,6 +554,47 @@ def create_app(
             'rows':     len(csv_text.splitlines()),
         })
 
+    @app.post('/api/save-xlsx')
+    async def api_save_xlsx(request: Request):
+        """Generate and save the pattern as a coloured .xlsx file."""
+        import csv as _csv
+        import io as _io
+        body       = await request.json()
+        xlsx_path_ = Path(_STATE['xlsx_path'])
+
+        out_name = body.get('filename', '')
+        if not out_name:
+            stem     = xlsx_path_.stem
+            out_name = stem + '_pattern-from-web.xlsx'
+        out_path = xlsx_path_.parent / out_name
+
+        try:
+            csv_text = _make_csv()
+            # Parse CSV rows
+            rows = list(_csv.reader(_io.StringIO(csv_text)))
+            # Write xlsx
+            out_wb = openpyxl.Workbook()
+            out_ws = out_wb.active
+            out_ws.title = 'pattern'
+            for row in rows:
+                out_ws.append(row)
+            out_wb.save(str(out_path))
+            # Colourize
+            try:
+                from .pattern_colors import colorize_pattern_file
+                colorize_pattern_file(str(out_path))
+            except Exception:
+                pass  # colour is cosmetic — don't fail on it
+        except Exception as exc:
+            raise HTTPException(500, str(exc))
+
+        _STATE['log'].write('SAVE', f'path={out_path} format=xlsx rows={len(rows)}')
+        return JSONResponse({
+            'ok':       True,
+            'saved_to': str(out_path),
+            'rows':     len(rows),
+        })
+
     @app.get('/api/cell/{ref}')
     async def api_cell(ref: str):
         ref = ref.upper()
