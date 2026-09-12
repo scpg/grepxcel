@@ -570,6 +570,12 @@ backends:
           Uses claude-sonnet-5 by default — high quality at reasonable cost.
           The raw file is NOT transmitted — only column types, sample
           values, and labels are sent.
+  nvidia  Send the Excel structure description to NVIDIA NIM (free-tier cloud).
+          Needs NVIDIA_API_KEY (free key at build.nvidia.com) and pip install openai.
+          Default model: z-ai/glm-5.3-flash (override with --nvidia-model).
+          Other examples: mistralai/mistral-nemotron, nvidia/nemotron-3-super-120b-a12b
+          The raw file is NOT transmitted — only column types, sample
+          values, and labels are sent.
   server  Send the Excel structure description to any OpenAI-compatible API
           server (LM Studio, Ollama, vLLM, text-generation-inference, etc.).
           Needs pip install openai. Default URL: http://localhost:1234/v1
