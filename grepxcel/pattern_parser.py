@@ -350,6 +350,7 @@ class PatternParser:
                     ignore_case=global_config.ignore_case,
                     lbl_match=global_config.lbl_match,
                 )
+                explicit_table_cfg_keys: set[str] = set()
                 template_rows = []
                 i += 1
 
@@ -377,8 +378,10 @@ class PatternParser:
                                     f"Invalid read.direction '{val}' in table config. "
                                     f"Valid values: LR (left-to-right), TD (top-down)")
                             table_config.read_direction = direction
+                            explicit_table_cfg_keys.add('read.direction')
                         elif key == 'ignore.case' and val is not None:
                             table_config.ignore_case = _truthy(val)
+                            explicit_table_cfg_keys.add('ignore.case')
                         i += 1
                         continue
 
@@ -513,6 +516,7 @@ class PatternParser:
                     multiplicity=mult,
                     config=table_config,
                     rows=template_rows,
+                    explicit_config_keys=frozenset(explicit_table_cfg_keys),
                 ))
 
             elif col_a_l in ('doc:', 'info:'):

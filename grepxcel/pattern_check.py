@@ -316,6 +316,24 @@ def render_result(result: CheckResult, verbose: bool = False, out=None) -> None:
             elif isinstance(instr, TableInstruction):
                 step = paint(f'table:{instr.multiplicity}', 'green', color)
                 print(f'     {step}', file=out)
+                # Print per-table config entries that were explicitly declared
+                # in the pattern (tracked by explicit_config_keys on the
+                # instruction).  We show the actual values, not a diff — even
+                # if a value matches the global, it appeared in the file.
+                explicit = instr.explicit_config_keys
+                if explicit:
+                    tcfg = instr.config
+                    parts: list[str] = []
+                    if 'read.direction' in explicit:
+                        parts.append(
+                            f'read.direction {paint(tcfg.read_direction, "cyan", color)}'
+                        )
+                    if 'ignore.case' in explicit:
+                        parts.append(
+                            f'ignore.case {paint(str(tcfg.ignore_case), "cyan", color)}'
+                        )
+                    cfg_label = paint('config:', 'dim', color)
+                    print(f'        {cfg_label}  {"  ".join(parts)}', file=out)
                 _render_table_grid(instr.rows, out, color)
 
 

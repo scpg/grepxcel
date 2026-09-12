@@ -158,6 +158,70 @@ def test_verbose_table_with_skip_if(tmp_path):
     assert 'SKIP_IF' not in header_line
 
 
+def test_verbose_table_per_table_config_shown(tmp_path):
+    """A per-table config: row is shown between 'table:N' and the grid."""
+    rows = [
+        ['lbl:', 'h', 'string', 'Name'],
+        ['var:', 'v', 'string', '.*'],
+        ['START:'],
+        ['table:1'],
+        ['', 'config:', 'read.direction', 'TD'],
+        ['', 'HEADER:1', 'h'],
+        ['', 'DATA:*', 'v'],
+        ['END:'],
+    ]
+    buf = io.StringIO()
+    run_validate([_write(rows, tmp_path)], verbose=True, out=buf)
+    out = buf.getvalue()
+    lines = out.splitlines()
+    table_idx = next(i for i, l in enumerate(lines) if 'table:1' in l)
+    cfg_line = lines[table_idx + 1]
+    assert 'config:' in cfg_line
+    assert 'read.direction' in cfg_line
+    assert 'TD' in cfg_line
+
+
+def test_verbose_table_per_table_config_same_as_global_still_shown(tmp_path):
+    """Per-table config is shown even when the value matches the global default —
+    it was explicitly written in the pattern file."""
+    rows = [
+        ['lbl:', 'h', 'string', 'Name'],
+        ['var:', 'v', 'string', '.*'],
+        ['START:'],
+        ['table:1'],
+        ['', 'config:', 'read.direction', 'LR'],  # LR is the global default
+        ['', 'HEADER:1', 'h'],
+        ['', 'DATA:*', 'v'],
+        ['END:'],
+    ]
+    buf = io.StringIO()
+    run_validate([_write(rows, tmp_path)], verbose=True, out=buf)
+    out = buf.getvalue()
+    assert 'read.direction' in out   # must appear even though LR == global default
+    assert 'LR' in out
+
+
+def test_verbose_table_no_per_table_config_no_config_line(tmp_path):
+    """A table without any config: row shows no config line under 'table:N'."""
+    rows = [
+        ['lbl:', 'h', 'string', 'Name'],
+        ['var:', 'v', 'string', '.*'],
+        ['START:'],
+        ['table:1'],
+        ['', 'HEADER:1', 'h'],
+        ['', 'DATA:*', 'v'],
+        ['END:'],
+    ]
+    buf = io.StringIO()
+    run_validate([_write(rows, tmp_path)], verbose=True, out=buf)
+    out = buf.getvalue()
+    lines = out.splitlines()
+    table_idx = next(i for i, l in enumerate(lines) if 'table:1' in l)
+    first_sub_line = lines[table_idx + 1]
+    # The first line under table:1 should be the grid row, not a config: line
+    assert 'HEADER:1' in first_sub_line
+
+
 # ── lbl.match warnings ────────────────────────────────────────────────────────
 
 def _lbl_pattern(rows, tmp_path):

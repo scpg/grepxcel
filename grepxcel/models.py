@@ -60,6 +60,10 @@ class TableInstruction:
     multiplicity: str  # '1' or '*'
     config: Config     # table-level config (may override global)
     rows: list         # list[TemplateRow]
+    explicit_config_keys: frozenset = field(default_factory=frozenset)
+    # Keys that were explicitly declared in the table's config: block, e.g.
+    # frozenset({'read.direction', 'ignore.case'}).  Used by validate-pattern
+    # -v to show exactly what the author wrote, independent of the global value.
 
 
 @dataclass
