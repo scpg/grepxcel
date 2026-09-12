@@ -5,7 +5,7 @@
   "employee": {
     "name": "Shir Rosenstein",
     "manager": "Naoki Kaneko",
-    "week_starting": "2026-09-10 00:00:00"
+    "week_starting": "2026-09-12 00:00:00"
   },
   "rate": {
     "regular": 15,
@@ -18,8 +18,8 @@
     "regular": 675,
     "overtime": 52.5,
     "sick": 247.5,
-    "holiday": 0,
-    "vacation": "#N/A",
-    "grand_total": "#N/A"
+    "holiday": 120,
+    "vacation": 120,
+    "grand_total": 1215
   }
 }
