@@ -17,15 +17,12 @@ build/
 *.egg
 pip-wheel-metadata/
 
-# ── Runtime output (directories kept in repo via .gitkeep) ───────────────────
-logs/*
-!logs/.gitkeep
+# ── Runtime output (directory kept in repo via .gitkeep) ─────────────────────
 output/*
 !output/.gitkeep
 
-# ── Wizard logs created inside fixture/sample dirs (never committed) ──────────
-tests/fixtures/**/logs/
-samples.local/**/logs/
+# ── Logs — ignored everywhere (CLI creates the dir at runtime via os.makedirs) ─
+**/logs/
 
 # ── Wizard-generated pattern files (timestamped, never committed) ─────────────
 *-wizard-*.xlsx
