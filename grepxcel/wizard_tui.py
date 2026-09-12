@@ -921,10 +921,20 @@ if _TEXTUAL_OK:
         'boolean', 'date', 'datetime', 'time', 'duration',
     ]
 
-    # var: match-mode override options (col A prefix modifier)
-    _VAR_MODE_OPTIONS = ['(default)', 'literal', 'glob']
-    # lbl: match-mode override options (col A prefix modifier)
-    _LBL_MODE_OPTIONS = ['(default)', 'glob', 'regexp']
+    # var: match-mode override options — tuples (display_label, internal_value)
+    # default for var: is regexp; keeping '(default)' as internal sentinel so
+    # all existing comparisons remain unchanged.
+    _VAR_MODE_OPTIONS = [
+        ('regexp  (default)', '(default)'),
+        'literal',
+        'glob',
+    ]
+    # lbl: match-mode override options — default since PR #43 is literal.
+    _LBL_MODE_OPTIONS = [
+        ('literal  (default)', '(default)'),
+        'glob',
+        'regexp',
+    ]
     # var: field modifier combinations
     _VAR_MODIFIER_OPTIONS = [
         'none',
@@ -978,9 +988,14 @@ if _TEXTUAL_OK:
                     presets = field[3] if len(field) > 3 else None
                     yield Label(lbl, classes='lbl')
                     if opts is not None:
-                        sel_val = default if default in opts else opts[0]
+                        # opts entries may be bare strings or (display_label, value) tuples.
+                        def _opt_pair(o):
+                            return o if isinstance(o, tuple) else (o, o)
+                        pairs      = [_opt_pair(o) for o in opts]
+                        opt_values = [v for _, v in pairs]
+                        sel_val    = default if default in opt_values else opt_values[0]
                         yield Select(
-                            [(o, o) for o in opts],
+                            pairs,
                             value=sel_val,
                             id=f'f{i}',
                             allow_blank=False,
