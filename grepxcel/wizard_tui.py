@@ -1023,18 +1023,17 @@ if _TEXTUAL_OK:
                 try:
                     w = self.query_one(f'#f{i}')
                     if w is event.input:
-                        # Advance to the next INPUT field, skipping Selects.
-                        # Textual's Select widget consumes ENTER internally
-                        # (open/close overlay), so ENTER-based navigation must
-                        # skip them. The user reaches Selects via Tab.
+                        # Advance focus to the very next field (Input OR Select).
+                        # Pressing Enter on a Select opens its dropdown — safe
+                        # because on_key('enter') is a no-op at modal level and
+                        # cannot accidentally dismiss the modal.
                         advanced = False
                         for next_i in range(i + 1, len(self._fields)):
                             try:
                                 nw = self.query_one(f'#f{next_i}')
-                                if isinstance(nw, Input):
-                                    nw.focus()
-                                    advanced = True
-                                    break
+                                nw.focus()
+                                advanced = True
+                                break
                             except Exception:
                                 pass
                         if not advanced:
@@ -1952,8 +1951,12 @@ if _TEXTUAL_OK:
                 self._log_file.write(f'Started   : {self._session_start}\n')
                 self._log_file.write(f'{sep}\n')
                 self._log_file.write(f'# Columns: timestamp   EVENT_TYPE    detail\n')
-                self._log_file.write(f'# COMMENT lines = user notes typed with ;\n')
-                self._log_file.write(f'# NOTE lines    = per-cell notes typed with F2\n')
+                self._log_file.write(f'# COMMENT lines = user notes typed with ;  '
+                                     f'[in:main-grid, cell:XX] = where note was entered\n')
+                self._log_file.write(f'# NOTE lines    = per-cell notes typed with F2 or '
+                                     f'via modal Notes field  '
+                                     f'[in:Label-modal|Value-modal|Table-modal|Cell-note-F2]\n')
+                self._log_file.write(f'# SETTINGS      = full config snapshot after each F4 save\n')
                 self._log_file.write(f'{sep}\n\n')
                 self._log_file.flush()
             except OSError:
@@ -2733,10 +2736,16 @@ if _TEXTUAL_OK:
                         1 for r, c in self._cells
                         if self._ws.cell(row=r, column=c).value is not None
                     )
+                _aliases_s = ', '.join(cfg.get('empty_aliases', []))
                 self._log(
                     'SETTINGS',
-                    f'direction={cfg["direction"]}  ignore_case={cfg.get("ignore_case")}  '
-                    f'currency={cfg.get("currency_sign")}  template={cfg["template"]}',
+                    f'direction={cfg["direction"]}  template={cfg["template"]}'
+                    f'  ignore_case={cfg.get("ignore_case", False)}'
+                    f'  trim_ws={cfg.get("trim_whitespace", False)}'
+                    f'  currency={cfg.get("currency_sign", "€")}'
+                    f'  lbl_match={cfg.get("lbl_match", "literal") or "literal"}'
+                    f'  var_match={cfg.get("var_match", "regexp") or "regexp"}'
+                    f'  aliases=[{_aliases_s}]',
                 )
                 self.notify('Settings updated.', timeout=2)
 
@@ -2913,7 +2922,7 @@ if _TEXTUAL_OK:
                                    'lbl_mode': lbl_mode})
                 if notes:
                     self._notes[ref] = notes
-                    self._log('NOTE', f'{ref}: {notes}')
+                    self._log('NOTE', f'{ref}  [in:Label-modal]  {notes}')
                 elif ref in self._notes:
                     del self._notes[ref]
                 reclassify = f'  (was {old})' if old else ''
@@ -2929,12 +2938,14 @@ if _TEXTUAL_OK:
 
             self.push_screen(
                 _FieldsModal(
-                    '[bold green]Label[/bold green] — text that identifies a nearby value',
+                    '[bold green]Label[/bold green] — text anchor for a nearby value  '
+                    '[dim](no modifiers — use Value for those)[/dim]',
                     [('Label anchor name', existing_meta.get('name', default_name)),
                      ('Type', existing_meta.get('ltype', _infer_cell_type(
                          self._ws.cell(row=self._ws_row, column=self._ws_col))),
                       _TYPE_OPTIONS),
-                     ('Match mode  (col A override)', existing_lbl_mode, _LBL_MODE_OPTIONS),
+                     ('Match mode  (col A override · literal is default)',
+                      existing_lbl_mode, _LBL_MODE_OPTIONS),
                      ('Match  (exact text · F4 cycles presets)',
                       existing_meta.get('lmatch', default_match), None, _MATCH_PRESETS),
                      ('Notes  (written to session log — optional)', existing_note)],
@@ -3004,7 +3015,7 @@ if _TEXTUAL_OK:
                                    'col_a_extra': col_a_extra})
                 if notes:
                     self._notes[ref] = notes
-                    self._log('NOTE', f'{ref}: {notes}')
+                    self._log('NOTE', f'{ref}  [in:Value-modal]  {notes}')
                 elif ref in self._notes:
                     del self._notes[ref]
                 reclassify = f'  (was {old})' if old else ''
@@ -3023,7 +3034,8 @@ if _TEXTUAL_OK:
                      ('Match mode  (col A prefix)', ex_var_mode, _VAR_MODE_OPTIONS),
                      ('Match pattern  (F4 cycles presets)',
                       existing_meta.get('match', '.*'), None, _MATCH_PRESETS),
-                     ('Modifiers', ex_modifiers, _VAR_MODIFIER_OPTIONS),
+                     ('Modifiers  (nullable/not-null/trim-ws · colon = combine both)',
+                      ex_modifiers, _VAR_MODIFIER_OPTIONS),
                      ('Notes  (written to session log — optional)', existing_note)],
                 ),
                 _done,
@@ -3203,7 +3215,7 @@ if _TEXTUAL_OK:
                                     d_rows[0] if d_rows else start_row, cinfo['col']
                                 )
                                 self._notes[d_ref] = note
-                                self._log('NOTE', f'{d_ref}: {note}  (DATA col {cinfo["letter"]})')
+                                self._log('NOTE', f'{d_ref}  [in:Table-modal, col {cinfo["letter"]}]  {note}')
 
                         # Remove old table if editing
                         if existing_meta and existing_anchor:
@@ -3606,10 +3618,10 @@ if _TEXTUAL_OK:
                 note = result[0].strip()
                 if note:
                     self._notes[ref] = note
-                    self._log('NOTE', f'{ref}: {note}')
+                    self._log('NOTE', f'{ref}  [in:Cell-note-F2]  {note}')
                 elif ref in self._notes:
                     del self._notes[ref]
-                    self._log('NOTE-DEL', f'{ref}: removed')
+                    self._log('NOTE-DEL', f'{ref}  [in:Cell-note-F2]  removed')
                 self._refresh_panel()
 
             self.push_screen(
@@ -3630,7 +3642,7 @@ if _TEXTUAL_OK:
                     return
                 text = result[0].strip()
                 if text:
-                    self._log('COMMENT', f'[{ref}] {text}')
+                    self._log('COMMENT', f'[in:main-grid, cell:{ref}]  {text}')
                     self.notify('Comment saved to log.', timeout=2)
 
             self.push_screen(
