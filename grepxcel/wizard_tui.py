@@ -33,7 +33,7 @@ try:
     from textual.binding import Binding
     from textual.containers import Horizontal, Vertical
     from textual.screen import ModalScreen
-    from textual.widgets import DataTable, Footer, Header, Input, Label, Select, Static
+    from textual.widgets import Button, DataTable, Footer, Header, Input, Label, Select, Static
     from rich.text import Text as RichText
     _TEXTUAL_OK = True
 except ImportError:
@@ -967,11 +967,13 @@ if _TEXTUAL_OK:
         _FieldsModal > #dialog    { background: $surface; border: thick $primary;
                                     width: 68; height: auto; max-height: 82vh;
                                     padding: 1 2; overflow-y: auto; }
-        _FieldsModal Label.title   { text-style: bold; margin-bottom: 1; }
-        _FieldsModal Label.lbl     { color: $text-muted; margin-top: 1; }
-        _FieldsModal Label.hint    { color: $text-muted; margin-top: 1; }
+        _FieldsModal Label.title   { text-style: bold; margin-bottom: 0; }
+        _FieldsModal Label.lbl     { color: $text-muted; margin-top: 1; margin-bottom: 0; }
+        _FieldsModal Label.hint    { color: $text-muted; margin-top: 0; }
         _FieldsModal Label.presets { color: $text-muted; margin-top: 0; }
         _FieldsModal Select        { width: 100%; margin-top: 0; }
+        _FieldsModal Horizontal.btns { height: auto; margin-top: 1; }
+        _FieldsModal Horizontal.btns Button { width: 1fr; }
         """
 
         def __init__(self, title: str, fields: list[tuple]) -> None:
@@ -1005,7 +1007,10 @@ if _TEXTUAL_OK:
                     if presets is not None:
                         labels = '  '.join(f'[dim]{lbl}[/dim]' for _, lbl in presets)
                         yield Label(f'F4 cycles: {labels}', classes='presets')
-                yield Label('ENTER = confirm  •  Tab = next field  •  ESC = cancel', classes='hint')
+                yield Label('ENTER = next field  •  Tab = navigate  •  Ctrl+Enter = confirm', classes='hint')
+                with Horizontal(classes='btns'):
+                    yield Button('OK', variant='primary', id='ok_btn')
+                    yield Button('Cancel', variant='default', id='cancel_btn')
 
         def on_mount(self) -> None:
             try:
@@ -1039,8 +1044,16 @@ if _TEXTUAL_OK:
                     pass
             self._submit()
 
+        def on_button_pressed(self, event: Button.Pressed) -> None:
+            if event.button.id == 'ok_btn':
+                self._submit()
+            elif event.button.id == 'cancel_btn':
+                self.dismiss(None)
+
         def on_key(self, event) -> None:
-            if event.key == 'escape':
+            if event.key == 'ctrl+enter':
+                self._submit()
+            elif event.key == 'escape':
                 self.dismiss(None)
             elif event.key == 'enter':
                 # If Select dropdown is open, let Select handle ENTER (picks the item).
@@ -1111,7 +1124,9 @@ if _TEXTUAL_OK:
         _GotoModal > #dialog    { background: $surface; border: thick $primary;
                                   width: 44; height: auto; padding: 1 2; }
         _GotoModal Label.title  { text-style: bold; margin-bottom: 1; }
-        _GotoModal Label.hint   { color: $text-muted; margin-top: 1; }
+        _GotoModal Label.hint   { color: $text-muted; margin-top: 0; margin-bottom: 0; }
+        _GotoModal Horizontal.btns { height: auto; margin-top: 1; }
+        _GotoModal Horizontal.btns Button { width: 1fr; }
         """
 
         def compose(self) -> ComposeResult:
@@ -1119,12 +1134,22 @@ if _TEXTUAL_OK:
                 yield Label('Go to cell', classes='title')
                 yield Input(placeholder='e.g. B5', id='ref')
                 yield Label('ENTER = jump  •  ESC = cancel', classes='hint')
+                with Horizontal(classes='btns'):
+                    yield Button('Jump', variant='primary', id='ok_btn')
+                    yield Button('Cancel', variant='default', id='cancel_btn')
 
         def on_mount(self) -> None:
             self.query_one('#ref', Input).focus()
 
         def on_input_submitted(self, event: Input.Submitted) -> None:
             self.dismiss(event.value.strip().upper() or None)
+
+        def on_button_pressed(self, event: Button.Pressed) -> None:
+            if event.button.id == 'ok_btn':
+                ref = self.query_one('#ref', Input).value.strip().upper()
+                self.dismiss(ref or None)
+            elif event.button.id == 'cancel_btn':
+                self.dismiss(None)
 
         def on_key(self, event) -> None:
             if event.key == 'escape':
@@ -1143,6 +1168,7 @@ if _TEXTUAL_OK:
         _ConfigModal Select       { margin-bottom: 1; }
         _ConfigModal Input        { margin-bottom: 1; }
         _ConfigModal Label.hint   { color: $text-muted; margin-top: 1; }
+        _ConfigModal #ok_btn      { width: 100%; margin-top: 1; }
         """
 
         def __init__(self, is_template: bool,
@@ -1215,36 +1241,55 @@ if _TEXTUAL_OK:
                             classes='desc')
                 aliases_val = ', '.join(pc.get('empty_aliases', []))
                 yield Input(value=aliases_val, id='aliases', placeholder='N/A, -, n/a')
-                yield Label('ENTER = start  •  Tab = next field  •  ESC = cancel',
+                yield Button('OK — save settings', variant='primary', id='ok_btn')
+                yield Label('Tab = next field  •  Ctrl+Enter = confirm  •  ESC = cancel',
                             classes='hint')
 
+        # ------------------------------------------------------------------
+        # Helpers
+        # ------------------------------------------------------------------
+
+        def _read_values(self) -> dict:
+            """Collect current widget values and return a config dict."""
+            try:
+                direction     = str(self.query_one('#dir',       Select).value)
+                template      = str(self.query_one('#tpl',       Select).value) == 'yes'
+                ignore_case   = str(self.query_one('#ic',        Select).value) == 'yes'
+                trim_ws       = str(self.query_one('#trim_ws',   Select).value) == 'yes'
+                currency_sign = self.query_one('#cur', Input).value.strip() or '€'
+                lbl_match_v   = str(self.query_one('#lbl_match', Select).value)
+                var_match_v   = str(self.query_one('#var_match', Select).value)
+                aliases_raw   = self.query_one('#aliases', Input).value.strip()
+                aliases       = [a.strip() for a in aliases_raw.split(',') if a.strip()]
+            except Exception:
+                direction, template = 'LR', self._is_template
+                ignore_case, trim_ws, currency_sign = False, False, '€'
+                lbl_match_v, var_match_v, aliases = 'literal', 'regexp', []
+            return {
+                'direction':       direction,
+                'template':        template,
+                'ignore_case':     ignore_case,
+                'trim_whitespace': trim_ws,
+                'currency_sign':   currency_sign,
+                'lbl_match':       lbl_match_v,
+                'var_match':       var_match_v,
+                'empty_aliases':   aliases,
+            }
+
+        def on_button_pressed(self, event: Button.Pressed) -> None:
+            if event.button.id == 'ok_btn':
+                self.dismiss(self._read_values())
+
         def on_key(self, event) -> None:
-            if event.key == 'enter':
-                try:
-                    direction     = str(self.query_one('#dir',       Select).value)
-                    template      = str(self.query_one('#tpl',       Select).value) == 'yes'
-                    ignore_case   = str(self.query_one('#ic',        Select).value) == 'yes'
-                    trim_ws       = str(self.query_one('#trim_ws',   Select).value) == 'yes'
-                    currency_sign = self.query_one('#cur', Input).value.strip() or '€'
-                    lbl_match_v   = str(self.query_one('#lbl_match', Select).value)
-                    var_match_v   = str(self.query_one('#var_match', Select).value)
-                    aliases_raw   = self.query_one('#aliases', Input).value.strip()
-                    aliases       = [a.strip() for a in aliases_raw.split(',')
-                                     if a.strip()]
-                except Exception:
-                    direction, template = 'LR', self._is_template
-                    ignore_case, trim_ws, currency_sign = False, False, '€'
-                    lbl_match_v, var_match_v, aliases = 'literal', 'regexp', []
-                self.dismiss({
-                    'direction':        direction,
-                    'template':         template,
-                    'ignore_case':      ignore_case,
-                    'trim_whitespace':  trim_ws,
-                    'currency_sign':    currency_sign,
-                    'lbl_match':        lbl_match_v,
-                    'var_match':        var_match_v,
-                    'empty_aliases':    aliases,
-                })
+            if event.key == 'ctrl+enter':
+                # Force-confirm from any widget (useful from Select dropdowns).
+                self.dismiss(self._read_values())
+            elif event.key == 'enter':
+                # When a Select dropdown is focused, Enter opens/closes it —
+                # don't dismiss the modal yet; let the Select handle the key.
+                if isinstance(self.focused, Select):
+                    return
+                self.dismiss(self._read_values())
             elif event.key == 'escape':
                 self.dismiss(None)
 
@@ -1256,7 +1301,8 @@ if _TEXTUAL_OK:
         _ZoomModal > #dialog    { background: $surface; border: thick $primary;
                                   width: 72; height: auto; padding: 1 2; }
         _ZoomModal Label.title  { text-style: bold; color: $accent; margin-bottom: 1; }
-        _ZoomModal Label.hint   { color: $text-muted; margin-top: 1; }
+        _ZoomModal Label.hint   { color: $text-muted; margin-top: 0; margin-bottom: 0; }
+        _ZoomModal #close_btn   { width: 100%; margin-top: 1; }
         """
 
         def __init__(self, ref: str, value: Any, meta: dict | None) -> None:
@@ -1277,7 +1323,11 @@ if _TEXTUAL_OK:
             with Vertical(id='dialog'):
                 yield Label(f'Cell {self._ref}', classes='title')
                 yield Static(f'[white]{display}[/white]{status}')
-                yield Label('ESC / ENTER to close', classes='hint')
+                yield Label('ESC / ENTER / Space to close', classes='hint')
+                yield Button('Close', variant='default', id='close_btn')
+
+        def on_button_pressed(self, event: Button.Pressed) -> None:
+            self.dismiss(None)
 
         def on_key(self, event) -> None:
             if event.key in ('escape', 'enter', 'space'):
@@ -1292,7 +1342,8 @@ if _TEXTUAL_OK:
                                      width: 80; height: 28; padding: 1 2;
                                      overflow-y: auto; }
         _PreviewModal Label.title  { text-style: bold; color: $accent; margin-bottom: 1; }
-        _PreviewModal Label.hint   { color: $text-muted; margin-top: 1; }
+        _PreviewModal Label.hint   { color: $text-muted; margin-top: 0; margin-bottom: 0; }
+        _PreviewModal #close_btn   { width: 100%; margin-top: 1; }
         """
 
         def __init__(self, csv_text: str) -> None:
@@ -1304,6 +1355,10 @@ if _TEXTUAL_OK:
                 yield Label('Pattern preview (current state)', classes='title')
                 yield Static(self._csv)
                 yield Label('ESC to close', classes='hint')
+                yield Button('Close', variant='default', id='close_btn')
+
+        def on_button_pressed(self, event: Button.Pressed) -> None:
+            self.dismiss(None)
 
         def on_key(self, event) -> None:
             if event.key == 'escape':
@@ -1317,7 +1372,8 @@ if _TEXTUAL_OK:
                                   width: 84; height: auto; max-height: 44;
                                   padding: 1 2; overflow-y: auto; }
         _HelpModal Label.title  { text-style: bold; color: $accent; margin-bottom: 1; }
-        _HelpModal Label.hint   { color: $text-muted; margin-top: 1; }
+        _HelpModal Label.hint   { color: $text-muted; margin-top: 0; margin-bottom: 0; }
+        _HelpModal #close_btn   { width: 100%; margin-top: 1; }
         """
 
         _HELP = """\
@@ -1355,7 +1411,7 @@ if _TEXTUAL_OK:
   [bold]F2[/bold]         Add internal note to current cell
   [bold]Ctrl+Z[/bold]     Undo last classification
   [bold]E[/bold]          End wizard and save pattern file
-  [bold]Ctrl+Q[/bold]     Cancel without saving
+  [bold]Q / Ctrl+Q[/bold]  Cancel without saving (no pattern written)
 
 [bold cyan]LEGEND[/bold cyan]
 
@@ -1367,20 +1423,26 @@ if _TEXTUAL_OK:
             with Vertical(id='dialog'):
                 yield Label('grepxcel wizard — Help  (F1)', classes='title')
                 yield Static(self._HELP)
-                yield Label('ESC to close', classes='hint')
+                yield Label('ESC / ENTER to close', classes='hint')
+                yield Button('Close', variant='default', id='close_btn')
+
+        def on_button_pressed(self, event: Button.Pressed) -> None:
+            self.dismiss(None)
 
         def on_key(self, event) -> None:
-            if event.key == 'escape':
+            if event.key in ('escape', 'enter'):
                 self.dismiss(None)
 
 
     class _ConfirmModal(ModalScreen):
-        """Warning + Y/N confirmation before a destructive/questionable save."""
+        """Warning + Yes/No confirmation before a destructive/questionable save."""
         DEFAULT_CSS = """
         _ConfirmModal              { align: center middle; }
         _ConfirmModal > #dialog    { background: $surface; border: thick $warning;
                                      width: 72; height: auto; padding: 1 2; }
-        _ConfirmModal Label.hint   { color: $text-muted; margin-top: 1; }
+        _ConfirmModal Label.hint   { color: $text-muted; margin-top: 0; margin-bottom: 0; }
+        _ConfirmModal Horizontal.btns { height: auto; margin-top: 1; }
+        _ConfirmModal Horizontal.btns Button { width: 1fr; }
         """
 
         def __init__(self, message: str) -> None:
@@ -1390,12 +1452,18 @@ if _TEXTUAL_OK:
         def compose(self) -> ComposeResult:
             with Vertical(id='dialog'):
                 yield Static(self._message)
-                yield Label('Y = save anyway  •  any other key = go back', classes='hint')
+                yield Label('Y = save anyway  •  ESC / N = go back', classes='hint')
+                with Horizontal(classes='btns'):
+                    yield Button('Save anyway', variant='warning', id='ok_btn')
+                    yield Button('Go back', variant='default', id='cancel_btn')
+
+        def on_button_pressed(self, event: Button.Pressed) -> None:
+            self.dismiss(event.button.id == 'ok_btn')
 
         def on_key(self, event) -> None:
             if event.key.lower() == 'y':
                 self.dismiss(True)
-            else:
+            elif event.key in ('escape', 'n'):
                 self.dismiss(False)
 
 
@@ -1407,7 +1475,9 @@ if _TEXTUAL_OK:
                                  width: 90; height: 34; padding: 1 2;
                                  overflow-y: auto; }
         _LogModal Label.title  { text-style: bold; color: $warning; margin-bottom: 1; }
-        _LogModal Label.hint   { color: $text-muted; margin-top: 1; }
+        _LogModal Label.hint   { color: $text-muted; margin-top: 0; margin-bottom: 0; }
+        _LogModal Horizontal.btns { height: auto; margin-top: 1; }
+        _LogModal Horizontal.btns Button { width: 1fr; }
         """
 
         def __init__(self, lines: list[str], data_file: str) -> None:
@@ -1422,28 +1492,40 @@ if _TEXTUAL_OK:
             with Vertical(id='dialog'):
                 yield Label(f'Session event log — {fname}', classes='title')
                 yield Static(content)
-                yield Label('ESC to close  •  W to write log to file', classes='hint')
+                yield Label('ESC / Close to exit  •  W or "Write to file" to save', classes='hint')
+                with Horizontal(classes='btns'):
+                    yield Button('Write to file  (W)', variant='warning', id='write_btn')
+                    yield Button('Close', variant='default', id='close_btn')
+
+        def _do_write(self) -> None:
+            ts       = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
+            stem     = os.path.splitext(os.path.basename(self._data_file))[0]
+            log_path = os.path.join(
+                os.path.dirname(os.path.abspath(self._data_file)),
+                f'grepxcel-wizard-log-{stem}-{ts}.txt',
+            )
+            with open(log_path, 'w', encoding='utf-8') as fh:
+                fh.write('\n'.join(self._lines))
+            self._wrote = log_path
+            # Update hint to confirm
+            try:
+                self.query_one('Label.hint', Label).update(
+                    f'[bold green]Written:[/bold green] {log_path}  •  ESC to close'
+                )
+            except Exception:
+                pass
+
+        def on_button_pressed(self, event: Button.Pressed) -> None:
+            if event.button.id == 'write_btn':
+                self._do_write()
+            elif event.button.id == 'close_btn':
+                self.dismiss(self._wrote)
 
         def on_key(self, event) -> None:
             if event.key == 'escape':
                 self.dismiss(self._wrote)
             elif event.key == 'w':
-                ts       = datetime.datetime.now().strftime('%Y%m%d-%H%M%S')
-                stem     = os.path.splitext(os.path.basename(self._data_file))[0]
-                log_path = os.path.join(
-                    os.path.dirname(os.path.abspath(self._data_file)),
-                    f'grepxcel-wizard-log-{stem}-{ts}.txt',
-                )
-                with open(log_path, 'w', encoding='utf-8') as fh:
-                    fh.write('\n'.join(self._lines))
-                self._wrote = log_path
-                # Update hint to confirm
-                try:
-                    self.query_one(Label.hint if False else 'Label.hint', Label).update(
-                        f'[bold green]Written:[/bold green] {log_path}  •  ESC to close'
-                    )
-                except Exception:
-                    pass
+                self._do_write()
 
 
     # ── Main application ───────────────────────────────────────────────────────
@@ -1460,10 +1542,12 @@ if _TEXTUAL_OK:
                                         width: 76; height: auto; padding: 1 3; }
         _TableSetupModal Label.title  { text-style: bold; color: $accent; margin-bottom: 1; }
         _TableSetupModal Label.sect   { text-style: bold; margin-top: 1; }
-        _TableSetupModal Label.desc   { color: $text-muted; margin-bottom: 1; }
-        _TableSetupModal Label.err    { color: $error; margin-top: 1; }
-        _TableSetupModal Label.hint   { color: $text-muted; margin-top: 1; }
-        _TableSetupModal Input        { margin-bottom: 1; }
+        _TableSetupModal Label.desc   { color: $text-muted; margin-bottom: 0; }
+        _TableSetupModal Label.err    { color: $error; margin-top: 0; }
+        _TableSetupModal Label.hint   { color: $text-muted; margin-top: 0; margin-bottom: 0; }
+        _TableSetupModal Input        { margin-bottom: 0; }
+        _TableSetupModal Horizontal.btns { height: auto; margin-top: 1; }
+        _TableSetupModal Horizontal.btns Button { width: 1fr; }
         """
 
         def __init__(self, default_name: str, default_range: str,
@@ -1493,9 +1577,18 @@ if _TEXTUAL_OK:
                 yield Input(value=self._default_mult, id='mult', placeholder='*')
                 yield Label(id='errmsg', classes='err')
                 yield Label('ENTER = next field  •  ESC = cancel', classes='hint')
+                with Horizontal(classes='btns'):
+                    yield Button('OK', variant='primary', id='ok_btn')
+                    yield Button('Cancel', variant='default', id='cancel_btn')
 
         def on_mount(self) -> None:
             self.query_one('#name', Input).focus()
+
+        def on_button_pressed(self, event: Button.Pressed) -> None:
+            if event.button.id == 'ok_btn':
+                self._validate_and_submit()
+            elif event.button.id == 'cancel_btn':
+                self.dismiss(None)
 
         def on_input_submitted(self, event: Input.Submitted) -> None:
             inputs = list(self.query(Input))
@@ -2186,7 +2279,7 @@ if _TEXTUAL_OK:
                 '',
                 '  [dim]Space[/dim] Zoom  [dim]F3[/dim] Preview  [dim]F1[/dim] Help',
                 '  [dim]F4[/dim] Settings  [dim]H[/dim] Highlight  [dim]^Z[/dim] Undo',
-                '  [dim]^D[/dim] Dark/light  [dim]^P[/dim] Palette',
+                '  [dim]Q/^Q[/dim] Quit  [dim]^D[/dim] Dark/light  [dim]^P[/dim] Palette',
                 '  [dim]F2[/dim] Cell note  [dim];[/dim] Comment  [dim]F11[/dim] Screenshot  [dim]F12[/dim] View log',
                 '',
             ]

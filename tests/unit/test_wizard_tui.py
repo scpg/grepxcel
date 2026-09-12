@@ -301,9 +301,9 @@ class TestWizardTUIApp:
 
     @staticmethod
     async def _accept_config_and_then(pilot, *keys):
-        """Accept the config modal (enter), then press each additional key."""
+        """Accept the config modal (ctrl+enter), then press each additional key."""
         await pilot.pause()
-        await pilot.press('enter')   # dismiss _ConfigModal with defaults
+        await pilot.press('ctrl+enter')  # dismiss _ConfigModal with defaults
         await pilot.pause()
         for key in keys:
             await pilot.press(key)
@@ -930,13 +930,13 @@ class TestConfigModalNewFields:
         return WizardTUIApp(ws2, state, xlsx_path)
 
     def test_config_modal_accepts_with_new_defaults(self, tmp_path):
-        """Config modal dismisses with ENTER; new config fields get defaults."""
+        """Config modal dismisses on OK button click; new config fields get defaults."""
         app = self._make_app({(1, 1): 'Hello'}, tmp_path)
 
         async def _run():
             async with app.run_test(headless=True, size=(120, 50)) as pilot:
                 await pilot.pause()
-                await pilot.press('enter')  # accept config modal
+                await pilot.press('ctrl+enter')  # accept config modal
                 await pilot.pause()
                 # New config defaults
                 assert app._state.trim_whitespace is False
@@ -955,7 +955,7 @@ class TestConfigModalNewFields:
         async def _run():
             async with app.run_test(headless=True, size=(120, 50)) as pilot:
                 await pilot.pause()
-                await pilot.press('enter')  # accept config
+                await pilot.press('ctrl+enter')  # accept config
                 await pilot.pause()
                 await pilot.press('i')      # classify as Ignore
                 await pilot.pause()
@@ -1879,7 +1879,7 @@ class TestPreloadTableTUI:
         async def _run():
             async with app.run_test(headless=True, size=(120, 40)) as pilot:
                 await pilot.pause()
-                await pilot.press('enter')  # accept config
+                await pilot.press('ctrl+enter')  # accept config
                 await pilot.pause()
                 await pilot.press('e')       # End & Save
                 await pilot.pause()
@@ -1954,7 +1954,7 @@ class TestPreloadPatternTUI:
     @staticmethod
     async def _accept_config(pilot):
         await pilot.pause()
-        await pilot.press('enter')
+        await pilot.press('ctrl+enter')  # dismiss _ConfigModal with defaults
         await pilot.pause()
 
     # ── Choices wiring ────────────────────────────────────────────────────────
@@ -2140,7 +2140,7 @@ class TestPreloadPatternTUI:
         async def _run():
             async with app.run_test(headless=True, size=(120, 40)) as pilot:
                 await pilot.pause()
-                await pilot.press('enter')  # accept config
+                await pilot.press('ctrl+enter')  # accept config
                 await pilot.pause()
                 await pilot.press('e')      # save
                 await pilot.pause()
