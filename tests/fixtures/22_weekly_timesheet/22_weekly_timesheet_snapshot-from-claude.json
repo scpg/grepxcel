@@ -1,10 +1,10 @@
 {
   "company": {
-    "name": "  TIME SHEET  "
+    "name": "NOD PUBLISHERS"
   },
   "footer": {
-    "sig_val": "  TIME SHEET  ",
-    "grand_total": "NOD PUBLISHERS"
+    "sig_val": "Employee name:",
+    "grand_total": "Apt. 100"
   },
   "pay": [
     {

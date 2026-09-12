@@ -257,36 +257,59 @@ def _build_nested_output(raw: dict, defs: dict) -> dict:
 
 # ── Sheet preparation helpers ──────────────────────────────────────────────────
 
-def _expand_merged_cells(ws) -> None:
+def _expand_merged_cells(ws) -> dict:
     """
-    Fill every cell in each merged range with the top-left value so the
-    scanner sees the value in every visually merged cell.
+    Unmerge all merged ranges, fill every non-anchor cell with the anchor value,
+    and return a merge-map for the scanner.
 
-    openpyxl makes non-top-left merged cells into read-only MergedCell proxy
-    objects — writing to them raises AttributeError. The fix is to snapshot
-    each range's bounds and top-left value, unmerge everything (which removes
-    the proxies and makes all cells writable again), then fill each cell.
+    **Fill rationale**: Excel displays merged ranges as a single visual cell.
+    Repeated reads of any position in the range (e.g., DATA rows in a vertical
+    merge used as a category column) must all return the same value, which
+    requires filling.
+
+    **Merge-map rationale**: the merge-map maps every (row, col) to the *full
+    set* of (row, col) cells in that range.  When the scanner consumes any cell
+    in a range it consumes all of them simultaneously, so the entire merged area
+    is treated as one logical cell for sequential scanning.  Without this, a
+    horizontal merge after a ``seek:`` + ``dir:`` change would expose duplicated
+    values to the scan; with it, consuming the anchor cell silently retires
+    every shadow cell too.
+
     The original file on disk is never modified — this operates on the
     in-memory workbook object only.
     """
+    merge_map: dict[tuple, set] = {}
+
+    # Snapshot everything before any structural changes, because unmerging
+    # modifies ws.merged_cells in place.
     snapshots = []
     for merged_range in list(ws.merged_cells.ranges):
+        cells_in_range: set[tuple] = set()
+        for row_num in range(merged_range.min_row, merged_range.max_row + 1):
+            for col_num in range(merged_range.min_col, merged_range.max_col + 1):
+                cells_in_range.add((row_num, col_num))
+        anchor_value = ws.cell(merged_range.min_row, merged_range.min_col).value
         snapshots.append((
             merged_range.min_row, merged_range.min_col,
             merged_range.max_row, merged_range.max_col,
-            ws.cell(merged_range.min_row, merged_range.min_col).value,
+            cells_in_range,
+            anchor_value,
         ))
 
-    for min_row, min_col, max_row, max_col, _ in snapshots:
+    for min_row, min_col, max_row, max_col, cells_in_range, anchor_value in snapshots:
         ws.unmerge_cells(
             start_row=min_row, start_column=min_col,
             end_row=max_row, end_column=max_col,
         )
-
-    for min_row, min_col, max_row, max_col, top_val in snapshots:
+        # Fill all cells (including the anchor) with the anchor value.
         for row_num in range(min_row, max_row + 1):
             for col_num in range(min_col, max_col + 1):
-                ws.cell(row=row_num, column=col_num).value = top_val
+                ws.cell(row=row_num, column=col_num).value = anchor_value
+        # Register the entire range in the merge-map.
+        for pos in cells_in_range:
+            merge_map[pos] = cells_in_range
+
+    return merge_map
 
 
 def _warn_uncached_formulas(ws, logger: Logger) -> None:
@@ -308,14 +331,21 @@ class SheetScanner:
     Table scanning uses a separate local cursor so it never moves the main cursor.
     """
 
-    def __init__(self, ws, config: Config):
+    def __init__(self, ws, config: Config, merge_map: dict | None = None):
         self.ws = ws
         self.config = config
         self.direction = config.read_direction
         self.consumed: set = set()
+        # merge_map: (row, col) → frozenset of all (row, col) in the same merged range.
+        # Consuming any cell in a range also consumes every other cell in that range,
+        # so the entire merged area is treated as a single logical cell.
+        self.merge_map: dict = merge_map or {}
         self.scan_order = self._build_scan_order()
         self.scan_order_index: dict[tuple, int] = {pos: i for i, pos in enumerate(self.scan_order)}
         self.cursor = 0
+        # Set True by seek: instructions; controls whether the *next* dir: change
+        # preserves the cursor position (seek-then-dir idiom) or resets it to 0.
+        self._cursor_from_seek: bool = False
 
     def _build_scan_order(self) -> list:
         cells = []
@@ -330,14 +360,43 @@ class SheetScanner:
         return cells
 
     def set_direction(self, direction: str) -> None:
-        """Switch the scan direction and rebuild the scan order. The cursor
-        resets to the start; already-consumed cells (tracked by position) are
-        skipped, so scanning continues over the not-yet-read cells in the new
-        direction."""
+        """Switch the scan direction and rebuild the scan order.
+
+        **Cursor behaviour** depends on what set the cursor most recently:
+
+        * If a ``seek:`` instruction was the last cursor-moving action
+          (``_cursor_from_seek`` is True), the cursor's current (row, col) is
+          preserved — it is repositioned to the same cell in the new order.
+          This is the ``seek:G4`` → ``dir:TD`` idiom: the direction change
+          should start scanning *from* the seeked cell, not from the top-left.
+
+        * Otherwise the cursor resets to 0 (beginning of the new scan order).
+          Already-consumed cells are skipped naturally by ``advance_to_next``.
+          This is the expected behaviour when a plain ``dir:`` mid-sequence
+          switches direction without a preceding seek.
+
+        The ``_cursor_from_seek`` flag is cleared unconditionally so that a
+        second ``dir:`` without an intervening ``seek:`` always resets.
+        """
+        preserve = self._cursor_from_seek
+        self._cursor_from_seek = False  # always clear after any direction change
+
+        if preserve and self.cursor < len(self.scan_order):
+            current_pos = self.scan_order[self.cursor]
+        else:
+            current_pos = None
+
         self.direction = direction
         self.scan_order = self._build_scan_order()
         self.scan_order_index = {pos: i for i, pos in enumerate(self.scan_order)}
-        self.cursor = 0
+
+        if current_pos is not None:
+            # Reposition to the seeked cell in the new order (fall back to 0 if
+            # somehow not found, which shouldn't happen for valid coordinates).
+            self.cursor = self.scan_order_index.get(current_pos, 0)
+        else:
+            # No seek preceded this direction change — start from the beginning.
+            self.cursor = 0
 
     def cell_value(self, row: int, col: int):
         return self.ws.cell(row=row, column=col).value
@@ -349,7 +408,12 @@ class SheetScanner:
         return (row, col) in self.consumed
 
     def consume(self, row: int, col: int):
+        """Mark (row, col) as consumed.  If it belongs to a merged range,
+        all cells in that range are consumed at the same time — the entire
+        merged region is one logical cell."""
         self.consumed.add((row, col))
+        for pos in self.merge_map.get((row, col), ()):
+            self.consumed.add(pos)
 
     def advance_to_next(self) -> tuple:
         """Advance main cursor to the next non-empty, non-consumed cell and return it."""
@@ -560,12 +624,12 @@ class Engine:
         _raw = {'cells': {}, 'tables': []}
         logger.begin_summary_scope()  # scope summary/ISSUES to THIS sheet
         logger.sheet_name = ws.title
-        _expand_merged_cells(ws)
+        merge_map = _expand_merged_cells(ws)
         _warn_uncached_formulas(ws, logger)
         logger.sheet_info(ws.title, ws.max_row, ws.max_column, global_config.read_direction)
         logger.config_verbose(global_config)
 
-        scanner = SheetScanner(ws, global_config)
+        scanner = SheetScanner(ws, global_config, merge_map)
         table_index = 0
 
         try:
@@ -599,15 +663,10 @@ class Engine:
         """
         row, col = coordinate_to_tuple(instr.target)
 
-        idx = scanner.scan_order_index.get((row, col))
-        if idx is not None and idx < scanner.cursor:
-            logger.fatal(
-                f"cell:{instr.target} is unreachable — the scanner has already advanced past it",
-                location=cell_ref(row, col, logger.sheet_name),
-                expected='a cell that has not yet been scanned',
-                found=f'cursor is at scan-order position {scanner.cursor}; '
-                      f'{instr.target} is at position {idx}',
-            )
+        # Explicit cell addresses (cell:B4) are intentional jumps — they may land
+        # before OR after the current cursor, e.g. after a dir: change that
+        # preserved the cursor position from a preceding seek:.  No fatal check here;
+        # the cursor is repositioned to idx+1 after the read (see _process_cell).
 
         value = scanner.cell_value(row, col)
         if is_empty(value, config.empty_aliases, config.ignore_case) and instr.field != 'IGNORE':
@@ -712,6 +771,7 @@ class Engine:
                       f'(sheet used range: {scanner.ws.max_row} rows × {scanner.ws.max_column} cols)',
             )
         scanner.cursor = idx
+        scanner._cursor_from_seek = True
 
     # -------------------------------------------------------------------------
     # table:* processing

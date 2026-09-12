@@ -417,12 +417,19 @@ class TestOutOfBounds:
         assert result == {'x': {'val': 'found'}}
 
 
-# ── unreachable references ────────────────────────────────────────────────────
+# ── backward absolute references ─────────────────────────────────────────────
+# Backward abs jumps (to a cell before the current cursor) are silently allowed.
+# The engine removed the "unreachable" fatal check because seek: + dir: patterns
+# legitimately land the cursor AHEAD of a cell that should still be read explicitly
+# (e.g. seek:G4 → dir:TD → cell:B4 is a backward jump in TD order but perfectly
+# valid).  The parser still enforces monotonic ordering for consecutive cell:abs
+# instructions that have no seek/dir in between.
 
 class TestUnreachable:
-    def test_cursor_past_target_is_fatal(self, tmp_path):
-        # cell:next consumes A1 (cursor → 1), then cell:A1 (idx=0 < 1) → fatal
-        _, lg = _run(
+    def test_backward_abs_ref_allowed_reads_cell(self, tmp_path):
+        # cell:next consumes A1 (cursor → 1), then cell:A1 (idx=0 < 1).
+        # No longer fatal — the cell is re-read and b.v receives the value.
+        result, lg = _run(
             [['var:', 'a.v', 'string', '.*'],
              ['var:', 'b.v', 'string', '.*'],
              ['START:'],
@@ -431,11 +438,13 @@ class TestUnreachable:
              ['END:']],
             {'A1': 'val', 'B1': 'other'}, tmp_path,
         )
-        assert lg.has_errors()
+        assert not lg.has_errors()
+        assert result == {'a': {'v': 'val'}, 'b': {'v': 'val'}}
 
-    def test_cursor_past_via_multiple_nexts(self, tmp_path):
-        # Two cell:next consume A1 and B1; then cell:A1 → fatal
-        _, lg = _run(
+    def test_backward_abs_ref_via_multiple_nexts_allowed(self, tmp_path):
+        # Two cell:next consume A1 and B1; then cell:A1 is a backward jump.
+        # Allowed — c.v gets A1's value.
+        result, lg = _run(
             [['var:', 'a.v', 'string', '.*'],
              ['var:', 'b.v', 'string', '.*'],
              ['var:', 'c.v', 'string', '.*'],
@@ -446,7 +455,8 @@ class TestUnreachable:
              ['END:']],
             {'A1': 'v1', 'B1': 'v2'}, tmp_path,
         )
-        assert lg.has_errors()
+        assert not lg.has_errors()
+        assert result == {'a': {'v': 'v1'}, 'b': {'v': 'v2'}, 'c': {'v': 'v1'}}
 
     def test_cursor_exactly_at_target_is_ok(self, tmp_path):
         # cursor at index 0, cell:A1 has idx 0 → 0 < 0 is False → OK

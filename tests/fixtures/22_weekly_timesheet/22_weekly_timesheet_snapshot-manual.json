@@ -1,17 +1,17 @@
 {
   "company": {
-    "name": "TIME SHEET",
+    "name": "NOD PUBLISHERS",
     "address1": "222 2nd Ave",
     "address2": "Apt. 100",
     "address3": "Bellevue, WA 54321",
     "phone": "(502) 555-0123"
   },
   "employee": {
-    "name": "TIME SHEET",
-    "manager": "NOD PUBLISHERS"
+    "name": "Shir Rosenstein",
+    "manager": "Naoki Kaneko"
   },
   "timesheet": {
-    "week_starting": "NOD PUBLISHERS"
+    "week_starting": "2026-09-12 00:00:00"
   },
   "rate": {
     "regular": 15,
