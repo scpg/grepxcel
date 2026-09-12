@@ -286,6 +286,10 @@ def render_result(result: CheckResult, verbose: bool = False, out=None) -> None:
                 tags.append(fd.var_mode)
             if fd.required:
                 tags.append('not-null')
+            if fd.nullable:
+                tags.append('nullable')
+            if fd.trim_whitespace:
+                tags.append('trim')
             mode_tag = _faint(f' [{", ".join(tags)}]') if tags else ''
             role_color = 'yellow' if fd.role == 'lbl' else 'green'
             role  = paint(f'{fd.role:<4}', role_color, color)

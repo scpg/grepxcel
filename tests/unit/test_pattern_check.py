@@ -230,6 +230,64 @@ def test_verbose_shows_per_field_mode_tag(tmp_path):
     assert '[glob]' in buf.getvalue()
 
 
+def test_verbose_shows_nullable_tag(tmp_path):
+    """var:nullable fields show [nullable] in the verbose fields listing."""
+    rows = [
+        ['var:nullable', 'x.v', 'string', '.*'],
+        ['START:'], ['cell:A1', 'x.v'], ['END:'],
+    ]
+    buf = io.StringIO()
+    run_validate([_write(rows, tmp_path)], verbose=True, out=buf)
+    assert '[nullable]' in buf.getvalue()
+
+
+def test_verbose_shows_not_null_tag(tmp_path):
+    """var:not-null fields show [not-null] in the verbose fields listing."""
+    rows = [
+        ['var:not-null', 'x.v', 'string', '.*'],
+        ['START:'], ['cell:A1', 'x.v'], ['END:'],
+    ]
+    buf = io.StringIO()
+    run_validate([_write(rows, tmp_path)], verbose=True, out=buf)
+    assert '[not-null]' in buf.getvalue()
+
+
+def test_verbose_shows_trim_tag(tmp_path):
+    """var:trim-whitespace fields show [trim] in the verbose fields listing."""
+    rows = [
+        ['var:trim-whitespace', 'x.v', 'string', '.*'],
+        ['START:'], ['cell:A1', 'x.v'], ['END:'],
+    ]
+    buf = io.StringIO()
+    run_validate([_write(rows, tmp_path)], verbose=True, out=buf)
+    assert '[trim]' in buf.getvalue()
+
+
+def test_verbose_shows_multiple_tags_combined(tmp_path):
+    """A field with both not-null and trim-whitespace shows both tags."""
+    rows = [
+        ['var:not-null:trim-whitespace', 'x.v', 'string', '.*'],
+        ['START:'], ['cell:A1', 'x.v'], ['END:'],
+    ]
+    buf = io.StringIO()
+    run_validate([_write(rows, tmp_path)], verbose=True, out=buf)
+    out = buf.getvalue()
+    assert '[not-null, trim]' in out
+
+
+def test_verbose_plain_var_has_no_modifier_tag(tmp_path):
+    """A plain var: field with no modifiers shows no [...] tag."""
+    rows = [
+        ['var:', 'x.v', 'string', '.*'],
+        ['START:'], ['cell:A1', 'x.v'], ['END:'],
+    ]
+    buf = io.StringIO()
+    run_validate([_write(rows, tmp_path)], verbose=True, out=buf)
+    # No modifier tag should appear for this field's line
+    field_line = next(l for l in buf.getvalue().splitlines() if 'x.v' in l and 'var' in l)
+    assert '[' not in field_line
+
+
 # ── verbose config: complete defaults ────────────────────────────────────────
 
 def _run_verbose(rows, tmp_path):
