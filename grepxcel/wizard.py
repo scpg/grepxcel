@@ -773,12 +773,14 @@ def _write_pattern(state: WizardState, output_path: str) -> None:
     rows = _pattern_rows(state)
     if os.path.splitext(output_path)[1].lower() == '.xlsx':
         import openpyxl as _openpyxl  # already a core dependency
+        from .pattern_colors import colorize_pattern_file
         wb = _openpyxl.Workbook()
         ws = wb.active
         ws.title = 'pattern'
         for row in rows:
             ws.append([str(c) if c is not None else '' for c in row])
         wb.save(output_path)
+        colorize_pattern_file(output_path)
     else:
         with open(output_path, 'w', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
