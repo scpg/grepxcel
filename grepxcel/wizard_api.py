@@ -10,6 +10,7 @@ Optional dependency group: ``pip install "grepxcel[web]"``
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import sys
@@ -48,6 +49,94 @@ except ImportError:
 # ── Module-level session (single-user local tool) ─────────────────────────────
 
 _STATE: dict[str, Any] = {}   # single session dict
+
+
+# ── Session log ───────────────────────────────────────────────────────────────
+
+class _SessionLog:
+    """Writes a structured session log in the same format as the TUI wizard."""
+
+    def __init__(self, xlsx_path: str, sheet_name: str) -> None:
+        self._fh = None
+        self._path: str | None = None
+
+        try:
+            stem     = Path(xlsx_path).stem
+            ts_file  = datetime.now().strftime('%Y-%m-%d-%H%M%S')
+            abs_path = str(Path(xlsx_path).resolve())
+
+            # SHA-256 + size
+            sha256 = hashlib.sha256()
+            file_size = 0
+            with open(xlsx_path, 'rb') as fh:
+                for chunk in iter(lambda: fh.read(65536), b''):
+                    sha256.update(chunk)
+                    file_size += len(chunk)
+            sha8 = sha256.hexdigest()[:8]
+
+            session_dir = Path(os.getcwd()) / 'logs' / 'wizard' / stem / f'{ts_file}_{sha8}'
+            session_dir.mkdir(parents=True, exist_ok=True)
+            log_path = session_dir / 'session.log'
+            self._fh   = log_path.open('w', encoding='utf-8')
+            self._path = str(log_path)
+
+            sep = '═' * 51
+            v = _get_version()
+            self._fh.write('grepxcel web-wizard session\n')
+            self._fh.write(f'{sep}\n')
+            self._fh.write(f'Data file : {abs_path}\n')
+            self._fh.write(f'SHA-256   : {sha256.hexdigest()}\n')
+            self._fh.write(f'File size : {file_size} bytes\n')
+            self._fh.write(f'Sheet     : {sheet_name}\n')
+            self._fh.write(f'Interface : web (FastAPI)\n')
+            self._fh.write(f'Version   : grepxcel {v}\n')
+            self._fh.write(f'Started   : {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}\n')
+            self._fh.write(f'{sep}\n')
+            self._fh.write('# Columns: timestamp   EVENT_TYPE    detail\n')
+            self._fh.write('# CLASSIFY ref:ACTION name=… — cell classified\n')
+            self._fh.write('# CONFIG   direction=… — global config changed\n')
+            self._fh.write('# UNDO     ref — last classification reversed\n')
+            self._fh.write('# SAVE     path — pattern file written to disk\n')
+            self._fh.write(f'{sep}\n\n')
+            self._fh.flush()
+        except OSError:
+            pass
+
+    def write(self, event_type: str, detail: str) -> None:
+        if not self._fh:
+            return
+        now = datetime.now()
+        ts  = now.strftime('%H:%M:%S.') + f'{now.microsecond // 1000:03d}'
+        try:
+            self._fh.write(f'{ts}  {event_type:<12}  {detail}\n')
+            self._fh.flush()
+        except OSError:
+            pass
+
+    def close(self, choices: dict, notes: dict) -> None:
+        if not self._fh:
+            return
+        try:
+            ts = datetime.now().strftime('%H:%M:%S')
+            self._fh.write('#\n')
+            self._fh.write(f'# Session ended: {ts}\n')
+            counts: dict = {}
+            for info in choices.values():
+                ch = info.get('choice', '?')
+                counts[ch] = counts.get(ch, 0) + 1
+            self._fh.write(f'# Classifications: {counts}\n')
+            if notes:
+                self._fh.write('#\n# Cell notes:\n')
+                for ref, note in sorted(notes.items()):
+                    self._fh.write(f'#   {ref}: {note}\n')
+            self._fh.close()
+            self._fh = None
+        except OSError:
+            pass
+
+    @property
+    def path(self) -> str | None:
+        return self._path
 
 
 def _cell_ref(row: int, col: int) -> str:
@@ -210,6 +299,9 @@ def create_app(
         except Exception:
             pass
 
+    # ── Session log ───────────────────────────────────────────────────────────
+    session_log = _SessionLog(xlsx_path, ws.title)
+
     # ── Module-level session ──────────────────────────────────────────────────
     _STATE.clear()
     _STATE.update({
@@ -223,7 +315,21 @@ def create_app(
         'undo_stack':  [],
         'max_rows':    max_rows,
         'max_cols':    max_cols,
+        'log':         session_log,
     })
+
+    # Log initial config
+    st0 = state
+    session_log.write('CONFIG',
+        f'direction={st0.direction} ignore_case={st0.ignore_case} '
+        f'trim_whitespace={st0.trim_whitespace} currency_sign={st0.currency_sign!r} '
+        f'lbl_match={st0.lbl_match!r} var_match={st0.var_match!r} '
+        f'aliases={st0.empty_aliases}'
+    )
+    if pattern_path:
+        session_log.write('PRELOAD',
+            f'pattern={pattern_path} cells_loaded={len(choices)}'
+        )
 
     # ── Jinja2 env ────────────────────────────────────────────────────────────
     tpl_dir = Path(__file__).parent / 'templates'
@@ -280,6 +386,12 @@ def create_app(
         st.lbl_match       = body.get('lbl_match',       st.lbl_match)
         st.var_match       = body.get('var_match',       st.var_match)
         st.empty_aliases   = body.get('empty_aliases',   st.empty_aliases)
+        _STATE['log'].write('CONFIG',
+            f'direction={st.direction} ignore_case={st.ignore_case} '
+            f'trim_whitespace={st.trim_whitespace} currency_sign={st.currency_sign!r} '
+            f'lbl_match={st.lbl_match!r} var_match={st.var_match!r} '
+            f'aliases={st.empty_aliases}'
+        )
         return JSONResponse({'ok': True, 'config': body})
 
     @app.post('/api/classify')
@@ -300,6 +412,7 @@ def create_app(
         if action == 'CLEAR':
             choices.pop(ref, None)
             notes.pop(ref, None)
+            _STATE['log'].write('CLASSIFY', f'{ref}:CLEAR')
             return JSONResponse({'ok': True, 'ref': ref, 'action': 'CLEAR'})
 
         ws: openpyxl.worksheet.worksheet.Worksheet = _STATE['ws']
@@ -350,6 +463,13 @@ def create_app(
             if 'notes' in fields:
                 notes.pop(ref, None)
 
+        # Log classify event
+        info = choices.get(ref, {})
+        log_detail = f'{ref}:{action} name={info.get("name", "")!r}'
+        if note:
+            log_detail += f' note={note!r}'
+        _STATE['log'].write('CLASSIFY', log_detail)
+
         return JSONResponse({
             'ok':     True,
             'ref':    ref,
@@ -365,6 +485,7 @@ def create_app(
         snapshot = stack.pop()
         _STATE['choices'] = snapshot['choices']
         _STATE['notes']   = snapshot['notes']
+        _STATE['log'].write('UNDO', f"restored {snapshot['ref']}")
         return JSONResponse({'ok': True, 'ref': snapshot['ref'], 'stats': _build_stats()})
 
     @app.post('/api/note')
@@ -426,6 +547,7 @@ def create_app(
         except Exception as exc:
             raise HTTPException(500, str(exc))
 
+        _STATE['log'].write('SAVE', f'path={out_path} rows={len(csv_text.splitlines())}')
         return JSONResponse({
             'ok':       True,
             'saved_to': str(out_path),
@@ -467,6 +589,7 @@ def create_app(
     @app.get('/api/shutdown')
     async def api_shutdown():
         """Graceful shutdown — called by the browser when user clicks 'Done'."""
+        _STATE['log'].close(_STATE.get('choices', {}), _STATE.get('notes', {}))
         def _stop():
             time.sleep(0.3)
             os._exit(0)
@@ -510,11 +633,14 @@ def run(
             webbrowser.open(url)
         threading.Thread(target=_open, daemon=True).start()
 
+    log_path = (_STATE.get('log') or type('', (), {'path': None})()).path
     print(f'\ngrepxcel Web Wizard')
     print(f'  File  : {xlsx_path}')
     if pattern_path:
         print(f'  Pattern: {pattern_path}')
     print(f'  URL   : {url}')
+    if log_path:
+        print(f'  Log   : {log_path}')
     print(f'\n  Press Ctrl+C to stop.\n')
 
     uvicorn.run(app, host='127.0.0.1', port=port, log_level='warning')
