@@ -646,10 +646,12 @@ def _draft_args(p: argparse.ArgumentParser) -> None:
     )
     p.add_argument(
         '--nvidia-model',
-        default=os.environ.get('GREPXCEL_NVIDIA_MODEL', 'meta/llama-3.1-8b-instruct'),
+        default=os.environ.get('GREPXCEL_NVIDIA_MODEL', 'z-ai/glm-5.3-flash'),
         help="NVIDIA NIM model id when --backend nvidia, e.g. "
-             "'meta/llama-3.3-70b-instruct', 'nvidia/llama-3.1-nemotron-70b-instruct' "
-             "(default: meta/llama-3.1-8b-instruct). Also via GREPXCEL_NVIDIA_MODEL.",
+             "'nvidia/nemotron-3-super-120b-a12b', 'openai/gpt-oss-20b' "
+             "(default: z-ai/glm-5.3-flash). "
+             "Available models vary by account tier — run `grepxcel doctor draft` to check. "
+             "Also via GREPXCEL_NVIDIA_MODEL.",
     )
     p.add_argument(
         '--github-model',

@@ -1116,7 +1116,7 @@ class NvidiaBackend:
     """
 
     ENDPOINT = 'https://integrate.api.nvidia.com/v1'
-    DEFAULT_MODEL = 'meta/llama-3.1-8b-instruct'
+    DEFAULT_MODEL = 'z-ai/glm-5.3-flash'
 
     def __init__(self, model: str = DEFAULT_MODEL):
         self._model     = model
@@ -1161,7 +1161,7 @@ class NvidiaBackend:
                 {'role': 'user',   'content': user},
             ],
             temperature=0.1,
-            max_tokens=2048,
+            max_tokens=4096,
         )
         completion = raw.parse()
         usage = completion.usage
@@ -1179,7 +1179,12 @@ class NvidiaBackend:
             rate_remaining_tokens=self._int_header(h, 'x-ratelimit-remaining-tokens'),
             rate_limit_tokens=self._int_header(h, 'x-ratelimit-limit-tokens'),
         )
-        return completion.choices[0].message.content
+        content = completion.choices[0].message.content
+        # Thinking models (e.g. openai/gpt-oss-20b) put the answer in
+        # reasoning_content when content is None — use that as fallback.
+        if content is None:
+            content = getattr(completion.choices[0].message, 'reasoning_content', None)
+        return content
 
 
 # ── OpenAI-compatible server backend ──────────────────────────────────────
