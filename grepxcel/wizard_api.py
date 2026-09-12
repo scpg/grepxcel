@@ -191,9 +191,22 @@ def create_app(
 
     if pattern_path and Path(pattern_path).exists():
         try:
-            choices, loaded_state = _preload_from_pattern(pattern_path, ws)
-            if loaded_state:
-                state = loaded_state
+            loaded_choices, preload_cfg, _warnings = _preload_from_pattern(ws, pattern_path)
+            choices.update(loaded_choices)
+            if preload_cfg.get('direction'):
+                state.direction       = preload_cfg['direction']
+            if preload_cfg.get('lbl_match'):
+                state.lbl_match       = preload_cfg['lbl_match']
+            if preload_cfg.get('var_match'):
+                state.var_match       = preload_cfg['var_match']
+            if preload_cfg.get('ignore_case') is not None:
+                state.ignore_case     = preload_cfg['ignore_case']
+            if preload_cfg.get('trim_whitespace') is not None:
+                state.trim_whitespace = preload_cfg['trim_whitespace']
+            if preload_cfg.get('currency_sign'):
+                state.currency_sign   = preload_cfg['currency_sign']
+            if preload_cfg.get('empty_aliases'):
+                state.empty_aliases   = preload_cfg['empty_aliases']
         except Exception:
             pass
 
