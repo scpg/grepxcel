@@ -1056,24 +1056,17 @@ if _TEXTUAL_OK:
             elif event.key == 'escape':
                 self.dismiss(None)
             elif event.key == 'enter':
-                # If Select dropdown is open, let Select handle ENTER (picks the item).
-                # If closed, behave like Input: advance to next field, or submit if last.
-                focused = self.focused
-                if isinstance(focused, Select) and not focused.expanded:
-                    for i in range(len(self._fields)):
-                        try:
-                            w = self.query_one(f'#f{i}')
-                            if w is focused:
-                                if i < len(self._fields) - 1:
-                                    try:
-                                        self.query_one(f'#f{i + 1}').focus()
-                                    except Exception:
-                                        pass
-                                else:
-                                    self._submit()
-                                break
-                        except Exception:
-                            pass
+                # When a Select is focused and its dropdown is open, Enter picks
+                # the highlighted option — let the Select's own binding handle it.
+                # Do NOT dismiss or navigate here, because Textual's Select BINDING
+                # does not stop the key event, so Enter bubbles even after the
+                # dropdown closes; dismissing here would close the modal unexpectedly.
+                # When a Select is focused and CLOSED, Enter opens its dropdown (also
+                # handled by the Select binding) — again, do nothing here.
+                # Input fields are handled via on_input_submitted (which fires after
+                # the user presses Enter in an Input), so no action is needed here
+                # for Input fields either.
+                pass
             elif event.key == 'f4':
                 # Cycle through presets for the focused Input field
                 focused = self.focused
@@ -1282,16 +1275,20 @@ if _TEXTUAL_OK:
 
         def on_key(self, event) -> None:
             if event.key == 'ctrl+enter':
-                # Force-confirm from any widget (useful from Select dropdowns).
-                self.dismiss(self._read_values())
-            elif event.key == 'enter':
-                # When a Select dropdown is focused, Enter opens/closes it —
-                # don't dismiss the modal yet; let the Select handle the key.
-                if isinstance(self.focused, Select):
-                    return
+                # Force-confirm (works from any widget, even an open Select).
+                # This is the keyboard path; the mouse path uses the OK button.
+                event.stop()
                 self.dismiss(self._read_values())
             elif event.key == 'escape':
+                event.stop()
                 self.dismiss(None)
+            # NOTE: plain 'enter' is intentionally NOT handled here.
+            # Textual's Select BINDING for 'enter' does NOT stop the key event
+            # from bubbling, so Enter would fire here AFTER the Select has
+            # already processed it (opening or closing the dropdown).  Relying
+            # on Enter to dismiss the modal causes the modal to close
+            # unexpectedly the moment any dropdown option is chosen.
+            # Use the OK button or Ctrl+Enter to confirm settings.
 
 
     class _ZoomModal(ModalScreen):
