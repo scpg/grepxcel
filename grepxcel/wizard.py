@@ -799,12 +799,17 @@ def run_wizard(
     data_file: str | None,
     sheet: str | None = None,
     output: str | None = None,
+    fmt: str = 'xlsx',
     no_tui: bool = False,
     load_state: str | None = None,
     save_state: str | None = None,
     load_pattern: str | None = None,
 ) -> int:
-    """Interactive wizard: loads *data_file*, walks cells, writes a CSV pattern.
+    """Interactive wizard: loads *data_file*, walks cells, writes a pattern file.
+
+    *fmt* controls the default output format when *output* is not given —
+    ``'xlsx'`` (default) or ``'csv'``.  When *output* is specified its
+    extension takes precedence.
 
     When *textual* is installed and stdout is a TTY the full-screen TUI is used
     by default.  Pass ``no_tui=True`` (or set ``GREPXCEL_NO_TUI=1``) to fall
@@ -834,7 +839,8 @@ def run_wizard(
             stem = os.path.splitext(os.path.basename(load_state))[0]
             if data_file:
                 stem = os.path.splitext(os.path.basename(data_file))[0]
-            output = f'pattern-{stem}.csv'
+            ts     = datetime.datetime.now().strftime('%Y%m%d%H%M%S')
+            output = f'{stem}-wizard-{ts}.{fmt}'
         _write_pattern(state, output)
         print(_c(f'\n🟢  Pattern written to: {output}', _C.BOLD, _C.GREEN))
         if save_state:
@@ -846,7 +852,7 @@ def run_wizard(
     if not _force_seq and sys.stdout.isatty():
         try:
             from .wizard_tui import run_wizard_tui
-            rc = run_wizard_tui(data_file, sheet=sheet, output=output,
+            rc = run_wizard_tui(data_file, sheet=sheet, output=output, fmt=fmt,
                                 save_state=save_state,
                                 load_pattern=load_pattern)
             if rc != 2:          # 2 = textual not installed → fall through
@@ -880,9 +886,10 @@ def run_wizard(
     state = WizardState(sheet_name=ws.title)
 
     if not output:
-        stem = os.path.splitext(os.path.basename(data_file))[0]
+        stem   = os.path.splitext(os.path.basename(data_file))[0]
+        ts     = datetime.datetime.now().strftime('%Y%m%d%H%M%S')
         output = os.path.join(os.path.dirname(os.path.abspath(data_file)),
-                              f'pattern-{stem}.csv')
+                              f'{stem}-wizard-{ts}.{fmt}')
 
     print(_c('\ngrepxcel wizard', _C.BOLD, _C.CYAN)
           + f' — {_c(os.path.basename(data_file), _C.WHITE)}'

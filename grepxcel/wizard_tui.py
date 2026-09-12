@@ -3506,6 +3506,7 @@ def run_wizard_tui(
     data_file: str,
     sheet: str | None = None,
     output: str | None = None,
+    fmt: str = 'xlsx',
     save_state: str | None = None,
     load_pattern: str | None = None,
 ) -> int:
@@ -3516,6 +3517,11 @@ def run_wizard_tui(
     0   pattern saved successfully
     1   user cancelled
     2   textual not installed (caller falls back to sequential wizard)
+
+    ``fmt``
+        Default output format when *output* is not provided — ``'xlsx'``
+        (default) or ``'csv'``.  The extension of an explicit *output* path
+        takes precedence.
 
     ``save_state``
         If given, write the final WizardState to this JSON path after saving
@@ -3555,9 +3561,10 @@ def run_wizard_tui(
 
     if not output:
         stem   = os.path.splitext(os.path.basename(data_file))[0]
+        ts     = datetime.datetime.now().strftime('%Y%m%d%H%M%S')
         output = os.path.join(
             os.path.dirname(os.path.abspath(data_file)),
-            f'pattern-{stem}.csv',
+            f'{stem}-wizard-{ts}.{fmt}',
         )
 
     # ── Pre-populate from existing pattern (optional) ─────────────────────────

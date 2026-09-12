@@ -435,7 +435,12 @@ class TestRunWizardLoadState:
         state_path = _make_state_json(tmp_path, name='mystate')
         rc = run_wizard(data_file=None, load_state=state_path)
         assert rc == 0
-        assert (tmp_path / 'pattern-mystate.csv').exists()
+        # Default name: <stem>-wizard-YYYYmmddHHMMSS.xlsx (timestamped, xlsx default)
+        matches = list(tmp_path.glob('mystate-wizard-*.xlsx'))
+        assert matches, (
+            f'Expected a mystate-wizard-<ts>.xlsx file in {tmp_path}; '
+            f'found: {list(tmp_path.iterdir())}'
+        )
 
     def test_error_on_missing_state_file(self, tmp_path):
         rc = run_wizard(data_file=None, load_state=str(tmp_path / 'no_such.json'))

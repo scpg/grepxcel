@@ -358,17 +358,22 @@ def _add_wizard_subparser(sub) -> None:
         help='Interactively build a pattern file cell by cell',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Walks you through your Excel file cell by cell and writes a valid CSV pattern.
+Walks you through your Excel file cell by cell and writes a grepxcel pattern.
 No LLM required. Ideal when you want full manual control or have no internet
 access.
+
+The default output file is named  <stem>-wizard-YYYYmmddHHMMSS.xlsx
+next to the data file (use -o to override).  Each run produces a unique
+timestamped file so repeated sessions never overwrite each other.
 
 examples:
   grepxcel wizard data.xlsx
   grepxcel wizard data.xlsx --sheet Sheet2
-  grepxcel wizard data.xlsx -o my-pattern.csv
+  grepxcel wizard data.xlsx -o my-pattern.xlsx
+  grepxcel wizard data.xlsx --format csv -o my-pattern.csv
   grepxcel wizard data.xlsx --save-state session.json
-  grepxcel wizard --load-state session.json -o my-pattern.csv
-  grepxcel wizard data.xlsx --load-pattern existing-pattern.csv
+  grepxcel wizard --load-state session.json -o my-pattern.xlsx
+  grepxcel wizard data.xlsx --load-pattern existing-pattern.xlsx
         """,
     )
     p.add_argument('file', metavar='FILE', nargs='?',
@@ -377,8 +382,11 @@ examples:
     p.add_argument('--sheet', metavar='NAME_OR_INDEX',
                    help='Sheet to use (default: active sheet)')
     p.add_argument('-o', '--output', metavar='FILE',
-                   help='Write the pattern CSV/XLSX to FILE '
-                        '(default: pattern-<stem>.csv next to the data file)')
+                   help='Write the pattern to FILE '
+                        '(default: <stem>-wizard-YYYYmmddHHMMSS.xlsx next to the data file)')
+    p.add_argument('--format', metavar='FORMAT', choices=['xlsx', 'csv'],
+                   default='xlsx',
+                   help='Output format when -o is not given (default: xlsx)')
     p.add_argument('--load-state', metavar='FILE',
                    help='Load a saved wizard state (JSON) and write the pattern '
                         'directly without any interactive session')
@@ -1189,6 +1197,7 @@ def main(argv=None):
             data_file=args.file,
             sheet=getattr(args, 'sheet', None),
             output=getattr(args, 'output', None),
+            fmt=getattr(args, 'format', 'xlsx'),
             load_state=load_state,
             save_state=getattr(args, 'save_state', None),
             load_pattern=getattr(args, 'load_pattern', None),
