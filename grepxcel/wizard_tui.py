@@ -1334,6 +1334,7 @@ if _TEXTUAL_OK:
 
   [bold]ENTER[/bold]      Auto-accept proposed classification (no modal, uses defaults)
   [bold]Space[/bold]      Zoom — view full untruncated cell content
+  [bold]S[/bold]          Settings — re-open config (direction, case, currency…)
   [bold]F1 / ?[/bold]     This help screen
   [bold]F3[/bold]         Preview current pattern
   [bold]F2[/bold]         Add internal note to current cell
@@ -1740,6 +1741,7 @@ if _TEXTUAL_OK:
             # Other (hidden)
             Binding('enter',  'accept',             'Auto-accept',     show=False),
             Binding('space',  'zoom',               'Zoom cell',       show=False),
+            Binding('s',      'open_settings',      'Settings',        show=False),
             Binding('f1',             'show_help', 'Help (F1/?)', show=True),
             Binding('question_mark',  'show_help', 'Help',       show=False),
             Binding('f3',     'preview',            'Pattern preview', show=False),
@@ -2167,7 +2169,7 @@ if _TEXTUAL_OK:
                 '  [bold red]E[/bold red]  End & save pattern',
                 '',
                 '  [dim]Space[/dim] Zoom  [dim]F3[/dim] Preview  [dim]F1[/dim] Help',
-                '  [dim]H[/dim] Highlight pending  [dim]^Z[/dim] Undo',
+                '  [dim]S[/dim] Settings  [dim]H[/dim] Highlight  [dim]^Z[/dim] Undo',
                 '  [dim]^D[/dim] Dark/light  [dim]^P[/dim] Palette',
                 '  [dim]F2[/dim] Cell note  [dim];[/dim] Comment  [dim]F11[/dim] Screenshot  [dim]F12[/dim] View log',
                 '',
@@ -2582,6 +2584,50 @@ if _TEXTUAL_OK:
                     self._move_cursor(nr, c)
                     return
             self._advance()
+
+        def action_open_settings(self) -> None:
+            """S — re-open the config modal with current settings pre-filled."""
+            preload = {
+                'direction':       self._state.direction,
+                'ignore_case':     self._state.ignore_case,
+                'trim_whitespace': self._state.trim_whitespace,
+                'currency_sign':   self._state.currency_sign,
+                'lbl_match':       self._state.lbl_match,
+                'var_match':       self._state.var_match,
+                'empty_aliases':   list(self._state.empty_aliases),
+                'template':        self._is_template,
+            }
+
+            def _on_settings_done(cfg: dict | None) -> None:
+                if cfg is None:
+                    return  # user cancelled — keep current settings
+                prev_direction = self._state.direction
+                self._state.direction       = cfg['direction']
+                self._state.ignore_case     = cfg.get('ignore_case', False)
+                self._state.trim_whitespace = cfg.get('trim_whitespace', False)
+                self._state.currency_sign   = cfg.get('currency_sign', '€')
+                self._state.lbl_match       = cfg.get('lbl_match', '')
+                self._state.var_match       = cfg.get('var_match', '')
+                self._state.empty_aliases   = cfg.get('empty_aliases', [])
+                self._is_template           = cfg['template']
+                if cfg['direction'] != prev_direction:
+                    # Rebuild scan order; try to stay at the same cell
+                    self._cells = _build_cell_order(self._ws, self._state.direction)
+                    self._total_nonempty = sum(
+                        1 for r, c in self._cells
+                        if self._ws.cell(row=r, column=c).value is not None
+                    )
+                self._log(
+                    'SETTINGS',
+                    f'direction={cfg["direction"]}  ignore_case={cfg.get("ignore_case")}  '
+                    f'currency={cfg.get("currency_sign")}  template={cfg["template"]}',
+                )
+                self.notify('Settings updated.', timeout=2)
+
+            self.push_screen(
+                _ConfigModal(self._is_template, preload_config=preload),
+                _on_settings_done,
+            )
 
         async def action_nav_next(self) -> None:
             self._clear_highlights()
