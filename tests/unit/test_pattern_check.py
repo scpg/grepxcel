@@ -98,7 +98,8 @@ def test_verbose_shows_seek_instruction(tmp_path):
 
 
 def test_verbose_table_columnar_format(tmp_path):
-    """Table rows render as a columnar grid, one column-position per line."""
+    """Table grid matches the pattern file orientation: one display-row per
+    table row type, one display-column per column position."""
     rows = [
         ['lbl:', 'h1', 'string', 'Name'],
         ['lbl:', 'h2', 'string', 'Age'],
@@ -114,21 +115,23 @@ def test_verbose_table_columnar_format(tmp_path):
     run_validate([_write(rows, tmp_path)], verbose=True, out=buf)
     out = buf.getvalue()
     lines = out.splitlines()
-    # Find the table block
     table_idx = next(i for i, l in enumerate(lines) if 'table:1' in l)
-    # Next line should be the header row with row-type labels
+    # HEADER row: row-type label + both field names on the same line
     header_line = lines[table_idx + 1]
     assert 'HEADER:1' in header_line
-    assert 'DATA:*' in header_line
-    # Column positions follow, one per line
-    col1_line = lines[table_idx + 2]
-    assert 'h1' in col1_line and 'name' in col1_line
-    col2_line = lines[table_idx + 3]
-    assert 'h2' in col2_line and 'age' in col2_line
+    assert 'h1' in header_line
+    assert 'h2' in header_line
+    # DATA row: row-type label + both var names on the same line
+    data_line = lines[table_idx + 2]
+    assert 'DATA:*' in data_line
+    assert 'name' in data_line
+    assert 'age' in data_line
+    # DATA:* must NOT appear in the header line (it is its own row)
+    assert 'DATA:*' not in header_line
 
 
 def test_verbose_table_with_skip_if(tmp_path):
-    """SKIP_IF rows appear in the columnar table grid."""
+    """SKIP_IF appears as its own display-row, not as a column header."""
     rows = [
         ['lbl:', 'h', 'string', 'Val'],
         ['var:', 'v', 'string', '.*'],
@@ -144,11 +147,15 @@ def test_verbose_table_with_skip_if(tmp_path):
     out = buf.getvalue()
     lines = out.splitlines()
     table_idx = next(i for i, l in enumerate(lines) if 'table:1' in l)
+    # Three display rows: HEADER:1, SKIP_IF, DATA:*
     header_line = lines[table_idx + 1]
-    assert 'SKIP_IF' in header_line
-    # The single column position should show all three row types
-    col_line = lines[table_idx + 2]
-    assert 'h' in col_line and 'EMPTY' in col_line and 'v' in col_line
+    skip_line   = lines[table_idx + 2]
+    data_line   = lines[table_idx + 3]
+    assert 'HEADER:1' in header_line and 'h' in header_line
+    assert 'SKIP_IF'  in skip_line   and 'EMPTY' in skip_line
+    assert 'DATA:*'   in data_line   and 'v' in data_line
+    # SKIP_IF must appear as its own row, not in the same line as HEADER:1
+    assert 'SKIP_IF' not in header_line
 
 
 # ── lbl.match warnings ────────────────────────────────────────────────────────

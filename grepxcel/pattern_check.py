@@ -173,12 +173,19 @@ def check_pattern(path: str) -> CheckResult:
 
 
 def _render_table_grid(rows, out, color: bool = False) -> None:
-    """Render table rows as a columnar grid: one column-position per line,
-    row types side by side so you can see what each position maps to."""
+    """Render the table in the same orientation as the pattern file:
+    one display-row per table row (HEADER/SKIP_IF/DATA/FOOTER),
+    one display-column per column position within each row.
+
+    Example output for a 2-column table with HEADER + DATA rows::
+
+        HEADER:1  lbl_name  lbl_age
+        DATA:*    name      age
+    """
     if not rows:
         return
 
-    # ── build plain-text header labels ────────────────────────────────────────
+    # ── row-type labels ───────────────────────────────────────────────────────
     headers = []
     for trow in rows:
         if trow.row_type == 'SKIP_IF':
@@ -187,14 +194,17 @@ def _render_table_grid(rows, out, color: bool = False) -> None:
             headers.append(f'{trow.row_type}:{trow.multiplicity}')
 
     # ── column widths (plain text only — ANSI codes must not inflate these) ───
+    # col 0  = row-type label column
+    # col i  = column position i-1 in the table
     n_cols = max(len(trow.columns) for trow in rows)
-    widths = []
-    for ri, trow in enumerate(rows):
-        w = len(headers[ri])
-        for ci in range(n_cols):
+    label_w = max(len(h) for h in headers)
+    field_ws = []
+    for ci in range(n_cols):
+        w = 0
+        for trow in rows:
             if ci < len(trow.columns):
                 w = max(w, len(trow.columns[ci].field))
-        widths.append(w)
+        field_ws.append(w)
 
     # ── color helpers — pad FIRST (plain length), then paint ──────────────────
     _ROW_COLOR = {
@@ -207,25 +217,20 @@ def _render_table_grid(rows, out, color: bool = False) -> None:
         padded = f'{plain:<{width}}'
         return paint(padded, color_name, color)
 
-    # ── header row ─────────────────────────────────────────────────────────────
-    parts = []
-    for i, h in enumerate(headers):
+    # ── one display-row per table row ─────────────────────────────────────────
+    for h, trow in zip(headers, rows):
         row_type = h.split(':')[0]
-        c = _ROW_COLOR.get(row_type, 'cyan')
-        parts.append(_pad_paint(h, c, widths[i]))
-    print(f'        {"  ".join(parts)}', file=out)
-
-    # ── column rows (one per column position) ─────────────────────────────────
-    for ci in range(n_cols):
-        parts = []
-        for ri, trow in enumerate(rows):
+        row_color = _ROW_COLOR.get(row_type, 'cyan')
+        parts = [_pad_paint(h, row_color, label_w)]
+        for ci in range(n_cols):
             val = trow.columns[ci].field if ci < len(trow.columns) else ''
+            w = field_ws[ci]
             if val in _SENTINEL_FIELDS:
-                parts.append(_pad_paint(val, 'dim', widths[ri]))
+                parts.append(_pad_paint(val, 'dim', w))
             elif val:
-                parts.append(_pad_paint(val, 'cyan', widths[ri]))
+                parts.append(_pad_paint(val, 'cyan', w))
             else:
-                parts.append(' ' * widths[ri])
+                parts.append(' ' * w)
         print(f'        {"  ".join(parts)}', file=out)
 
 
