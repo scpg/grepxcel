@@ -121,6 +121,7 @@ Run 'grepxcel <command> --help' for per-command options.
     _add_validate_subparser(sub)
     _add_draft_subparser(sub)
     _add_wizard_subparser(sub)
+    _add_web_wizard_subparser(sub)
     _add_docs_subparser(sub)
     _add_lint_subparser(sub)
     _add_schema_subparser(sub)
@@ -397,6 +398,39 @@ examples:
                    help='Pre-populate the TUI from an existing pattern file '
                         '(.xlsx or .csv) — opens the wizard with field classifications '
                         'already filled in so you can review and adjust')
+
+
+def _add_web_wizard_subparser(sub) -> None:
+    p = sub.add_parser(
+        'web-wizard',
+        help='Build a pattern file visually in your browser (mouse-friendly)',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Opens a local web server and launches your default browser.  Click cells in
+the spreadsheet grid to classify them as Label / Value / Header / Table /
+Ignore.  Works with a mouse — no keyboard shortcuts required.
+
+Requires: pip install "grepxcel[web]"
+
+examples:
+  grepxcel web-wizard data.xlsx
+  grepxcel web-wizard data.xlsx -p existing-pattern.xlsx
+  grepxcel web-wizard data.xlsx --port 9000
+  grepxcel web-wizard data.xlsx --no-browser
+        """,
+    )
+    p.add_argument('file', metavar='FILE',
+                   help='Excel data file to inspect')
+    p.add_argument('-p', '--pattern', metavar='FILE', default=None,
+                   help='Pre-populate from an existing pattern file (.xlsx or .csv)')
+    p.add_argument('--port', metavar='PORT', type=int, default=8765,
+                   help='Local port to listen on (default: 8765)')
+    p.add_argument('--no-browser', action='store_true',
+                   help='Do not automatically open a browser window')
+    p.add_argument('--max-rows', metavar='N', type=int, default=150,
+                   help='Maximum rows to display in the grid (default: 150)')
+    p.add_argument('--max-cols', metavar='N', type=int, default=40,
+                   help='Maximum columns to display in the grid (default: 40)')
 
 
 def _add_quickstart_subparser(sub) -> None:
@@ -1202,6 +1236,18 @@ def main(argv=None):
             save_state=getattr(args, 'save_state', None),
             load_pattern=getattr(args, 'load_pattern', None),
         ))
+
+    if args.command == 'web-wizard':
+        from .wizard_api import run as run_web
+        run_web(
+            xlsx_path=args.file,
+            pattern_path=getattr(args, 'pattern', None),
+            port=getattr(args, 'port', 8765),
+            open_browser=not getattr(args, 'no_browser', False),
+            max_rows=getattr(args, 'max_rows', 150),
+            max_cols=getattr(args, 'max_cols', 40),
+        )
+        sys.exit(0)
 
     if args.command == 'draft':
         sys.exit(_run_draft(args))
