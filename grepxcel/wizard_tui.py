@@ -1334,7 +1334,7 @@ if _TEXTUAL_OK:
 
   [bold]ENTER[/bold]      Auto-accept proposed classification (no modal, uses defaults)
   [bold]Space[/bold]      Zoom — view full untruncated cell content
-  [bold]S[/bold]          Settings — re-open config (direction, case, currency…)
+  [bold]Ctrl+,[/bold]     Settings — re-open config (direction, case, currency…) [dim](S also works)[/dim]
   [bold]F1 / ?[/bold]     This help screen
   [bold]F3[/bold]         Preview current pattern
   [bold]F2[/bold]         Add internal note to current cell
@@ -1741,7 +1741,8 @@ if _TEXTUAL_OK:
             # Other (hidden)
             Binding('enter',  'accept',             'Auto-accept',     show=False),
             Binding('space',  'zoom',               'Zoom cell',       show=False),
-            Binding('s',      'open_settings',      'Settings',        show=False),
+            Binding('ctrl+comma', 'open_settings', 'Settings (Ctrl+,)', show=False),
+            Binding('s',         'open_settings', 'Settings',         show=False),
             Binding('f1',             'show_help', 'Help (F1/?)', show=True),
             Binding('question_mark',  'show_help', 'Help',       show=False),
             Binding('f3',     'preview',            'Pattern preview', show=False),
@@ -2169,7 +2170,7 @@ if _TEXTUAL_OK:
                 '  [bold red]E[/bold red]  End & save pattern',
                 '',
                 '  [dim]Space[/dim] Zoom  [dim]F3[/dim] Preview  [dim]F1[/dim] Help',
-                '  [dim]S[/dim] Settings  [dim]H[/dim] Highlight  [dim]^Z[/dim] Undo',
+                '  [dim]^,[/dim] Settings  [dim]H[/dim] Highlight  [dim]^Z[/dim] Undo',
                 '  [dim]^D[/dim] Dark/light  [dim]^P[/dim] Palette',
                 '  [dim]F2[/dim] Cell note  [dim];[/dim] Comment  [dim]F11[/dim] Screenshot  [dim]F12[/dim] View log',
                 '',
