@@ -84,16 +84,15 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
 #grid-table {
   border-collapse: collapse;
   font-size: 12px;
-  table-layout: fixed;
+  table-layout: auto;
 }
 #grid-table th, #grid-table td {
   border: 1px solid var(--border);
-  padding: 2px 4px;
+  padding: 2px 6px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  min-width: 80px;
-  max-width: 160px;
+  max-width: 220px;
   height: 22px;
   vertical-align: middle;
 }
@@ -103,10 +102,7 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
   text-align: center; font-weight: 600;
   color: var(--text-muted);
   font-size: 11px;
-  padding: 3px 4px;
-  min-width: unset;
-  max-width: unset;
-  width: 80px;
+  padding: 3px 6px;
 }
 #grid-table thead th:first-child {
   min-width: 36px; width: 36px; max-width: 36px;
@@ -342,6 +338,10 @@ td.gx-I.selected { background: var(--I-sel) !important; }
 <nav id="navbar">
   <span class="brand">📊 grepxcel</span>
   <span class="file" title="{{ xlsx_path }}">{{ xlsx_path | replace('\\', '/') | truncate(60) }} · <em>{{ sheet_name }}</em></span>
+  <input id="cell-jump" type="text" placeholder="Go to cell…"
+         title="Jump to cell (e.g. B3) — press Enter or Ctrl+G"
+         style="width:100px;border:1px solid var(--border);border-radius:5px;padding:3px 8px;font-size:12px;background:var(--bg);color:var(--text)"
+         onkeydown="if(event.key==='Enter'){event.preventDefault();jumpToCell(this.value.trim().toUpperCase())}">
   <div class="spacer"></div>
   <button class="btn btn-sm" onclick="undoLast()" title="Undo last classification (Ctrl+Z)">
     <svg viewBox="0 0 20 20" fill="currentColor"><path d="M7.7 8H5V5.2L2 8.2 5 11V8.3h2.7A5 5 0 0 1 10 18a5 5 0 0 0 5-5 5 5 0 0 0-7.3-4.4z"/></svg>
@@ -569,7 +569,7 @@ td.gx-I.selected { background: var(--I-sel) !important; }
 <!-- ── Footer ───────────────────────────────────────────────────────────── -->
 <div id="footer">
   <span class="status-msg" id="status-msg">Ready — click a cell to classify it</span>
-  <span><kbd class="kbd">Click</kbd> select · <kbd class="kbd">L V C I T</kbd> shortcuts · <kbd class="kbd">Ctrl+Z</kbd> undo</span>
+  <span><kbd class="kbd">Click</kbd> select · <kbd class="kbd">L V C I T</kbd> classify · <kbd class="kbd">Enter</kbd> apply · <kbd class="kbd">Ctrl+Z</kbd> undo · <kbd class="kbd">Ctrl+G</kbd> jump to cell</span>
   <span>grepxcel v{{ gx_version }}</span>
 </div>
 
@@ -937,9 +937,28 @@ function switchTab(name) {
   if (name === 'config') loadConfig();
 }
 
+// ── Jump to cell ──────────────────────────────────────────────────────────
+function jumpToCell(ref) {
+  if (!ref) return;
+  // Normalise: "b3" → "B3"
+  ref = ref.toUpperCase().trim();
+  const td = document.querySelector(`td[data-ref="${ref}"]`);
+  if (!td) { toast(`Cell ${ref} not found in visible grid`, true); return; }
+  td.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
+  selectCell(ref);
+  document.getElementById('cell-jump').value = '';
+}
+
 // ── Keyboard shortcuts ─────────────────────────────────────────────────────
 function loadKeyboardShortcuts() {
   document.addEventListener('keydown', e => {
+    // Ctrl+G → focus jump input (like Cmd+G in spreadsheets)
+    if ((e.ctrlKey || e.metaKey) && e.key === 'g') {
+      e.preventDefault();
+      document.getElementById('cell-jump').focus();
+      document.getElementById('cell-jump').select();
+      return;
+    }
     // Ignore when typing in an input
     if (['INPUT','SELECT','TEXTAREA'].includes(e.target.tagName)) return;
     if (e.ctrlKey && e.key === 'z') { e.preventDefault(); undoLast(); return; }
