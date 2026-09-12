@@ -25,7 +25,7 @@
           "overtime": 52.5,
           "sick": 247.5,
           "holiday": 0,
-          "vacation": 0
+          "vacation": "#N/A"
         }
       ]
     }

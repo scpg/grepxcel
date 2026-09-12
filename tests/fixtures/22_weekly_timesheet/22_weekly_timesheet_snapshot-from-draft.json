@@ -19,7 +19,7 @@
     "overtime": 52.5,
     "sick": 247.5,
     "holiday": 0,
-    "vacation": 0,
-    "grand_total": 975
+    "vacation": "#N/A",
+    "grand_total": "#N/A"
   }
 }
