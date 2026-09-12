@@ -1100,6 +1100,88 @@ class GitHubModelsBackend:
         return completion.choices[0].message.content
 
 
+# ── NVIDIA NIM backend ────────────────────────────────────────────────────
+
+class NvidiaBackend:
+    """Sends inference requests to NVIDIA NIM (OpenAI-compatible endpoint).
+
+    Free-tier access via build.nvidia.com — no credit card required, governed
+    by generous rate limits.  Requires NVIDIA_API_KEY in the environment (obtain
+    from https://build.nvidia.com after signing in with your NVIDIA account).
+
+    Model ids follow NVIDIA NIM naming, e.g. 'meta/llama-3.1-8b-instruct',
+    'meta/llama-3.3-70b-instruct', 'nvidia/llama-3.1-nemotron-70b-instruct'.
+    Only the Excel structure description is transmitted — raw bytes never leave
+    the machine.
+    """
+
+    ENDPOINT = 'https://integrate.api.nvidia.com/v1'
+    DEFAULT_MODEL = 'meta/llama-3.1-8b-instruct'
+
+    def __init__(self, model: str = DEFAULT_MODEL):
+        self._model     = model
+        self._last_cost: CostRecord | None = None
+
+    def last_cost(self) -> CostRecord | None:
+        return self._last_cost
+
+    @staticmethod
+    def _int_header(headers, name: str) -> int | None:
+        try:
+            v = headers.get(name)
+            return int(v) if v is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    def chat(self, system: str, user: str) -> str:
+        try:
+            from openai import OpenAI
+        except ImportError:
+            print(
+                "Error: the NVIDIA backend needs the 'openai' package.\n"
+                "Fix:   pip install openai",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        api_key = os.environ.get('NVIDIA_API_KEY')
+        if not api_key:
+            raise RuntimeError(
+                'NVIDIA_API_KEY is not set. Create a free API key at '
+                'https://build.nvidia.com and add NVIDIA_API_KEY=... to your '
+                'environment or .env file.'
+            )
+        from .proxy_support import make_httpx_client
+        _http = make_httpx_client()
+        _kw = {'http_client': _http} if _http is not None else {}
+        client = OpenAI(base_url=self.ENDPOINT, api_key=api_key, **_kw)
+        raw = client.chat.completions.with_raw_response.create(
+            model=self._model,
+            messages=[
+                {'role': 'system', 'content': system},
+                {'role': 'user',   'content': user},
+            ],
+            temperature=0.1,
+            max_tokens=2048,
+        )
+        completion = raw.parse()
+        usage = completion.usage
+        in_tok  = getattr(usage, 'prompt_tokens', 0) or 0
+        out_tok = getattr(usage, 'completion_tokens', 0) or 0
+        h = raw.headers
+        self._last_cost = CostRecord(
+            model=self._model,
+            input_tokens=in_tok,
+            output_tokens=out_tok,
+            input_cost_usd=0.0,   # free-tier quota, no per-token charge
+            output_cost_usd=0.0,
+            rate_remaining_requests=self._int_header(h, 'x-ratelimit-remaining-requests'),
+            rate_limit_requests=self._int_header(h, 'x-ratelimit-limit-requests'),
+            rate_remaining_tokens=self._int_header(h, 'x-ratelimit-remaining-tokens'),
+            rate_limit_tokens=self._int_header(h, 'x-ratelimit-limit-tokens'),
+        )
+        return completion.choices[0].message.content
+
+
 # ── OpenAI-compatible server backend ──────────────────────────────────────
 
 class OpenAICompatBackend:

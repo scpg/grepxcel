@@ -635,14 +635,21 @@ def _draft_args(p: argparse.ArgumentParser) -> None:
     )
     p.add_argument(
         '--backend',
-        choices=['local', 'claude', 'gemini', 'github', 'server'],
+        choices=['local', 'claude', 'gemini', 'github', 'nvidia', 'server'],
         default='local',
         help='Inference backend: local (default, GGUF model), claude (requires '
-             'ANTHROPIC_API_KEY), '
+             'ANTHROPIC_API_KEY), nvidia (free-tier NVIDIA NIM, requires NVIDIA_API_KEY), '
              'server (any OpenAI-compatible server, e.g. LM Studio / Ollama / '
              'vLLM; use --server-url). '
              'gemini is planned for a future release. '
              'github is currently unavailable (GitHub retired the free-tier endpoint).',
+    )
+    p.add_argument(
+        '--nvidia-model',
+        default=os.environ.get('GREPXCEL_NVIDIA_MODEL', 'meta/llama-3.1-8b-instruct'),
+        help="NVIDIA NIM model id when --backend nvidia, e.g. "
+             "'meta/llama-3.3-70b-instruct', 'nvidia/llama-3.1-nemotron-70b-instruct' "
+             "(default: meta/llama-3.1-8b-instruct). Also via GREPXCEL_NVIDIA_MODEL.",
     )
     p.add_argument(
         '--github-model',
@@ -1088,7 +1095,7 @@ def _run_draft(args) -> int:
     # (model download or cloud backend). Verification stays on.
     from .proxy_support import enable_corporate_tls
     enable_corporate_tls(getattr(args, 'ca_bundle', None))
-    from .drafter import ClaudeBackend, GitHubModelsBackend, OpenAICompatBackend, PatternDrafter
+    from .drafter import ClaudeBackend, GitHubModelsBackend, NvidiaBackend, OpenAICompatBackend, PatternDrafter
     sheet    = _resolve_sheet(args)
     selected = getattr(args, 'backend', 'local')
     backend  = None
@@ -1116,6 +1123,11 @@ def _run_draft(args) -> int:
         print("[!] Excel structure description will be sent to Anthropic's API.",
               file=sys.stderr)
         backend = ClaudeBackend()
+    elif selected == 'nvidia':
+        nv_model = getattr(args, 'nvidia_model', 'meta/llama-3.1-8b-instruct')
+        print(f"[!] Excel structure description will be sent to NVIDIA NIM ({nv_model}).",
+              file=sys.stderr)
+        backend = NvidiaBackend(model=nv_model)
     elif selected == 'github':
         gh_model = getattr(args, 'github_model', 'openai/gpt-4o-mini')
         print(f"[!] Excel structure description will be sent to GitHub Models ({gh_model}).",

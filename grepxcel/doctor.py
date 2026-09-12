@@ -129,6 +129,19 @@ def check_draft_cloud() -> list[Result]:
     res.append((WARN, 'github backend',
                 'currently unavailable — GitHub retired the free-tier Models endpoint '
                 '(HTTP 410 retirement brownout); implementation preserved for future re-enable'))
+    have_openai = _have('openai')
+    nv_key = bool(os.environ.get('NVIDIA_API_KEY'))
+    if have_openai and nv_key:
+        res.append((OK, 'nvidia backend',
+                    'openai installed, NVIDIA_API_KEY set — free-tier NVIDIA NIM available'))
+    elif have_openai:
+        res.append((WARN, 'nvidia backend',
+                    'openai installed but NVIDIA_API_KEY not set — '
+                    'get a free key at https://build.nvidia.com'))
+    else:
+        res.append((WARN, 'nvidia backend',
+                    "not configured — pip install openai and set NVIDIA_API_KEY "
+                    "(free key at https://build.nvidia.com)"))
     return res
 
 
