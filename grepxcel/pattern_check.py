@@ -21,6 +21,12 @@ from .security import SecurityError
 # Patterns that strongly suggest regex intent (backslash-escapes, lookahead)
 _REGEX_TELL = re.compile(r'\\[()[\]{}|+*.?^$]|[(][?]')
 
+# Excel formula-error strings that openpyxl returns as plain strings when a
+# data file is loaded with data_only=True.  Useful as empty.aliases values.
+_EXCEL_ERROR_STRINGS: frozenset[str] = frozenset({
+    '#N/A', '#REF!', '#VALUE!', '#DIV/0!', '#NAME?', '#NUM!', '#NULL!',
+})
+
 _MARK_OK, _MARK_WARN, _MARK_FAIL = MARK_OK, MARK_WARN, MARK_FAIL
 
 
@@ -118,6 +124,49 @@ def check_pattern(path: str) -> CheckResult:
                     f"empty (pattern '.*'). Add a {fd.var_mode} pattern in column D "
                     f"or change to plain var: for type-only validation."
                 )
+
+    # ── empty.aliases validation ──────────────────────────────────────────────
+    if config.empty_aliases:
+        seen_aliases: set[str] = set()
+        for alias in config.empty_aliases:
+
+            # 1. Duplicate alias
+            alias_key = alias.lower() if config.ignore_case else alias
+            if alias_key in seen_aliases:
+                result.warnings.append(
+                    f"Duplicate empty.aliases value {alias!r} — "
+                    f"the duplicate has no effect."
+                )
+            seen_aliases.add(alias_key)
+
+            # 2. Alias contains regex metacharacters — aliases are plain strings
+            if _REGEX_TELL.search(alias) or re.search(r'[.*+?^${}()|[\]\\]', alias):
+                result.warnings.append(
+                    f"empty.aliases value {alias!r} contains regex metacharacters, "
+                    f"but aliases are matched as plain strings, not regular expressions. "
+                    f"It will only match cells whose text is exactly {alias!r}."
+                )
+
+            # 3. Alias starts with '#' — validate it is a known Excel error string
+            if alias.startswith('#'):
+                if alias.upper() not in {e.upper() for e in _EXCEL_ERROR_STRINGS}:
+                    result.warnings.append(
+                        f"empty.aliases value {alias!r} starts with '#' but is not a "
+                        f"recognised Excel error string. "
+                        f"Known errors: {', '.join(sorted(_EXCEL_ERROR_STRINGS))}. "
+                        f"Verify this is the exact string the data file contains."
+                    )
+                elif not config.ignore_case and alias not in _EXCEL_ERROR_STRINGS:
+                    # Correct error string but wrong case and ignore_case is off
+                    canonical = next(e for e in _EXCEL_ERROR_STRINGS
+                                     if e.upper() == alias.upper())
+                    result.warnings.append(
+                        f"empty.aliases value {alias!r} is a known Excel error string "
+                        f"but the capitalisation differs from the canonical form "
+                        f"{canonical!r}. Excel always produces the canonical form — "
+                        f"use {canonical!r}, or add 'config: ignore.case yes' to "
+                        f"match case-insensitively."
+                    )
 
     result.valid = not result.errors
     return result

@@ -288,6 +288,146 @@ class TestPatternParserSecurity:
         with pytest.raises(SecurityError, match='too long'):
             PatternParser().parse(path)
 
+    # ── =TRUE() / =FALSE() allowlist ─────────────────────────────────────────
+
+    def test_formula_true_xlsx_allowed(self, tmp_path):
+        """=TRUE() in a pattern xlsx is converted to 'True' without raising."""
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        # Simulate what Excel stores when user types TRUE in a config cell.
+        # openpyxl represents formula cells with data_type='f' and value='=TRUE()'.
+        ws['A1'] = '=TRUE()'
+        ws['A1'].data_type = 'f'
+        path = str(tmp_path / 'true.xlsx')
+        wb.save(path)
+        try:
+            PatternParser().parse(path)
+        except SecurityError:
+            pytest.fail('SecurityError raised for =TRUE() — should be allowed')
+        except Exception:
+            pass   # PatternError (empty sequence etc.) is fine
+
+    def test_formula_false_xlsx_allowed(self, tmp_path):
+        """=FALSE() in a pattern xlsx is converted to 'False' without raising."""
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws['A1'] = '=FALSE()'
+        ws['A1'].data_type = 'f'
+        path = str(tmp_path / 'false.xlsx')
+        wb.save(path)
+        try:
+            PatternParser().parse(path)
+        except SecurityError:
+            pytest.fail('SecurityError raised for =FALSE() — should be allowed')
+        except Exception:
+            pass
+
+    def test_formula_true_lowercase_xlsx_allowed(self, tmp_path):
+        """Case-insensitive: =true() and =True() are also accepted."""
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws['A1'] = '=true()'
+        ws['A1'].data_type = 'f'
+        path = str(tmp_path / 'lower.xlsx')
+        wb.save(path)
+        try:
+            PatternParser().parse(path)
+        except SecurityError:
+            pytest.fail('SecurityError raised for =true() — should be allowed')
+        except Exception:
+            pass
+
+    def test_formula_true_in_config_parsed_as_true(self, tmp_path):
+        """=TRUE() used as ignore.case value is treated as 'True' → truthy."""
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        # A minimal valid pattern with ignore.case = =TRUE()
+        ws.append(['config:', 'ignore.case', '=TRUE()'])
+        ws['C1'].data_type = 'f'
+        ws.append(['var:', 'x.v', 'string', '.*'])
+        ws.append(['START:'])
+        ws.append(['cell:A1', 'x.v'])
+        ws.append(['END:'])
+        path = str(tmp_path / 'ignore_case.xlsx')
+        wb.save(path)
+        try:
+            cfg, _, _ = PatternParser().parse(path)
+            assert cfg.ignore_case is True
+        except SecurityError:
+            pytest.fail('SecurityError raised for =TRUE() — should be allowed')
+
+    def test_formula_non_allowlisted_still_rejected(self, tmp_path):
+        """=VLOOKUP() and other arbitrary formulas remain forbidden."""
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws['A1'] = '=VLOOKUP(A2,B:C,2)'
+        ws['A1'].data_type = 'f'
+        path = str(tmp_path / 'vlookup.xlsx')
+        wb.save(path)
+        with pytest.raises(SecurityError, match='Formulas are not allowed'):
+            PatternParser().parse(path)
+
+    def test_formula_true_csv_allowed(self, tmp_path):
+        """=TRUE() in a CSV pattern is converted to 'True' without raising."""
+        import csv as _csv
+        path = str(tmp_path / 'pattern.csv')
+        with open(path, 'w', newline='') as fh:
+            _csv.writer(fh).writerows([
+                ['config:', 'ignore.case', '=TRUE()'],
+                ['var:', 'x.v', 'string', '.*'],
+                ['START:'],
+                ['cell:A1', 'x.v'],
+                ['END:'],
+            ])
+        try:
+            cfg, _, _ = PatternParser().parse(path)
+            assert cfg.ignore_case is True
+        except SecurityError:
+            pytest.fail('SecurityError raised for =TRUE() in CSV — should be allowed')
+
+    def test_formula_false_csv_allowed(self, tmp_path):
+        """=FALSE() in a CSV pattern is converted to 'False'."""
+        import csv as _csv
+        path = str(tmp_path / 'pattern.csv')
+        with open(path, 'w', newline='') as fh:
+            _csv.writer(fh).writerows([
+                ['config:', 'ignore.case', '=FALSE()'],
+                ['var:', 'x.v', 'string', '.*'],
+                ['START:'],
+                ['cell:A1', 'x.v'],
+                ['END:'],
+            ])
+        try:
+            cfg, _, _ = PatternParser().parse(path)
+            assert cfg.ignore_case is False
+        except SecurityError:
+            pytest.fail('SecurityError raised for =FALSE() in CSV — should be allowed')
+
+    def test_formula_non_allowlisted_csv_still_rejected(self, tmp_path):
+        """=SUM(...) in a CSV pattern is still forbidden."""
+        import csv as _csv
+        path = str(tmp_path / 'pattern.csv')
+        with open(path, 'w', newline='') as fh:
+            _csv.writer(fh).writerows([['=SUM(1,2)']])
+        with pytest.raises(SecurityError, match='Formulas are not allowed'):
+            PatternParser().parse(path)
+
+    # ── empty.aliases whitespace stripping ────────────────────────────────────
+
+    def test_empty_alias_stripped_on_intake(self, tmp_path):
+        """Aliases with surrounding whitespace are stripped on intake so they
+        match cell values that are themselves stripped by is_empty()."""
+        path = _write_pattern([
+            ['config:', 'empty.aliases', ' N/A '],   # leading + trailing space
+            ['config:', 'empty.aliases', '\t-\t'],    # tab-padded
+        ], tmp_path)
+        cfg, _, _ = PatternParser().parse(path)
+        assert 'N/A' in cfg.empty_aliases
+        assert '-' in cfg.empty_aliases
+        # The padded originals must NOT be present
+        assert ' N/A ' not in cfg.empty_aliases
+        assert '\t-\t' not in cfg.empty_aliases
+
 
 # ── Cell addressing (cell:next / cell:A1) ────────────────────────────────────
 

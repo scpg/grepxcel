@@ -29,6 +29,14 @@ MIN_SUPPORTED_PATTERN_VERSION = 1
 _TRUTHY = frozenset({'1', 'true', 'yes', 'on', 'y'})
 _FALSY  = frozenset({'0', 'false', 'no', 'off', 'n', ''})
 
+# Excel constant formulas that are safe to accept in pattern config cells.
+# =TRUE() / =FALSE() appear when a user types TRUE/FALSE without an apostrophe
+# and Excel auto-converts them.  They carry no dynamic logic.
+_SAFE_CONSTANT_FORMULAS: dict[str, str] = {
+    '=TRUE()':  'True',
+    '=FALSE()': 'False',
+}
+
 # Modifier tokens recognised in column-A field rows ('lbl:...' / 'var:...').
 # Mode tokens map to their canonical name; 're' normalises to 'regexp'.
 _MODE_TOKENS = {'literal': 'literal', 'glob': 'glob', 're': 'regexp', 'regexp': 'regexp'}
@@ -631,6 +639,10 @@ class PatternParser:
                             row_values.append(None)
                             continue
                         if val.startswith('='):
+                            mapped = _SAFE_CONSTANT_FORMULAS.get(val.strip().upper())
+                            if mapped is not None:
+                                row_values.append(mapped)
+                                continue
                             coord = f'{get_column_letter(col_idx + 1)}{line_no}'
                             raise SecurityError(
                                 f'Formulas are not allowed in pattern files. '
@@ -675,8 +687,16 @@ class PatternParser:
                     row_values.append(None)
                     continue
 
-                # Formulas are never allowed in pattern files
+                # Formulas are never allowed in pattern files.
+                # Exception: =TRUE() and =FALSE() are safe constant expressions
+                # that Excel auto-inserts when a user types TRUE/FALSE without
+                # quoting.  We substitute their boolean equivalent and continue.
                 if cell.data_type == 'f' or (isinstance(val, str) and val.startswith('=')):
+                    if isinstance(val, str):
+                        mapped = _SAFE_CONSTANT_FORMULAS.get(val.strip().upper())
+                        if mapped is not None:
+                            row_values.append(mapped)
+                            continue
                     raise SecurityError(
                         f'Formulas are not allowed in pattern files. '
                         f'Cell {cell.coordinate} contains: {val!r}  '
@@ -762,7 +782,7 @@ class PatternParser:
         elif key == 'currency.sign' and val:
             config.currency_sign = str(val)
         elif key == 'empty.aliases' and val:
-            config.empty_aliases.append(str(val))
+            config.empty_aliases.append(str(val).strip())
         elif key == 'ignore.case' and val is not None:
             config.ignore_case = _truthy(val)
         elif key == 'trim.whitespace' and val is not None:

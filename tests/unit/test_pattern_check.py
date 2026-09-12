@@ -346,3 +346,108 @@ def test_verbose_config_pattern_version_explicit(tmp_path):
     out = _cfg_pattern([['config:', 'pattern.version', '1']], tmp_path)
     assert 'pattern.version 1' in out
     assert 'defaulted' not in out
+
+
+# ── empty.aliases validation warnings ────────────────────────────────────────
+
+def _alias_pattern(alias_rows, tmp_path, extra_config=None):
+    """Build and check a pattern with the given empty.aliases config rows."""
+    rows = (extra_config or []) + alias_rows + list(_VALID)
+    return check_pattern(_write(rows, tmp_path))
+
+
+def test_alias_known_excel_error_no_warning(tmp_path):
+    """A well-formed Excel error string like '#N/A' must not trigger any warning."""
+    r = _alias_pattern([['config:', 'empty.aliases', '#N/A']], tmp_path)
+    assert r.valid
+    assert not any('#N/A' in w and 'not a recognised' in w for w in r.warnings)
+    assert not any('#N/A' in w and 'capitalisation' in w for w in r.warnings)
+
+
+def test_alias_all_known_excel_errors_accepted(tmp_path):
+    """Every canonical Excel error string is recognised without a warning."""
+    known = ['#N/A', '#REF!', '#VALUE!', '#DIV/0!', '#NAME?', '#NUM!', '#NULL!']
+    for err in known:
+        r = _alias_pattern([['config:', 'empty.aliases', err]], tmp_path)
+        assert r.valid, f'Unexpected invalid for {err!r}'
+        assert not any('not a recognised' in w for w in r.warnings), \
+            f'False-positive "not recognised" warning for {err!r}'
+
+
+def test_alias_unknown_hash_string_warns(tmp_path):
+    """A '#'-prefixed alias that is not a known Excel error triggers a warning."""
+    r = _alias_pattern([['config:', 'empty.aliases', '#UNKNOWN!']], tmp_path)
+    assert r.valid   # warning, not error
+    assert any('not a recognised' in w for w in r.warnings)
+
+
+def test_alias_wrong_case_warns_without_ignore_case(tmp_path):
+    """'#n/a' (wrong case) warns about capitalisation when ignore.case is off."""
+    r = _alias_pattern([['config:', 'empty.aliases', '#n/a']], tmp_path)
+    assert r.valid
+    assert any('capitalisation' in w for w in r.warnings)
+
+
+def test_alias_wrong_case_no_warn_with_ignore_case(tmp_path):
+    """'#n/a' with ignore.case yes: no capitalisation warning (case won't matter)."""
+    r = _alias_pattern(
+        [['config:', 'empty.aliases', '#n/a']],
+        tmp_path,
+        extra_config=[['config:', 'ignore.case', 'yes']],
+    )
+    assert r.valid
+    assert not any('capitalisation' in w for w in r.warnings)
+
+
+def test_alias_duplicate_warns(tmp_path):
+    """Two identical aliases produce a 'Duplicate' warning."""
+    r = _alias_pattern([
+        ['config:', 'empty.aliases', 'N/A'],
+        ['config:', 'empty.aliases', 'N/A'],
+    ], tmp_path)
+    assert r.valid
+    assert any('Duplicate' in w for w in r.warnings)
+
+
+def test_alias_duplicate_case_insensitive_warns(tmp_path):
+    """'N/A' and 'n/a' are duplicates when ignore.case is on."""
+    r = _alias_pattern(
+        [['config:', 'empty.aliases', 'N/A'],
+         ['config:', 'empty.aliases', 'n/a']],
+        tmp_path,
+        extra_config=[['config:', 'ignore.case', 'yes']],
+    )
+    assert r.valid
+    assert any('Duplicate' in w for w in r.warnings)
+
+
+def test_alias_duplicate_case_sensitive_no_warn(tmp_path):
+    """'N/A' and 'n/a' are NOT duplicates when ignore.case is off."""
+    r = _alias_pattern([
+        ['config:', 'empty.aliases', 'N/A'],
+        ['config:', 'empty.aliases', 'n/a'],
+    ], tmp_path)
+    assert r.valid
+    assert not any('Duplicate' in w for w in r.warnings)
+
+
+def test_alias_regex_metacharacter_warns(tmp_path):
+    """An alias containing regex metacharacters (e.g. '.*') warns that it is
+    matched as a plain string, not a regex."""
+    r = _alias_pattern([['config:', 'empty.aliases', '.*']], tmp_path)
+    assert r.valid
+    assert any('metacharacter' in w for w in r.warnings)
+
+
+def test_alias_plain_string_no_metachar_warning(tmp_path):
+    """A plain alias like 'N/A' or '-' has no metacharacter warning."""
+    r = _alias_pattern([['config:', 'empty.aliases', 'N/A']], tmp_path)
+    assert r.valid
+    assert not any('metacharacter' in w for w in r.warnings)
+
+
+def test_alias_no_warnings_when_no_aliases(tmp_path):
+    """A pattern with no empty.aliases config produces no alias-related warnings."""
+    r = check_pattern(_write(list(_VALID), tmp_path))
+    assert r.valid
+    assert not any('alias' in w.lower() for w in r.warnings)
