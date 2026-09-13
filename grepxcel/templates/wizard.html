@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="light">
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -230,28 +230,27 @@ td.gx-I.selected { background: var(--I-sel) !important; }
 .action-row { display: flex; gap: 6px; margin-top: 10px; }
 .action-row .btn { flex: 1; justify-content: center; }
 
-/* ── Stats Panel ────────────────────────────────────────────────── */
-.stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 12px; }
-.stat-card {
-  border-radius: 8px; padding: 8px 10px;
-  display: flex; flex-direction: column; align-items: center;
+/* ── Stats Bar (persistent bottom strip) ───────────────────────── */
+#stats-bar {
+  flex-shrink: 0; height: 40px;
+  background: var(--surface); border-top: 1px solid var(--border);
+  display: flex; align-items: center; gap: 10px; padding: 0 14px;
 }
-.stat-card .stat-n { font-size: 22px; font-weight: 700; }
-.stat-card .stat-l { font-size: 11px; font-weight: 600; }
-.stat-L { background: var(--L); color: var(--L-dark); }
-.stat-V { background: var(--V); color: var(--V-dark); }
-.stat-C { background: var(--C); color: var(--C-dark); }
-.stat-T { background: var(--T); color: var(--T-dark); }
-.stat-I { background: var(--I); color: var(--I-dark); }
-.progress-bar {
-  height: 6px; border-radius: 3px;
-  background: var(--border); overflow: hidden; margin: 8px 0;
+.sb-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 10px; border-radius: 5px; font-size: 12px; font-weight: 700;
+  white-space: nowrap;
 }
-.progress-bar .fill {
-  height: 100%; background: var(--accent);
-  transition: width 0.4s ease;
-}
-.total-line { font-size: 12px; color: var(--text-muted); text-align: center; margin-bottom: 12px; }
+.sb-L { background: var(--L); color: var(--L-dark); }
+.sb-V { background: var(--V); color: var(--V-dark); }
+.sb-C { background: var(--C); color: var(--C-dark); }
+.sb-T { background: var(--T); color: var(--T-dark); }
+.sb-I { background: var(--I); color: var(--I-dark); }
+.sb-sep { width: 1px; height: 18px; background: var(--border); flex-shrink: 0; }
+.sb-progress-wrap { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 100px; }
+.sb-progress-bar { flex: 1; height: 5px; background: var(--border); border-radius: 3px; overflow: hidden; }
+.sb-fill { height: 100%; background: var(--accent); border-radius: 3px; transition: width 0.35s ease; width: 0%; }
+.sb-pct { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
 
 /* ── Config Panel ───────────────────────────────────────────────── */
 .cfg-section-title {
@@ -301,7 +300,7 @@ td.gx-I.selected { background: var(--I-sel) !important; }
 
 /* ── Toast ──────────────────────────────────────────────────────── */
 #toast {
-  position: fixed; bottom: 44px; left: 50%; transform: translateX(-50%);
+  position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%);
   background: #333; color: #fff;
   padding: 7px 16px; border-radius: 20px; font-size: 13px;
   opacity: 0; transition: opacity 0.3s; pointer-events: none; z-index: 1000;
@@ -359,7 +358,7 @@ td.gx-I.selected { background: var(--I-sel) !important; }
     <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z"/></svg>
     Save Excel
   </button>
-  <button class="btn btn-sm" onclick="toggleTheme()" title="Toggle dark/light">🌙</button>
+  <button class="btn btn-sm" onclick="toggleTheme()" title="Toggle dark/light">☀️</button>
 </nav>
 
 <!-- ── Main ─────────────────────────────────────────────────────────────── -->
@@ -381,7 +380,6 @@ td.gx-I.selected { background: var(--I-sel) !important; }
     </div>
     <div id="panel-tabs">
       <div class="ptab active" data-tab="classify" onclick="switchTab('classify')">Classify</div>
-      <div class="ptab" data-tab="stats"    onclick="switchTab('stats')">Stats</div>
       <div class="ptab" data-tab="config"   onclick="switchTab('config')">Config</div>
     </div>
     <div id="panel-body">
@@ -492,27 +490,6 @@ td.gx-I.selected { background: var(--I-sel) !important; }
         </div>
       </div>
 
-      <!-- ── Stats Tab ── -->
-      <div id="tab-stats" style="display:none">
-        <div id="stats-content"></div>
-        <div class="legend">
-          <div class="legend-row"><span class="legend-dot" style="background:var(--L)"></span>
-            <span><strong style="color:var(--L-dark)">L</strong> Label — identifies a nearby value</span></div>
-          <div class="legend-row"><span class="legend-dot" style="background:var(--V)"></span>
-            <span><strong style="color:var(--V-dark)">V</strong> Value — field to extract</span></div>
-          <div class="legend-row"><span class="legend-dot" style="background:var(--C)"></span>
-            <span><strong style="color:var(--C-dark)">C</strong> Header — section title</span></div>
-          <div class="legend-row"><span class="legend-dot" style="background:var(--T)"></span>
-            <span><strong style="color:var(--T-dark)">T</strong> Table — tabular data block</span></div>
-          <div class="legend-row"><span class="legend-dot" style="background:var(--I)"></span>
-            <span><strong style="color:var(--I-dark)">I</strong> Ignore — skip this cell</span></div>
-        </div>
-        <hr style="border-color:var(--border);margin:12px 0">
-        <button class="btn btn-sm btn-primary" style="width:100%" onclick="savePattern()">
-          💾 Save Pattern File
-        </button>
-      </div>
-
       <!-- ── Config Tab ── -->
       <div id="tab-config" style="display:none">
         <div class="cfg-section-title">Scan direction</div>
@@ -569,6 +546,20 @@ td.gx-I.selected { background: var(--I-sel) !important; }
     </div><!-- /panel-body -->
   </div><!-- /panel -->
 </div><!-- /main -->
+
+<!-- ── Stats Bar ─────────────────────────────────────────────────────────── -->
+<div id="stats-bar">
+  <span class="sb-chip sb-L" title="Labels"><span id="sb-L">0</span> L</span>
+  <span class="sb-chip sb-V" title="Values"><span id="sb-V">0</span> V</span>
+  <span class="sb-chip sb-C" title="Headers"><span id="sb-C">0</span> C</span>
+  <span class="sb-chip sb-T" title="Tables"><span id="sb-T">0</span> T</span>
+  <span class="sb-chip sb-I" title="Ignored"><span id="sb-I">0</span> I</span>
+  <div class="sb-sep"></div>
+  <div class="sb-progress-wrap">
+    <div class="sb-progress-bar"><div id="sb-fill" class="sb-fill"></div></div>
+    <span id="sb-pct" class="sb-pct">0 / 0 cells classified</span>
+  </div>
+</div>
 
 <!-- ── Footer ───────────────────────────────────────────────────────────── -->
 <div id="footer">
@@ -855,20 +846,18 @@ async function undoLast() {
   }
 }
 
-// ── Stats ─────────────────────────────────────────────────────────────────
+// ── Stats bar (always-visible bottom strip) ───────────────────────────────
 function renderStats(stats) {
   const pct = stats.total > 0 ? Math.round((stats.classified / stats.total) * 100) : 0;
-  const html = `
-    <div class="stats-grid">
-      <div class="stat-card stat-L"><span class="stat-n">${stats.L}</span><span class="stat-l">Label</span></div>
-      <div class="stat-card stat-V"><span class="stat-n">${stats.V}</span><span class="stat-l">Value</span></div>
-      <div class="stat-card stat-C"><span class="stat-n">${stats.C}</span><span class="stat-l">Header</span></div>
-      <div class="stat-card stat-T"><span class="stat-n">${stats.T}</span><span class="stat-l">Table</span></div>
-      <div class="stat-card stat-I"><span class="stat-n">${stats.I}</span><span class="stat-l">Ignore</span></div>
-    </div>
-    <div class="progress-bar"><div class="fill" style="width:${pct}%"></div></div>
-    <div class="total-line">${stats.classified} / ${stats.total} non-empty cells classified (${pct}%)</div>`;
-  document.getElementById('stats-content').innerHTML = html;
+  const setText = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+  setText('sb-L', stats.L);
+  setText('sb-V', stats.V);
+  setText('sb-C', stats.C);
+  setText('sb-T', stats.T);
+  setText('sb-I', stats.I);
+  setText('sb-pct', `${stats.classified} / ${stats.total} cells classified (${pct}%)`);
+  const fill = document.getElementById('sb-fill');
+  if (fill) fill.style.width = pct + '%';
 }
 
 // ── Config ────────────────────────────────────────────────────────────────
@@ -950,9 +939,8 @@ async function savePatternXlsx() {
 // ── Tabs ──────────────────────────────────────────────────────────────────
 function switchTab(name) {
   document.querySelectorAll('.ptab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
-  ['classify','stats','config'].forEach(n =>
+  ['classify','config'].forEach(n =>
     document.getElementById('tab-' + n).style.display = n === name ? 'block' : 'none');
-  if (name === 'stats') loadStats();
   if (name === 'config') loadConfig();
 }
 
@@ -997,6 +985,7 @@ function loadKeyboardShortcuts() {
 function toggleTheme() {
   const t = document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark';
   document.documentElement.setAttribute('data-theme', t);
+  // ☀️ when dark (to switch to light), 🌙 when light (to switch to dark)
   document.querySelector('#navbar .btn[onclick="toggleTheme()"]').textContent = t === 'dark' ? '☀️' : '🌙';
 }
 
