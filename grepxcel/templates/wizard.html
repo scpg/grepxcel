@@ -1464,6 +1464,8 @@ function selectAction(action) {
   const btn = document.querySelector(`.cbtn-${action}`);
   if (btn) btn.classList.add('active');
   document.querySelectorAll('.action-fields').forEach(d => d.style.display = 'none');
+  // Clear T-mode anchor when switching away from T
+  if (action !== 'T') _tModeAnchor = null;
 
   if (!selectedRef) return;
   const info = cellData[selectedRef] || {};
@@ -1505,8 +1507,15 @@ function selectAction(action) {
         })
         .catch(() => {});
     } else {
-      // Clear end_ref and status for a fresh anchor
-      setVal('f-T-end_ref', '');
+      // For a fresh anchor: pre-populate end_ref from any active range selection
+      // so the user can: select range with Shift+Arrow → press T → Enter opens editor.
+      const rangeEndForT = (_rangeAnchor === selectedRef && _rangeEnd) ? _rangeEnd : '';
+      setVal('f-T-end_ref', rangeEndForT.toUpperCase());
+      if (rangeEndForT) {
+        // Range is now "claimed" by T mode — keep the visual highlight but
+        // remember the anchor so openTableModal uses it correctly.
+        _tModeAnchor = selectedRef;
+      }
       const s = document.getElementById('t-row-config-status');
       if (s) s.style.display = 'none';
     }
