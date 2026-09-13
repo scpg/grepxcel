@@ -510,9 +510,13 @@ def create_app(
     choices: dict[str, dict] = {}
     notes: dict[str, str] = {}
 
+    # Warnings from preload surfaced to the UI log panel.
+    preload_warnings: list[str] = []
+
     if pattern_path and Path(pattern_path).exists():
         try:
             loaded_choices, preload_cfg, _warnings = _preload_from_pattern(ws, pattern_path)
+            preload_warnings.extend(_warnings)
             choices.update(loaded_choices)
             if preload_cfg.get('direction'):
                 state.direction       = preload_cfg['direction']
@@ -540,8 +544,8 @@ def create_app(
                 state.currency_sign   = preload_cfg['currency_sign']
             if preload_cfg.get('empty_aliases'):
                 state.empty_aliases   = preload_cfg['empty_aliases']
-        except Exception:
-            pass
+        except Exception as exc:  # noqa: BLE001
+            preload_warnings.append(f'Could not load pattern: {exc}')
 
     # ── Session log ───────────────────────────────────────────────────────────
     session_log = _SessionLog(xlsx_path, ws.title)
@@ -549,17 +553,18 @@ def create_app(
     # ── Module-level session ──────────────────────────────────────────────────
     _STATE.clear()
     _STATE.update({
-        'xlsx_path':   xlsx_path,
-        'pattern_path': pattern_path,
-        'wb':          wb,
-        'ws':          ws,
-        'state':       state,
-        'choices':     choices,
-        'notes':       notes,
-        'undo_stack':  [],
-        'max_rows':    max_rows,
-        'max_cols':    max_cols,
-        'log':         session_log,
+        'xlsx_path':       xlsx_path,
+        'pattern_path':    pattern_path,
+        'wb':              wb,
+        'ws':              ws,
+        'state':           state,
+        'choices':         choices,
+        'notes':           notes,
+        'undo_stack':      [],
+        'max_rows':        max_rows,
+        'max_cols':        max_cols,
+        'log':             session_log,
+        'preload_warnings': preload_warnings,
     })
 
     # Log initial config
@@ -576,6 +581,8 @@ def create_app(
         session_log.write('PRELOAD',
             f'pattern={pattern_path} cells_loaded={len(choices)}'
         )
+        for w in preload_warnings:
+            session_log.write('PRELOAD_WARN', w)
 
     # ── Jinja2 env ────────────────────────────────────────────────────────────
     tpl_dir = Path(__file__).parent / 'templates'
@@ -622,6 +629,24 @@ def create_app(
             'choices': _STATE['choices'],
             'notes':   _STATE['notes'],
             'stats':   _build_stats(),
+        })
+
+    @app.get('/api/logs')
+    async def api_logs():
+        """Return session log entries and preload warnings for the UI log panel."""
+        log_obj: _SessionLog = _STATE.get('log')
+        log_path = log_obj._path if log_obj else None
+        recent_lines: list[str] = []
+        if log_path:
+            try:
+                with open(log_path, encoding='utf-8') as fh:
+                    recent_lines = fh.readlines()[-200:]
+            except OSError:
+                pass
+        return JSONResponse({
+            'preload_warnings': _STATE.get('preload_warnings', []),
+            'log_path':         log_path,
+            'log_lines':        [l.rstrip('\n') for l in recent_lines],
         })
 
     @app.post('/api/config')
@@ -681,12 +706,15 @@ def create_app(
             cell_value = None
 
         if action == 'L':
+            lbl_mode_raw = fields.get('match_mode', '')
+            # '(default)' is the UI sentinel for "use global default" — normalize to ''
+            lbl_mode = '' if lbl_mode_raw == '(default)' else lbl_mode_raw
             choices[ref] = {
                 'choice':   'L',
                 'name':     fields.get('name', _slugify(str(cell_value or '')) + '_label'),
                 'ltype':    fields.get('type', 'string'),
                 'lmatch':   fields.get('match', str(cell_value or '')),
-                'lbl_mode': fields.get('match_mode', ''),
+                'lbl_mode': lbl_mode,
             }
         elif action == 'V':
             var_mode_raw  = fields.get('match_mode', '(default)')

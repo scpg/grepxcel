@@ -766,7 +766,8 @@ def _pattern_rows(state: WizardState) -> list[list]:
     for t in state.lbl_defs:
         name, ltype, value = t[0], t[1], t[2]
         lbl_mode = t[3] if len(t) > 3 else ''
-        col_a = f'lbl:{lbl_mode}' if lbl_mode else 'lbl:'
+        # '(default)' is the UI sentinel for "use global default" — never write it
+        col_a = f'lbl:{lbl_mode}' if lbl_mode and lbl_mode != '(default)' else 'lbl:'
         rows.append([col_a, name, ltype, value])
     for t in state.var_defs:
         name, vtype, match = t[0], t[1], t[2]

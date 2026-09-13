@@ -673,6 +673,7 @@ td.gx-T-bottom { border-bottom: 2px solid rgba(124,58,237,0.5) !important; }
       <div class="ptab active" data-tab="classify" onclick="switchTab('classify')">Classify</div>
       <div class="ptab" data-tab="extract"  onclick="switchTab('extract')">🔎 Extract</div>
       <div class="ptab" data-tab="config"   onclick="switchTab('config')">Config</div>
+      <div class="ptab" data-tab="logs"     onclick="switchTab('logs')" id="tab-logs-btn">📋 Logs</div>
     </div>
     <div id="panel-body">
 
@@ -959,6 +960,23 @@ td.gx-T-bottom { border-bottom: 2px solid rgba(124,58,237,0.5) !important; }
         </div>
       </div>
 
+      <!-- ── Logs Tab ── -->
+      <div id="tab-logs" style="display:none;padding:8px 0">
+        <div id="log-warn-box" style="display:none;margin-bottom:8px"></div>
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;padding:0 8px">
+          <span style="font-size:12px;font-weight:600;color:var(--text-muted);flex:1">Session log</span>
+          <button class="btn" style="padding:2px 8px;font-size:11px" onclick="refreshLogs()">↻ Refresh</button>
+        </div>
+        <div id="log-lines-box"
+             style="font-family:monospace;font-size:11px;line-height:1.5;
+                    overflow-y:auto;max-height:400px;padding:0 8px;
+                    white-space:pre;color:var(--text-muted)">
+          <em>Loading…</em>
+        </div>
+        <div id="log-path-line"
+             style="font-size:10px;color:var(--text-muted);padding:6px 8px 0;word-break:break-all"></div>
+      </div>
+
     </div><!-- /panel-body -->
   </div><!-- /panel -->
 </div><!-- /main -->
@@ -1075,7 +1093,21 @@ let csvText = '';
 (async function init() {
   await Promise.all([loadSheet(), loadConfig(), loadStats()]);
   loadKeyboardShortcuts();
+  // Check for preload warnings and badge the Logs tab if any exist.
+  _checkPreloadWarnings();
 })();
+
+async function _checkPreloadWarnings() {
+  try {
+    const r    = await fetch('/api/logs');
+    const data = await r.json();
+    const warns = data.preload_warnings || [];
+    if (warns.length) {
+      const btn = document.getElementById('tab-logs-btn');
+      if (btn) { btn.textContent = '⚠️ Logs'; btn.dataset.warned = '1'; }
+    }
+  } catch (_) { /* ignore */ }
+}
 
 // ── Data fetching ─────────────────────────────────────────────────────────
 async function loadSheet() {
@@ -1687,7 +1719,7 @@ async function savePatternXlsx() {
 // ── Tabs ──────────────────────────────────────────────────────────────────
 function switchTab(name) {
   document.querySelectorAll('.ptab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
-  ['classify','extract','config'].forEach(n => {
+  ['classify','extract','config','logs'].forEach(n => {
     const el = document.getElementById('tab-' + n);
     if (!el) return;
     if (n === 'extract') {
@@ -1702,7 +1734,52 @@ function switchTab(name) {
   // Config tab: do NOT reload from server on every tab-switch — that races with
   // in-progress edits. The form is populated once on page init; the user's
   // unsaved changes remain visible if they switch away and back.
+  if (name === 'logs') refreshLogs();
 }
+
+async function refreshLogs() {
+  const linesBox = document.getElementById('log-lines-box');
+  const warnBox  = document.getElementById('log-warn-box');
+  const pathLine = document.getElementById('log-path-line');
+  try {
+    const r    = await fetch('/api/logs');
+    const data = await r.json();
+
+    // ── Preload warnings ──────────────────────────────────────────────────
+    const warns = data.preload_warnings || [];
+    if (warns.length) {
+      warnBox.innerHTML = warns.map(w =>
+        `<div style="background:var(--warn,#7c4a00);color:#ffe;border-radius:4px;padding:5px 8px;margin:0 8px 4px;font-size:11px;">⚠️ ${_esc(w)}</div>`
+      ).join('');
+      warnBox.style.display = 'block';
+      // Badge the tab if there are warnings
+      const btn = document.getElementById('tab-logs-btn');
+      if (btn && !btn.dataset.warned) {
+        btn.dataset.warned = '1';
+        btn.textContent = '⚠️ Logs';
+      }
+    } else {
+      warnBox.style.display = 'none';
+    }
+
+    // ── Log lines ─────────────────────────────────────────────────────────
+    const lines = data.log_lines || [];
+    if (lines.length) {
+      linesBox.textContent = lines.join('\n');
+      linesBox.scrollTop   = linesBox.scrollHeight;
+    } else {
+      linesBox.textContent = '(no log entries yet)';
+    }
+
+    // ── Log path ──────────────────────────────────────────────────────────
+    if (data.log_path) {
+      pathLine.textContent = '📁 ' + data.log_path;
+    }
+  } catch (e) {
+    if (linesBox) linesBox.textContent = 'Error loading logs: ' + e.message;
+  }
+}
+
 
 // ── Extract panel ─────────────────────────────────────────────────────────
 let _extractProvenance = {};
