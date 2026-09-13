@@ -181,7 +181,9 @@ def _build_state_from_choices(
         var_match=var_match,
         empty_aliases=list(empty_aliases) if empty_aliases else [],
     )
+    from openpyxl.utils import get_column_letter as _gcl
     seen_t_anchors: set[str] = set()
+    prev_lbl = False   # True when the immediately preceding emitted cell was L or C
     for r, c in cells:
         ref  = _cell_ref(r, c)
         meta = choices.get(ref)
@@ -196,17 +198,25 @@ def _build_state_from_choices(
                                    meta.get('lmatch', str(value) if value is not None else ''),
                                    meta.get('lbl_mode', '')))
             state.body_rows.append(['cell:1', name])
+            prev_lbl = True
         elif choice == 'C':
             state.lbl_defs.append((name,
                                    meta.get('ltype', 'string'),
                                    meta.get('lmatch', str(value) if value is not None else ''),
                                    meta.get('lbl_mode', '')))
             state.body_rows.append(['cell:1', name])
+            prev_lbl = True
         elif choice == 'V':
             state.var_defs.append((name, meta.get('ftype', 'string'),
                                    meta.get('match', '.*'),
                                    meta.get('col_a_extra', '')))
-            state.body_rows.append(['cell:1', name])
+            # Use cell:1 (relative) only when the var immediately follows a label cell so
+            # the engine can advance one step from the label anchor.  For standalone vars
+            # (first in sequence, after a table, or after another var) emit an absolute
+            # reference so the engine can locate the cell without a preceding anchor.
+            cell_instr = 'cell:1' if prev_lbl else f'cell:{_gcl(c)}{r}'
+            state.body_rows.append([cell_instr, name])
+            prev_lbl = False
         elif choice == 'T':
             # Each table is emitted once from its anchor cell; T-HEAD cells are skipped.
             if ref in seen_t_anchors:
@@ -364,6 +374,10 @@ def _build_state_from_choices(
             pass  # handled by the anchor cell above
         elif choice == 'I':
             state.body_rows.append(['cell:1', 'IGNORE'])
+            prev_lbl = False
+        if choice == 'T':
+            # Table blocks break scalar L→V adjacency; reset after the full block.
+            prev_lbl = False
     return state
 
 
@@ -1106,6 +1120,42 @@ def _preload_from_pattern(ws, pattern_path: str) -> tuple[dict, dict, list[str]]
                     return (r, c)
         return None
 
+    def _find_var_by_content(fd) -> tuple | None:
+        """Fallback: scan the sheet for the first unclaimed cell matching fd.regex.
+
+        Used when a standalone var has no preceding label anchor and the pattern
+        instruction is relative (cell:1).  Only attempted for non-trivial patterns —
+        broad patterns like '.*' or '.+' would match arbitrary cells and are skipped.
+        """
+        import re as _re
+        import fnmatch as _fnmatch
+        pat = fd.regex or ''
+        if pat in ('.*', '.+', ''):
+            return None   # too broad; would produce false positives
+        mode = fd.var_mode or global_config.var_match or 'regexp'
+        ic   = global_config.ignore_case_values
+        try:
+            if mode == 'literal':
+                compiled = _re.compile(_re.escape(pat), _re.IGNORECASE if ic else 0)
+            elif mode == 'glob':
+                compiled = _re.compile(_fnmatch.translate(pat), _re.IGNORECASE if ic else 0)
+            else:  # regexp (default)
+                compiled = _re.compile(pat, _re.IGNORECASE if ic else 0)
+        except _re.error:
+            return None
+        tw = global_config.trim_whitespace_values
+        for rr in range(1, max_row + 1):
+            for cc in range(1, max_col + 1):
+                ref = _cell_ref(rr, cc)
+                if ref in claimed:
+                    continue
+                v = ws.cell(row=rr, column=cc).value
+                if v is not None:
+                    sv = str(v).strip() if tw else str(v)
+                    if compiled.fullmatch(sv):
+                        return (rr, cc)
+        return None
+
     def _adjacent(pos: tuple) -> tuple:
         r, c = pos
         return (r, c + 1) if direction == 'LR' else (r + 1, c)
@@ -1252,10 +1302,20 @@ def _preload_from_pattern(ws, pattern_path: str) -> tuple[dict, dict, list[str]]
 
         else:  # var field — place adjacent to last matched lbl
             if last_lbl_pos is None:
-                warnings.append(
-                    f'Var {name!r}: no preceding label was matched — '
-                    f'cannot determine cell position; classify manually'
-                )
+                # No label anchor.  Try content-scan: find an unclaimed cell whose
+                # value matches fd.regex.  This handles patterns like
+                # `cell:1 -> report.title` where a var with a specific match
+                # pattern (e.g. 'SALES.*') appears before any label anchor.
+                found = _find_var_by_content(fd)
+                if found:
+                    ref = _cell_ref(*found)
+                    _record_var(ref, fd)
+                    last_lbl_pos = found
+                else:
+                    warnings.append(
+                        f'Var {name!r}: no preceding label was matched — '
+                        f'cannot determine cell position; classify manually'
+                    )
             else:
                 ar, ac = _adjacent(last_lbl_pos)
                 if 1 <= ar <= max_row and 1 <= ac <= max_col:
