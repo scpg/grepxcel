@@ -386,6 +386,30 @@ td.gx-cell[data-field]:not([data-field=""]):hover::before {
 .toggle input:checked + .slider { background: var(--accent); }
 .toggle input:checked + .slider::before { transform: translateX(16px); }
 .aliases-help { font-size: 11px; color: var(--text-muted); margin-top: 3px; }
+/* ── Modifier checkbox dropdown ── */
+.mod-dropdown { position: relative; }
+.mod-trigger {
+  display: flex; align-items: center; justify-content: space-between;
+  width: 100%; padding: 5px 8px; border: 1px solid var(--border);
+  border-radius: 4px; background: var(--input-bg); color: var(--text);
+  font-size: 13px; cursor: pointer; text-align: left; box-sizing: border-box;
+}
+.mod-trigger:focus { outline: 1px solid var(--accent); }
+.mod-chevron { font-size: 10px; opacity: 0.55; flex-shrink: 0; margin-left: 6px; }
+.mod-menu {
+  display: none; position: absolute; top: calc(100% + 2px); left: 0; right: 0;
+  background: var(--panel-bg); border: 1px solid var(--border); border-radius: 4px;
+  z-index: 300; padding: 4px 0;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.35);
+}
+.mod-menu.open { display: block; }
+.mod-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 12px; font-size: 13px; cursor: pointer; color: var(--text);
+  user-select: none;
+}
+.mod-item:hover { background: var(--hover); }
+.mod-item input[type=checkbox] { margin: 0; cursor: pointer; accent-color: var(--accent); flex-shrink: 0; }
 .info-icon {
   cursor: help; font-size: 11px; color: var(--text-muted);
   margin-left: 4px; opacity: 0.7; transition: opacity 0.15s;
@@ -566,16 +590,35 @@ td.gx-cell[data-field]:not([data-field=""]):hover::before {
               </label>
               <input id="f-V-match" type="text" placeholder="e.g. .* or \d+"></div>
             <div class="form-group"><label>Modifiers
-                <span class="info-icon" title="nullable: return null instead of failing when the cell is empty.&#10;not-null: fail extraction if the value is empty or missing.&#10;trim-whitespace: strip leading/trailing spaces before type check.&#10;Combine with colon, e.g. nullable:trim-whitespace.">🛈</span>
+                <span class="info-icon" title="nullable: return null instead of failing when the cell is empty.&#10;not-null: fail extraction if the value is empty or missing.&#10;trim-whitespace: strip leading/trailing spaces before type check.&#10;nullable and not-null are mutually exclusive.&#10;trim-whitespace can be combined with either.">🛈</span>
               </label>
-              <select id="f-V-modifiers">
-                <option value="none">none</option>
-                <option value="nullable">nullable</option>
-                <option value="not-null">not-null</option>
-                <option value="trim-whitespace">trim-whitespace</option>
-                <option value="nullable:trim-whitespace">nullable + trim-whitespace</option>
-                <option value="not-null:trim-whitespace">not-null + trim-whitespace</option>
-              </select></div>
+              <!-- hidden input holds the computed value; read by g('f-V-modifiers') -->
+              <input type="hidden" id="f-V-modifiers" value="none">
+              <div class="mod-dropdown" id="mod-dropdown">
+                <button type="button" class="mod-trigger" id="mod-trigger"
+                        onclick="toggleModDropdown(event)">
+                  <span id="mod-display">none</span>
+                  <span class="mod-chevron">▾</span>
+                </button>
+                <div class="mod-menu" id="mod-menu">
+                  <label class="mod-item">
+                    <input type="checkbox" id="mod-none" checked onchange="onModChange('none')">
+                    none
+                  </label>
+                  <label class="mod-item">
+                    <input type="checkbox" id="mod-nullable" onchange="onModChange('nullable')">
+                    nullable
+                  </label>
+                  <label class="mod-item">
+                    <input type="checkbox" id="mod-not-null" onchange="onModChange('not-null')">
+                    not-null
+                  </label>
+                  <label class="mod-item">
+                    <input type="checkbox" id="mod-trim" onchange="onModChange('trim-whitespace')">
+                    trim-whitespace
+                  </label>
+                </div>
+              </div></div>
             <div class="form-group"><label>Note <span style="font-weight:400;text-transform:none">(optional)</span></label>
               <textarea id="f-V-notes" rows="2" placeholder="Internal note…"></textarea></div>
           </div>
@@ -1515,7 +1558,73 @@ function suggestNameFromLabel(ref) {
   }
   return '';
 }
+// ── Modifier checkbox dropdown ────────────────────────────────────────────────
+function toggleModDropdown(e) {
+  e && e.stopPropagation();
+  document.getElementById('mod-menu').classList.toggle('open');
+}
+document.addEventListener('click', function(e) {
+  const dd = document.getElementById('mod-dropdown');
+  if (dd && !dd.contains(e.target)) {
+    const menu = document.getElementById('mod-menu');
+    if (menu) menu.classList.remove('open');
+  }
+});
+
+function onModChange(which) {
+  const noneEl  = document.getElementById('mod-none');
+  const nullEl  = document.getElementById('mod-nullable');
+  const nnullEl = document.getElementById('mod-not-null');
+  const trimEl  = document.getElementById('mod-trim');
+  if (which === 'none') {
+    if (noneEl.checked) {
+      nullEl.checked = false; nnullEl.checked = false; trimEl.checked = false;
+    } else {
+      // unchecking none with nothing else on → re-check none
+      if (!nullEl.checked && !nnullEl.checked && !trimEl.checked) noneEl.checked = true;
+    }
+  } else {
+    noneEl.checked = false;
+    if (which === 'nullable'  && nullEl.checked)  nnullEl.checked = false;
+    if (which === 'not-null'  && nnullEl.checked) nullEl.checked  = false;
+    // if everything was unchecked, restore none
+    if (!nullEl.checked && !nnullEl.checked && !trimEl.checked) noneEl.checked = true;
+  }
+  _syncModifiers();
+}
+
+function _syncModifiers() {
+  const isNone  = document.getElementById('mod-none').checked;
+  const isNull  = document.getElementById('mod-nullable').checked;
+  const isNnull = document.getElementById('mod-not-null').checked;
+  const isTrim  = document.getElementById('mod-trim').checked;
+  let val, display;
+  if (isNone || (!isNull && !isNnull && !isTrim)) {
+    val = 'none'; display = 'none';
+  } else {
+    const parts = [];
+    if (isNull)  parts.push('nullable');
+    if (isNnull) parts.push('not-null');
+    if (isTrim)  parts.push('trim-whitespace');
+    val = parts.join(':');
+    display = parts.join(' + ');
+  }
+  document.getElementById('f-V-modifiers').value = val;
+  document.getElementById('mod-display').textContent = display;
+}
+
+function _applyModifiers(val) {
+  val = val || 'none';
+  const parts = (val === 'none') ? [] : val.split(':');
+  document.getElementById('mod-none').checked    = parts.length === 0;
+  document.getElementById('mod-nullable').checked = parts.includes('nullable');
+  document.getElementById('mod-not-null').checked  = parts.includes('not-null');
+  document.getElementById('mod-trim').checked      = parts.includes('trim-whitespace');
+  _syncModifiers();
+}
+
 function setVal(id, v) {
+  if (id === 'f-V-modifiers') { _applyModifiers(v); return; }
   const el = document.getElementById(id);
   if (el) el.value = v;
 }
