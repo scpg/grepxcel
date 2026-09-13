@@ -694,6 +694,136 @@ def _get_version() -> str:
         return '?'
 
 
+def _port_in_use(port: int) -> bool:
+    """Return True if *port* is already bound on localhost."""
+    import socket
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(0.3)
+        return s.connect_ex(('127.0.0.1', port)) == 0
+
+
+def _pids_on_port(port: int) -> list[tuple[int, str]]:
+    """Return [(pid, cmdline), …] for processes listening on *port*.
+
+    Uses ``ss`` (Linux) then ``lsof`` (macOS/fallback), then falls back
+    gracefully to an empty list when neither is available.
+    """
+    import subprocess, shutil
+    results: list[tuple[int, str]] = []
+
+    # ── Try ss (Linux iproute2) ────────────────────────────────────────────────
+    if shutil.which('ss'):
+        try:
+            out = subprocess.check_output(
+                ['ss', '-tlnp', f'sport = :{port}'],
+                text=True, stderr=subprocess.DEVNULL,
+            )
+            for line in out.splitlines():
+                # ss output: "LISTEN  0  128  127.0.0.1:8765  *:*  users:(("grepxcel",pid=12345,fd=7))"
+                if f':{port}' in line and 'pid=' in line:
+                    import re
+                    for m in re.finditer(r'pid=(\d+)', line):
+                        pid = int(m.group(1))
+                        try:
+                            cmd = Path(f'/proc/{pid}/cmdline').read_text().replace('\x00', ' ').strip()
+                        except OSError:
+                            cmd = f'pid {pid}'
+                        results.append((pid, cmd))
+        except (subprocess.SubprocessError, FileNotFoundError):
+            pass
+
+    # ── Try lsof (macOS / BSD) ─────────────────────────────────────────────────
+    if not results and shutil.which('lsof'):
+        try:
+            out = subprocess.check_output(
+                ['lsof', '-ti', f'tcp:{port}'],
+                text=True, stderr=subprocess.DEVNULL,
+            )
+            for line in out.splitlines():
+                pid = int(line.strip())
+                try:
+                    cmd = Path(f'/proc/{pid}/cmdline').read_text().replace('\x00', ' ').strip()
+                except OSError:
+                    try:
+                        cmd = subprocess.check_output(
+                            ['ps', '-p', str(pid), '-o', 'command='],
+                            text=True, stderr=subprocess.DEVNULL,
+                        ).strip()
+                    except subprocess.SubprocessError:
+                        cmd = f'pid {pid}'
+                results.append((pid, cmd))
+        except (subprocess.SubprocessError, ValueError, FileNotFoundError):
+            pass
+
+    return results
+
+
+def _handle_port_conflict(port: int) -> None:
+    """If *port* is taken, show who holds it and ask the user to kill or abort."""
+    import signal
+    if not _port_in_use(port):
+        return  # all clear
+
+    pids = _pids_on_port(port)
+    print(f'\n⚠️  Port {port} is already in use.', file=sys.stderr)
+    if pids:
+        for pid, cmd in pids:
+            short = cmd[:80] + ('…' if len(cmd) > 80 else '')
+            print(f'   PID {pid}: {short}', file=sys.stderr)
+    else:
+        print('   (Could not identify the process holding the port.)', file=sys.stderr)
+
+    try:
+        answer = input(
+            f'\nKill the existing process and restart on port {port}? [y/N] '
+        ).strip().lower()
+    except (EOFError, KeyboardInterrupt):
+        print('\nAborted.', file=sys.stderr)
+        sys.exit(1)
+
+    if answer not in ('y', 'yes'):
+        print(
+            f'Tip: use --port <other> to start on a different port.',
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    # Kill each identified process
+    if pids:
+        for pid, _ in pids:
+            try:
+                os.kill(pid, signal.SIGTERM)
+                print(f'   Sent SIGTERM to PID {pid}', file=sys.stderr)
+            except ProcessLookupError:
+                pass
+        # Wait for port to free (up to 3 s)
+        for _ in range(30):
+            time.sleep(0.1)
+            if not _port_in_use(port):
+                break
+        else:
+            # Hard-kill if still up
+            for pid, _ in pids:
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+            time.sleep(0.3)
+    else:
+        # No PID found; wait a moment hoping the OS frees the port
+        print('   Waiting for port to free…', file=sys.stderr)
+        time.sleep(2)
+
+    if _port_in_use(port):
+        print(
+            f'Port {port} is still occupied. Try --port <other>.',
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    print(f'   Port {port} is now free.\n', file=sys.stderr)
+
+
 def run(
     xlsx_path: str,
     pattern_path: str | None = None,
@@ -710,6 +840,8 @@ def run(
             file=sys.stderr,
         )
         sys.exit(1)
+
+    _handle_port_conflict(port)
 
     app = create_app(xlsx_path, pattern_path, max_rows=max_rows, max_cols=max_cols)
     url = f'http://localhost:{port}'
