@@ -388,6 +388,7 @@ def _build_sheet_data() -> dict:
                 'type':      _cell_type_display(cell.value),
                 'choice':    choice_info.get('choice', ''),
                 'name':      choice_info.get('name', ''),
+                'anchor':    choice_info.get('anchor', ''),  # set for T-HEAD / T-DATA
                 'note':      notes.get(ref, ''),
                 'empty':     cell.value is None and not is_anchor,
                 'colspan':   colspan,

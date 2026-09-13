@@ -717,8 +717,9 @@ td.gx-T-bottom { border-bottom: 2px solid rgba(124,58,237,0.5) !important; }
           <div id="fields-T" class="action-fields" style="display:none">
             <div class="form-section-title">Table</div>
             <p style="font-size:12px;color:var(--text-muted);margin-bottom:8px">
-              Mark the <strong>top-left header cell</strong> as the table anchor, then set the
-              bottom-right cell (end ref) and open the row editor.
+              Mark the <strong>top-left header cell</strong> as the table anchor.
+              Shift+click the bottom-right cell to set the range, then open the editor.
+              Clicking any <em>T-HEAD</em> or <em>T-DATA</em> cell also opens the editor automatically.
             </p>
             <div class="form-group">
               <label>Table name</label>
@@ -748,7 +749,7 @@ td.gx-T-bottom { border-bottom: 2px solid rgba(124,58,237,0.5) !important; }
             <div id="t-row-config-status" style="font-size:11px;color:var(--text-muted);padding:4px 0;display:none"></div>
             <!-- Open full row editor -->
             <button type="button" class="btn btn-primary" style="width:100%;margin-bottom:8px"
-                    onclick="openTableModal()">📋 Open Row Editor…</button>
+                    onclick="openTableModal()">✏️ Edit Mini-Table…</button>
             <!-- Legacy column editor (fallback, hidden when row-configs exist) -->
             <div id="t-legacy-editor" style="display:none">
               <div id="t-col-header" style="display:none;margin-bottom:4px">
@@ -921,7 +922,7 @@ td.gx-T-bottom { border-bottom: 2px solid rgba(124,58,237,0.5) !important; }
 <div id="table-row-modal">
   <div id="trm-box">
     <div class="trm-header">
-      <span>📋 Table Row Editor</span>
+      <span>✏️ Mini-Table Editor</span>
       <span class="spacer"></span>
       <button class="btn" style="padding:2px 8px;font-size:13px" onclick="closeTableModal()">✕</button>
     </div>
@@ -1151,8 +1152,13 @@ function prefillForm(info) {
     fetch(`/api/table-context/${info.ref}`)
       .then(r => r.json())
       .then(ctx => {
-        // Only set end_ref if it differs from anchor (preloaded tables may return anchor as fallback)
-        if (ctx.end_ref && ctx.end_ref !== info.ref) setVal('f-T-end_ref', ctx.end_ref);
+        // Prefer stored end_ref; fall back to visible T-HEAD/T-DATA scan
+        if (ctx.end_ref && ctx.end_ref !== info.ref) {
+          setVal('f-T-end_ref', ctx.end_ref);
+        } else {
+          const inferred = _inferTableEndRef(info.ref);
+          if (inferred) setVal('f-T-end_ref', inferred);
+        }
         _tUpdateRowConfigStatus(ctx);
         _tLoadColumnsFromContext(ctx);
       })
@@ -1171,13 +1177,19 @@ function prefillForm(info) {
       document.querySelectorAll('.cbtn').forEach(b => b.classList.remove('active'));
       const btn = document.querySelector('.cbtn-T');
       if (btn) btn.classList.add('active');
-      // Load anchor config
+      // Load anchor config and auto-infer end_ref if missing
       fetch(`/api/table-context/${anchorRef}`)
         .then(r => r.json())
         .then(ctx => {
           setVal('f-T-name', ctx.name || '');
           setVal('f-T-mult', ctx.mult || '*');
-          if (ctx.end_ref && ctx.end_ref !== anchorRef) setVal('f-T-end_ref', ctx.end_ref);
+          // Prefer stored end_ref; fall back to scanning visible T-HEAD/T-DATA cells
+          if (ctx.end_ref && ctx.end_ref !== anchorRef) {
+            setVal('f-T-end_ref', ctx.end_ref);
+          } else {
+            const inferred = _inferTableEndRef(anchorRef);
+            if (inferred) setVal('f-T-end_ref', inferred);
+          }
           _tUpdateRowConfigStatus(ctx);
           _tLoadColumnsFromContext(ctx);
         })
@@ -1224,7 +1236,12 @@ function selectAction(action) {
       fetch(`/api/table-context/${selectedRef}`)
         .then(r => r.json())
         .then(ctx => {
-          if (ctx.end_ref && ctx.end_ref !== selectedRef) setVal('f-T-end_ref', ctx.end_ref);
+          if (ctx.end_ref && ctx.end_ref !== selectedRef) {
+            setVal('f-T-end_ref', ctx.end_ref);
+          } else {
+            const inferred = _inferTableEndRef(selectedRef);
+            if (inferred) setVal('f-T-end_ref', inferred);
+          }
           _tUpdateRowConfigStatus(ctx);
         })
         .catch(() => {});
@@ -1244,7 +1261,8 @@ function selectAction(action) {
 function showFields(action) {
   const div = document.getElementById(`fields-${action}`);
   if (div) div.style.display = 'block';
-  document.getElementById('apply-row').style.display = 'flex';
+  // T action goes through the modal — sidebar Apply/Cancel are misleading, hide them
+  document.getElementById('apply-row').style.display = action === 'T' ? 'none' : 'flex';
 }
 
 function cancelClassification() {
@@ -2029,6 +2047,41 @@ let _trmHeaderNames = [];   // header col names collected at grid render (index 
 function _trmSlugify(s) {
   return String(s).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'col';
 }
+
+// Ref ↔ (row, col) helpers for JS
+function _parseRef(ref) {
+  const m = String(ref).match(/^([A-Za-z]+)(\d+)$/);
+  if (!m) return [0, 0];
+  const colStr = m[1].toUpperCase();
+  let col = 0;
+  for (const ch of colStr) col = col * 26 + (ch.charCodeAt(0) - 64);
+  return [parseInt(m[2], 10), col];
+}
+function _buildRef(row, col) {
+  let s = '';
+  while (col > 0) { const r = (col - 1) % 26; s = String.fromCharCode(65 + r) + s; col = Math.floor((col - 1) / 26); }
+  return s + row;
+}
+
+/**
+ * Scan cellData for all T / T-HEAD / T-DATA cells belonging to anchorRef and
+ * return the bottom-right cell ref.  Used to auto-determine end_ref when the
+ * user hasn't shift-clicked yet (e.g. after loading a preloaded pattern).
+ */
+function _inferTableEndRef(anchorRef) {
+  let maxRow = 0, maxCol = 0;
+  Object.values(cellData).forEach(info => {
+    const ref = info.ref || '';
+    const choice = info.choice || '';
+    const isAnchor  = ref === anchorRef && choice === 'T';
+    const isMember  = (choice === 'T-HEAD' || choice === 'T-DATA') && info.anchor === anchorRef;
+    if (!isAnchor && !isMember) return;
+    const [r, c] = _parseRef(ref);
+    if (r > maxRow) maxRow = r;
+    if (c > maxCol) maxCol = c;
+  });
+  return (maxRow > 0 && maxCol > 0) ? _buildRef(maxRow, maxCol) : '';
+}
 const _TRM_ROW_TYPES = [
   { val: 'header',         label: 'Header:N',    hasN: true,  hasCols: true  },
   { val: 'data',           label: 'Data:*',       hasN: false, hasCols: true  },
@@ -2046,10 +2099,19 @@ async function openTableModal() {
   const multEl   = document.getElementById('f-T-mult');
   const endEl    = document.getElementById('f-T-end_ref');
   const anchorRef = selectedRef || '';
-  const endRef    = (endEl?.value || '').toUpperCase().trim();
 
   if (!anchorRef) { toast('Select the top-left table cell first', true); return; }
-  if (!endRef)    { toast('Set the bottom-right cell (end ref) first', true); return; }
+
+  // Resolve end_ref: sidebar input → inferred from visible T-HEAD/T-DATA cells → error
+  let endRef = (endEl?.value || '').toUpperCase().trim();
+  if (!endRef) {
+    endRef = _inferTableEndRef(anchorRef);
+    if (endRef && endEl) { endEl.value = endRef; }  // write back so sidebar shows it
+  }
+  if (!endRef) {
+    toast('Set the bottom-right cell (end ref): Shift+click any cell in the table', true);
+    return;
+  }
 
   _trmAnchorRef = anchorRef;
 
