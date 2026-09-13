@@ -428,13 +428,14 @@ def create_app(
         st: WizardState = _STATE['state']
         return JSONResponse({
             'config': {
-                'direction':      st.direction,
-                'ignore_case':    st.ignore_case,
+                'direction':       st.direction,
+                'template':        st.template,
+                'ignore_case':     st.ignore_case,
                 'trim_whitespace': st.trim_whitespace,
-                'currency_sign':  st.currency_sign,
-                'lbl_match':      st.lbl_match,
-                'var_match':      st.var_match,
-                'empty_aliases':  st.empty_aliases,
+                'currency_sign':   st.currency_sign,
+                'lbl_match':       st.lbl_match,
+                'var_match':       st.var_match,
+                'empty_aliases':   st.empty_aliases,
             },
             'choices': _STATE['choices'],
             'notes':   _STATE['notes'],
@@ -446,6 +447,7 @@ def create_app(
         body = await request.json()
         st: WizardState = _STATE['state']
         st.direction       = body.get('direction',       st.direction)
+        st.template        = body.get('template',        st.template)
         st.ignore_case     = body.get('ignore_case',     st.ignore_case)
         st.trim_whitespace = body.get('trim_whitespace', st.trim_whitespace)
         st.currency_sign   = body.get('currency_sign',   st.currency_sign)

@@ -1068,10 +1068,18 @@ async function saveConfig() {
 
 // ── Preview & Save ─────────────────────────────────────────────────────────
 async function showPreview() {
-  document.getElementById('preview-modal').classList.add('open');
-  const r = await fetch('/api/preview');
-  csvText = await r.text();
-  document.getElementById('preview-text').textContent = csvText;
+  const modal = document.getElementById('preview-modal');
+  const pre   = document.getElementById('preview-text');
+  pre.textContent = 'Loading…';   // reset each time so stale content never shows
+  modal.classList.add('open');
+  try {
+    const r = await fetch('/api/preview');
+    if (!r.ok) { pre.textContent = `Error ${r.status}: ${await r.text()}`; return; }
+    csvText = await r.text();
+    pre.textContent = csvText;
+  } catch (e) {
+    pre.textContent = `Network error: ${e.message}`;
+  }
 }
 function closePreview() { document.getElementById('preview-modal').classList.remove('open'); }
 function downloadCSV() {
@@ -1127,7 +1135,9 @@ function switchTab(name) {
       el.style.display = n === name ? 'block' : 'none';
     }
   });
-  if (name === 'config') loadConfig();
+  // Config tab: do NOT reload from server on every tab-switch — that races with
+  // in-progress edits. The form is populated once on page init; the user's
+  // unsaved changes remain visible if they switch away and back.
 }
 
 // ── Extract panel ─────────────────────────────────────────────────────────

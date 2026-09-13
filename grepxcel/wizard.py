@@ -188,6 +188,7 @@ class WizardState:
     var_defs: list[tuple] = field(default_factory=list)
     body_rows: list[list[str]] = field(default_factory=list)
     # ── New global config fields ───────────────────────────────────────────
+    template: bool = False             # config: template mode (blank-form spreadsheets)
     trim_whitespace: bool = False      # config: trim.whitespace yes
     lbl_match: str = ''               # config: lbl.match ('' = omit / use default)
     var_match: str = ''               # config: var.match ('' = omit / use default)
@@ -209,6 +210,7 @@ class WizardState:
             lbl_defs=[tuple(t) for t in d.get('lbl_defs', [])],
             var_defs=[tuple(t) for t in d.get('var_defs', [])],
             body_rows=[list(r) for r in d.get('body_rows', [])],
+            template=d.get('template', False),
             trim_whitespace=d.get('trim_whitespace', False),
             lbl_match=d.get('lbl_match', ''),
             var_match=d.get('var_match', ''),
