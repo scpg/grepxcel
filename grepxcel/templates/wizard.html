@@ -386,6 +386,12 @@ td.gx-cell[data-field]:not([data-field=""]):hover::before {
 .toggle input:checked + .slider { background: var(--accent); }
 .toggle input:checked + .slider::before { transform: translateX(16px); }
 .aliases-help { font-size: 11px; color: var(--text-muted); margin-top: 3px; }
+.info-icon {
+  cursor: help; font-size: 11px; color: var(--text-muted);
+  margin-left: 4px; opacity: 0.7; transition: opacity 0.15s;
+  vertical-align: middle; text-decoration: none;
+}
+.info-icon:hover { opacity: 1; }
 
 /* ── Legend ─────────────────────────────────────────────────────── */
 .legend { display: flex; flex-direction: column; gap: 5px; margin: 8px 0; }
@@ -533,9 +539,13 @@ td.gx-cell[data-field]:not([data-field=""]):hover::before {
 
           <div id="fields-V" class="action-fields" style="display:none">
             <div class="form-section-title">Value fields</div>
-            <div class="form-group"><label>Field name</label>
+            <div class="form-group"><label>Field name
+                <span class="info-icon" title="The key used in the extracted JSON output.&#10;Auto-suggested from the adjacent label cell when available.&#10;Use snake_case (e.g. invoice_no, total_amount).">🛈</span>
+              </label>
               <input id="f-V-name" type="text" placeholder="e.g. invoice_no"></div>
-            <div class="form-group"><label>Type</label>
+            <div class="form-group"><label>Type
+                <span class="info-icon" title="Expected data type of the extracted value.&#10;string: any text. integer: whole numbers. number: decimals.&#10;date: parsed as ISO date. boolean: true/false.">🛈</span>
+              </label>
               <select id="f-V-type">
                 <option value="string">string</option>
                 <option value="integer">integer</option>
@@ -543,15 +553,21 @@ td.gx-cell[data-field]:not([data-field=""]):hover::before {
                 <option value="date">date</option>
                 <option value="boolean">boolean</option>
               </select></div>
-            <div class="form-group"><label>Match mode</label>
+            <div class="form-group"><label>Match mode
+                <span class="info-icon" title="How the match pattern below is interpreted.&#10;regexp (default): Python regular expression.&#10;literal: exact text match.&#10;glob: wildcard (* = anything, ? = one char).&#10;Overrides the global default in Config.">🛈</span>
+              </label>
               <select id="f-V-match_mode">
                 <option value="(default)">regexp (default)</option>
                 <option value="literal">literal</option>
                 <option value="glob">glob</option>
               </select></div>
-            <div class="form-group"><label>Match pattern</label>
+            <div class="form-group"><label>Match pattern
+                <span class="info-icon" title="Pattern the cell value must satisfy to be accepted.&#10;Default '.*' accepts anything. Use '^\\d+$' for integers, '^\\d{4}-\\d{2}-\\d{2}$' for dates.&#10;Set match mode above to change how this pattern is read.">🛈</span>
+              </label>
               <input id="f-V-match" type="text" placeholder="e.g. .* or \d+"></div>
-            <div class="form-group"><label>Modifiers <span style="font-weight:400;text-transform:none">(colon = combine)</span></label>
+            <div class="form-group"><label>Modifiers
+                <span class="info-icon" title="nullable: return null instead of failing when the cell is empty.&#10;not-null: fail extraction if the value is empty or missing.&#10;trim-whitespace: strip leading/trailing spaces before type check.&#10;Combine with colon, e.g. nullable:trim-whitespace.">🛈</span>
+              </label>
               <select id="f-V-modifiers">
                 <option value="none">none</option>
                 <option value="nullable">nullable</option>
@@ -598,7 +614,9 @@ td.gx-cell[data-field]:not([data-field=""]):hover::before {
 
       <!-- ── Config Tab ── -->
       <div id="tab-config" style="display:none">
-        <div class="cfg-section-title">Scan direction</div>
+        <div class="cfg-section-title">Scan direction
+          <span class="info-icon" title="Controls the order cells are visited when building the pattern.&#10;LR (left-to-right): scan row by row — label is expected to the LEFT of its value.&#10;TD (top-down): scan column by column — label is expected ABOVE its value.">🛈</span>
+        </div>
         <div class="form-group">
           <select id="cfg-direction">
             <option value="LR">LR — left-to-right, top-to-bottom</option>
@@ -607,24 +625,36 @@ td.gx-cell[data-field]:not([data-field=""]):hover::before {
         </div>
         <div class="cfg-section-title">Behaviour</div>
         <div class="switch-row">
-          <label>Template mode</label>
+          <label>Template mode
+            <span class="info-icon" title="Enable for blank-form spreadsheets where value cells are empty.&#10;In template mode the engine accepts empty cells as valid extraction targets.">🛈</span>
+          </label>
           <label class="toggle"><input type="checkbox" id="cfg-template"><span class="slider"></span></label>
         </div>
         <div class="switch-row">
-          <label>Ignore case (labels)</label>
+          <label>Ignore case (labels)
+            <span class="info-icon" title="When ON, label anchors are matched case-insensitively.&#10;e.g. 'Invoice No:' matches 'INVOICE NO:' or 'invoice no:'.">🛈</span>
+          </label>
           <label class="toggle"><input type="checkbox" id="cfg-ignore_case"><span class="slider"></span></label>
         </div>
         <div class="switch-row">
-          <label>Trim whitespace (values)</label>
+          <label>Trim whitespace (values)
+            <span class="info-icon" title="When ON, leading and trailing spaces are stripped from extracted values before returning them.&#10;Useful for poorly formatted spreadsheets.">🛈</span>
+          </label>
           <label class="toggle"><input type="checkbox" id="cfg-trim_ws"><span class="slider"></span></label>
         </div>
-        <div class="cfg-section-title">Currency sign</div>
+        <div class="cfg-section-title">Currency sign
+          <span class="info-icon" title="A character stripped from cell values before number parsing.&#10;e.g. with €: the cell '€1,200.00' is extracted as the number 1200.">🛈</span>
+        </div>
         <div class="form-group">
           <input id="cfg-currency" type="text" maxlength="5" style="width:80px" placeholder="€">
         </div>
-        <div class="cfg-section-title">Default match mode</div>
+        <div class="cfg-section-title">Default match mode
+          <span class="info-icon" title="Overrides the built-in matching defaults for all fields in this pattern.&#10;Per-field overrides (set in the Classify form) still take priority over this global default.">🛈</span>
+        </div>
         <div class="form-group">
-          <label style="font-size:11px;color:var(--text-muted);margin-bottom:2px">Labels (lbl.match)</label>
+          <label style="font-size:11px;color:var(--text-muted);margin-bottom:2px">Labels (lbl.match)
+            <span class="info-icon" title="How label anchor text is matched against spreadsheet cells.&#10;literal: exact text match (default, safe for most cases).&#10;glob: wildcard patterns (* matches anything, ? matches one char).&#10;regexp: full Python regular expressions.">🛈</span>
+          </label>
           <select id="cfg-lbl_match">
             <option value="">literal (default)</option>
             <option value="glob">glob</option>
@@ -632,14 +662,18 @@ td.gx-cell[data-field]:not([data-field=""]):hover::before {
           </select>
         </div>
         <div class="form-group">
-          <label style="font-size:11px;color:var(--text-muted);margin-bottom:2px">Values (var.match)</label>
+          <label style="font-size:11px;color:var(--text-muted);margin-bottom:2px">Values (var.match)
+            <span class="info-icon" title="How value field match patterns are interpreted.&#10;regexp: patterns are regular expressions (default).&#10;literal: patterns are plain text.&#10;glob: patterns use * and ? wildcards.">🛈</span>
+          </label>
           <select id="cfg-var_match">
             <option value="">regexp (default)</option>
             <option value="literal">literal</option>
             <option value="glob">glob</option>
           </select>
         </div>
-        <div class="cfg-section-title">Empty aliases</div>
+        <div class="cfg-section-title">Empty aliases
+          <span class="info-icon" title="Values treated as empty/null during extraction.&#10;Comma-separated list. Any cell whose content matches one of these strings is returned as null instead of the raw text.&#10;Useful for placeholder text like '#N/A' or '—'.">🛈</span>
+        </div>
         <div class="form-group">
           <input id="cfg-aliases" type="text" placeholder="#N/A, N/A, —">
           <div class="aliases-help">Comma-separated values treated as empty/null</div>
@@ -906,7 +940,8 @@ function selectAction(action) {
     setVal('f-L-match', info.raw || '');
     setVal('f-L-notes', info.note || '');
   } else if (action === 'V') {
-    setVal('f-V-name', info.name || slugify(info.raw || 'field'));
+    const suggested = suggestNameFromLabel(selectedRef);
+    setVal('f-V-name', info.name || suggested || slugify(info.raw || 'field'));
     setVal('f-V-type', info.inferred_type || info.ftype || 'string');
     setVal('f-V-match_mode', '(default)');
     setVal('f-V-match', info.match || '.*');
@@ -1413,6 +1448,45 @@ function escHtml(s) {
 }
 function slugify(s) {
   return s.toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'').substring(0,40) || 'field';
+}
+
+/**
+ * When classifying a cell as V, look at adjacent cells for an L (label) and
+ * derive a suggested field name from it.
+ * Direction LR: check columns to the left in the same row (up to 3 back).
+ * Direction TD: check rows above in the same column (up to 3 back).
+ * Returns slugified label text, or '' if no L neighbour found.
+ */
+function suggestNameFromLabel(ref) {
+  const direction = (document.getElementById('cfg-direction') || {}).value || 'LR';
+  const match = ref.match(/^([A-Z]+)(\d+)$/);
+  if (!match) return '';
+  const colIdx  = colLetterToNum(match[1]);  // 1-based
+  const rowIdx  = parseInt(match[2], 10);
+
+  const candidates = [];
+  if (direction === 'LR') {
+    // Look left: same row, columns colIdx-1 down to max(1, colIdx-3)
+    for (let c = colIdx - 1; c >= Math.max(1, colIdx - 3); c--) {
+      candidates.push(numToColLetter(c) + rowIdx);
+    }
+  } else {
+    // Look up: same column, rows rowIdx-1 down to max(1, rowIdx-3)
+    for (let r = rowIdx - 1; r >= Math.max(1, rowIdx - 3); r--) {
+      candidates.push(match[1] + r);
+    }
+  }
+
+  for (const cref of candidates) {
+    const cd = cellData[cref];
+    if (cd && cd.choice === 'L') {
+      // Prefer lmatch (the anchor text) over raw cell value
+      const text = (cd.lmatch || cd.value || cd.raw || '').trim()
+                     .replace(/[:\-–—]+$/, '').trim();  // strip trailing : — etc.
+      if (text) return slugify(text);
+    }
+  }
+  return '';
 }
 function setVal(id, v) {
   const el = document.getElementById(id);
