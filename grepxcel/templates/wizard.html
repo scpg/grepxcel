@@ -2160,8 +2160,11 @@ function loadKeyboardShortcuts() {
           const newRef = numToColLetter(newCol) + newRow;
           const td = document.querySelector(`td[data-ref="${newRef}"]`);
           if (td) {
-            if (e.shiftKey) {
-              // Start range if not already started
+            if (e.shiftKey && selectedAction === 'T') {
+              // In T (table) mode: Shift+Arrow sets the end-ref field, same as Shift+Click
+              handleShiftClick(newRef);
+            } else if (e.shiftKey) {
+              // General range selection
               if (!_rangeAnchor) _rangeAnchor = selectedRef;
               _rangeEnd = newRef;
               _renderRangeHighlight();
