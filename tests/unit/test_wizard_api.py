@@ -453,14 +453,16 @@ class TestExtractEndpoint:
     """Tests for the POST /api/extract endpoint (Phase A)."""
 
     def test_no_pattern_returns_ok_false(self, tmp_path):
-        """Without a pattern, extraction must return ok=False gracefully."""
-        client = _make_client(tmp_path)  # no pattern_path
+        """Without a pattern or classified cells, extraction must return ok=False."""
+        client = _make_client(tmp_path)  # no pattern_path, no choices
         r = client.post('/api/extract')
         assert r.status_code == 200
         data = r.json()
         assert data['ok'] is False
         assert 'error' in data
-        assert 'pattern' in data['error'].lower()
+        # Message must mention "classified" or "classify" (new behaviour: generate
+        # from choices when no pattern file is pre-loaded, fail early when empty)
+        assert any(w in data['error'].lower() for w in ('classif', 'field', 'pattern'))
 
     def test_with_real_pattern_returns_result(self):
         """With a real pattern, extraction must return ok=True and a non-empty result."""

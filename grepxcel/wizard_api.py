@@ -1133,21 +1133,52 @@ def create_app(
 
     @app.post('/api/extract')
     async def api_extract():
-        """Run extraction with the current pattern; return result + approximate provenance."""
-        pattern_path_ = _STATE.get('pattern_path')
-        xlsx_path_    = _STATE.get('xlsx_path')
-        if not pattern_path_:
-            return JSONResponse({
-                'ok': False,
-                'error': 'No pattern loaded — restart the wizard with -p pattern.xlsx',
-            })
+        """Run extraction with the current pattern; return result + approximate provenance.
+
+        If no pattern file was pre-loaded (-p flag), generates the pattern
+        from the current wizard choices on the fly.
+        """
+        xlsx_path_ = _STATE.get('xlsx_path')
+        tmp_csv_path: str | None = None
         try:
             import grepxcel as _gx
-            result = _gx.extract(pattern_path_, xlsx_path_, output_format='nested')
-            safe   = _to_json_safe(result)
+            import tempfile
+
+            pattern_path_ = _STATE.get('pattern_path')
+            if pattern_path_:
+                result = _gx.extract(pattern_path_, xlsx_path_, output_format='nested')
+            else:
+                # No pre-loaded pattern — generate CSV from current choices
+                csv_text = _make_csv()
+                # Check that the CSV has at least one extraction instruction
+                start_idx = csv_text.find('START:')
+                end_idx   = csv_text.find('END:')
+                has_steps = (
+                    start_idx >= 0 and end_idx > start_idx
+                    and csv_text[start_idx + 6: end_idx].strip()
+                )
+                if not has_steps:
+                    return JSONResponse({
+                        'ok': False,
+                        'error': 'No fields classified yet — classify some cells first, then run extraction.',
+                    })
+                with tempfile.NamedTemporaryFile(
+                    mode='w', suffix='.csv', delete=False, encoding='utf-8'
+                ) as tf:
+                    tf.write(csv_text)
+                    tmp_csv_path = tf.name
+                result = _gx.extract(tmp_csv_path, xlsx_path_, output_format='nested')
+            safe = _to_json_safe(result)
         except Exception as exc:
             _STATE['log'].write('EXTRACT', f'ok=False error={exc}')
             return JSONResponse({'ok': False, 'error': str(exc)})
+        finally:
+            if tmp_csv_path:
+                import os as _os
+                try:
+                    _os.unlink(tmp_csv_path)
+                except OSError:
+                    pass
 
         # Provenance: field name → [cell refs] derived from the current choices dict.
         # Using the leaf name (what the user typed in the classify form) as the key,
@@ -1160,6 +1191,77 @@ def create_app(
 
         _STATE['log'].write('EXTRACT', f'ok=True fields={len(provenance)}')
         return JSONResponse({'ok': True, 'result': safe, 'provenance': provenance})
+
+    @app.post('/api/load-pattern')
+    async def api_load_pattern(request: Request):
+        """Upload a pattern file and reload the wizard's preloaded choices.
+
+        Accepts multipart form data with a single ``file`` field.  The uploaded
+        pattern (.xlsx or .csv) is saved to a temp file, preloaded against the
+        current data sheet, and the session choices are replaced.  The browser
+        should reload after a successful response to re-render the updated grid.
+        """
+        import tempfile
+        import os as _os
+        from grepxcel.wizard_tui import _preload_from_pattern
+        from starlette.datastructures import UploadFile as _UploadFile
+
+        form = await request.form()
+        upload = form.get('file')
+        if upload is None or not hasattr(upload, 'read'):
+            raise HTTPException(400, 'No file uploaded')
+
+        filename = getattr(upload, 'filename', 'pattern.csv') or 'pattern.csv'
+        suffix = '.xlsx' if filename.lower().endswith('.xlsx') else '.csv'
+
+        tmp_path: str | None = None
+        try:
+            data = await upload.read()
+            with tempfile.NamedTemporaryFile(
+                suffix=suffix, delete=False
+            ) as tf:
+                tf.write(data)
+                tmp_path = tf.name
+
+            ws_ = _STATE['ws']
+            choices, cfg, warnings = _preload_from_pattern(ws_, tmp_path)
+
+            # Rebuild state from preloaded choices so Config tab reflects the pattern
+            _STATE['choices'] = choices
+            _STATE['preload_warnings'] = warnings
+
+            # Update direction/config from the loaded pattern's global config
+            st: WizardState = _STATE['state']
+            st.direction              = cfg.get('direction', st.direction)
+            st.ignore_case_labels     = cfg.get('ignore_case_labels', st.ignore_case_labels)
+            st.ignore_case_values     = cfg.get('ignore_case_values', st.ignore_case_values)
+            st.trim_whitespace_labels = cfg.get('trim_whitespace_labels', st.trim_whitespace_labels)
+            st.trim_whitespace_values = cfg.get('trim_whitespace_values', st.trim_whitespace_values)
+            st.currency_sign          = cfg.get('currency_sign', st.currency_sign)
+            st.lbl_match              = cfg.get('lbl_match', st.lbl_match)
+            st.var_match              = cfg.get('var_match', st.var_match)
+            st.empty_aliases          = cfg.get('empty_aliases', st.empty_aliases)
+
+            # Mark the loaded pattern as the active pattern for future extractions
+            _STATE['pattern_path'] = tmp_path   # keep temp alive for this session
+
+            _STATE['log'].write(
+                'LOAD_PATTERN',
+                f'file={filename} choices={len(choices)} warnings={len(warnings)}',
+            )
+
+            return JSONResponse({
+                'ok': True,
+                'n_choices': len(choices),
+                'warnings': warnings,
+            })
+        except Exception as exc:
+            if tmp_path:
+                try:
+                    _os.unlink(tmp_path)
+                except OSError:
+                    pass
+            raise HTTPException(500, str(exc))
 
     @app.get('/api/shutdown')
     async def api_shutdown():

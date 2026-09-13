@@ -182,8 +182,47 @@ def _build_state_from_choices(
         empty_aliases=list(empty_aliases) if empty_aliases else [],
     )
     from openpyxl.utils import get_column_letter as _gcl
+
+    # ── Pre-scan: group T anchors by column structure ─────────────────────────
+    # A table instruction with multiplicity N (e.g. table:2) creates N T anchors
+    # in the choices dict, one per occurrence.  We must emit ONE instruction
+    # (table:N) for the whole group, not one table:1 per anchor, to avoid
+    # duplicating data rows.
+    # Anchors are grouped by their column layout: same header/data/footer → same group.
+    def _t_struct_key(m: dict) -> tuple:
+        if 'header_rows' in m:
+            hdr = tuple(
+                tuple(col.get('var_name') or col.get('orig_field') or ''
+                      for col in row.get('cols', []))
+                for row in m.get('header_rows', [])
+            )
+            # data_vars is a list of dicts — extract var names for a hashable key
+            dat = tuple(
+                dv.get('var_name') or dv.get('orig_field') or ''
+                for dv in m.get('data_vars', [])
+            )
+            ftr = tuple(
+                tuple(col.get('var_name') or col.get('orig_field') or ''
+                      for col in row.get('cols', []))
+                for row in m.get('footer_rows', [])
+            )
+            return ('multi', hdr, dat, ftr)
+        return ('legacy', tuple(m.get('columns', [])))
+
+    _t_groups: dict[tuple, list[str]] = {}
+    _t_ref_to_key: dict[str, tuple] = {}
+    for _r2, _c2 in cells:
+        _ref2 = _cell_ref(_r2, _c2)
+        _m2   = choices.get(_ref2)
+        if _m2 and _m2.get('choice') == 'T':
+            _k = _t_struct_key(_m2)
+            _t_ref_to_key[_ref2] = _k
+            _t_groups.setdefault(_k, []).append(_ref2)
+
     seen_t_anchors: set[str] = set()
-    prev_lbl = False   # True when the immediately preceding emitted cell was L or C
+    prev_lbl = False      # True when the immediately preceding emitted cell was L or C
+    prev_lbl_row: int | None = None   # row of the last emitted L/C cell
+    prev_lbl_col: int | None = None   # col of the last emitted L/C cell
     for r, c in cells:
         ref  = _cell_ref(r, c)
         meta = choices.get(ref)
@@ -197,33 +236,61 @@ def _build_state_from_choices(
                                    meta.get('ltype', 'string'),
                                    meta.get('lmatch', str(value) if value is not None else ''),
                                    meta.get('lbl_mode', '')))
-            state.body_rows.append(['cell:1', name])
+            # Always emit an absolute cell reference for label cells so the engine
+            # jumps directly to the right cell regardless of the previous cursor
+            # position (critical when labels follow sequences of absolute-ref vars).
+            state.body_rows.append([f'cell:{_gcl(c)}{r}', name])
             prev_lbl = True
+            prev_lbl_row, prev_lbl_col = r, c
         elif choice == 'C':
             state.lbl_defs.append((name,
                                    meta.get('ltype', 'string'),
                                    meta.get('lmatch', str(value) if value is not None else ''),
                                    meta.get('lbl_mode', '')))
-            state.body_rows.append(['cell:1', name])
+            state.body_rows.append([f'cell:{_gcl(c)}{r}', name])
             prev_lbl = True
+            prev_lbl_row, prev_lbl_col = r, c
         elif choice == 'V':
             state.var_defs.append((name, meta.get('ftype', 'string'),
                                    meta.get('match', '.*'),
                                    meta.get('col_a_extra', '')))
-            # Use cell:1 (relative) only when the var immediately follows a label cell so
-            # the engine can advance one step from the label anchor.  For standalone vars
-            # (first in sequence, after a table, or after another var) emit an absolute
-            # reference so the engine can locate the cell without a preceding anchor.
-            cell_instr = 'cell:1' if prev_lbl else f'cell:{_gcl(c)}{r}'
+            # Decide the cell instruction:
+            # • The var immediately follows a label (prev_lbl=True) AND is exactly
+            #   one step away (adjacent) → cell:1  (relative, engine steps from anchor)
+            # • The var follows a label but is NOT adjacent (empty cells between L and V)
+            #   → cell:next  (engine scans for first non-empty after anchor)
+            # • No preceding label → absolute reference cell:XY
+            if prev_lbl and prev_lbl_row is not None:
+                if state.direction == 'TD':
+                    adjacent = (r == prev_lbl_row + 1 and c == prev_lbl_col)
+                else:  # LR
+                    adjacent = (r == prev_lbl_row and c == prev_lbl_col + 1)
+                cell_instr = 'cell:1' if adjacent else 'cell:next'
+            else:
+                cell_instr = f'cell:{_gcl(c)}{r}'
             state.body_rows.append([cell_instr, name])
             prev_lbl = False
+            prev_lbl_row = prev_lbl_col = None
         elif choice == 'T':
-            # Each table is emitted once from its anchor cell; T-HEAD cells are skipped.
+            # Multiple T anchors may share the same column structure (they came
+            # from a single table:N instruction).  Emit ONE table:N instruction
+            # for the whole group, keyed by the first anchor in reading order.
+            t_key   = _t_ref_to_key.get(ref)
+            t_group = _t_groups.get(t_key, [ref])
+            if t_group[0] != ref:
+                seen_t_anchors.add(ref)
+                continue   # already handled by the first anchor in this group
             if ref in seen_t_anchors:
                 continue
             seen_t_anchors.add(ref)
-            mult = meta.get('mult', '*')
-            state.body_rows.append([f'table:{mult}'])
+            # Multiplicity: if original was table:* keep it; otherwise use the
+            # group count (= how many occurrences the preload actually found).
+            orig_mult = meta.get('mult', '1')
+            if orig_mult == '*':
+                table_mult = '*'
+            else:
+                table_mult = str(len(t_group))
+            state.body_rows.append([f'table:{table_mult}'])
 
             if 'header_rows' in meta:
                 # New multi-row model: header_rows + data_vars [+ footer_rows]
@@ -957,6 +1024,25 @@ def _preload_table(
             'cols': cols_cfg,
         })
 
+    # ── Extract SKIP_IF rows from the pattern instruction for round-trip ─────
+    # The engine's TableInstruction already knows which row types are SKIP_IF;
+    # here we convert them to the _web_skip_configs format so they survive the
+    # preload → wizard CSV → extract round-trip.
+    web_skip_configs: list[dict] = []
+    for trow in instr.rows:
+        if trow.row_type == 'SKIP_IF':
+            cols = []
+            for tcol in trow.columns:
+                fld = tcol.field
+                if fld == 'IGNORE':
+                    cols.append({'condition': 'IGNORE'})
+                elif fld == 'EMPTY':
+                    cols.append({'condition': 'EMPTY'})
+                else:
+                    # Named field → label condition (rare, but handle it)
+                    cols.append({'condition': 'LABEL', 'lbl_name': fld, 'lmatch': ''})
+            web_skip_configs.append({'cols': cols})
+
     # ── Guard: anchor must not be already claimed ─────────────────────────────
     if anchor_ref in claimed:
         warnings.append(
@@ -989,6 +1075,7 @@ def _preload_table(
         'skip_rows':        skip_rows,
         'row_types':        row_types,
         '_web_row_configs': web_row_configs,
+        '_web_skip_configs': web_skip_configs,
         'table_role':       _anchor_table_role,
         'row_class':        'header',
     }
@@ -1326,7 +1413,17 @@ def _preload_from_pattern(ws, pattern_path: str) -> tuple[dict, dict, list[str]]
                         f'cannot determine cell position; classify manually'
                     )
             else:
-                ar, ac = _adjacent(last_lbl_pos)
+                if instr.multiplicity == 'next':
+                    # cell:next — scan forward for the first non-empty, unclaimed
+                    # cell in the reading direction.  This mirrors the engine's
+                    # own behaviour (skip empty cells until data found).
+                    ar, ac = _adjacent(last_lbl_pos)
+                    while (1 <= ar <= max_row and 1 <= ac <= max_col
+                           and (ws.cell(row=ar, column=ac).value is None
+                                or _cell_ref(ar, ac) in claimed)):
+                        ar, ac = _adjacent((ar, ac))
+                else:
+                    ar, ac = _adjacent(last_lbl_pos)
                 if 1 <= ar <= max_row and 1 <= ac <= max_col:
                     ref = _cell_ref(ar, ac)
                     if ref in claimed:

@@ -633,6 +633,14 @@ td.gx-T-bottom { border-bottom: 2px solid rgba(124,58,237,0.5) !important; }
          style="width:100px;border:1px solid var(--border);border-radius:5px;padding:3px 8px;font-size:12px;background:var(--bg);color:var(--text)"
          onkeydown="if(event.key==='Enter'){event.preventDefault();jumpToCell(this.value.trim().toUpperCase())}">
   <div class="spacer"></div>
+  <!-- hidden file picker for "Load Pattern" -->
+  <input type="file" id="load-pattern-input" accept=".xlsx,.csv"
+         style="display:none" onchange="uploadPattern(this)">
+  <button class="btn btn-sm" onclick="document.getElementById('load-pattern-input').click()"
+          title="Load a saved pattern file to pre-fill the grid">
+    <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M2 6a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1H8a3 3 0 00-3 3v1.5a1.5 1.5 0 01-3 0V6z"/><path d="M6 12a2 2 0 012-2h8a2 2 0 012 2v2a2 2 0 01-2 2H2h2a2 2 0 002-2v-2z"/></svg>
+    Load Pattern
+  </button>
   <button class="btn btn-sm" onclick="undoLast()" title="Undo last classification (Ctrl+Z)">
     <svg viewBox="0 0 20 20" fill="currentColor"><path d="M7.7 8H5V5.2L2 8.2 5 11V8.3h2.7A5 5 0 0 1 10 18a5 5 0 0 0 5-5 5 5 0 0 0-7.3-4.4z"/></svg>
     Undo
@@ -955,7 +963,7 @@ td.gx-T-bottom { border-bottom: 2px solid rgba(124,58,237,0.5) !important; }
         </div>
         <div id="ext-result">
           <div class="et-no-pattern" id="ext-placeholder">
-            Run extraction to see the fields<br>your pattern pulls from this file.
+            Classify some cells, then click<br><em>Run Extraction</em> to preview the result.
           </div>
         </div>
       </div>
@@ -1686,6 +1694,30 @@ function downloadCSV() {
   a.click();
 }
 
+async function uploadPattern(input) {
+  const file = input.files[0];
+  if (!file) return;
+  input.value = '';  // reset so the same file can be re-selected
+  const fd = new FormData();
+  fd.append('file', file);
+  toast(`Loading pattern from ${file.name}…`);
+  try {
+    const r = await fetch('/api/load-pattern', { method: 'POST', body: fd });
+    const data = await r.json();
+    if (data.ok) {
+      const warn = data.warnings && data.warnings.length
+        ? ` (${data.warnings.length} warning(s))` : '';
+      toast(`Pattern loaded — ${data.n_choices} cells classified${warn}. Reloading grid…`);
+      // Short delay so the user can read the toast, then reload
+      setTimeout(() => window.location.reload(), 900);
+    } else {
+      toast('Load failed: ' + (data.detail || data.error || '?'), true);
+    }
+  } catch (err) {
+    toast('Load failed: ' + err, true);
+  }
+}
+
 async function savePattern() {
   const r = await fetch('/api/save', {
     method: 'POST',
@@ -2226,9 +2258,13 @@ function toggleModDropdown(e) {
   } else {
     // Position the fixed menu aligned to the trigger's viewport rect
     const rect = trigger.getBoundingClientRect();
-    menu.style.top   = (rect.bottom + 2) + 'px';
-    menu.style.left  = rect.left + 'px';
-    menu.style.width = rect.width + 'px';
+    const menuMinW = 170;  // wide enough for "trim-whitespace"
+    menu.style.top      = (rect.bottom + 2) + 'px';
+    menu.style.minWidth = Math.max(menuMinW, rect.width) + 'px';
+    menu.style.width    = '';  // clear any previously forced width
+    // Prevent overflow on the right edge of the viewport
+    const leftPos = Math.min(rect.left, window.innerWidth - menuMinW - 8);
+    menu.style.left = Math.max(0, leftPos) + 'px';
     menu.classList.add('open');
   }
 }
