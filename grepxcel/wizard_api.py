@@ -541,12 +541,68 @@ def create_app(
         elif action == 'I':
             choices[ref] = {'choice': 'I'}
         elif action == 'T':
-            # Simplified table: mark anchor cell as T; full multi-step is TUI-only in v1
-            choices[ref] = {
-                'choice': 'T',
-                'name':   fields.get('name', _slugify(str(cell_value or '')) + '_table'),
-                '_web_simplified': True,
-            }
+            table_name = fields.get('name', _slugify(str(cell_value or '')) + '_table')
+            mult       = fields.get('mult', '*')
+            cols_cfg   = fields.get('columns', [])  # list of {ref, header, field_name, var_type, var_match}
+
+            # Clear any previous T-HEAD/T-DATA cells that belonged to this anchor
+            stale = [r for r, m in choices.items()
+                     if m.get('choice') in ('T-HEAD', 'T-DATA')
+                     and m.get('anchor') == ref]
+            for r in stale:
+                choices.pop(r, None)
+
+            if cols_cfg:
+                # Full table config — build the legacy columns structure and mark adjacent cells
+                columns = []
+                for col_cfg in cols_cfg:
+                    fn = col_cfg.get('field_name', '').strip()
+                    if fn and fn.upper() != 'IGNORE' and table_name and not fn.startswith(table_name + '.'):
+                        fn = f'{table_name}.{fn}'
+                    fn = fn or 'IGNORE'
+                    columns.append({
+                        'lbl_name':  fn,
+                        'var_name':  fn,
+                        'var_type':  col_cfg.get('var_type', 'string'),
+                        'var_match': col_cfg.get('var_match', '.*'),
+                        'cell_value': col_cfg.get('header', ''),
+                    })
+                    # Mark each header cell as T-HEAD (except the anchor itself)
+                    cref = col_cfg.get('ref', '')
+                    if cref and cref.upper() != ref:
+                        choices[cref.upper()] = {'choice': 'T-HEAD', 'anchor': ref}
+
+                choices[ref] = {
+                    'choice':  'T',
+                    'name':    table_name,
+                    'mult':    mult,
+                    'columns': columns,
+                }
+
+                # Mark data rows below the anchor row as T-DATA
+                ws_: openpyxl.worksheet.worksheet.Worksheet = _STATE['ws']
+                anchor_row_, anchor_col_ = _parse_ref(ref)
+                end_col_ = anchor_col_ + len(cols_cfg) - 1
+                data_r = anchor_row_ + 1
+                while data_r <= ws_.max_row:
+                    has_content = any(
+                        ws_.cell(row=data_r, column=c_).value is not None
+                        for c_ in range(anchor_col_, end_col_ + 1)
+                    )
+                    if not has_content:
+                        break
+                    for c_ in range(anchor_col_, end_col_ + 1):
+                        dref = _cell_ref(data_r, c_)
+                        choices[dref] = {'choice': 'T-DATA', 'anchor': ref}
+                    data_r += 1
+
+            else:
+                # Minimal anchor-only (user hasn't confirmed columns yet)
+                choices[ref] = {
+                    'choice': 'T',
+                    'name':   table_name,
+                    'mult':   mult,
+                }
 
         if note:
             notes[ref] = note
@@ -592,6 +648,99 @@ def create_app(
         else:
             _STATE['notes'].pop(ref, None)
         return JSONResponse({'ok': True})
+
+    @app.get('/api/table-scan/{ref}')
+    async def api_table_scan(ref: str):
+        """Auto-detect table columns starting from the anchor cell.
+
+        For LR direction: scans rightward along the anchor row.
+        For TD direction: scans downward along the anchor column.
+        Returns suggested column configs (header text, suggested field name & type).
+        """
+        ref = ref.upper()
+        ws: openpyxl.worksheet.worksheet.Worksheet = _STATE['ws']
+        direction = _STATE['state'].direction
+        try:
+            anchor_row_, anchor_col_ = _parse_ref(ref)
+        except Exception:
+            raise HTTPException(404, f'Invalid ref {ref!r}')
+
+        columns = []
+        if direction == 'LR':
+            c = anchor_col_
+            while c <= ws.max_column:
+                cell = ws.cell(row=anchor_row_, column=c)
+                val  = cell.value
+                if val is None and c > anchor_col_:
+                    break
+                cref = _cell_ref(anchor_row_, c)
+                text = str(val).strip() if val is not None else ''
+                columns.append({
+                    'ref':            cref,
+                    'col_letter':     get_column_letter(c),
+                    'header':         text,
+                    'suggested_field': _slugify(text) if text else f'col_{get_column_letter(c).lower()}',
+                    'suggested_type': _infer_cell_type(cell),
+                })
+                c += 1
+        else:
+            r = anchor_row_
+            while r <= ws.max_row:
+                cell = ws.cell(row=r, column=anchor_col_)
+                val  = cell.value
+                if val is None and r > anchor_row_:
+                    break
+                cref = _cell_ref(r, anchor_col_)
+                text = str(val).strip() if val is not None else ''
+                columns.append({
+                    'ref':            cref,
+                    'row':            r,
+                    'header':         text,
+                    'suggested_field': _slugify(text) if text else f'row_{r}',
+                    'suggested_type': _infer_cell_type(cell),
+                })
+                r += 1
+
+        # Count non-empty data rows after the header row (preview only)
+        data_count = 0
+        if direction == 'LR' and columns:
+            r = anchor_row_ + 1
+            while r <= ws.max_row:
+                if ws.cell(row=r, column=anchor_col_).value is None:
+                    break
+                data_count += 1
+                r += 1
+
+        return JSONResponse({
+            'anchor':    ref,
+            'direction': direction,
+            'columns':   columns,
+            'data_rows': data_count,
+        })
+
+    @app.get('/api/table-context/{ref}')
+    async def api_table_context(ref: str):
+        """Given any T/T-HEAD/T-DATA cell, return the anchor ref + full table config."""
+        ref     = ref.upper()
+        choices = _STATE['choices']
+        meta    = choices.get(ref, {})
+        choice  = meta.get('choice', '')
+
+        if choice == 'T':
+            anchor_ref = ref
+        elif choice in ('T-HEAD', 'T-DATA'):
+            anchor_ref = meta.get('anchor', '')
+        else:
+            raise HTTPException(404, f'{ref} is not a table cell (choice={choice!r})')
+
+        anchor_meta = choices.get(anchor_ref, {})
+        return JSONResponse({
+            'anchor':   anchor_ref,
+            'name':     anchor_meta.get('name', ''),
+            'mult':     anchor_meta.get('mult', '*'),
+            'columns':  anchor_meta.get('columns', []),
+            'range':    anchor_meta.get('range', anchor_ref),
+        })
 
     def _make_csv() -> str:
         """Generate pattern CSV from current session state."""
@@ -710,6 +859,7 @@ def create_app(
             'raw':          str(cell.value) if cell.value is not None else '',
             'inferred_type': _infer_cell_type(cell),
             'choice':       choice_info.get('choice', ''),
+            'anchor':       choice_info.get('anchor', ''),   # set for T-HEAD / T-DATA
             'name':         choice_info.get('name', ''),
             'ltype':        choice_info.get('ltype', ''),
             'lmatch':       choice_info.get('lmatch', ''),
