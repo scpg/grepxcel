@@ -389,8 +389,9 @@ def _build_sheet_data() -> dict:
                 'choice':      choice_info.get('choice', ''),
                 'name':        choice_info.get('name', ''),
                 'anchor':      choice_info.get('anchor', ''),  # set for T-HEAD / T-DATA
-                'table_role':  choice_info.get('table_role', ''),  # L/V/I within the table row
-                'row_class':   choice_info.get('row_class', ''),   # header/data/footer
+                'table_role':    choice_info.get('table_role', ''),    # L/V/I within the table row
+                'row_class':     choice_info.get('row_class', ''),     # header/data/footer
+                'is_table_end':  choice_info.get('is_table_end', False),  # True on the bottom-right cell
                 'note':        notes.get(ref, ''),
                 'empty':     cell.value is None and not is_anchor,
                 'colspan':   colspan,
@@ -746,6 +747,11 @@ def create_app(
                             if dref not in choices:
                                 choices[dref] = {'choice': 'T-DATA', 'anchor': ref,
                                                  'table_role': t_role, 'row_class': 'data'}
+
+                # Mark the table's bottom-right cell as the end ref (◀ glyph in grid)
+                _end_ref_mark = _cell_ref(meta_dict['end_row'], meta_dict['end_col'])
+                if _end_ref_mark in choices:
+                    choices[_end_ref_mark]['is_table_end'] = True
 
             else:
                 # Minimal anchor-only (modal not yet confirmed; placeholder)

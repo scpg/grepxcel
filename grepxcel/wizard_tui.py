@@ -996,6 +996,11 @@ def _preload_table(
                                 'table_role': t_role, 'row_class': 'data'}
                 claimed.add(ref)
 
+    # Mark the table's bottom-right cell as the end ref (carries the ◀ glyph in the grid)
+    _end_ref = _cell_ref(end_row, end_col)
+    if _end_ref in choices:
+        choices[_end_ref]['is_table_end'] = True
+
     n_d = len(d_rows_sheet)
     # Informational notice when data rows were limited
     if n_d == 200:
