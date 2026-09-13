@@ -84,15 +84,14 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
 #grid-table {
   border-collapse: collapse;
   font-size: 12px;
-  table-layout: auto;
+  table-layout: fixed;   /* enables column resize */
+  min-width: 100%;
 }
 #grid-table th, #grid-table td {
   border: 1px solid var(--border);
-  padding: 2px 6px;
+  padding: 1px 4px;
   white-space: nowrap;
   overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 220px;
   height: 22px;
   vertical-align: middle;
 }
@@ -108,6 +107,14 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
   min-width: 36px; width: 36px; max-width: 36px;
   position: sticky; left: 0; z-index: 20;
 }
+/* Column resize handle sits at the right edge of each header cell */
+.col-resizer {
+  position: absolute; right: 0; top: 0; bottom: 0; width: 5px;
+  cursor: col-resize; z-index: 1; user-select: none;
+}
+.col-resizer:hover { background: rgba(99,102,241,0.35); }
+body.col-resizing { cursor: col-resize !important; user-select: none !important; }
+body.col-resizing * { cursor: col-resize !important; }
 .row-header {
   position: sticky; left: 0; z-index: 5;
   background: var(--surface) !important;
@@ -156,11 +163,28 @@ td.gx-T.selected { background: var(--T-sel) !important; }
 td.gx-I.selected { background: var(--I-sel) !important; }
 td.gx-T-HEAD.selected, td.gx-T-DATA.selected { outline: 2px solid var(--accent); outline-offset: -2px; }
 
+/* ── Cell badge base (smaller, subtler) ──────────────────────────── */
 .cell-badge {
-  display: inline-block; font-size: 9px; font-weight: 700;
-  padding: 0 3px; border-radius: 3px; margin-right: 3px;
-  vertical-align: middle; line-height: 14px;
+  display: inline-block; font-size: 7px; font-weight: 600;
+  padding: 0 1px; border-radius: 2px; margin: 0;
+  vertical-align: middle; line-height: 10px;
 }
+/* Phantom badge: same size but invisible — reserves space for alignment */
+.badge-phantom { visibility: hidden; }
+/* Fixed-width badge strip — ensures text starts at the same x in every cell */
+.badge-strip {
+  display: inline-flex; align-items: center; gap: 1px;
+  flex-shrink: 0; vertical-align: middle;
+}
+.badge-strip.tbl  { width: 44px; }   /* 4 table glyphs (▶/phantom ▦ ▀|▬|▄ L|V|⬚) */
+.badge-strip.role { width: 13px; }   /* 1 role glyph (L/V/C/I) */
+/* Flex layout inside each td — badge-strip on left, value on right */
+.gx-inner { display: flex; align-items: center; width: 100%; overflow: hidden; }
+.gx-inner .cell-value {
+  flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+}
+.cell-value.v-right { text-align: right; }
+
 .badge-L { background: var(--L-dark); color: #fff; }
 .badge-V { background: var(--V-dark); color: #fff; }
 .badge-C { background: var(--C-dark); color: #fff; }
@@ -168,20 +192,20 @@ td.gx-T-HEAD.selected, td.gx-T-DATA.selected { outline: 2px solid var(--accent);
 .badge-I { background: var(--I-dark); color: #fff; }
 /* Uniform Unicode glyph badge system for table cells
    Full matrix — any (choice × row_class × role) combination:
-     T      header  L/V/I  →  ▶ ▦ ▀ L|V|⬚
-     T-HEAD header  L/V/I  →    ▦ ▀ L|V|⬚
-     T-HEAD footer  L/V/I  →    ▦ ▄ L|V|⬚  [◀ if table-end]
-     T-DATA data    L/V/I  →    ▦ ▬ L|V|⬚  [◀ if table-end]
+     T      header  L/V/I  →  ▶ ▦ ▀ L|V|⬚    (anchor: real ▶)
+     T-HEAD header  L/V/I  →  ⃝ ▦ ▀ L|V|⬚    (phantom ▶ for alignment)
+     T-HEAD footer  L/V/I  →  ⃝ ▦ ▄ L|V|⬚  [◀ if table-end]
+     T-DATA data    L/V/I  →  ⃝ ▦ ▬ L|V|⬚  [◀ if table-end]
 */
-.badge-tbl-anchor { background: #7c3aed;               color: #fff; } /* ▶ ◀  table-start / table-end */
-.badge-tbl-member { background: rgba(124, 58, 237, 0.5); color: #fff; } /* ▦    belongs to table       */
-.badge-row-H      { background: #7c3aed;               color: #fff; } /* ▀    header row              */
-.badge-row-D      { background: #0284c7;               color: #fff; } /* ▬    data row                */
-.badge-row-F      { background: #0891b2;               color: #fff; } /* ▄    footer row              */
-.badge-row-S      { background: #d97706;               color: #fff; } /* ➥   skip row               */
-.badge-role-L     { background: #15803d;               color: #fff; } /* L    label role              */
-.badge-role-V     { background: #b45309;               color: #fff; } /* V    variable role           */
-.badge-role-empty { background: transparent; color: #9ca3af; padding: 0 2px; font-size: 11px; } /* ⬚ ignored */
+.badge-tbl-anchor { background: #7c3aed;                color: #fff; } /* ▶ ◀ */
+.badge-tbl-member { background: rgba(124, 58, 237, 0.35); color: #fff; } /* ▦ */
+.badge-row-H      { background: #7c3aed;                color: #fff; } /* ▀  header  */
+.badge-row-D      { background: #0284c7;                color: #fff; } /* ▬  data    */
+.badge-row-F      { background: #0891b2;                color: #fff; } /* ▄  footer  */
+.badge-row-S      { background: #d97706;                color: #fff; } /* ➥ skip    */
+.badge-role-L     { background: #15803d;                color: #fff; } /* L  label   */
+.badge-role-V     { background: #b45309;                color: #fff; } /* V  var     */
+.badge-role-empty { color: #9ca3af; font-size: 7px; }                  /* ⬚ ignored */
 
 /* ── Extract result tree ─────────────────────────────────────────── */
 #tab-extract { display:flex; flex-direction:column; height:100%; }
@@ -543,6 +567,29 @@ td.gx-T-bottom { border-bottom: 2px solid rgba(124,58,237,0.5) !important; }
   padding: 10px 16px; border-top: 1px solid var(--border);
   display: flex; gap: 8px; flex-shrink: 0;
 }
+
+/* ── TRM legend bar ────────────────────────────────────────────── */
+#trm-legend {
+  padding: 5px 16px; border-bottom: 1px solid var(--border);
+  display: flex; gap: 16px; align-items: center; flex-wrap: wrap;
+  font-size: 10px; flex-shrink: 0; background: var(--bg);
+}
+.trm-leg-section { display: flex; align-items: center; gap: 5px; }
+.trm-leg-label { font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.4px; }
+.trm-leg-chip {
+  display: inline-flex; align-items: center;
+  padding: 1px 5px; border-radius: 3px; font-size: 10px; font-weight: 600;
+}
+/* Row-type chips — same hue as row bands */
+.trm-leg-H { background: rgb(124 58 237 / 0.18); color: #7c3aed; border: 1px solid rgba(124,58,237,0.3); }
+.trm-leg-D { background: rgb(2 132 199 / 0.15);  color: #0284c7; border: 1px solid rgba(2,132,199,0.3); }
+.trm-leg-F { background: rgb(8 145 178 / 0.15);  color: #0891b2; border: 1px solid rgba(8,145,178,0.3); }
+.trm-leg-S { background: rgb(217 119 6 / 0.15);  color: #d97706; border: 1px solid rgba(217,119,6,0.3); }
+/* Role chips — same hue as main-grid badges */
+.trm-leg-L { background: rgb(21 128 61 / 0.15);  color: #15803d; border: 1px solid rgba(21,128,61,0.3); }
+.trm-leg-V { background: rgb(180 83 9 / 0.15);   color: #b45309; border: 1px solid rgba(180,83,9,0.3); }
+.trm-leg-I { background: rgba(156,163,175,0.12); color: #6b7280; border: 1px solid rgba(156,163,175,0.3); }
+.trm-leg-E { background: transparent;            color: #6b7280; border: 1px dashed rgba(156,163,175,0.5); }
 
 /* end_ref input in sidebar */
 #f-T-end_ref.flash { outline: 2px solid var(--accent); }
@@ -965,6 +1012,22 @@ td.gx-T-bottom { border-bottom: 2px solid rgba(124,58,237,0.5) !important; }
         ↕ Drag rows to reorder &nbsp;·&nbsp; First data row defines the schema
       </span>
     </div>
+    <div id="trm-legend">
+      <div class="trm-leg-section">
+        <span class="trm-leg-label">Row:</span>
+        <span class="trm-leg-chip trm-leg-H">H — Header</span>
+        <span class="trm-leg-chip trm-leg-D">D — Data</span>
+        <span class="trm-leg-chip trm-leg-F">F — Footer</span>
+        <span class="trm-leg-chip trm-leg-S">S — Skip</span>
+      </div>
+      <div class="trm-leg-section">
+        <span class="trm-leg-label">Column:</span>
+        <span class="trm-leg-chip trm-leg-V">V — Variable (value to extract)</span>
+        <span class="trm-leg-chip trm-leg-L">L — Label (text anchor)</span>
+        <span class="trm-leg-chip trm-leg-I">I — Ignore (skip)</span>
+        <span class="trm-leg-chip trm-leg-E">E — Empty (expect blank)</span>
+      </div>
+    </div>
     <div id="trm-grid-wrap">
       <table id="trm-grid"><tbody id="trm-tbody"></tbody></table>
     </div>
@@ -1050,54 +1113,119 @@ async function loadStats() {
  */
 function _tableBadge(choice, table_role, row_class, is_table_end) {
   if (!choice) return '';
-  const B = (cls, txt) => `<span class="cell-badge ${cls}">${txt}</span>`;
+  const B  = (cls, txt) => `<span class="cell-badge ${cls}">${txt}</span>`;
+  const Ph = txt => `<span class="cell-badge badge-phantom">${txt}</span>`;  // invisible placeholder
   const roleBadge = r => r === 'L' ? B('badge-role-L', 'L')
                        : r === 'V' ? B('badge-role-V', 'V')
                        :             B('badge-role-empty', '⬚');
+  // Non-table cells: just the single choice badge (L/V/C/I/T)
   if (!['T', 'T-HEAD', 'T-DATA'].includes(choice)) return B(`badge-${choice}`, choice);
-  const anchor  = choice === 'T' ? B('badge-tbl-anchor', '▶') : '';
+  // Table cells: always 4 slots so text aligns across the column
+  //   slot 1: ▶ (anchor only) or phantom for non-anchor
+  //   slot 2: ▦ (always)
+  //   slot 3: ▀/▬/▄/➥ (row class)
+  //   slot 4: L/V/⬚ (role)
+  //   [optional] ◀ on the bottom-right (table-end) cell
+  const anchor  = choice === 'T' ? B('badge-tbl-anchor', '▶') : Ph('▶');
   const member  = B('badge-tbl-member', '▦');
   const rowG    = row_class === 'header' ? B('badge-row-H', '▀')
                 : row_class === 'data'   ? B('badge-row-D', '▬')
                 : row_class === 'footer' ? B('badge-row-F', '▄')
                 : row_class === 'skip'   ? B('badge-row-S', '➥')
-                : '';
+                :                          Ph('▀');
   const role    = roleBadge(table_role || 'I');
   const endMark = is_table_end ? B('badge-tbl-anchor', '◀') : '';
   return anchor + member + rowG + role + endMark;
 }
 
+// ── Column resize state ───────────────────────────────────────────────────
+const _colWidths = {};        // letter → current width in px
+let   _resizeDrag = null;     // {ltr, startX, startW} while dragging
+
+function _initColResizers() {
+  document.querySelectorAll('#grid-head .col-resizer').forEach(rz => {
+    rz.addEventListener('mousedown', e => {
+      e.preventDefault(); e.stopPropagation();
+      const ltr = rz.dataset.col;
+      const th  = rz.parentElement;
+      _resizeDrag = { ltr, startX: e.clientX, startW: th.offsetWidth };
+      document.body.classList.add('col-resizing');
+    });
+  });
+}
+document.addEventListener('mousemove', e => {
+  if (!_resizeDrag) return;
+  const dx   = e.clientX - _resizeDrag.startX;
+  const newW = Math.max(40, _resizeDrag.startW + dx);
+  _colWidths[_resizeDrag.ltr] = newW;
+  const col = document.querySelector(`#grid-colgroup col[data-col="${_resizeDrag.ltr}"]`);
+  if (col) col.style.width = newW + 'px';
+});
+document.addEventListener('mouseup', () => {
+  if (_resizeDrag) { _resizeDrag = null; document.body.classList.remove('col-resizing'); }
+});
+
+// ── Cell content builder ──────────────────────────────────────────────────
+// Returns the innerHTML for a grid cell: badge-strip + cell-value wrapper.
+// badge-strip has a fixed width for table cells so the text starts at the
+// same x position in every cell of the same column.
+function _cellContent(choice, table_role, row_class, is_table_end, valRaw, note, cellType) {
+  const badge = _tableBadge(choice, table_role, row_class, is_table_end);
+  const val   = escHtml(valRaw);
+  const isRight = (cellType === 'num' || cellType === 'date' || cellType === 'bool');
+  const alignCls = isRight ? ' v-right' : '';
+  if (!badge) {
+    return `<div class="gx-inner"><span class="cell-value${alignCls}">${val}${note}</span></div>`;
+  }
+  const isTbl = ['T','T-HEAD','T-DATA'].includes(choice);
+  const stripCls = isTbl ? 'badge-strip tbl' : 'badge-strip role';
+  return `<div class="gx-inner"><span class="${stripCls}">${badge}</span><span class="cell-value${alignCls}">${val}${note}</span></div>`;
+}
+
 // ── Grid rendering ────────────────────────────────────────────────────────
 function renderGrid(data) {
-  // Header row
+  // ── Colgroup (drives fixed-layout column widths & resize) ────────────────
+  const table = document.getElementById('grid-table');
+  let cg = document.getElementById('grid-colgroup');
+  if (!cg) { cg = document.createElement('colgroup'); cg.id = 'grid-colgroup'; table.prepend(cg); }
+  cg.innerHTML = '';
+  const rcol = document.createElement('col'); rcol.style.width = '36px'; cg.appendChild(rcol);
+  for (const ltr of data.col_letters) {
+    const col = document.createElement('col');
+    col.setAttribute('data-col', ltr);
+    col.style.width = (_colWidths[ltr] || 120) + 'px';
+    cg.appendChild(col);
+  }
+
+  // ── Header row with resize handles ──────────────────────────────────────
   const thead = document.getElementById('grid-head');
-  let th = '<tr><th></th>';
-  for (const ltr of data.col_letters) th += `<th>${ltr}</th>`;
+  let th = '<tr><th class="row-num-head"></th>';
+  for (const ltr of data.col_letters) {
+    th += `<th data-col="${ltr}" style="position:relative"><span>${ltr}</span><div class="col-resizer" data-col="${ltr}"></div></th>`;
+  }
   th += '</tr>';
   thead.innerHTML = th;
+  _initColResizers();
 
-  // Body
+  // ── Body ─────────────────────────────────────────────────────────────────
   const tbody = document.getElementById('grid-body');
   let html = '';
   for (const row of data.rows) {
     html += `<tr><td class="row-header">${row[0].row}</td>`;
     for (const cell of row) {
       // Non-anchor merged cells are ghost cells — skip them entirely.
-      // The anchor's colspan/rowspan already covers their visual space.
       if (cell.skip) continue;
 
       let cls = cell.choice ? `gx-cell gx-${cell.choice}` : 'gx-cell' + (cell.empty ? ' empty' : '');
-      if (cell.merged) cls += ' gx-merged';   // anchor of a merged region
+      if (cell.merged) cls += ' gx-merged';
 
-      const badge = _tableBadge(cell.choice, cell.table_role || '', cell.row_class || '', cell.is_table_end || false);
-      const note  = cell.note  ? ' 📝' : '';
-      const val   = escHtml(cell.value || '');
+      const note    = cell.note ? ' 📝' : '';
+      const content = _cellContent(cell.choice, cell.table_role || '', cell.row_class || '',
+                                   cell.is_table_end || false, cell.value || '', note,
+                                   cell.type || 'str');
 
-      // Build colspan/rowspan attrs for merged anchors
-      const csAttr = (cell.colspan && cell.colspan > 1) ? ` colspan="${cell.colspan}"` : '';
-      const rsAttr = (cell.rowspan && cell.rowspan > 1) ? ` rowspan="${cell.rowspan}"` : '';
-
-      // Phase B provenance: data-field lets CSS show a hover tooltip with the field name
+      const csAttr    = (cell.colspan && cell.colspan > 1) ? ` colspan="${cell.colspan}"` : '';
+      const rsAttr    = (cell.rowspan && cell.rowspan > 1) ? ` rowspan="${cell.rowspan}"` : '';
       const fieldAttr = cell.name ? ` data-field="${escHtml(cell.name)}"` : '';
       const titleTxt  = cell.name
         ? `${cell.ref}: ${escHtml(cell.value)} · field: ${escHtml(cell.name)}`
@@ -1105,7 +1233,7 @@ function renderGrid(data) {
       html += `<td class="${cls}" data-ref="${cell.ref}" data-merged="${cell.merged ? '1' : ''}"${fieldAttr}
                    ${csAttr}${rsAttr}
                    onclick="if(event.shiftKey&&selectedAction==='T'){handleShiftClick('${cell.ref}');return}selectCell('${cell.ref}')"
-                   title="${titleTxt}">${badge}${val}${note}</td>`;
+                   title="${titleTxt}">${content}</td>`;
     }
     html += '</tr>';
   }
@@ -1120,9 +1248,10 @@ function refreshCell(ref) {
   const isMerged = td.dataset.merged === '1';
   td.className = 'gx-cell' + (ch ? ` gx-${ch}` : '') + (info.empty ? ' empty' : '') + (isMerged ? ' gx-merged' : '');
   if (ref === selectedRef) td.classList.add('selected');
-  const badge = _tableBadge(ch, info.table_role || '', info.row_class || '', info.is_table_end || false);
-  const note  = info.note ? ' 📝' : '';
-  td.innerHTML = badge + escHtml(info.value || '') + note;
+  const note    = info.note ? ' 📝' : '';
+  td.innerHTML  = _cellContent(ch, info.table_role || '', info.row_class || '',
+                               info.is_table_end || false, info.value || '', note,
+                               info.type || 'str');
   // Phase B: keep provenance data-field and title in sync after reclassification
   const fname = info.name || '';
   if (fname) {
@@ -2143,7 +2272,9 @@ const _TRM_ROW_TYPES = [
   { val: 'skip',           label: 'Skip',         hasN: false, hasCols: true,  isSkip: true },
   { val: 'ignore',         label: 'Ignore',       hasN: false, hasCols: false },
 ];
-const _TRM_ROLES  = ['V','L','C','I'];
+// V=Variable, L=Label, I=Ignore, E=Empty  (C was removed — had no distinct table role)
+const _TRM_ROLES       = ['V','L','I','E'];
+const _TRM_ROLE_LABELS = {V:'V — Variable', L:'L — Label', I:'I — Ignore', E:'E — Empty'};
 const _TRM_TYPES  = ['string','integer','number','currency','datetime','date','boolean'];
 const _TRM_SKIP_COND = ['IGNORE','EMPTY','label'];
 
@@ -2315,7 +2446,7 @@ function _trmColEditorHTML(rowType, cfg, ci, cell) {
 
   // Determine role and field values
   const role = cfg?.role || (isData ? 'V' : 'L');
-  const hidden = role === 'I';
+  const hidden = role === 'I' || role === 'E';  // both I and E suppress name/type inputs
 
   if (isHeader || isFooter) {
     // Header / footer: label name (slugified) + match mode + match pattern
@@ -2328,7 +2459,7 @@ function _trmColEditorHTML(rowType, cfg, ci, cell) {
     const display   = hidden ? 'none' : 'block';
     return `<div class="trm-col-ed">
       <select class="trm-col-role" onchange="_trmRoleChange(this)">
-        ${_TRM_ROLES.map(r=>`<option value="${r}"${r===role?' selected':''}>${r}</option>`).join('')}
+        ${_TRM_ROLES.map(r=>`<option value="${r}"${r===role?' selected':''}>${_TRM_ROLE_LABELS[r]||r}</option>`).join('')}
       </select>
       <input type="text" placeholder="label name (slug)" value="${_esc(nameVal)}"
              class="trm-col-name" style="display:${display}"
@@ -2357,7 +2488,7 @@ function _trmColEditorHTML(rowType, cfg, ci, cell) {
 
   return `<div class="trm-col-ed">
     <select class="trm-col-role" onchange="_trmRoleChange(this)">
-      ${_TRM_ROLES.map(r=>`<option value="${r}"${r===role?' selected':''}>${r}</option>`).join('')}
+      ${_TRM_ROLES.map(r=>`<option value="${r}"${r===role?' selected':''}>${_TRM_ROLE_LABELS[r]||r}</option>`).join('')}
     </select>
     <input type="text" placeholder="${suggestedName ? `e.g. ${suggestedName}` : 'field name'}"
            value="${_esc(nameVal)}" class="trm-col-name" style="display:${display}"
@@ -2407,7 +2538,7 @@ function _trmRoleChange(sel) {
   const td = sel.closest('.trm-cell');
   if (!td) return;
   const role    = sel.value;
-  const isI     = role === 'I';
+  const isI     = role === 'I' || role === 'E';  // E=Empty hides inputs same as I=Ignore
   const isV     = role === 'V';
   const isHeader= td.closest('tr')?.dataset.rowType === 'header' || td.closest('tr')?.dataset.rowType === 'footer';
   const nameEl  = td.querySelector('.trm-col-name');

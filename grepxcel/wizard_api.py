@@ -144,11 +144,18 @@ def _cell_ref(row: int, col: int) -> str:
 
 
 def _ui_role_to_meta(role: str) -> str:
-    """Map UI role V/L/C/I → internal meta role var/label/label/ignore."""
+    """Map UI role V/L/I/E → internal meta role var/label/ignore.
+
+    V = Variable (extract value)
+    L = Label (text anchor to match)
+    I = Ignore (skip column)
+    E = Empty (expect blank cell; same meta role as I but orig_field='EMPTY')
+    C = legacy alias for L (was mistakenly included; retained for backward compat)
+    """
     r = (role or 'V').upper()
-    if r == 'V':    return 'var'
-    if r in ('L', 'C'): return 'label'
-    return 'ignore'
+    if r == 'V':            return 'var'
+    if r in ('L', 'C'):     return 'label'
+    return 'ignore'   # I, E, or anything else
 
 
 def _web_row_configs_to_meta(anchor_ref: str, end_ref: str, name: str, mult: str,
@@ -201,9 +208,17 @@ def _web_row_configs_to_meta(anchor_ref: str, end_ref: str, name: str, mult: str
         modifiers_raw = col_cfg.get('modifiers') or 'none'
         col_a_extra   = _col_a_extra_from_parts('', modifiers_raw)
 
-        # For ignore-role columns, preserve the EMPTY vs IGNORE distinction from
-        # the original pattern so round-trip CSV generation is lossless.
-        orig_field_ignore = col_cfg.get('orig_field', 'IGNORE') if role == 'ignore' else ''
+        # For ignore-role columns, preserve the EMPTY vs IGNORE distinction so
+        # round-trip CSV generation is lossless.
+        # E role always maps to EMPTY; I role uses the stored orig_field (default IGNORE).
+        if role == 'ignore':
+            ui_role = (col_cfg.get('role') or '').upper()
+            if ui_role == 'E':
+                orig_field_ignore = 'EMPTY'
+            else:
+                orig_field_ignore = col_cfg.get('orig_field', 'IGNORE')
+        else:
+            orig_field_ignore = ''
 
         return {
             'ref':          _cell_ref(sheet_row, c),
