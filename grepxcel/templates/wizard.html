@@ -1331,8 +1331,9 @@ function refreshCell(ref) {
 
 // ── Cell selection ─────────────────────────────────────────────────────────
 async function selectCell(ref) {
-  // Clear any active range selection when navigating to a new cell normally
+  // Clear any active range selection and T-mode anchor when clicking normally
   _clearRange();
+  _tModeAnchor = null;
   // Deselect old
   if (selectedRef) {
     const old = document.querySelector(`td[data-ref="${selectedRef}"]`);
@@ -2161,8 +2162,17 @@ function loadKeyboardShortcuts() {
           const td = document.querySelector(`td[data-ref="${newRef}"]`);
           if (td) {
             if (e.shiftKey && selectedAction === 'T') {
-              // In T (table) mode: Shift+Arrow sets the end-ref field, same as Shift+Click
-              handleShiftClick(newRef);
+              // In T (table) mode: Shift+Arrow extends the end-ref range.
+              // Store the original anchor so openTableModal uses it, then
+              // move selectedRef to the cursor so subsequent Shift+Arrow
+              // steps accumulate from the right position.
+              if (!_tModeAnchor) _tModeAnchor = selectedRef;
+              handleShiftClick(newRef);   // updates f-T-end_ref
+              // Show the selection rectangle so the user sees the range growing
+              _rangeAnchor = _tModeAnchor;
+              _rangeEnd    = newRef;
+              _renderRangeHighlight();
+              lightMoveToCell(newRef);    // advances cursor (selectedRef)
             } else if (e.shiftKey) {
               // General range selection
               if (!_rangeAnchor) _rangeAnchor = selectedRef;
@@ -2171,8 +2181,9 @@ function loadKeyboardShortcuts() {
               // Move the focus indicator to the far corner (no API call — stay fast)
               lightMoveToCell(newRef);
             } else {
-              // Plain Arrow — cancel any range, move normally
+              // Plain Arrow — cancel any range and T-anchor, move normally
               _clearRange();
+              _tModeAnchor = null;
               lightMoveToCell(newRef);
               clearTimeout(_arrowDebounce);
               _arrowDebounce = setTimeout(() => selectCell(selectedRef), 120);
@@ -2497,6 +2508,15 @@ function handleShiftClick(ref) {
   return true;  // consumed
 }
 
+// ── T-mode keyboard anchor tracking ──────────────────────────────────────
+// When the user uses Shift+Arrow in T mode to extend the end-ref range,
+// selectedRef moves to the cursor position so subsequent Shift+Arrow steps
+// accumulate correctly.  But openTableModal() must use the original anchor
+// (the cell that had T selected), not the cursor.  _tModeAnchor captures
+// that original anchor; openTableModal() prefers it over selectedRef.
+// It is cleared whenever the user makes a plain click / plain Arrow move.
+let _tModeAnchor = null;
+
 // ── Table Row Editor Modal ─────────────────────────────────────────────────
 
 let _trmAnchorRef   = '';   // anchor (top-left) ref being edited
@@ -2576,7 +2596,10 @@ async function openTableModal() {
   const nameEl   = document.getElementById('f-T-name');
   const multEl   = document.getElementById('f-T-mult');
   const endEl    = document.getElementById('f-T-end_ref');
-  const anchorRef = selectedRef || '';
+  // _tModeAnchor is set when Shift+Arrow was used to extend the T range;
+  // in that case selectedRef has moved to the cursor (end-ref position),
+  // so we must use the stored anchor instead.
+  const anchorRef = _tModeAnchor || selectedRef || '';
 
   if (!anchorRef) { toast('Select the top-left table cell first', true); return; }
 
