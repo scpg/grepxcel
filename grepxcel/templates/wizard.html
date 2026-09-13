@@ -2335,7 +2335,7 @@ function _tRenderColumns(cols) {
     row.dataset.header = col.header || '';
     row.innerHTML = `
       <span style="font-size:12px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
-            title="${(col.header || '').replace(/"/g,'&quot;')}">${col.header || '(empty)'}</span>
+            title="${(col.header || '').replace(/"/g,'&quot;')}">${escHtml(col.header) || '(empty)'}</span>
       <input class="t-col-field" type="text" value="${(col.field_name || '').replace(/"/g,'&quot;')}"
              placeholder="field_name" style="min-width:0">
       <button type="button" class="t-col-del" title="Remove column" onclick="this.closest('.t-col-row').remove()">×</button>

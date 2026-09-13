@@ -501,6 +501,12 @@ def create_app(
             'Install with: pip install "grepxcel[web]"'
         )
 
+    # ── Security checks (same guards as the extract command) ─────────────────
+    from .security import validate_file, validate_pattern_file
+    validate_file(xlsx_path)
+    if pattern_path and Path(pattern_path).exists():
+        validate_pattern_file(pattern_path)
+
     # ── Load workbook ─────────────────────────────────────────────────────────
     wb = openpyxl.load_workbook(xlsx_path, data_only=True)
     ws = wb.active
@@ -1119,7 +1125,7 @@ def create_app(
         xlsx_path_ = Path(_STATE['xlsx_path'])
 
         # Determine output path
-        out_name = body.get('filename', '')
+        out_name = Path(body.get('filename', '')).name  # strip any directory components
         if not out_name:
             stem     = xlsx_path_.stem
             out_name = stem + '_pattern-from-web.csv'
@@ -1146,7 +1152,7 @@ def create_app(
         body       = await request.json()
         xlsx_path_ = Path(_STATE['xlsx_path'])
 
-        out_name = body.get('filename', '')
+        out_name = Path(body.get('filename', '')).name  # strip any directory components
         if not out_name:
             stem     = xlsx_path_.stem
             out_name = stem + '_pattern-from-web.xlsx'
@@ -1298,11 +1304,17 @@ def create_app(
         tmp_path: str | None = None
         try:
             data = await upload.read()
+            _MAX_PATTERN_BYTES = 5 * 1024 * 1024  # 5 MB — same as validate_file default
+            if len(data) > _MAX_PATTERN_BYTES:
+                raise HTTPException(413, 'Pattern file exceeds 5 MB limit')
             with tempfile.NamedTemporaryFile(
                 suffix=suffix, delete=False
             ) as tf:
                 tf.write(data)
                 tmp_path = tf.name
+
+            from .security import validate_pattern_file
+            validate_pattern_file(tmp_path)
 
             ws_ = _STATE['ws']
             choices, cfg, warnings = _preload_from_pattern(ws_, tmp_path)
@@ -1344,7 +1356,7 @@ def create_app(
                     pass
             raise HTTPException(500, str(exc))
 
-    @app.get('/api/shutdown')
+    @app.post('/api/shutdown')
     async def api_shutdown():
         """Graceful shutdown — called by the browser when user clicks 'Done'."""
         _STATE['log'].close(_STATE.get('choices', {}), _STATE.get('notes', {}))
