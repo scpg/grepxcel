@@ -1104,6 +1104,15 @@ def _preload_from_pattern(ws, pattern_path: str) -> tuple[dict, dict, list[str]]
     direction = global_config.read_direction   # may be updated by dir: instructions
     last_lbl_pos: tuple | None = None          # (row, col) of the last matched lbl cell
 
+    # Up-front warning when the pattern contains seek: instructions — the web
+    # wizard cannot simulate them during preload.  Per-seek warnings follow below.
+    if any(isinstance(instr, SeekInstruction) for instr in start_sequence):
+        warnings.append(
+            "This pattern uses seek: instructions, which the wizard cannot "
+            "simulate during preload. Affected fields will not be pre-filled — "
+            "classify them manually, or replace seek: with absolute cell: references."
+        )
+
     # ── Helpers ───────────────────────────────────────────────────────────────
 
     def _find_lbl_pos(fd) -> tuple | None:
