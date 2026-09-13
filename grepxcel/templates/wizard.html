@@ -122,6 +122,18 @@ td.gx-cell {
 }
 td.gx-cell:hover:not(.selected) { background: var(--accent-dim) !important; }
 td.gx-cell.empty { color: var(--text-muted); }
+td.gx-cell.gx-merged {
+  /* Subtle diagonal stripe to signal a merged region */
+  background-image: repeating-linear-gradient(
+    -45deg, transparent, transparent 5px,
+    rgba(127,127,127,0.04) 5px, rgba(127,127,127,0.04) 6px
+  );
+}
+td.gx-cell.gx-merged::after {
+  content: '⊞'; font-size: 9px; color: var(--text-muted);
+  position: absolute; top: 1px; right: 2px; pointer-events: none;
+}
+td.gx-cell.gx-merged { position: relative; }
 td.gx-cell.selected {
   background: var(--sel) !important;
   outline: 2px solid var(--sel-border);
@@ -647,13 +659,25 @@ function renderGrid(data) {
   for (const row of data.rows) {
     html += `<tr><td class="row-header">${row[0].row}</td>`;
     for (const cell of row) {
-      const cls = cell.choice ? `gx-cell gx-${cell.choice}` : 'gx-cell' + (cell.empty ? ' empty' : '');
+      // Non-anchor merged cells are ghost cells — skip them entirely.
+      // The anchor's colspan/rowspan already covers their visual space.
+      if (cell.skip) continue;
+
+      let cls = cell.choice ? `gx-cell gx-${cell.choice}` : 'gx-cell' + (cell.empty ? ' empty' : '');
+      if (cell.merged) cls += ' gx-merged';   // anchor of a merged region
+
       const badge = cell.choice ? `<span class="cell-badge badge-${cell.choice}">${cell.choice}</span>` : '';
       const note  = cell.note  ? ' 📝' : '';
-      const val   = escHtml(cell.value || (cell.empty ? '' : ''));
-      html += `<td class="${cls}" data-ref="${cell.ref}"
+      const val   = escHtml(cell.value || '');
+
+      // Build colspan/rowspan attrs for merged anchors
+      const csAttr = (cell.colspan && cell.colspan > 1) ? ` colspan="${cell.colspan}"` : '';
+      const rsAttr = (cell.rowspan && cell.rowspan > 1) ? ` rowspan="${cell.rowspan}"` : '';
+
+      html += `<td class="${cls}" data-ref="${cell.ref}" data-merged="${cell.merged ? '1' : ''}"
+                   ${csAttr}${rsAttr}
                    onclick="selectCell('${cell.ref}')"
-                   title="${cell.ref}: ${escHtml(cell.value)}">${badge}${val}${note}</td>`;
+                   title="${cell.ref}${cell.merged ? ` [merged ${cell.colspan}×${cell.rowspan}]` : ''}: ${escHtml(cell.value)}">${badge}${val}${note}</td>`;
     }
     html += '</tr>';
   }
@@ -665,7 +689,8 @@ function refreshCell(ref) {
   if (!td) return;
   const info = cellData[ref] || {};
   const ch = info.choice || '';
-  td.className = 'gx-cell' + (ch ? ` gx-${ch}` : '') + (info.empty ? ' empty' : '');
+  const isMerged = td.dataset.merged === '1';
+  td.className = 'gx-cell' + (ch ? ` gx-${ch}` : '') + (info.empty ? ' empty' : '') + (isMerged ? ' gx-merged' : '');
   if (ref === selectedRef) td.classList.add('selected');
   const badge = ch ? `<span class="cell-badge badge-${ch}">${ch}</span>` : '';
   const note  = info.note ? ' 📝' : '';

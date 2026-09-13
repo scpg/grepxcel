@@ -174,6 +174,27 @@ def _cell_type_display(value: Any) -> str:
     return 'string'
 
 
+def _build_merge_info(ws) -> tuple[dict, set]:
+    """Return (merge_topleft, merge_skip) from the worksheet's merged cell ranges.
+
+    merge_topleft  dict[ref → (colspan, rowspan)] for anchor cells
+    merge_skip     set[ref] of non-anchor cells that must not be rendered
+    """
+    merge_topleft: dict[str, tuple[int, int]] = {}
+    merge_skip: set[str] = set()
+    for m in ws.merged_cells.ranges:
+        tl = _cell_ref(m.min_row, m.min_col)
+        colspan = m.max_col - m.min_col + 1
+        rowspan = m.max_row - m.min_row + 1
+        merge_topleft[tl] = (colspan, rowspan)
+        for r in range(m.min_row, m.max_row + 1):
+            for c in range(m.min_col, m.max_col + 1):
+                ref = _cell_ref(r, c)
+                if ref != tl:
+                    merge_skip.add(ref)
+    return merge_topleft, merge_skip
+
+
 def _build_sheet_data() -> dict:
     """Serialize the active worksheet into a JSON-friendly structure."""
     ws: openpyxl.worksheet.worksheet.Worksheet = _STATE['ws']
@@ -185,6 +206,8 @@ def _build_sheet_data() -> dict:
     display_rows = min(max_row, _STATE.get('max_rows', 150))
     display_cols = min(max_col, _STATE.get('max_cols', 40))
 
+    merge_topleft, merge_skip = _build_merge_info(ws)
+
     rows = []
     for r in range(1, display_rows + 1):
         row = []
@@ -192,18 +215,25 @@ def _build_sheet_data() -> dict:
             ref = _cell_ref(r, c)
             cell = ws.cell(row=r, column=c)
             choice_info = choices.get(ref, {})
+            colspan, rowspan = merge_topleft.get(ref, (1, 1))
+            is_anchor = ref in merge_topleft
+            is_skip   = ref in merge_skip
             row.append({
-                'ref':     ref,
-                'row':     r,
-                'col':     c,
+                'ref':       ref,
+                'row':       r,
+                'col':       c,
                 'col_letter': get_column_letter(c),
-                'value':   _cell_display(cell.value),
-                'raw':     str(cell.value) if cell.value is not None else '',
-                'type':    _cell_type_display(cell.value),
-                'choice':  choice_info.get('choice', ''),
-                'name':    choice_info.get('name', ''),
-                'note':    notes.get(ref, ''),
-                'empty':   cell.value is None,
+                'value':     _cell_display(cell.value),
+                'raw':       str(cell.value) if cell.value is not None else '',
+                'type':      _cell_type_display(cell.value),
+                'choice':    choice_info.get('choice', ''),
+                'name':      choice_info.get('name', ''),
+                'note':      notes.get(ref, ''),
+                'empty':     cell.value is None and not is_anchor,
+                'colspan':   colspan,
+                'rowspan':   rowspan,
+                'merged':    is_anchor,   # True = top-left of a merged range
+                'skip':      is_skip,     # True = inside a merge, must not render
             })
         rows.append(row)
 
@@ -222,16 +252,24 @@ def _build_sheet_data() -> dict:
 
 
 def _build_stats() -> dict:
-    choices = _STATE.get('choices', {})
+    ws       = _STATE.get('ws')
+    choices  = _STATE.get('choices', {})
+
+    # Ignore any choice stored on a non-anchor merged cell (ghost classifications)
+    _, merge_skip = _build_merge_info(ws) if ws else ({}, set())
+
     counts: dict[str, int] = {}
-    for info in choices.values():
+    for ref, info in choices.items():
+        if ref in merge_skip:
+            continue          # don't count ghost cells from pre-existing patterns
         ch = info.get('choice', '')
         counts[ch] = counts.get(ch, 0) + 1
-    ws = _STATE.get('ws')
+
     total = sum(
         1 for r in range(1, (ws.max_row or 1) + 1)
         for c in range(1, (ws.max_column or 1) + 1)
         if ws.cell(row=r, column=c).value is not None
+           and _cell_ref(r, c) not in merge_skip
     ) if ws else 0
     classified = sum(counts.values())
     return {
@@ -406,6 +444,10 @@ def create_app(
 
         if not ref or action not in ('L', 'V', 'C', 'I', 'T', 'CLEAR'):
             raise HTTPException(400, f'Invalid ref={ref!r} or action={action!r}')
+        # Block classifying a non-anchor merged cell (ghost cell)
+        _, merge_skip = _build_merge_info(_STATE['ws'])
+        if ref in merge_skip:
+            raise HTTPException(400, f'{ref} is inside a merged cell — classify the top-left anchor instead')
 
         _push_undo(ref)
         choices = _STATE['choices']
