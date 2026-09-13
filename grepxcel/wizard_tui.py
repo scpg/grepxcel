@@ -684,6 +684,107 @@ def _preload_table(
                 'notes': '', 'col_a_extra': _fd_to_col_a_extra(fd),
             })
 
+    # ── Detect and build footer rows ──────────────────────────────────────────
+    f_rows_sheet: list[dict] = []
+    f_row_nums:   set[int]   = set()
+
+    for fi, f_tmpl in enumerate(footer_tmpl):
+        # Build scan targets for this footer template row (lbl cols only)
+        f_scan: list[tuple] = []
+        for col_idx, tmpl_col in enumerate(f_tmpl.columns):
+            field = tmpl_col.field if hasattr(tmpl_col, 'field') else str(tmpl_col)
+            if field in ('IGNORE', 'EMPTY', ''):
+                continue
+            fd = defs.get(field)
+            if fd and fd.role == 'lbl' and fd.regex:
+                f_scan.append((col_idx, fd))
+
+        if not f_scan:
+            # No label anchors — cannot locate this footer row
+            warnings.append(
+                f'TABLE footer row {fi + 1} has no label columns to match; '
+                f'skipped (classify manually)'
+            )
+            continue
+
+        # Scan d_rows_sheet for the first row matching all f_scan targets
+        matched_row: int | None = None
+        for r in d_rows_sheet:
+            if r in f_row_nums:
+                continue
+            ok = True
+            for col_off, fd in f_scan:
+                sheet_c = start_col + col_off
+                if sheet_c > max_col:
+                    ok = False
+                    break
+                v      = ws.cell(row=r, column=sheet_c).value
+                f_mode = fd.lbl_match or global_config.lbl_match
+                if not _lbl_cell_matches(v, fd.regex, f_mode, ic):
+                    ok = False
+                    break
+            if ok:
+                matched_row = r
+                break
+
+        if matched_row is None:
+            probe = [fd.regex for _, fd in f_scan[:2]]
+            warnings.append(
+                f'TABLE footer row {fi + 1}: label not matched in data rows '
+                f'(looking for: {", ".join(repr(t) for t in probe)}); '
+                f'classify manually'
+            )
+            continue
+
+        # Build the footer col descriptors (same shape as header cols)
+        f_row_nums.add(matched_row)
+        fcols: list[dict] = []
+        for ci, tmpl_col in enumerate(f_tmpl.columns):
+            sheet_c = start_col + ci
+            if sheet_c > max_col:
+                break
+            field = tmpl_col.field if hasattr(tmpl_col, 'field') else str(tmpl_col)
+            fd    = defs.get(field) if field not in ('IGNORE', 'EMPTY', '') else None
+            val   = ws.cell(row=matched_row, column=sheet_c).value
+            val_s = str(val) if val is not None else ''
+
+            if field in ('IGNORE', 'EMPTY', '') or fd is None:
+                fcols.append({
+                    'ref': _cell_ref(matched_row, sheet_c),
+                    'row': matched_row, 'col': sheet_c,
+                    'cell_value': val_s,
+                    'role': 'ignore',
+                    'lbl_name': 'IGNORE', 'lbl_type': 'string', 'lbl_match': val_s,
+                    'var_name': 'IGNORE', 'var_type': 'string', 'var_match': '.*',
+                    'notes': '',
+                })
+            elif fd.role == 'lbl':
+                fcols.append({
+                    'ref': _cell_ref(matched_row, sheet_c),
+                    'row': matched_row, 'col': sheet_c,
+                    'cell_value': val_s,
+                    'role': 'label',
+                    'lbl_name': field, 'lbl_type': fd.type, 'lbl_match': fd.regex,
+                    'var_name': 'IGNORE', 'var_type': 'string', 'var_match': '.*',
+                    'lbl_mode': fd.lbl_match or '',
+                    'notes': '',
+                })
+            else:  # var in footer position (e.g. po.grand_total)
+                fcols.append({
+                    'ref': _cell_ref(matched_row, sheet_c),
+                    'row': matched_row, 'col': sheet_c,
+                    'cell_value': val_s,
+                    'role': 'var',
+                    'lbl_name': 'IGNORE', 'lbl_type': 'string', 'lbl_match': val_s,
+                    'var_name': field, 'var_type': fd.type, 'var_match': fd.regex,
+                    'notes': '',
+                    'col_a_extra': _fd_to_col_a_extra(fd),
+                })
+        f_rows_sheet.append({'row': matched_row, 'cols': fcols})
+
+    # Remove detected footer rows from d_rows_sheet
+    d_rows_sheet = [r for r in d_rows_sheet if r not in f_row_nums]
+
     # ── Skip_if rows (Phase 2: detect S rows in the row_types scan) ──────────
     skip_rows: list[int] = []   # Phase 2: detect SKIP_IF rows from template
 
@@ -693,19 +794,135 @@ def _preload_table(
         row_types[hd['row']] = 'H'
     for r in d_rows_sheet:
         row_types[r] = 'D'
+    for fr in f_rows_sheet:
+        row_types[fr['row']] = 'F'
 
     # ── Anchor / range ────────────────────────────────────────────────────────
-    end_row    = d_rows_sheet[-1] if d_rows_sheet else last_h_row
+    last_f_row = f_rows_sheet[-1]['row'] if f_rows_sheet else None
+    end_row    = last_f_row or (d_rows_sheet[-1] if d_rows_sheet else last_h_row)
     end_col    = start_col + num_cols - 1
     anchor_ref = _cell_ref(header_row_num, start_col)
     range_str  = f'{anchor_ref}:{_cell_ref(header_row_num, end_col)}'
 
-    # Table name: derive from the first lbl field, strip common suffixes
-    raw_name   = first_fd.name
-    table_name = _slugify(
-        raw_name.removesuffix('_lbl').removesuffix('_label')
-                .removesuffix('_header').removesuffix('_col')
-    ) or _slugify(raw_name)
+    # ── Table name: common dot-prefix of data var names, fallback to header lbl ─
+    dv_names = [
+        dv['var_name'] for dv in data_vars
+        if dv.get('var_name') and dv['var_name'] not in ('IGNORE', 'EMPTY', '')
+    ]
+    table_name = ''
+    if dv_names:
+        # Prefer shared dot-prefix (e.g. 'item.name', 'item.qty' → 'item')
+        dot_prefixes = [n.split('.')[0] for n in dv_names if '.' in n]
+        if dot_prefixes and len(set(dot_prefixes)) == 1:
+            table_name = _slugify(dot_prefixes[0])
+        if not table_name and len(dv_names) == 1:
+            # Single var: use its name (or the part before an underscore)
+            table_name = _slugify(dv_names[0].split('_')[0] or dv_names[0])
+        # (otherwise leave table_name='' and fall through to the lbl-field fallback)
+    if not table_name or table_name == 'field':
+        raw_name   = first_fd.name
+        table_name = _slugify(
+            raw_name.removesuffix('_lbl').removesuffix('_label')
+                    .removesuffix('_header').removesuffix('_col')
+        ) or _slugify(raw_name)
+
+    # ── Build _web_row_configs for modal pre-population ───────────────────────
+    web_row_configs: list[dict] = []
+
+    for hi, h_row in enumerate(h_rows_sheet):
+        cols_cfg: list[dict] = []
+        for col_dict in h_row['cols']:
+            role = col_dict.get('role', 'ignore')
+            if role == 'label':
+                lbl_mode = col_dict.get('lbl_mode', '') or 'literal'
+                cols_cfg.append({
+                    'role': 'L',
+                    'name': _slugify(col_dict.get('lbl_name', '') or col_dict.get('cell_value', '')),
+                    'lmatch': col_dict.get('lbl_match', col_dict.get('cell_value', '')),
+                    'lmatch_mode': lbl_mode,
+                })
+            elif role == 'var':
+                _, mods = _col_a_extra_to_parts(col_dict.get('col_a_extra', ''))
+                cols_cfg.append({
+                    'role': 'V',
+                    'name': col_dict.get('var_name', 'IGNORE'),
+                    'ftype': col_dict.get('var_type', 'string'),
+                    'match': col_dict.get('var_match', '.*'),
+                    'modifiers': mods,
+                })
+            else:
+                cols_cfg.append({'role': 'I'})
+        web_row_configs.append({
+            'sheet_row': h_row['row'],
+            'row_type': 'header',
+            'row_n': hi + 1,
+            'cols': cols_cfg,
+        })
+
+    for di, r in enumerate(d_rows_sheet):
+        if di == 0:
+            cols_cfg = []
+            for dv in data_vars:
+                dv_role = dv.get('role', 'ignore')
+                if dv_role == 'var':
+                    _, mods = _col_a_extra_to_parts(dv.get('col_a_extra', ''))
+                    cols_cfg.append({
+                        'role': 'V',
+                        'name': dv.get('var_name', 'IGNORE'),
+                        'ftype': dv.get('var_type', 'string'),
+                        'match': dv.get('var_match', '.*'),
+                        'modifiers': mods,
+                    })
+                elif dv_role == 'label':
+                    lbl_mode = dv.get('lbl_mode', '') or 'literal'
+                    cols_cfg.append({
+                        'role': 'L',
+                        'name': _slugify(dv.get('lbl_name', '') or ''),
+                        'lmatch': dv.get('lbl_match', ''),
+                        'lmatch_mode': lbl_mode,
+                    })
+                else:
+                    cols_cfg.append({'role': 'I'})
+            web_row_configs.append({
+                'sheet_row': r,
+                'row_type': 'data',
+                'cols': cols_cfg,
+            })
+        else:
+            web_row_configs.append({
+                'sheet_row': r,
+                'row_type': 'data_inherited',
+            })
+
+    for fi, f_row in enumerate(f_rows_sheet):
+        cols_cfg = []
+        for col_dict in f_row['cols']:
+            role = col_dict.get('role', 'ignore')
+            if role == 'label':
+                lbl_mode = col_dict.get('lbl_mode', '') or 'literal'
+                cols_cfg.append({
+                    'role': 'L',
+                    'name': _slugify(col_dict.get('lbl_name', '') or col_dict.get('cell_value', '')),
+                    'lmatch': col_dict.get('lbl_match', col_dict.get('cell_value', '')),
+                    'lmatch_mode': lbl_mode,
+                })
+            elif role == 'var':
+                _, mods = _col_a_extra_to_parts(col_dict.get('col_a_extra', ''))
+                cols_cfg.append({
+                    'role': 'V',
+                    'name': col_dict.get('var_name', 'IGNORE'),
+                    'ftype': col_dict.get('var_type', 'string'),
+                    'match': col_dict.get('var_match', '.*'),
+                    'modifiers': mods,
+                })
+            else:
+                cols_cfg.append({'role': 'I'})
+        web_row_configs.append({
+            'sheet_row': f_row['row'],
+            'row_type': 'footer',
+            'row_n': fi + 1,
+            'cols': cols_cfg,
+        })
 
     # ── Guard: anchor must not be already claimed ─────────────────────────────
     if anchor_ref in claimed:
@@ -717,28 +934,37 @@ def _preload_table(
 
     # ── Write anchor T entry ──────────────────────────────────────────────────
     meta: dict = {
-        'choice':      'T',
-        'name':        table_name,
-        'mult':        instr.multiplicity,
-        'range':       range_str,
-        'start_row':   header_row_num,
-        'end_row':     end_row,
-        'start_col':   start_col,
-        'end_col':     end_col,
-        'header_rows': h_rows_sheet,
-        'footer_rows': [],          # footer detection is Phase 3
-        'data_vars':   data_vars,
-        'skip_rows':   skip_rows,
-        'row_types':   row_types,
+        'choice':           'T',
+        'name':             table_name,
+        'mult':             instr.multiplicity,
+        'range':            range_str,
+        'start_row':        header_row_num,
+        'end_row':          end_row,
+        'start_col':        start_col,
+        'end_col':          end_col,
+        'header_rows':      h_rows_sheet,
+        'footer_rows':      f_rows_sheet,
+        'data_vars':        data_vars,
+        'skip_rows':        skip_rows,
+        'row_types':        row_types,
+        '_web_row_configs': web_row_configs,
     }
     choices[anchor_ref] = meta
     claimed.add(anchor_ref)
 
-    # ── Write T-HEAD for all header / footer cells (except anchor) ────────────
+    # ── Write T-HEAD for all header cells (except anchor) ────────────────────
     for hd in h_rows_sheet:
         for col_dict in hd['cols']:
             ref = col_dict['ref']
             if ref != anchor_ref and ref not in claimed:
+                choices[ref] = {'choice': 'T-HEAD', 'anchor': anchor_ref}
+                claimed.add(ref)
+
+    # ── Write T-HEAD for footer cells ────────────────────────────────────────
+    for fr in f_rows_sheet:
+        for col_dict in fr['cols']:
+            ref = col_dict['ref']
+            if ref not in claimed:
                 choices[ref] = {'choice': 'T-HEAD', 'anchor': anchor_ref}
                 claimed.add(ref)
 
@@ -750,9 +976,7 @@ def _preload_table(
                 choices[ref] = {'choice': 'T-DATA', 'anchor': anchor_ref}
                 claimed.add(ref)
 
-    n_h = len(h_rows_sheet)
     n_d = len(d_rows_sheet)
-    var_names = [dv['var_name'] for dv in data_vars if dv['var_name'] != 'IGNORE']
     # Informational notice when data rows were limited
     if n_d == 200:
         warnings.append(

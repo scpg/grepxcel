@@ -712,6 +712,13 @@ def create_app(
                         if cref and cref != ref:
                             choices[cref] = {'choice': 'T-HEAD', 'anchor': ref}
 
+                # Mark T-HEAD cells for footer rows
+                for f_row in meta_dict.get('footer_rows', []):
+                    for col_d in f_row.get('cols', []):
+                        cref = col_d.get('ref', '')
+                        if cref and cref != ref:
+                            choices[cref] = {'choice': 'T-HEAD', 'anchor': ref}
+
                 # Mark T-DATA cells (all non-header/footer/skip rows in range)
                 start_col_ = meta_dict['start_col']
                 end_col_   = meta_dict['end_col']

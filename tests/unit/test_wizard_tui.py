@@ -1935,6 +1935,213 @@ class TestPreloadTable:
         assert choices.get('B5', {}).get('anchor') == 'A4'
 
 
+# ── TestPreloadTableFooter ────────────────────────────────────────────────────
+
+class TestPreloadTableFooter:
+    """Tests for footer row detection and _web_row_configs generation in _preload_table."""
+
+    @staticmethod
+    def _make_footer_ws():
+        """3-row table: header row 1, data row 2, footer row 3 (Grand Total)."""
+        return _make_ws({
+            (1, 1): 'Item',       (1, 2): 'Amount',
+            (2, 1): 'Widget',     (2, 2): 50,
+            (3, 1): 'Grand Total', (3, 2): 50,
+        })
+
+    @staticmethod
+    def _write_footer_pattern(path):
+        """Pattern with HEADER:1 / DATA:* / FOOTER:1 (lbl + var)."""
+        _write_pattern_csv(path, [
+            ['lbl:', 'item_lbl',        'string',   'Item'],
+            ['lbl:', 'amount_lbl',      'string',   'Amount'],
+            ['lbl:', 'grand_total_lbl', 'string',   'Grand Total'],
+            ['var:', 'item.name',       'string',   '.*'],
+            ['var:', 'item.amount',     'currency', r'\d+'],
+            ['var:', 'total',           'currency', r'\d+'],
+            ['START:'],
+            ['table:*', ''],
+            ['', 'HEADER:1', 'item_lbl',        'amount_lbl'],
+            ['', 'DATA:*',   'item.name',        'item.amount'],
+            ['', 'FOOTER:1', 'grand_total_lbl',  'total'],
+            ['END:'],
+        ])
+
+    def test_footer_rows_in_meta(self, tmp_path):
+        """Footer row is detected and stored in footer_rows meta key."""
+        ws  = self._make_footer_ws()
+        pat = tmp_path / 'p.csv'
+        self._write_footer_pattern(pat)
+
+        choices, _, warns = _preload_from_pattern(ws, str(pat))
+
+        assert not warns, f'Unexpected warnings: {warns}'
+        meta = choices.get('A1', {})
+        fr = meta.get('footer_rows', [])
+        assert len(fr) == 1, f'Expected 1 footer row; got {len(fr)}'
+        assert fr[0]['row'] == 3
+
+    def test_footer_row_not_in_data_rows(self, tmp_path):
+        """Footer row is removed from d_rows_sheet — row 3 must NOT be T-DATA."""
+        ws  = self._make_footer_ws()
+        pat = tmp_path / 'p.csv'
+        self._write_footer_pattern(pat)
+
+        choices, _, warns = _preload_from_pattern(ws, str(pat))
+
+        assert not warns
+        assert choices.get('A3', {}).get('choice') != 'T-DATA', (
+            'A3 (footer) must not be T-DATA'
+        )
+
+    def test_footer_cells_marked_t_head(self, tmp_path):
+        """Footer cells are classified as T-HEAD with the correct anchor."""
+        ws  = self._make_footer_ws()
+        pat = tmp_path / 'p.csv'
+        self._write_footer_pattern(pat)
+
+        choices, _, warns = _preload_from_pattern(ws, str(pat))
+
+        assert not warns
+        a3 = choices.get('A3', {})
+        b3 = choices.get('B3', {})
+        assert a3.get('choice') == 'T-HEAD', f'A3 choice={a3.get("choice")!r}'
+        assert b3.get('choice') == 'T-HEAD', f'B3 choice={b3.get("choice")!r}'
+        assert a3.get('anchor') == 'A1'
+        assert b3.get('anchor') == 'A1'
+
+    def test_row_types_includes_footer(self, tmp_path):
+        """row_types dict maps the footer row to 'F'."""
+        ws  = self._make_footer_ws()
+        pat = tmp_path / 'p.csv'
+        self._write_footer_pattern(pat)
+
+        choices, _, warns = _preload_from_pattern(ws, str(pat))
+
+        assert not warns
+        rt = choices['A1'].get('row_types', {})
+        assert rt.get(1) == 'H', f'row 1 should be H; got {rt.get(1)}'
+        assert rt.get(2) == 'D', f'row 2 should be D; got {rt.get(2)}'
+        assert rt.get(3) == 'F', f'row 3 should be F; got {rt.get(3)}'
+
+    def test_end_row_includes_footer(self, tmp_path):
+        """end_row in meta should be the footer row (3), not the last data row (2)."""
+        ws  = self._make_footer_ws()
+        pat = tmp_path / 'p.csv'
+        self._write_footer_pattern(pat)
+
+        choices, _, warns = _preload_from_pattern(ws, str(pat))
+
+        assert not warns
+        assert choices['A1']['end_row'] == 3, (
+            f"end_row should be 3 (footer); got {choices['A1']['end_row']}"
+        )
+
+    def test_web_row_configs_header_entry(self, tmp_path):
+        """_web_row_configs first entry is row_type='header' with cols."""
+        ws  = self._make_footer_ws()
+        pat = tmp_path / 'p.csv'
+        self._write_footer_pattern(pat)
+
+        choices, _, warns = _preload_from_pattern(ws, str(pat))
+
+        assert not warns
+        wrc = choices['A1'].get('_web_row_configs', [])
+        assert wrc, '_web_row_configs must be present'
+        header_entries = [r for r in wrc if r.get('row_type') == 'header']
+        assert len(header_entries) == 1
+        assert header_entries[0]['sheet_row'] == 1
+        assert header_entries[0]['row_n'] == 1
+        # Cols: first col is L (label)
+        col0 = header_entries[0]['cols'][0]
+        assert col0['role'] == 'L'
+        assert col0.get('lmatch_mode') in ('literal', '', None) or 'lmatch_mode' in col0
+
+    def test_web_row_configs_footer_entry(self, tmp_path):
+        """_web_row_configs contains a row_type='footer' entry for the footer row."""
+        ws  = self._make_footer_ws()
+        pat = tmp_path / 'p.csv'
+        self._write_footer_pattern(pat)
+
+        choices, _, warns = _preload_from_pattern(ws, str(pat))
+
+        assert not warns
+        wrc = choices['A1'].get('_web_row_configs', [])
+        footer_entries = [r for r in wrc if r.get('row_type') == 'footer']
+        assert len(footer_entries) == 1, f'Expected 1 footer entry; got {len(footer_entries)}'
+        fe = footer_entries[0]
+        assert fe['sheet_row'] == 3
+        assert fe['row_n'] == 1
+        # col 0: L role (grand_total_lbl)
+        assert fe['cols'][0]['role'] == 'L'
+        # col 1: V role (total var)
+        assert fe['cols'][1]['role'] == 'V'
+        assert fe['cols'][1]['name'] == 'total'
+
+    def test_web_row_configs_data_and_inherited(self, tmp_path):
+        """_web_row_configs has exactly one 'data' entry; multi-data rows get 'data_inherited'."""
+        ws = _make_ws({
+            (1, 1): 'Item',    (1, 2): 'Amount',
+            (2, 1): 'Widget',  (2, 2): 10,
+            (3, 1): 'Gadget',  (3, 2): 20,
+            (4, 1): 'Grand Total', (4, 2): 30,
+        })
+        pat = tmp_path / 'p.csv'
+        _write_pattern_csv(pat, [
+            ['lbl:', 'item_lbl',        'string',   'Item'],
+            ['lbl:', 'amount_lbl',      'string',   'Amount'],
+            ['lbl:', 'grand_total_lbl', 'string',   'Grand Total'],
+            ['var:', 'item.name',       'string',   '.*'],
+            ['var:', 'item.amount',     'currency', r'\d+'],
+            ['var:', 'total',           'currency', r'\d+'],
+            ['START:'],
+            ['table:*', ''],
+            ['', 'HEADER:1', 'item_lbl',       'amount_lbl'],
+            ['', 'DATA:*',   'item.name',       'item.amount'],
+            ['', 'FOOTER:1', 'grand_total_lbl', 'total'],
+            ['END:'],
+        ])
+
+        choices, _, warns = _preload_from_pattern(ws, str(pat))
+
+        assert not warns
+        wrc = choices['A1']['_web_row_configs']
+        types = [r['row_type'] for r in wrc]
+        assert types.count('header')         == 1
+        assert types.count('data')           == 1
+        assert types.count('data_inherited') == 1
+        assert types.count('footer')         == 1
+
+    def test_table_name_from_dot_prefix(self, tmp_path):
+        """Table name is derived from common dot-prefix of data var names."""
+        ws  = self._make_footer_ws()
+        pat = tmp_path / 'p.csv'
+        self._write_footer_pattern(pat)
+
+        choices, _, warns = _preload_from_pattern(ws, str(pat))
+
+        # data vars: 'item.name', 'item.amount' → common dot-prefix 'item'
+        assert choices['A1']['name'] == 'item', (
+            f"Expected 'item'; got {choices['A1']['name']!r}"
+        )
+
+    def test_footer_not_found_produces_warning(self, tmp_path):
+        """If footer label is absent from the data rows, a warning is emitted."""
+        ws = _make_ws({
+            (1, 1): 'Item',   (1, 2): 'Amount',
+            (2, 1): 'Widget', (2, 2): 10,
+            # No grand total row
+        })
+        pat = tmp_path / 'p.csv'
+        self._write_footer_pattern(pat)
+
+        _, _, warns = _preload_from_pattern(ws, str(pat))
+
+        assert any('footer' in w.lower() and ('not matched' in w.lower() or 'not found' in w.lower()) for w in warns), (
+            f'Expected footer-not-matched warning; got: {warns}'
+        )
+
+
 # ── TestPreloadTableTUI (Textual pilot) ──────────────────────────────────────
 
 @_skip_no_textual
