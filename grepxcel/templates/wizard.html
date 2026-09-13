@@ -580,6 +580,13 @@ td.gx-T-bottom { border-bottom: 2px solid rgba(124,58,237,0.5) !important; }
 .trm-inherit-badge {
   font-size: 10px; color: var(--text-muted); font-style: italic; text-align: center; padding: 8px 0;
 }
+.trm-name-hint {
+  font-size: 9px; color: var(--text-muted); font-family: monospace;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  padding: 0 2px;
+}
+.trm-name-hint-tbl { color: var(--accent); opacity: 0.75; }
+.trm-name-hint-field { font-weight: 600; color: var(--text-muted); }
 #trm-footer {
   padding: 10px 16px; border-top: 1px solid var(--border);
   display: flex; gap: 8px; flex-shrink: 0;
@@ -1037,7 +1044,7 @@ td.gx-T-bottom { border-bottom: 2px solid rgba(124,58,237,0.5) !important; }
     </div>
     <div id="trm-settings">
       <span><label>Name:</label>
-        <input id="trm-name" type="text" placeholder="e.g. line_items">
+        <input id="trm-name" type="text" placeholder="e.g. line_items" oninput="_trmRefreshTableNameHints()">
       </span>
       <span><label>Range:</label>
         <span id="trm-range-display" style="font-family:monospace;font-size:12px">—</span>
@@ -2497,6 +2504,23 @@ function _trmSlugify(s) {
   return String(s).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'col';
 }
 
+/** Live-update the field preview hint when the user edits a data-row name input. */
+function _trmUpdateNameHint(input) {
+  const hint = input.closest('.trm-col-ed')?.querySelector('.trm-name-hint-field');
+  if (hint) hint.textContent = input.value.trim() || '…';
+}
+
+/** Refresh all .trm-name-hint-tbl spans when the table name changes.
+ *  Called by the trm-name input's oninput handler.
+ */
+function _trmRefreshTableNameHints() {
+  const name = (document.getElementById('trm-name')?.value || '').trim() || '…';
+  document.querySelectorAll('.trm-name-hint-tbl').forEach(el => {
+    el.textContent = name;
+    el.dataset.tbl = name;
+  });
+}
+
 // Ref ↔ (row, col) helpers for JS
 function _parseRef(ref) {
   const m = String(ref).match(/^([A-Za-z]+)(\d+)$/);
@@ -2735,8 +2759,10 @@ function _trmColEditorHTML(rowType, cfg, ci, cell) {
     const match       = cfg?.match || '.*';
     const mods        = cfg?.modifiers || 'none';
 
-    // Name: for V use suggested/slugified name; for L use stored name or slugified raw text
-    const nameVal = cfg?.name || (isHFVar ? suggestName || _trmSlugify(rawText) : _trmSlugify(rawText));
+    // Name: for V use suggested/slugified name;
+    //       for L use stored name or slugified raw text + _header_label suffix
+    const defaultLName = _trmSlugify(rawText) + (isHeader ? '_header_label' : (isFooter ? '_footer_label' : '_label'));
+    const nameVal = cfg?.name || (isHFVar ? suggestName || _trmSlugify(rawText) : defaultLName);
 
     // What to show — label-mode dropdown only for L; type/mods only for V
     const modeDisp = (!hidden && !isHFVar) ? 'block' : 'none';
@@ -2790,13 +2816,21 @@ function _trmColEditorHTML(rowType, cfg, ci, cell) {
   const display  = hidden ? 'none' : 'block';
   const typeDisp = (role === 'V' && !hidden) ? 'block' : 'none';
 
+  // Table name prefix hint: reads trm-name input at render time (may be empty)
+  const tblNameNow = (document.getElementById('trm-name')?.value || '').trim() || '…';
+
   return `<div class="trm-col-ed">
     <select class="trm-col-role" onchange="_trmRoleChange(this)">
       ${_TRM_ROLES.map(r=>`<option value="${r}"${r===role?' selected':''}>${_TRM_ROLE_LABELS[r]||r}</option>`).join('')}
     </select>
     <input type="text" placeholder="${suggestedName ? `e.g. ${suggestedName}` : 'field name'}"
            value="${_esc(nameVal)}" class="trm-col-name" style="display:${display}"
-           title="Variable field name in the extracted JSON">
+           title="Variable field name in the extracted JSON&#10;Full path in output: &lt;table_name&gt;.&lt;field_name&gt;"
+           oninput="_trmUpdateNameHint(this)">
+    <div class="trm-name-hint" style="display:${role==='V'&&!hidden?'block':'none'}"
+         title="Full key path in the extracted JSON output">
+      <span class="trm-name-hint-tbl" data-tbl="${_esc(tblNameNow)}">${_esc(tblNameNow)}</span>.<span class="trm-name-hint-field">${_esc(nameVal || suggestedName || '…')}</span>
+    </div>
     <select class="trm-col-type" style="display:${typeDisp}"
             title="Field data type">
       ${_TRM_TYPES.map(t=>`<option value="${t}"${t===ftype?' selected':''}>${t}</option>`).join('')}
@@ -2858,6 +2892,9 @@ function _trmRoleChange(sel) {
   if (typeEl)  typeEl.style.display  = (isV && !isI) ? 'block' : 'none';
   if (matchEl) matchEl.style.display = isI ? 'none' : 'block';
   if (modsEl)  modsEl.style.display  = (isV && !isI) ? 'block' : 'none';
+  // table-name prefix hint: shown for V in data rows only
+  const hintEl = td.querySelector('.trm-name-hint');
+  if (hintEl) hintEl.style.display = (isV && !isI && !isHF) ? 'block' : 'none';
 }
 
 function _trmSkipCondChange(sel) {
