@@ -255,7 +255,9 @@ class PatternParser:
                     # config: row where the author forgot to add 'config:' in A.
                     _KNOWN_CFG = frozenset({
                         'pattern.version', 'version', 'read.direction',
-                        'currency.sign', 'ignore.case', 'trim.whitespace',
+                        'currency.sign', 'ignore.case',
+                        'ignore.case.labels', 'ignore.case.values',
+                        'trim.whitespace', 'trim.whitespace.labels', 'trim.whitespace.values',
                         'lbl.match', 'var.match', 'empty.aliases',
                     })
                     col_b = str(row[1]).strip()
@@ -347,7 +349,8 @@ class PatternParser:
                     read_direction=global_config.read_direction,
                     currency_sign=global_config.currency_sign,
                     empty_aliases=list(global_config.empty_aliases),
-                    ignore_case=global_config.ignore_case,
+                    ignore_case_labels=global_config.ignore_case_labels,
+                    ignore_case_values=global_config.ignore_case_values,
                     lbl_match=global_config.lbl_match,
                 )
                 explicit_table_cfg_keys: set[str] = set()
@@ -380,8 +383,17 @@ class PatternParser:
                             table_config.read_direction = direction
                             explicit_table_cfg_keys.add('read.direction')
                         elif key == 'ignore.case' and val is not None:
-                            table_config.ignore_case = _truthy(val)
+                            # Backward compat: set both flags for tables too.
+                            v = _truthy(val)
+                            table_config.ignore_case_labels = v
+                            table_config.ignore_case_values = v
                             explicit_table_cfg_keys.add('ignore.case')
+                        elif key == 'ignore.case.labels' and val is not None:
+                            table_config.ignore_case_labels = _truthy(val)
+                            explicit_table_cfg_keys.add('ignore.case.labels')
+                        elif key == 'ignore.case.values' and val is not None:
+                            table_config.ignore_case_values = _truthy(val)
+                            explicit_table_cfg_keys.add('ignore.case.values')
                         i += 1
                         continue
 
@@ -788,9 +800,21 @@ class PatternParser:
         elif key == 'empty.aliases' and val:
             config.empty_aliases.append(str(val).strip())
         elif key == 'ignore.case' and val is not None:
-            config.ignore_case = _truthy(val)
+            # Backward compat: old single key sets both labels and values.
+            v = _truthy(val)
+            config.ignore_case_labels = v
+            config.ignore_case_values = v
+        elif key == 'ignore.case.labels' and val is not None:
+            config.ignore_case_labels = _truthy(val)
+        elif key == 'ignore.case.values' and val is not None:
+            config.ignore_case_values = _truthy(val)
         elif key == 'trim.whitespace' and val is not None:
-            config.trim_whitespace = _truthy(val)
+            # Backward compat: old single key sets values only (was values-only before).
+            config.trim_whitespace_values = _truthy(val)
+        elif key == 'trim.whitespace.labels' and val is not None:
+            config.trim_whitespace_labels = _truthy(val)
+        elif key == 'trim.whitespace.values' and val is not None:
+            config.trim_whitespace_values = _truthy(val)
         elif key == 'lbl.match' and val is not None:
             mode = str(val).strip().lower()
             if mode not in LBL_MATCH_MODES:

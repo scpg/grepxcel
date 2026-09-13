@@ -94,7 +94,7 @@ class TestValidateFieldVarGlob:
         assert not _validate_field(fd, 200.0, _CFG, _MAX_LEN)
 
     def test_glob_ignore_case(self):
-        cfg = Config(ignore_case=True)
+        cfg = Config(ignore_case_values=True)
         fd = _field(regex='prod-*', var_mode='glob')
         assert _validate_field(fd, 'PROD-99', cfg, _MAX_LEN)
 
@@ -115,7 +115,7 @@ class TestValidateFieldVarLiteral:
         assert not _validate_field(fd, 'active', _CFG, _MAX_LEN)
 
     def test_ignore_case(self):
-        cfg = Config(ignore_case=True)
+        cfg = Config(ignore_case_values=True)
         fd = _field(regex='Active', var_mode='literal')
         assert _validate_field(fd, 'ACTIVE', cfg, _MAX_LEN)
 
@@ -261,7 +261,8 @@ class TestTrimWhitespaceParser:
             ['END:'],
         ], tmp_path)
         cfg, _, _ = PatternParser().parse(path)
-        assert cfg.trim_whitespace is True
+        # backward-compat: old trim.whitespace key sets trim_whitespace_values
+        assert cfg.trim_whitespace_values is True
 
     def test_global_config_trim_whitespace_false(self, tmp_path):
         path = _write_pattern([
@@ -272,7 +273,7 @@ class TestTrimWhitespaceParser:
             ['END:'],
         ], tmp_path)
         cfg, _, _ = PatternParser().parse(path)
-        assert cfg.trim_whitespace is False
+        assert cfg.trim_whitespace_values is False
 
 
 class TestTrimWhitespaceEngine:

@@ -326,9 +326,11 @@ class TestConfigEndpoint:
 
     def test_save_config_ignore_case(self, tmp_path):
         client = _make_client(tmp_path)
-        client.post('/api/config', json={'ignore_case': False})
+        client.post('/api/config', json={'ignore_case_labels': False,
+                                         'ignore_case_values': False})
         state = client.get('/api/state').json()
-        assert state['config']['ignore_case'] is False
+        assert state['config']['ignore_case_labels'] is False
+        assert state['config']['ignore_case_values'] is False
 
     def test_save_config_currency(self, tmp_path):
         client = _make_client(tmp_path)

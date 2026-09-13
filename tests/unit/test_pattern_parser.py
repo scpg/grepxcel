@@ -352,7 +352,8 @@ class TestPatternParserSecurity:
         wb.save(path)
         try:
             cfg, _, _ = PatternParser().parse(path)
-            assert cfg.ignore_case is True
+            assert cfg.ignore_case_labels is True
+            assert cfg.ignore_case_values is True
         except SecurityError:
             pytest.fail('SecurityError raised for =TRUE() — should be allowed')
 
@@ -381,7 +382,8 @@ class TestPatternParserSecurity:
             ])
         try:
             cfg, _, _ = PatternParser().parse(path)
-            assert cfg.ignore_case is True
+            assert cfg.ignore_case_labels is True
+            assert cfg.ignore_case_values is True
         except SecurityError:
             pytest.fail('SecurityError raised for =TRUE() in CSV — should be allowed')
 
@@ -399,7 +401,8 @@ class TestPatternParserSecurity:
             ])
         try:
             cfg, _, _ = PatternParser().parse(path)
-            assert cfg.ignore_case is False
+            assert cfg.ignore_case_labels is False
+            assert cfg.ignore_case_values is False
         except SecurityError:
             pytest.fail('SecurityError raised for =FALSE() in CSV — should be allowed')
 
@@ -582,7 +585,8 @@ class TestIgnoreCaseConfig:
     def test_default_is_case_sensitive(self, tmp_path):
         path = _write_pattern([['var:', 'po.number', 'string', r'PO-\d+']], tmp_path)
         config, _, _ = PatternParser().parse(path)
-        assert config.ignore_case is False
+        assert config.ignore_case_labels is False
+        assert config.ignore_case_values is False
 
     @pytest.mark.parametrize('value', ['yes', 'YES', 'true', 'True', '1', 'on', 'y'])
     def test_truthy_values_enable(self, tmp_path, value):
@@ -591,7 +595,9 @@ class TestIgnoreCaseConfig:
             ['var:', 'po.number', 'string', r'PO-\d+'],
         ], tmp_path)
         config, _, _ = PatternParser().parse(path)
-        assert config.ignore_case is True
+        # backward-compat: old ignore.case key sets both labels and values
+        assert config.ignore_case_labels is True
+        assert config.ignore_case_values is True
 
     @pytest.mark.parametrize('value', ['no', 'No', 'false', '0', 'off', 'n', ''])
     def test_falsy_values_disable(self, tmp_path, value):
@@ -600,7 +606,8 @@ class TestIgnoreCaseConfig:
             ['var:', 'po.number', 'string', r'PO-\d+'],
         ], tmp_path)
         config, _, _ = PatternParser().parse(path)
-        assert config.ignore_case is False
+        assert config.ignore_case_labels is False
+        assert config.ignore_case_values is False
 
     def test_table_inherits_global_ignore_case(self, tmp_path):
         path = _write_pattern([
@@ -612,7 +619,8 @@ class TestIgnoreCaseConfig:
         ], tmp_path)
         _, _, seq = PatternParser().parse(path)
         table = [s for s in seq if type(s).__name__ == 'TableInstruction'][0]
-        assert table.config.ignore_case is True
+        assert table.config.ignore_case_labels is True
+        assert table.config.ignore_case_values is True
 
 
 # ── seek: instruction ─────────────────────────────────────────────────────────

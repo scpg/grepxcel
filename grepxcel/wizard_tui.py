@@ -144,12 +144,17 @@ def _build_state_from_choices(
     cells: list[tuple[int, int]],
     direction: str,
     sheet_name: str,
-    ignore_case: bool = False,
+    ignore_case_labels: bool = False,
+    ignore_case_values: bool = False,
     currency_sign: str = '€',
-    trim_whitespace: bool = False,
+    trim_whitespace_labels: bool = False,
+    trim_whitespace_values: bool = False,
     lbl_match: str = '',
     var_match: str = '',
     empty_aliases: list | None = None,
+    # Backward-compat: old callers pass ignore_case/trim_whitespace; map to both flags.
+    ignore_case: bool | None = None,
+    trim_whitespace: bool | None = None,
 ) -> WizardState:
     """Build a WizardState from the choices dict, in cell-scan order.
 
@@ -160,12 +165,18 @@ def _build_state_from_choices(
     Web-service note: this is the function a REST handler would call after
     the client submits the final classification list.
     """
+    if ignore_case is not None:
+        ignore_case_labels = ignore_case_values = ignore_case
+    if trim_whitespace is not None:
+        trim_whitespace_values = trim_whitespace
     state = WizardState(
         direction=direction,
         sheet_name=sheet_name,
-        ignore_case=ignore_case,
+        ignore_case_labels=ignore_case_labels,
+        ignore_case_values=ignore_case_values,
         currency_sign=currency_sign,
-        trim_whitespace=trim_whitespace,
+        trim_whitespace_labels=trim_whitespace_labels,
+        trim_whitespace_values=trim_whitespace_values,
         lbl_match=lbl_match,
         var_match=var_match,
         empty_aliases=list(empty_aliases) if empty_aliases else [],
@@ -326,13 +337,28 @@ def _build_state_from_choices(
 
 
 def _choices_to_csv(ws, choices, cells, direction, sheet_name,
-                    ignore_case: bool = False, currency_sign: str = '€',
-                    trim_whitespace: bool = False, lbl_match: str = '',
-                    var_match: str = '', empty_aliases: list | None = None) -> str:
+                    ignore_case_labels: bool = False,
+                    ignore_case_values: bool = False,
+                    currency_sign: str = '€',
+                    trim_whitespace_labels: bool = False,
+                    trim_whitespace_values: bool = False,
+                    lbl_match: str = '',
+                    var_match: str = '', empty_aliases: list | None = None,
+                    # backward compat
+                    ignore_case: bool | None = None,
+                    trim_whitespace: bool | None = None) -> str:
+    if ignore_case is not None:
+        ignore_case_labels = ignore_case_values = ignore_case
+    if trim_whitespace is not None:
+        trim_whitespace_values = trim_whitespace
     state = _build_state_from_choices(
         ws, choices, cells, direction, sheet_name,
-        ignore_case=ignore_case, currency_sign=currency_sign,
-        trim_whitespace=trim_whitespace, lbl_match=lbl_match,
+        ignore_case_labels=ignore_case_labels,
+        ignore_case_values=ignore_case_values,
+        currency_sign=currency_sign,
+        trim_whitespace_labels=trim_whitespace_labels,
+        trim_whitespace_values=trim_whitespace_values,
+        lbl_match=lbl_match,
         var_match=var_match, empty_aliases=empty_aliases,
     )
     buf = io.StringIO()
@@ -485,7 +511,7 @@ def _preload_table(
         return warnings
 
     first_offset, first_fd = scan_targets[0]
-    ic      = global_config.ignore_case
+    ic      = global_config.ignore_case_labels
     mode    = first_fd.lbl_match or global_config.lbl_match
 
     # ── Scan for the header row ───────────────────────────────────────────────
@@ -744,10 +770,12 @@ def _preload_from_pattern(ws, pattern_path: str) -> tuple[dict, dict, list[str]]
     # ── Config preload ────────────────────────────────────────────────────────
     # Only emit non-default values so the ConfigModal keeps sensible defaults
     preload_cfg: dict = {
-        'direction':     global_config.read_direction,
-        'ignore_case':   global_config.ignore_case,
-        'trim_whitespace': global_config.trim_whitespace,
-        'currency_sign': global_config.currency_sign,
+        'direction':             global_config.read_direction,
+        'ignore_case_labels':    global_config.ignore_case_labels,
+        'ignore_case_values':    global_config.ignore_case_values,
+        'trim_whitespace_labels': global_config.trim_whitespace_labels,
+        'trim_whitespace_values': global_config.trim_whitespace_values,
+        'currency_sign':         global_config.currency_sign,
         # Omit lbl_match / var_match when they equal the engine default so the
         # ConfigModal doesn't emit a redundant config: row on save.
         'lbl_match': global_config.lbl_match if global_config.lbl_match != 'literal' else '',
@@ -777,7 +805,7 @@ def _preload_from_pattern(ws, pattern_path: str) -> tuple[dict, dict, list[str]]
     def _find_lbl_pos(fd) -> tuple | None:
         """Scan ws for the first unclaimed cell matching fd under its lbl mode."""
         mode = fd.lbl_match or global_config.lbl_match
-        ic   = global_config.ignore_case
+        ic   = global_config.ignore_case_labels
         for r in range(1, max_row + 1):
             for c in range(1, max_col + 1):
                 ref = _cell_ref(r, c)
@@ -2063,8 +2091,13 @@ if _TEXTUAL_OK:
                 self.exit(result=None)
                 return
             self._state.direction       = cfg['direction']
-            self._state.ignore_case     = cfg.get('ignore_case', False)
-            self._state.trim_whitespace = cfg.get('trim_whitespace', False)
+            # Support both old single-key and new split-key config dicts.
+            _ic = cfg.get('ignore_case', False)
+            self._state.ignore_case_labels = cfg.get('ignore_case_labels', _ic)
+            self._state.ignore_case_values = cfg.get('ignore_case_values', _ic)
+            _tw = cfg.get('trim_whitespace', False)
+            self._state.trim_whitespace_labels = cfg.get('trim_whitespace_labels', False)
+            self._state.trim_whitespace_values = cfg.get('trim_whitespace_values', _tw)
             self._state.currency_sign   = cfg.get('currency_sign', '€')
             self._state.lbl_match       = cfg.get('lbl_match', '')
             self._state.var_match       = cfg.get('var_match', '')
@@ -2367,7 +2400,8 @@ if _TEXTUAL_OK:
                 f'  Tables: {counts.get("T", 0)}   Ignored: {counts.get("I", 0)}'
                 f'   Dir: {self._state.direction}',
                 f'  Template: {"[yellow]ON[/yellow]" if self._is_template else "[dim]off[/dim]"}'
-                f'   IC: {"[yellow]yes[/yellow]" if self._state.ignore_case else "[dim]no[/dim]"}'
+                f'   IC: {"[yellow]L[/yellow]" if self._state.ignore_case_labels else "[dim]L[/dim]"}'
+                f'{"[yellow]V[/yellow]" if self._state.ignore_case_values else "[dim]V[/dim]"}'
                 f'   Curr: [dim]{self._state.currency_sign}[/dim]',
             ]
             if self._undo_stack:
@@ -2755,8 +2789,13 @@ if _TEXTUAL_OK:
             """S — re-open the config modal with current settings pre-filled."""
             preload = {
                 'direction':       self._state.direction,
-                'ignore_case':     self._state.ignore_case,
-                'trim_whitespace': self._state.trim_whitespace,
+                # TUI modal has a single toggle — use labels flag as the representative value.
+                'ignore_case':           self._state.ignore_case_labels or self._state.ignore_case_values,
+                'ignore_case_labels':    self._state.ignore_case_labels,
+                'ignore_case_values':    self._state.ignore_case_values,
+                'trim_whitespace':       self._state.trim_whitespace_values,
+                'trim_whitespace_labels': self._state.trim_whitespace_labels,
+                'trim_whitespace_values': self._state.trim_whitespace_values,
                 'currency_sign':   self._state.currency_sign,
                 'lbl_match':       self._state.lbl_match,
                 'var_match':       self._state.var_match,
@@ -2769,8 +2808,12 @@ if _TEXTUAL_OK:
                     return  # user cancelled — keep current settings
                 prev_direction = self._state.direction
                 self._state.direction       = cfg['direction']
-                self._state.ignore_case     = cfg.get('ignore_case', False)
-                self._state.trim_whitespace = cfg.get('trim_whitespace', False)
+                _ic = cfg.get('ignore_case', False)
+                self._state.ignore_case_labels = cfg.get('ignore_case_labels', _ic)
+                self._state.ignore_case_values = cfg.get('ignore_case_values', _ic)
+                _tw = cfg.get('trim_whitespace', False)
+                self._state.trim_whitespace_labels = cfg.get('trim_whitespace_labels', False)
+                self._state.trim_whitespace_values = cfg.get('trim_whitespace_values', _tw)
                 self._state.currency_sign   = cfg.get('currency_sign', '€')
                 self._state.lbl_match       = cfg.get('lbl_match', '')
                 self._state.var_match       = cfg.get('var_match', '')
@@ -3577,9 +3620,11 @@ if _TEXTUAL_OK:
             csv_text = _choices_to_csv(
                 self._ws, self._choices, self._cells,
                 self._state.direction, self._state.sheet_name,
-                ignore_case=self._state.ignore_case,
+                ignore_case_labels=self._state.ignore_case_labels,
+                ignore_case_values=self._state.ignore_case_values,
                 currency_sign=self._state.currency_sign,
-                trim_whitespace=self._state.trim_whitespace,
+                trim_whitespace_labels=self._state.trim_whitespace_labels,
+                trim_whitespace_values=self._state.trim_whitespace_values,
                 lbl_match=self._state.lbl_match,
                 var_match=self._state.var_match,
                 empty_aliases=self._state.empty_aliases,
@@ -3606,9 +3651,11 @@ if _TEXTUAL_OK:
             state = _build_state_from_choices(
                 self._ws, self._choices, self._cells,
                 self._state.direction, self._state.sheet_name,
-                ignore_case=self._state.ignore_case,
+                ignore_case_labels=self._state.ignore_case_labels,
+                ignore_case_values=self._state.ignore_case_values,
                 currency_sign=self._state.currency_sign,
-                trim_whitespace=self._state.trim_whitespace,
+                trim_whitespace_labels=self._state.trim_whitespace_labels,
+                trim_whitespace_values=self._state.trim_whitespace_values,
                 lbl_match=self._state.lbl_match,
                 var_match=self._state.var_match,
                 empty_aliases=self._state.empty_aliases,

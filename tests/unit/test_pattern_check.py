@@ -361,12 +361,13 @@ def _run_verbose(rows, tmp_path):
     return buf.getvalue()
 
 
-def test_verbose_config_shows_all_eight_keys(tmp_path):
-    """All 8 config keys must appear in verbose output for any valid pattern."""
+def test_verbose_config_shows_all_keys(tmp_path):
+    """All config keys must appear in verbose output for any valid pattern."""
     out = _run_verbose(_VALID, tmp_path)
     for key in ('pattern.version', 'read.direction', 'currency.sign',
-                'ignore.case', 'trim.whitespace', 'lbl.match', 'var.match',
-                'empty.aliases'):
+                'ignore.case.labels', 'ignore.case.values',
+                'trim.ws.labels', 'trim.ws.values',
+                'lbl.match', 'var.match', 'empty.aliases'):
         assert key in out, f'Missing config key in -v output: {key!r}'
 
 
@@ -388,13 +389,16 @@ def test_verbose_config_default_currency_sign(tmp_path):
 
 def test_verbose_config_default_ignore_case(tmp_path):
     out = _run_verbose(_VALID, tmp_path)
-    assert 'ignore.case     False' in out
+    assert 'ignore.case.labels' in out
+    assert 'ignore.case.values' in out
+    assert 'False' in out  # both default to False
 
 
 def test_verbose_config_default_trim_whitespace(tmp_path):
-    """trim.whitespace defaults to False and must appear in verbose output."""
+    """trim.ws.* defaults to False and must appear in verbose output."""
     out = _run_verbose(_VALID, tmp_path)
-    assert 'trim.whitespace False' in out
+    assert 'trim.ws.labels' in out
+    assert 'trim.ws.values' in out
 
 
 def test_verbose_config_default_lbl_match(tmp_path):
@@ -418,8 +422,9 @@ def test_verbose_config_section_key_order(tmp_path):
     """Config keys must appear in the documented order in -v output."""
     out = _run_verbose(_VALID, tmp_path)
     keys = ('pattern.version', 'read.direction', 'currency.sign',
-            'ignore.case', 'trim.whitespace', 'lbl.match', 'var.match',
-            'empty.aliases')
+            'ignore.case.labels', 'ignore.case.values',
+            'trim.ws.labels', 'trim.ws.values',
+            'lbl.match', 'var.match', 'empty.aliases')
     positions = [out.index(k) for k in keys]
     assert positions == sorted(positions), (
         f'Config keys out of order. Positions: {list(zip(keys, positions))}'
@@ -436,7 +441,9 @@ def _cfg_pattern(config_rows, tmp_path):
 
 def test_verbose_config_trim_whitespace_true(tmp_path):
     out = _cfg_pattern([['config:', 'trim.whitespace', 'yes']], tmp_path)
-    assert 'trim.whitespace True' in out
+    # backward-compat: old key sets trim.ws.values (shown in output)
+    assert 'trim.ws.values' in out
+    assert 'True' in out
 
 
 def test_verbose_config_var_match_glob(tmp_path):
@@ -467,7 +474,10 @@ def test_verbose_config_empty_aliases_multiple(tmp_path):
 
 def test_verbose_config_ignore_case_true(tmp_path):
     out = _cfg_pattern([['config:', 'ignore.case', 'yes']], tmp_path)
-    assert 'ignore.case     True' in out
+    # backward-compat: old key sets both labels and values (both shown in output)
+    assert 'ignore.case.labels' in out
+    assert 'ignore.case.values' in out
+    assert 'True' in out
 
 
 def test_verbose_config_pattern_version_explicit(tmp_path):

@@ -94,17 +94,19 @@ class TestBuildStateFromChoices:
     def test_defaults_are_ltr_no_ignore_case_euro(self):
         ws = self._ws()
         state = _build_state_from_choices(ws, {}, self._cells(ws), 'LR', 'Sheet1')
-        assert state.direction    == 'LR'
-        assert state.ignore_case  is False
-        assert state.currency_sign == '€'
-        assert state.sheet_name   == 'Sheet1'
+        assert state.direction          == 'LR'
+        assert state.ignore_case_labels is False
+        assert state.ignore_case_values is False
+        assert state.currency_sign      == '€'
+        assert state.sheet_name         == 'Sheet1'
 
     def test_ignore_case_propagated(self):
         ws = self._ws()
         state = _build_state_from_choices(
             ws, {}, self._cells(ws), 'LR', 'Sheet1', ignore_case=True,
         )
-        assert state.ignore_case is True
+        assert state.ignore_case_labels is True
+        assert state.ignore_case_values is True
 
     def test_currency_sign_propagated(self):
         ws = self._ws()
@@ -188,15 +190,16 @@ class TestChoicesToCsv:
     def test_ignore_case_absent_by_default(self):
         ws, cells = self._ws_and_cells()
         rows = _csv_rows(_choices_to_csv(ws, {}, cells, 'LR', 'Sheet1'))
-        assert not any(r[:2] == ['config:', 'ignore.case'] for r in rows)
+        assert not any(r[0] == 'config:' and 'ignore.case' in str(r) for r in rows)
 
     def test_ignore_case_row_emitted_when_true(self):
-        """NEW-3 fix: ignore.case config row must appear in the preview CSV."""
+        """NEW-3 fix: ignore.case config rows must appear in the preview CSV."""
         ws, cells = self._ws_and_cells()
         rows = _csv_rows(_choices_to_csv(
             ws, {}, cells, 'LR', 'Sheet1', ignore_case=True,
         ))
-        assert ['config:', 'ignore.case', 'yes'] in rows
+        assert ['config:', 'ignore.case.labels', 'yes'] in rows
+        assert ['config:', 'ignore.case.values', 'yes'] in rows
 
     def test_currency_sign_default_euro(self):
         ws, cells = self._ws_and_cells()
@@ -217,7 +220,8 @@ class TestChoicesToCsv:
             ws, {}, cells, 'LR', 'Sheet1',
             ignore_case=True, currency_sign='£',
         ))
-        assert ['config:', 'ignore.case', 'yes'] in rows
+        assert ['config:', 'ignore.case.labels', 'yes'] in rows
+        assert ['config:', 'ignore.case.values', 'yes'] in rows
         assert ['config:', 'currency.sign', '£'] in rows
 
     # ── Field rows ─────────────────────────────────────────────────────────────
@@ -331,9 +335,10 @@ class TestWizardTUIApp:
                 await pilot.pause()
                 await pilot.press('enter')
                 await pilot.pause()
-                assert app._state.direction     == 'LR'
-                assert app._state.ignore_case   is False
-                assert app._state.currency_sign == '€'
+                assert app._state.direction           == 'LR'
+                assert app._state.ignore_case_labels  is False
+                assert app._state.ignore_case_values  is False
+                assert app._state.currency_sign       == '€'
                 await pilot.press('ctrl+q')
                 await pilot.pause()
 
@@ -505,13 +510,14 @@ class TestBuildStateNewConfigFields:
     def test_trim_whitespace_false_by_default(self):
         ws, cells = self._ws_and_cells()
         state = _build_state_from_choices(ws, {}, cells, 'LR', 'Sheet1')
-        assert state.trim_whitespace is False
+        assert state.trim_whitespace_labels is False
+        assert state.trim_whitespace_values is False
 
     def test_trim_whitespace_true_propagated(self):
         ws, cells = self._ws_and_cells()
         state = _build_state_from_choices(ws, {}, cells, 'LR', 'Sheet1',
                                           trim_whitespace=True)
-        assert state.trim_whitespace is True
+        assert state.trim_whitespace_values is True
 
     def test_lbl_match_empty_by_default(self):
         ws, cells = self._ws_and_cells()
@@ -645,11 +651,12 @@ class TestChoicesToCsvNewConfigRows:
 
     def test_trim_whitespace_absent_by_default(self):
         rows = self._rows()
-        assert not any(r[:2] == ['config:', 'trim.whitespace'] for r in rows)
+        assert not any(r[0] == 'config:' and 'trim.whitespace' in str(r) for r in rows)
 
     def test_trim_whitespace_yes_emitted(self):
         rows = self._rows(trim_whitespace=True)
-        assert ['config:', 'trim.whitespace', 'yes'] in rows
+        # Compat: trim_whitespace=True → trim_whitespace_values=True
+        assert ['config:', 'trim.whitespace.values', 'yes'] in rows
 
     def test_lbl_match_absent_by_default(self):
         rows = self._rows()
@@ -701,7 +708,7 @@ class TestChoicesToCsvNewConfigRows:
             trim_whitespace=True, lbl_match='glob',
             var_match='literal', empty_aliases=['N/A'],
         )
-        assert ['config:', 'trim.whitespace', 'yes'] in rows
+        assert ['config:', 'trim.whitespace.values', 'yes'] in rows
         assert ['config:', 'lbl.match', 'glob'] in rows
         assert ['config:', 'var.match', 'literal'] in rows
         assert ['config:', 'empty.aliases', 'N/A'] in rows
@@ -771,9 +778,9 @@ class TestPatternRowsModifiers:
 
     def test_trim_whitespace_config_row(self):
         s = self._state()
-        s.trim_whitespace = True
+        s.trim_whitespace_values = True
         rows = _pattern_rows(s)
-        assert ['config:', 'trim.whitespace', 'yes'] in rows
+        assert ['config:', 'trim.whitespace.values', 'yes'] in rows
 
     def test_lbl_match_config_row(self):
         s = self._state()
@@ -815,9 +822,9 @@ class TestWizardStateNewFieldsRoundTrip:
     """New WizardState config fields round-trip through to_dict / from_dict."""
 
     def test_trim_whitespace_round_trips(self):
-        s = WizardState(trim_whitespace=True)
+        s = WizardState(trim_whitespace_values=True)
         r = WizardState.from_dict(s.to_dict())
-        assert r.trim_whitespace is True
+        assert r.trim_whitespace_values is True
 
     def test_lbl_match_round_trips(self):
         s = WizardState(lbl_match='glob')
@@ -836,7 +843,8 @@ class TestWizardStateNewFieldsRoundTrip:
 
     def test_defaults_on_empty_dict(self):
         r = WizardState.from_dict({})
-        assert r.trim_whitespace is False
+        assert r.trim_whitespace_labels is False
+        assert r.trim_whitespace_values is False
         assert r.lbl_match == ''
         assert r.var_match == ''
         assert r.empty_aliases == []
@@ -939,7 +947,8 @@ class TestConfigModalNewFields:
                 await pilot.press('ctrl+enter')  # accept config modal
                 await pilot.pause()
                 # New config defaults
-                assert app._state.trim_whitespace is False
+                assert app._state.trim_whitespace_values is False
+                assert app._state.trim_whitespace_labels is False
                 assert app._state.lbl_match == 'literal'
                 assert app._state.var_match == 'regexp'
                 assert app._state.empty_aliases == []
@@ -966,7 +975,8 @@ class TestConfigModalNewFields:
         result = app._return_value
         assert isinstance(result, WizardState)
         # New fields present with defaults
-        assert result.trim_whitespace is False
+        assert result.trim_whitespace_values is False
+        assert result.trim_whitespace_labels is False
         assert result.lbl_match == 'literal'
         assert result.var_match == 'regexp'
         assert result.empty_aliases == []
@@ -1358,7 +1368,9 @@ class TestPreloadFromPattern:
             ['START:'], ['END:'],
         ])
         _, cfg, _ = _preload_from_pattern(ws, str(pat))
-        assert cfg['ignore_case'] is True
+        # Backward compat: old ignore.case key sets both labels and values
+        assert cfg['ignore_case_labels'] is True
+        assert cfg['ignore_case_values'] is True
 
     def test_config_trim_whitespace(self, tmp_path):
         ws = _make_ws({(1, 1): 'x'})
@@ -1368,7 +1380,8 @@ class TestPreloadFromPattern:
             ['START:'], ['END:'],
         ])
         _, cfg, _ = _preload_from_pattern(ws, str(pat))
-        assert cfg['trim_whitespace'] is True
+        # Backward compat: old trim.whitespace key sets trim_whitespace_values
+        assert cfg['trim_whitespace_values'] is True
 
     def test_config_currency_sign(self, tmp_path):
         ws = _make_ws({(1, 1): 'x'})

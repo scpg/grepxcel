@@ -176,7 +176,8 @@ def _detect_template(ws, data_file: str) -> bool:
 @dataclass
 class WizardState:
     direction: str = 'LR'
-    ignore_case: bool = False
+    ignore_case_labels: bool = False
+    ignore_case_values: bool = False
     currency_sign: str = '€'
     sheet_name: str | None = None
     # Each lbl_def is a 4-tuple: (name, type, match, lbl_mode)
@@ -188,8 +189,9 @@ class WizardState:
     var_defs: list[tuple] = field(default_factory=list)
     body_rows: list[list[str]] = field(default_factory=list)
     # ── New global config fields ───────────────────────────────────────────
-    template: bool = False             # config: template mode (blank-form spreadsheets)
-    trim_whitespace: bool = False      # config: trim.whitespace yes
+    template: bool = False                  # config: allow empty cells (blank-form spreadsheets)
+    trim_whitespace_labels: bool = False    # config: trim.whitespace.labels yes
+    trim_whitespace_values: bool = False    # config: trim.whitespace.values yes
     lbl_match: str = ''               # config: lbl.match ('' = omit / use default)
     var_match: str = ''               # config: var.match ('' = omit / use default)
     empty_aliases: list[str] = field(default_factory=list)  # config: empty.aliases
@@ -204,14 +206,16 @@ class WizardState:
         """Reconstruct from a plain dict (e.g. loaded from JSON)."""
         return cls(
             direction=d.get('direction', 'LR'),
-            ignore_case=d.get('ignore_case', False),
+            ignore_case_labels=d.get('ignore_case_labels', d.get('ignore_case', False)),
+            ignore_case_values=d.get('ignore_case_values', d.get('ignore_case', False)),
             currency_sign=d.get('currency_sign', '€'),
             sheet_name=d.get('sheet_name'),
             lbl_defs=[tuple(t) for t in d.get('lbl_defs', [])],
             var_defs=[tuple(t) for t in d.get('var_defs', [])],
             body_rows=[list(r) for r in d.get('body_rows', [])],
             template=d.get('template', False),
-            trim_whitespace=d.get('trim_whitespace', False),
+            trim_whitespace_labels=d.get('trim_whitespace_labels', d.get('trim_whitespace', False)),
+            trim_whitespace_values=d.get('trim_whitespace_values', d.get('trim_whitespace', False)),
             lbl_match=d.get('lbl_match', ''),
             var_match=d.get('var_match', ''),
             empty_aliases=list(d.get('empty_aliases', [])),
@@ -336,8 +340,10 @@ def _run_config_phase(state: WizardState) -> None:
     direction = _ask('Scan direction (LR / TD)', 'LR').upper()
     state.direction = direction if direction in ('LR', 'TD') else 'LR'
 
-    ic = _ask('Ignore case (yes/no)', 'no').lower()
-    state.ignore_case = ic in ('yes', 'y')
+    ic = _ask('Ignore case for labels (yes/no)', 'no').lower()
+    state.ignore_case_labels = ic in ('yes', 'y')
+    ic_v = _ask('Ignore case for values (yes/no)', 'no').lower()
+    state.ignore_case_values = ic_v in ('yes', 'y')
 
     currency = _ask('Currency symbol', '€')
     state.currency_sign = currency if currency else '€'
@@ -742,10 +748,14 @@ def _pattern_rows(state: WizardState) -> list[list]:
     """Flat list of rows for the pattern — shared by CSV and xlsx writers."""
     rows: list[list] = []
     rows.append(['config:', 'read.direction', state.direction])
-    if state.ignore_case:
-        rows.append(['config:', 'ignore.case', 'yes'])
-    if state.trim_whitespace:
-        rows.append(['config:', 'trim.whitespace', 'yes'])
+    if state.ignore_case_labels:
+        rows.append(['config:', 'ignore.case.labels', 'yes'])
+    if state.ignore_case_values:
+        rows.append(['config:', 'ignore.case.values', 'yes'])
+    if state.trim_whitespace_labels:
+        rows.append(['config:', 'trim.whitespace.labels', 'yes'])
+    if state.trim_whitespace_values:
+        rows.append(['config:', 'trim.whitespace.values', 'yes'])
     rows.append(['config:', 'currency.sign', state.currency_sign])
     if state.lbl_match:
         rows.append(['config:', 'lbl.match', state.lbl_match])

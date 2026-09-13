@@ -48,8 +48,8 @@ def _resolve_lbl_mode(fd, config) -> str:
 def _apply_trim(value, fd, config):
     """Strip leading/trailing whitespace from a string cell value when trim-whitespace
     is active — either per-field (``fd.trim_whitespace``) or globally via
-    ``config.trim_whitespace``.  Non-string values are returned unchanged."""
-    if isinstance(value, str) and (fd.trim_whitespace or config.trim_whitespace):
+    ``config.trim_whitespace_values``.  Non-string values are returned unchanged."""
+    if isinstance(value, str) and (fd.trim_whitespace or config.trim_whitespace_values):
         return value.strip()
     return value
 
@@ -67,20 +67,24 @@ def _validate_field(fd, value, config, max_cell_len: int) -> bool:
     Returns True/False; never raises.
     """
     if fd.role == 'lbl':
-        return _match_lbl(value, fd.regex, fd.lbl_match or config.lbl_match,
-                          config.ignore_case)
+        # Trim label cell text before matching when trim_whitespace_labels is active.
+        lbl_text = value
+        if isinstance(lbl_text, str) and config.trim_whitespace_labels:
+            lbl_text = lbl_text.strip()
+        return _match_lbl(lbl_text, fd.regex, fd.lbl_match or config.lbl_match,
+                          config.ignore_case_labels)
     # var: field — per-field var_mode wins; fall back to config.var_match global default.
     effective_var_mode = fd.var_mode if fd.var_mode is not None else config.var_match
     if effective_var_mode in ('literal', 'glob'):
         # Type check (use '.*' so it always passes the regex part).
         type_ok, _ = validate_type(value, fd.type, '.*', config.currency_sign,
-                                   max_cell_len, config.ignore_case)
+                                   max_cell_len, config.ignore_case_values)
         if not type_ok:
             return False
-        return _match_lbl(str(value), fd.regex, effective_var_mode, config.ignore_case)
+        return _match_lbl(str(value), fd.regex, effective_var_mode, config.ignore_case_values)
     # regexp mode (default) — validate_type handles both type and regex.
     ok, _ = validate_type(value, fd.type, fd.regex, config.currency_sign,
-                          max_cell_len, config.ignore_case)
+                          max_cell_len, config.ignore_case_values)
     return ok
 
 
@@ -402,7 +406,7 @@ class SheetScanner:
         return self.ws.cell(row=row, column=col).value
 
     def cell_empty(self, row: int, col: int) -> bool:
-        return is_empty(self.cell_value(row, col), self.config.empty_aliases, self.config.ignore_case)
+        return is_empty(self.cell_value(row, col), self.config.empty_aliases, self.config.ignore_case_values)
 
     def is_consumed(self, row: int, col: int) -> bool:
         return (row, col) in self.consumed
@@ -669,7 +673,7 @@ class Engine:
         # the cursor is repositioned to idx+1 after the read (see _process_cell).
 
         value = scanner.cell_value(row, col)
-        if is_empty(value, config.empty_aliases, config.ignore_case) and instr.field != 'IGNORE':
+        if is_empty(value, config.empty_aliases, config.ignore_case_values) and instr.field != 'IGNORE':
             fd = defs.get(instr.field)
             fd_role = fd.role if fd else 'var'
             if fd_role == 'lbl':
@@ -728,7 +732,7 @@ class Engine:
         value = _apply_trim(value, fd, config)
 
         # Required (not-null/not-empty) check — fatal before any other validation.
-        if fd.required and is_empty(value, config.empty_aliases, config.ignore_case):
+        if fd.required and is_empty(value, config.empty_aliases, config.ignore_case_values):
             logger.fatal(
                 f"Required field {fd.name!r} has an empty/null value",
                 location=cell_ref(row, col, logger.sheet_name),
@@ -738,7 +742,7 @@ class Engine:
 
         # nullable: empty (or empty-after-trim) is silently accepted — normalise to
         # None so that validation is skipped and no warning is generated.
-        if fd.nullable and is_empty(value, config.empty_aliases, config.ignore_case):
+        if fd.nullable and is_empty(value, config.empty_aliases, config.ignore_case_values):
             value = None
 
         # Validate before tracing so the -v trace can show 🟢/🔴 per field.
@@ -889,7 +893,7 @@ class Engine:
             for c_offset in range(num_cols):
                 col = anchor_col + c_offset
                 val = scanner.ws.cell(row=current_row, column=col).value
-                if not is_empty(val, config.empty_aliases, config.ignore_case):
+                if not is_empty(val, config.empty_aliases, config.ignore_case_values):
                     return None
                 tentative_consumed.add((current_row, col))
             current_row += 1
@@ -997,7 +1001,7 @@ class Engine:
             val = scanner.ws.cell(row=sheet_row, column=col).value
 
             if tmpl_col.field == 'EMPTY':
-                if not is_empty(val, config.empty_aliases, config.ignore_case):
+                if not is_empty(val, config.empty_aliases, config.ignore_case_values):
                     return {}, False
                 tentative_consumed.add((sheet_row, col))
                 continue
@@ -1008,7 +1012,7 @@ class Engine:
 
             fd = defs.get(tmpl_col.field)
 
-            if is_empty(val, config.empty_aliases, config.ignore_case):
+            if is_empty(val, config.empty_aliases, config.ignore_case_values):
                 # required (not-null) check — fatal regardless of strict mode
                 if fd is not None and fd.required:
                     logger.fatal(
@@ -1083,7 +1087,7 @@ class Engine:
             col = anchor_col + c_offset
             val = scanner.ws.cell(row=sheet_row, column=col).value
             if tmpl_col.field == 'EMPTY':
-                if not is_empty(val, config.empty_aliases, config.ignore_case):
+                if not is_empty(val, config.empty_aliases, config.ignore_case_values):
                     return False
         return True
 
@@ -1095,7 +1099,7 @@ class Engine:
                 continue
             col = anchor_col + c_offset
             val = scanner.ws.cell(row=sheet_row, column=col).value
-            if not is_empty(val, config.empty_aliases, config.ignore_case):
+            if not is_empty(val, config.empty_aliases, config.ignore_case_values):
                 return False
         return True
 
@@ -1108,7 +1112,7 @@ class Engine:
             val = scanner.ws.cell(row=sheet_row, column=col).value
 
             if tmpl_col.field == 'EMPTY':
-                if not is_empty(val, config.empty_aliases, config.ignore_case):
+                if not is_empty(val, config.empty_aliases, config.ignore_case_values):
                     return False
                 continue
 
@@ -1118,7 +1122,7 @@ class Engine:
             fd = defs.get(tmpl_col.field)
             if fd is None:
                 continue
-            if is_empty(val, config.empty_aliases, config.ignore_case):
+            if is_empty(val, config.empty_aliases, config.ignore_case_values):
                 return False
             ok = _validate_field(fd, _apply_trim(val, fd, config), config, self._max_cell_len)
             if not ok:

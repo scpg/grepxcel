@@ -131,7 +131,7 @@ def check_pattern(path: str) -> CheckResult:
         for alias in config.empty_aliases:
 
             # 1. Duplicate alias
-            alias_key = alias.lower() if config.ignore_case else alias
+            alias_key = alias.lower() if config.ignore_case_values else alias
             if alias_key in seen_aliases:
                 result.warnings.append(
                     f"Duplicate empty.aliases value {alias!r} — "
@@ -156,7 +156,7 @@ def check_pattern(path: str) -> CheckResult:
                         f"Known errors: {', '.join(sorted(_EXCEL_ERROR_STRINGS))}. "
                         f"Verify this is the exact string the data file contains."
                     )
-                elif not config.ignore_case and alias not in _EXCEL_ERROR_STRINGS:
+                elif not config.ignore_case_values and alias not in _EXCEL_ERROR_STRINGS:
                     # Correct error string but wrong case and ignore_case is off
                     canonical = next(e for e in _EXCEL_ERROR_STRINGS
                                      if e.upper() == alias.upper())
@@ -270,8 +270,10 @@ def render_result(result: CheckResult, verbose: bool = False, out=None) -> None:
         print(f'     {_key("pattern.version")} {ver}', file=out)
         print(f'     {_key("read.direction")}  {cfg.read_direction}', file=out)
         print(f'     {_key("currency.sign")}   {cfg.currency_sign}', file=out)
-        print(f'     {_key("ignore.case")}     {cfg.ignore_case}', file=out)
-        print(f'     {_key("trim.whitespace")} {cfg.trim_whitespace}', file=out)
+        print(f'     {_key("ignore.case.labels")}  {cfg.ignore_case_labels}', file=out)
+        print(f'     {_key("ignore.case.values")}  {cfg.ignore_case_values}', file=out)
+        print(f'     {_key("trim.ws.labels")}      {cfg.trim_whitespace_labels}', file=out)
+        print(f'     {_key("trim.ws.values")}      {cfg.trim_whitespace_values}', file=out)
         print(f'     {_key("lbl.match")}       {cfg.lbl_match}', file=out)
         print(f'     {_key("var.match")}       {cfg.var_match}', file=out)
         print(f'     {_key("empty.aliases")}   {aliases_val}', file=out)
@@ -330,7 +332,17 @@ def render_result(result: CheckResult, verbose: bool = False, out=None) -> None:
                         )
                     if 'ignore.case' in explicit:
                         parts.append(
-                            f'ignore.case {paint(str(tcfg.ignore_case), "cyan", color)}'
+                            f'ignore.case {paint(str(tcfg.ignore_case_labels), "cyan", color)}'
+                            f'/{paint(str(tcfg.ignore_case_values), "cyan", color)}'
+                            f' (labels/values)'
+                        )
+                    if 'ignore.case.labels' in explicit:
+                        parts.append(
+                            f'ignore.case.labels {paint(str(tcfg.ignore_case_labels), "cyan", color)}'
+                        )
+                    if 'ignore.case.values' in explicit:
+                        parts.append(
+                            f'ignore.case.values {paint(str(tcfg.ignore_case_values), "cyan", color)}'
                         )
                     cfg_label = paint('config:', 'dim', color)
                     print(f'        {cfg_label}  {"  ".join(parts)}', file=out)

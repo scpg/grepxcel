@@ -354,10 +354,22 @@ def create_app(
                 state.lbl_match       = preload_cfg['lbl_match']
             if preload_cfg.get('var_match'):
                 state.var_match       = preload_cfg['var_match']
-            if preload_cfg.get('ignore_case') is not None:
-                state.ignore_case     = preload_cfg['ignore_case']
-            if preload_cfg.get('trim_whitespace') is not None:
-                state.trim_whitespace = preload_cfg['trim_whitespace']
+            # Preload: handle both old single-key and new split-key patterns.
+            _ic = preload_cfg.get('ignore_case')
+            if _ic is not None:
+                state.ignore_case_labels = _ic
+                state.ignore_case_values = _ic
+            if preload_cfg.get('ignore_case_labels') is not None:
+                state.ignore_case_labels = preload_cfg['ignore_case_labels']
+            if preload_cfg.get('ignore_case_values') is not None:
+                state.ignore_case_values = preload_cfg['ignore_case_values']
+            _tw = preload_cfg.get('trim_whitespace')
+            if _tw is not None:
+                state.trim_whitespace_values = _tw
+            if preload_cfg.get('trim_whitespace_labels') is not None:
+                state.trim_whitespace_labels = preload_cfg['trim_whitespace_labels']
+            if preload_cfg.get('trim_whitespace_values') is not None:
+                state.trim_whitespace_values = preload_cfg['trim_whitespace_values']
             if preload_cfg.get('currency_sign'):
                 state.currency_sign   = preload_cfg['currency_sign']
             if preload_cfg.get('empty_aliases'):
@@ -387,8 +399,10 @@ def create_app(
     # Log initial config
     st0 = state
     session_log.write('CONFIG',
-        f'direction={st0.direction} ignore_case={st0.ignore_case} '
-        f'trim_whitespace={st0.trim_whitespace} currency_sign={st0.currency_sign!r} '
+        f'direction={st0.direction} '
+        f'ic_labels={st0.ignore_case_labels} ic_values={st0.ignore_case_values} '
+        f'trim_labels={st0.trim_whitespace_labels} trim_values={st0.trim_whitespace_values} '
+        f'currency_sign={st0.currency_sign!r} '
         f'lbl_match={st0.lbl_match!r} var_match={st0.var_match!r} '
         f'aliases={st0.empty_aliases}'
     )
@@ -429,9 +443,11 @@ def create_app(
         return JSONResponse({
             'config': {
                 'direction':       st.direction,
-                'template':        st.template,
-                'ignore_case':     st.ignore_case,
-                'trim_whitespace': st.trim_whitespace,
+                'template':               st.template,
+                'ignore_case_labels':     st.ignore_case_labels,
+                'ignore_case_values':     st.ignore_case_values,
+                'trim_whitespace_labels': st.trim_whitespace_labels,
+                'trim_whitespace_values': st.trim_whitespace_values,
                 'currency_sign':   st.currency_sign,
                 'lbl_match':       st.lbl_match,
                 'var_match':       st.var_match,
@@ -447,16 +463,20 @@ def create_app(
         body = await request.json()
         st: WizardState = _STATE['state']
         st.direction       = body.get('direction',       st.direction)
-        st.template        = body.get('template',        st.template)
-        st.ignore_case     = body.get('ignore_case',     st.ignore_case)
-        st.trim_whitespace = body.get('trim_whitespace', st.trim_whitespace)
+        st.template               = body.get('template',               st.template)
+        st.ignore_case_labels     = body.get('ignore_case_labels',     st.ignore_case_labels)
+        st.ignore_case_values     = body.get('ignore_case_values',     st.ignore_case_values)
+        st.trim_whitespace_labels = body.get('trim_whitespace_labels', st.trim_whitespace_labels)
+        st.trim_whitespace_values = body.get('trim_whitespace_values', st.trim_whitespace_values)
         st.currency_sign   = body.get('currency_sign',   st.currency_sign)
         st.lbl_match       = body.get('lbl_match',       st.lbl_match)
         st.var_match       = body.get('var_match',       st.var_match)
         st.empty_aliases   = body.get('empty_aliases',   st.empty_aliases)
         _STATE['log'].write('CONFIG',
-            f'direction={st.direction} ignore_case={st.ignore_case} '
-            f'trim_whitespace={st.trim_whitespace} currency_sign={st.currency_sign!r} '
+            f'direction={st.direction} '
+            f'ic_labels={st.ignore_case_labels} ic_values={st.ignore_case_values} '
+            f'trim_labels={st.trim_whitespace_labels} trim_values={st.trim_whitespace_values} '
+            f'currency_sign={st.currency_sign!r} '
             f'lbl_match={st.lbl_match!r} var_match={st.var_match!r} '
             f'aliases={st.empty_aliases}'
         )
@@ -584,9 +604,11 @@ def create_app(
             cells,
             st.direction,
             st.sheet_name or ws_.title,
-            ignore_case=st.ignore_case,
+            ignore_case_labels=st.ignore_case_labels,
+            ignore_case_values=st.ignore_case_values,
             currency_sign=st.currency_sign,
-            trim_whitespace=st.trim_whitespace,
+            trim_whitespace_labels=st.trim_whitespace_labels,
+            trim_whitespace_values=st.trim_whitespace_values,
             lbl_match=st.lbl_match,
             var_match=st.var_match,
             empty_aliases=st.empty_aliases,

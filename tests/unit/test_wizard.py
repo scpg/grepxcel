@@ -159,18 +159,22 @@ class TestWritePattern:
         assert ['config:', 'currency.sign', '€'] in rows
 
     def test_ignore_case_written_when_true(self, tmp_path):
-        state = WizardState(direction='TD', ignore_case=True, currency_sign='$')
+        state = WizardState(direction='TD', ignore_case_labels=True,
+                            ignore_case_values=True, currency_sign='$')
         out = str(tmp_path / 'p.csv')
         _write_pattern(state, out)
         rows = self._read_csv(out)
-        assert ['config:', 'ignore.case', 'yes'] in rows
+        assert ['config:', 'ignore.case.labels', 'yes'] in rows
+        assert ['config:', 'ignore.case.values', 'yes'] in rows
 
     def test_ignore_case_absent_when_false(self, tmp_path):
-        state = WizardState(ignore_case=False)
+        state = WizardState()
         out = str(tmp_path / 'p.csv')
         _write_pattern(state, out)
         rows = self._read_csv(out)
-        assert not any(r[:2] == ['config:', 'ignore.case'] for r in rows)
+        assert not any(r[:2] in [['config:', 'ignore.case'],
+                                  ['config:', 'ignore.case.labels'],
+                                  ['config:', 'ignore.case.values']] for r in rows)
 
     def test_lbl_def_written(self, tmp_path):
         state = WizardState()
@@ -288,7 +292,8 @@ class TestWizardState:
     def test_defaults(self):
         s = WizardState()
         assert s.direction == 'LR'
-        assert s.ignore_case is False
+        assert s.ignore_case_labels is False
+        assert s.ignore_case_values is False
         assert s.currency_sign == '€'
         assert s.lbl_defs == []
         assert s.var_defs == []
@@ -296,7 +301,8 @@ class TestWizardState:
     # ── to_dict / from_dict (JSON round-trip) ────────────────────────────────
 
     def test_to_dict_is_json_serialisable(self):
-        s = WizardState(direction='TD', currency_sign='$', ignore_case=True)
+        s = WizardState(direction='TD', currency_sign='$',
+                        ignore_case_labels=True, ignore_case_values=True)
         s.lbl_defs.append(('inv_lbl', 'string', 'Invoice:'))
         s.var_defs.append(('inv.number', 'integer', r'\d+'))
         s.body_rows.append(['cell:1', 'inv.number'])
@@ -310,7 +316,8 @@ class TestWizardState:
     def test_from_dict_restores_all_fields(self):
         original = WizardState(
             direction='TD',
-            ignore_case=True,
+            ignore_case_labels=True,
+            ignore_case_values=True,
             currency_sign='$',
             sheet_name='Sheet2',
         )
@@ -320,7 +327,8 @@ class TestWizardState:
 
         restored = WizardState.from_dict(original.to_dict())
         assert restored.direction == 'TD'
-        assert restored.ignore_case is True
+        assert restored.ignore_case_labels is True
+        assert restored.ignore_case_values is True
         assert restored.currency_sign == '$'
         assert restored.sheet_name == 'Sheet2'
         assert restored.lbl_defs == [('dept_lbl', 'string', 'Department:', '')]
@@ -330,7 +338,8 @@ class TestWizardState:
     def test_from_dict_uses_defaults_for_missing_keys(self):
         restored = WizardState.from_dict({})
         assert restored.direction == 'LR'
-        assert restored.ignore_case is False
+        assert restored.ignore_case_labels is False
+        assert restored.ignore_case_values is False
         assert restored.currency_sign == '€'
         assert restored.sheet_name is None
         assert restored.lbl_defs == []
