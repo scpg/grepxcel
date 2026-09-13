@@ -273,14 +273,16 @@ def _build_stats() -> dict:
     ) if ws else 0
     classified = sum(counts.values())
     return {
-        'L': counts.get('L', 0),
-        'V': counts.get('V', 0),
-        'C': counts.get('C', 0),
-        'T': counts.get('T', 0),
-        'I': counts.get('I', 0),
-        'total': total,
-        'classified': classified,             # L+V+C+T+I (ignored cells count as handled)
-        'unclassified': max(0, total - classified),  # non-empty cells with no type yet
+        'L':      counts.get('L', 0),
+        'V':      counts.get('V', 0),
+        'C':      counts.get('C', 0),
+        'T':      counts.get('T', 0),
+        'T_HEAD': counts.get('T-HEAD', 0),   # table column-header cells (from preload)
+        'T_DATA': counts.get('T-DATA', 0),   # table data-row cells (from preload)
+        'I':      counts.get('I', 0),
+        'total':      total,
+        'classified': classified,                        # all typed cells count as handled
+        'unclassified': max(0, total - classified),
     }
 
 
