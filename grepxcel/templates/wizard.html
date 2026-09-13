@@ -2451,29 +2451,66 @@ function _trmColEditorHTML(rowType, cfg, ci, cell) {
   const hidden = role === 'I' || role === 'E';  // both I and E suppress name/type inputs
 
   if (isHeader || isFooter) {
-    // Header / footer: label name (slugified) + match mode + match pattern
-    const rawText   = String(cell?.raw ?? '');
+    // Header / footer: columns can be L (label anchor) or V (extract value).
+    // Both share the same HTML skeleton; visibility toggles per role so that
+    // _trmRoleChange can swap between label-style and variable-style controls
+    // without rebuilding the DOM.
+    const rawText  = String(cell?.raw ?? '');
+    const isHFVar  = (role === 'V');
+    const display  = hidden ? 'none' : 'block';
+
+    // Label-style controls
     const lmatch_mode = cfg?.lmatch_mode || 'literal';
-    // Label name: user-editable slug; default from stored name or auto-slugify raw text
-    const nameVal   = cfg?.name  || _trmSlugify(rawText);
-    // Match text: the actual text to match (lmatch); default = raw cell text
-    const lmatch    = cfg?.lmatch || rawText;
-    const display   = hidden ? 'none' : 'block';
+    const lmatch      = cfg?.lmatch || rawText;
+
+    // Variable-style controls
+    const suggestName = _trmHeaderNames[ci] || '';
+    const inferType   = (cell?.inferred_type && cell.inferred_type !== 'string') ? cell.inferred_type : 'string';
+    const ftype       = cfg?.ftype || inferType;
+    const match       = cfg?.match || '.*';
+    const mods        = cfg?.modifiers || 'none';
+
+    // Name: for V use suggested/slugified name; for L use stored name or slugified raw text
+    const nameVal = cfg?.name || (isHFVar ? suggestName || _trmSlugify(rawText) : _trmSlugify(rawText));
+
+    // What to show — label-mode dropdown only for L; type/mods only for V
+    const modeDisp = (!hidden && !isHFVar) ? 'block' : 'none';
+    const typeDisp = (!hidden && isHFVar)  ? 'block' : 'none';
+
+    // Match input value and placeholder differ by role
+    const matchVal  = isHFVar ? match : lmatch;
+    const matchPh   = isHFVar ? 'match (.*)' : 'match text';
+    const matchTip  = isHFVar
+      ? 'Regex match pattern for the value (validates the extracted cell)'
+      : 'Text to match in the spreadsheet header/footer cell';
+    const namePh    = isHFVar ? (suggestName ? `e.g. ${suggestName}` : 'field name') : 'label name (slug)';
+    const nameTip   = isHFVar
+      ? 'Variable field name in the extracted JSON'
+      : 'Short identifier used in the pattern (auto-slugified from cell text)';
+
     return `<div class="trm-col-ed">
       <select class="trm-col-role" onchange="_trmRoleChange(this)">
         ${_TRM_ROLES.map(r=>`<option value="${r}"${r===role?' selected':''}>${_TRM_ROLE_LABELS[r]||r}</option>`).join('')}
       </select>
-      <input type="text" placeholder="label name (slug)" value="${_esc(nameVal)}"
-             class="trm-col-name" style="display:${display}"
-             title="Short identifier used in the pattern (auto-slugified from cell text)">
-      <select class="trm-col-lmatch-mode" style="display:${display}" title="Match mode for this label">
+      <input type="text" placeholder="${namePh}" value="${_esc(nameVal)}"
+             class="trm-col-name" style="display:${display}" title="${nameTip}">
+      <select class="trm-col-lmatch-mode" style="display:${modeDisp}" title="Match mode for this label">
         <option value="literal"${lmatch_mode==='literal'?' selected':''}>literal</option>
         <option value="glob"${lmatch_mode==='glob'?' selected':''}>glob</option>
         <option value="regexp"${lmatch_mode==='regexp'?' selected':''}>regexp</option>
       </select>
-      <input type="text" placeholder="match text" value="${_esc(lmatch)}"
-             class="trm-col-match" style="display:${display}"
-             title="Text to match in the spreadsheet header/footer cell">
+      <select class="trm-col-type" style="display:${typeDisp}" title="Field data type">
+        ${_TRM_TYPES.map(t=>`<option value="${t}"${t===ftype?' selected':''}>${t}</option>`).join('')}
+      </select>
+      <input type="text" placeholder="${matchPh}" value="${_esc(matchVal)}"
+             class="trm-col-match" style="display:${display}" title="${matchTip}">
+      <select class="trm-col-mods" style="display:${typeDisp}" title="Field modifiers">
+        <option value="none"${mods==='none'?' selected':''}>no modifiers</option>
+        <option value="nullable"${mods==='nullable'?' selected':''}>nullable</option>
+        <option value="not-null"${mods==='not-null'?' selected':''}>not-null</option>
+        <option value="trim-whitespace"${mods==='trim-whitespace'?' selected':''}>trim whitespace</option>
+        <option value="nullable:trim-whitespace"${mods==='nullable:trim-whitespace'?' selected':''}>nullable + trim</option>
+      </select>
     </div>`;
   }
 
@@ -2542,14 +2579,17 @@ function _trmRoleChange(sel) {
   const role    = sel.value;
   const isI     = role === 'I' || role === 'E';  // E=Empty hides inputs same as I=Ignore
   const isV     = role === 'V';
-  const isHeader= td.closest('tr')?.dataset.rowType === 'header' || td.closest('tr')?.dataset.rowType === 'footer';
+  const rowType = td.closest('tr')?.dataset.rowType || 'data';
+  const isHF    = rowType === 'header' || rowType === 'footer';
   const nameEl  = td.querySelector('.trm-col-name');
   const modeEl  = td.querySelector('.trm-col-lmatch-mode');
   const typeEl  = td.querySelector('.trm-col-type');
   const matchEl = td.querySelector('.trm-col-match');
   const modsEl  = td.querySelector('.trm-col-mods');
   if (nameEl)  nameEl.style.display  = isI ? 'none' : 'block';
-  if (modeEl)  modeEl.style.display  = isI ? 'none' : (isHeader ? 'block' : 'none');
+  // lmatch-mode: shown only for L columns in header/footer (not for V, never for data)
+  if (modeEl)  modeEl.style.display  = (!isI && !isV && isHF) ? 'block' : 'none';
+  // type + mods: shown for V in all row types
   if (typeEl)  typeEl.style.display  = (isV && !isI) ? 'block' : 'none';
   if (matchEl) matchEl.style.display = isI ? 'none' : 'block';
   if (modsEl)  modsEl.style.display  = (isV && !isI) ? 'block' : 'none';
@@ -2602,9 +2642,15 @@ function collectTableRowConfigs() {
         const ftype      = td.querySelector('.trm-col-type')?.value  || 'string';
         const matchV     = td.querySelector('.trm-col-match')?.value || '.*';
         if (rowType === 'header' || rowType === 'footer') {
-          // header/footer: name=slug, lmatch=match text, lmatch_mode=selector
-          const lmatch_mode = td.querySelector('.trm-col-lmatch-mode')?.value || 'literal';
-          cols.push({ role, name: nameV, lmatch: matchV, lmatch_mode, ftype });
+          if (role === 'V') {
+            // Variable column in H/F: extract a value — send var-style fields
+            const mods = td.querySelector('.trm-col-mods')?.value || 'none';
+            cols.push({ role, name: nameV, ftype, match: matchV, modifiers: mods !== 'none' ? mods : undefined });
+          } else {
+            // Label / Ignore / Empty column: send label-style fields
+            const lmatch_mode = td.querySelector('.trm-col-lmatch-mode')?.value || 'literal';
+            cols.push({ role, name: nameV, lmatch: matchV, lmatch_mode, ftype });
+          }
         } else {
           // data: name + type + match + modifiers
           const mods = td.querySelector('.trm-col-mods')?.value || 'none';
