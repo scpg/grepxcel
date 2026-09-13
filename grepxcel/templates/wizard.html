@@ -163,6 +163,18 @@ td.gx-T.selected { background: var(--T-sel) !important; }
 td.gx-I.selected { background: var(--I-sel) !important; }
 td.gx-T-HEAD.selected, td.gx-T-DATA.selected { outline: 2px solid var(--accent); outline-offset: -2px; }
 
+/* ── Range selection (Shift+Arrow / Shift+Click) ─────────────────── */
+td.gx-cell.in-range {
+  background: rgba(99, 102, 241, 0.18) !important;
+  outline: 1px dashed rgba(99, 102, 241, 0.7);
+  outline-offset: -1px;
+}
+td.gx-cell.in-range.selected {
+  background: rgba(99, 102, 241, 0.35) !important;
+  outline: 2px solid rgba(99, 102, 241, 0.9);
+  outline-offset: -2px;
+}
+
 /* ── Cell badge base (smaller, subtler) ──────────────────────────── */
 .cell-badge {
   display: inline-block; font-size: 7px; font-weight: 600;
@@ -441,24 +453,29 @@ td.gx-T-bottom { border-bottom: 2px solid rgba(124,58,237,0.5) !important; }
 .mod-trigger {
   display: flex; align-items: center; justify-content: space-between;
   width: 100%; padding: 5px 8px; border: 1px solid var(--border);
-  border-radius: 4px; background: var(--input-bg); color: var(--text);
+  border-radius: 4px; background: var(--bg); color: var(--text);
   font-size: 13px; cursor: pointer; text-align: left; box-sizing: border-box;
 }
 .mod-trigger:focus { outline: 1px solid var(--accent); }
 .mod-chevron { font-size: 10px; opacity: 0.55; flex-shrink: 0; margin-left: 6px; }
 .mod-menu {
-  display: none; position: absolute; top: calc(100% + 2px); left: 0; right: 0;
-  background: var(--panel-bg); border: 1px solid var(--border); border-radius: 4px;
-  z-index: 300; padding: 4px 0;
+  display: none; position: fixed;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 4px;
+  z-index: 9999; padding: 3px 0; min-width: 160px;
   box-shadow: 0 4px 12px rgba(0,0,0,0.35);
 }
 .mod-menu.open { display: block; }
+/* Use higher specificity (.form-group .mod-item) so .form-group label doesn't override flex/uppercase/margin */
+.form-group .mod-item,
 .mod-item {
-  display: flex; align-items: center; gap: 8px;
-  padding: 6px 12px; font-size: 13px; cursor: pointer; color: var(--text);
-  user-select: none;
+  display: flex !important; align-items: center; gap: 7px;
+  padding: 4px 10px; font-size: 12px; font-weight: 400; cursor: pointer;
+  color: var(--text) !important; user-select: none;
+  text-transform: none !important; letter-spacing: 0 !important;
+  margin-bottom: 0 !important; border-radius: 3px;
 }
-.mod-item:hover { background: var(--hover); }
+.form-group .mod-item:hover,
+.mod-item:hover { background: var(--border); }
 .mod-item input[type=checkbox] { margin: 0; cursor: pointer; accent-color: var(--accent); flex-shrink: 0; }
 .info-icon {
   cursor: help; font-size: 11px; color: var(--text-muted);
@@ -563,6 +580,13 @@ td.gx-T-bottom { border-bottom: 2px solid rgba(124,58,237,0.5) !important; }
 .trm-inherit-badge {
   font-size: 10px; color: var(--text-muted); font-style: italic; text-align: center; padding: 8px 0;
 }
+.trm-name-hint {
+  font-size: 9px; color: var(--text-muted); font-family: monospace;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  padding: 0 2px;
+}
+.trm-name-hint-tbl { color: var(--accent); opacity: 0.75; }
+.trm-name-hint-field { font-weight: 600; color: var(--text-muted); }
 #trm-footer {
   padding: 10px 16px; border-top: 1px solid var(--border);
   display: flex; gap: 8px; flex-shrink: 0;
@@ -628,6 +652,14 @@ td.gx-T-bottom { border-bottom: 2px solid rgba(124,58,237,0.5) !important; }
          style="width:100px;border:1px solid var(--border);border-radius:5px;padding:3px 8px;font-size:12px;background:var(--bg);color:var(--text)"
          onkeydown="if(event.key==='Enter'){event.preventDefault();jumpToCell(this.value.trim().toUpperCase())}">
   <div class="spacer"></div>
+  <!-- hidden file picker for "Load Pattern" -->
+  <input type="file" id="load-pattern-input" accept=".xlsx,.csv"
+         style="display:none" onchange="uploadPattern(this)">
+  <button class="btn btn-sm" onclick="document.getElementById('load-pattern-input').click()"
+          title="Load a saved pattern file to pre-fill the grid">
+    <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M2 6a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1H8a3 3 0 00-3 3v1.5a1.5 1.5 0 01-3 0V6z"/><path d="M6 12a2 2 0 012-2h8a2 2 0 012 2v2a2 2 0 01-2 2H2h2a2 2 0 002-2v-2z"/></svg>
+    Load Pattern
+  </button>
   <button class="btn btn-sm" onclick="undoLast()" title="Undo last classification (Ctrl+Z)">
     <svg viewBox="0 0 20 20" fill="currentColor"><path d="M7.7 8H5V5.2L2 8.2 5 11V8.3h2.7A5 5 0 0 1 10 18a5 5 0 0 0 5-5 5 5 0 0 0-7.3-4.4z"/></svg>
     Undo
@@ -668,6 +700,7 @@ td.gx-T-bottom { border-bottom: 2px solid rgba(124,58,237,0.5) !important; }
       <div class="ptab active" data-tab="classify" onclick="switchTab('classify')">Classify</div>
       <div class="ptab" data-tab="extract"  onclick="switchTab('extract')">🔎 Extract</div>
       <div class="ptab" data-tab="config"   onclick="switchTab('config')">Config</div>
+      <div class="ptab" data-tab="logs"     onclick="switchTab('logs')" id="tab-logs-btn">📋 Logs</div>
     </div>
     <div id="panel-body">
 
@@ -949,9 +982,26 @@ td.gx-T-bottom { border-bottom: 2px solid rgba(124,58,237,0.5) !important; }
         </div>
         <div id="ext-result">
           <div class="et-no-pattern" id="ext-placeholder">
-            Run extraction to see the fields<br>your pattern pulls from this file.
+            Classify some cells, then click<br><em>Run Extraction</em> to preview the result.
           </div>
         </div>
+      </div>
+
+      <!-- ── Logs Tab ── -->
+      <div id="tab-logs" style="display:none;padding:8px 0">
+        <div id="log-warn-box" style="display:none;margin-bottom:8px"></div>
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;padding:0 8px">
+          <span style="font-size:12px;font-weight:600;color:var(--text-muted);flex:1">Session log</span>
+          <button class="btn" style="padding:2px 8px;font-size:11px" onclick="refreshLogs()">↻ Refresh</button>
+        </div>
+        <div id="log-lines-box"
+             style="font-family:monospace;font-size:11px;line-height:1.5;
+                    overflow-y:auto;max-height:400px;padding:0 8px;
+                    white-space:pre;color:var(--text-muted)">
+          <em>Loading…</em>
+        </div>
+        <div id="log-path-line"
+             style="font-size:10px;color:var(--text-muted);padding:6px 8px 0;word-break:break-all"></div>
       </div>
 
     </div><!-- /panel-body -->
@@ -980,7 +1030,7 @@ td.gx-T-bottom { border-bottom: 2px solid rgba(124,58,237,0.5) !important; }
 <!-- ── Footer ───────────────────────────────────────────────────────────── -->
 <div id="footer">
   <span class="status-msg" id="status-msg">Ready — click a cell to classify it</span>
-  <span><kbd class="kbd">Click</kbd> select · <kbd class="kbd">↑↓←→</kbd> navigate · <kbd class="kbd">L V C I T</kbd> classify · <kbd class="kbd">Enter</kbd> apply · <kbd class="kbd">Ctrl+Z</kbd> undo · <kbd class="kbd">Ctrl+G</kbd> jump</span>
+  <span><kbd class="kbd">Click</kbd> select · <kbd class="kbd">↑↓←→</kbd> navigate · <kbd class="kbd">Shift+↑↓←→</kbd>/<kbd class="kbd">Shift+Click</kbd> range · <kbd class="kbd">L V C I T</kbd> classify · <kbd class="kbd">Enter</kbd> apply · <kbd class="kbd">Ctrl+Z</kbd> undo · <kbd class="kbd">Ctrl+G</kbd> jump</span>
   <span>grepxcel v{{ gx_version }}</span>
 </div>
 
@@ -994,7 +1044,7 @@ td.gx-T-bottom { border-bottom: 2px solid rgba(124,58,237,0.5) !important; }
     </div>
     <div id="trm-settings">
       <span><label>Name:</label>
-        <input id="trm-name" type="text" placeholder="e.g. line_items">
+        <input id="trm-name" type="text" placeholder="e.g. line_items" oninput="_trmRefreshTableNameHints()">
       </span>
       <span><label>Range:</label>
         <span id="trm-range-display" style="font-family:monospace;font-size:12px">—</span>
@@ -1070,7 +1120,21 @@ let csvText = '';
 (async function init() {
   await Promise.all([loadSheet(), loadConfig(), loadStats()]);
   loadKeyboardShortcuts();
+  // Check for preload warnings and badge the Logs tab if any exist.
+  _checkPreloadWarnings();
 })();
+
+async function _checkPreloadWarnings() {
+  try {
+    const r    = await fetch('/api/logs');
+    const data = await r.json();
+    const warns = data.preload_warnings || [];
+    if (warns.length) {
+      const btn = document.getElementById('tab-logs-btn');
+      if (btn) { btn.textContent = '⚠️ Logs'; btn.dataset.warned = '1'; }
+    }
+  } catch (_) { /* ignore */ }
+}
 
 // ── Data fetching ─────────────────────────────────────────────────────────
 async function loadSheet() {
@@ -1172,7 +1236,9 @@ document.addEventListener('mouseup', () => {
 function _cellContent(choice, table_role, row_class, is_table_end, valRaw, note, cellType) {
   const badge = _tableBadge(choice, table_role, row_class, is_table_end);
   const val   = escHtml(valRaw);
-  const isRight = (cellType === 'num' || cellType === 'date' || cellType === 'bool');
+  const isRight = (cellType === 'num' || cellType === 'number' ||
+                   cellType === 'date' ||
+                   cellType === 'bool' || cellType === 'boolean');
   const alignCls = isRight ? ' v-right' : '';
   if (!badge) {
     return `<div class="gx-inner"><span class="cell-value${alignCls}">${val}${note}</span></div>`;
@@ -1232,7 +1298,7 @@ function renderGrid(data) {
         : `${cell.ref}${cell.merged ? ` [merged ${cell.colspan}×${cell.rowspan}]` : ''}: ${escHtml(cell.value)}`;
       html += `<td class="${cls}" data-ref="${cell.ref}" data-merged="${cell.merged ? '1' : ''}"${fieldAttr}
                    ${csAttr}${rsAttr}
-                   onclick="if(event.shiftKey&&selectedAction==='T'){handleShiftClick('${cell.ref}');return}selectCell('${cell.ref}')"
+                   onclick="if(event.shiftKey&&selectedAction==='T'){handleShiftClick('${cell.ref}');return}if(event.shiftKey&&selectedRef){_rangeAnchor=_rangeAnchor||selectedRef;_rangeEnd='${cell.ref}';_renderRangeHighlight();return}selectCell('${cell.ref}')"
                    title="${titleTxt}">${content}</td>`;
     }
     html += '</tr>';
@@ -1265,6 +1331,9 @@ function refreshCell(ref) {
 
 // ── Cell selection ─────────────────────────────────────────────────────────
 async function selectCell(ref) {
+  // Clear any active range selection and T-mode anchor when clicking normally
+  _clearRange();
+  _tModeAnchor = null;
   // Deselect old
   if (selectedRef) {
     const old = document.querySelector(`td[data-ref="${selectedRef}"]`);
@@ -1349,6 +1418,14 @@ function prefillForm(info) {
     // These are part of a table entity — open the anchor's table editor instead
     const anchorRef = info.anchor || '';
     if (anchorRef) {
+      // Move the .selected highlight from the clicked cell to the anchor cell.
+      // selectCell() already added .selected to `ref`; we must remove it and
+      // point it at the anchor so subsequent clicks deselect the right cell.
+      const clickedTd = document.querySelector(`td[data-ref="${ref}"]`);
+      if (clickedTd) clickedTd.classList.remove('selected');
+      const anchorTd = document.querySelector(`td[data-ref="${anchorRef}"]`);
+      if (anchorTd) anchorTd.classList.add('selected');
+
       // Highlight that we're editing the whole table via the anchor
       document.getElementById('ph-val').textContent =
         `[${ch}] part of table at ${anchorRef}`;
@@ -1387,6 +1464,8 @@ function selectAction(action) {
   const btn = document.querySelector(`.cbtn-${action}`);
   if (btn) btn.classList.add('active');
   document.querySelectorAll('.action-fields').forEach(d => d.style.display = 'none');
+  // Clear T-mode anchor when switching away from T
+  if (action !== 'T') _tModeAnchor = null;
 
   if (!selectedRef) return;
   const info = cellData[selectedRef] || {};
@@ -1428,8 +1507,15 @@ function selectAction(action) {
         })
         .catch(() => {});
     } else {
-      // Clear end_ref and status for a fresh anchor
-      setVal('f-T-end_ref', '');
+      // For a fresh anchor: pre-populate end_ref from any active range selection
+      // so the user can: select range with Shift+Arrow → press T → Enter opens editor.
+      const rangeEndForT = (_rangeAnchor === selectedRef && _rangeEnd) ? _rangeEnd : '';
+      setVal('f-T-end_ref', rangeEndForT.toUpperCase());
+      if (rangeEndForT) {
+        // Range is now "claimed" by T mode — keep the visual highlight but
+        // remember the anchor so openTableModal uses it correctly.
+        _tModeAnchor = selectedRef;
+      }
       const s = document.getElementById('t-row-config-status');
       if (s) s.style.display = 'none';
     }
@@ -1639,6 +1725,30 @@ function downloadCSV() {
   a.click();
 }
 
+async function uploadPattern(input) {
+  const file = input.files[0];
+  if (!file) return;
+  input.value = '';  // reset so the same file can be re-selected
+  const fd = new FormData();
+  fd.append('file', file);
+  toast(`Loading pattern from ${file.name}…`);
+  try {
+    const r = await fetch('/api/load-pattern', { method: 'POST', body: fd });
+    const data = await r.json();
+    if (data.ok) {
+      const warn = data.warnings && data.warnings.length
+        ? ` (${data.warnings.length} warning(s))` : '';
+      toast(`Pattern loaded — ${data.n_choices} cells classified${warn}. Reloading grid…`);
+      // Short delay so the user can read the toast, then reload
+      setTimeout(() => window.location.reload(), 900);
+    } else {
+      toast('Load failed: ' + (data.detail || data.error || '?'), true);
+    }
+  } catch (err) {
+    toast('Load failed: ' + err, true);
+  }
+}
+
 async function savePattern() {
   const r = await fetch('/api/save', {
     method: 'POST',
@@ -1672,7 +1782,7 @@ async function savePatternXlsx() {
 // ── Tabs ──────────────────────────────────────────────────────────────────
 function switchTab(name) {
   document.querySelectorAll('.ptab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
-  ['classify','extract','config'].forEach(n => {
+  ['classify','extract','config','logs'].forEach(n => {
     const el = document.getElementById('tab-' + n);
     if (!el) return;
     if (n === 'extract') {
@@ -1687,7 +1797,52 @@ function switchTab(name) {
   // Config tab: do NOT reload from server on every tab-switch — that races with
   // in-progress edits. The form is populated once on page init; the user's
   // unsaved changes remain visible if they switch away and back.
+  if (name === 'logs') refreshLogs();
 }
+
+async function refreshLogs() {
+  const linesBox = document.getElementById('log-lines-box');
+  const warnBox  = document.getElementById('log-warn-box');
+  const pathLine = document.getElementById('log-path-line');
+  try {
+    const r    = await fetch('/api/logs');
+    const data = await r.json();
+
+    // ── Preload warnings ──────────────────────────────────────────────────
+    const warns = data.preload_warnings || [];
+    if (warns.length) {
+      warnBox.innerHTML = warns.map(w =>
+        `<div style="background:var(--warn,#7c4a00);color:#ffe;border-radius:4px;padding:5px 8px;margin:0 8px 4px;font-size:11px;">⚠️ ${_esc(w)}</div>`
+      ).join('');
+      warnBox.style.display = 'block';
+      // Badge the tab if there are warnings
+      const btn = document.getElementById('tab-logs-btn');
+      if (btn && !btn.dataset.warned) {
+        btn.dataset.warned = '1';
+        btn.textContent = '⚠️ Logs';
+      }
+    } else {
+      warnBox.style.display = 'none';
+    }
+
+    // ── Log lines ─────────────────────────────────────────────────────────
+    const lines = data.log_lines || [];
+    if (lines.length) {
+      linesBox.textContent = lines.join('\n');
+      linesBox.scrollTop   = linesBox.scrollHeight;
+    } else {
+      linesBox.textContent = '(no log entries yet)';
+    }
+
+    // ── Log path ──────────────────────────────────────────────────────────
+    if (data.log_path) {
+      pathLine.textContent = '📁 ' + data.log_path;
+    }
+  } catch (e) {
+    if (linesBox) linesBox.textContent = 'Error loading logs: ' + e.message;
+  }
+}
+
 
 // ── Extract panel ─────────────────────────────────────────────────────────
 let _extractProvenance = {};
@@ -1877,6 +2032,93 @@ function scrollCellIntoView(td) {
   if (relRight  > wrap.clientWidth)  wrap.scrollLeft += (relRight   - wrap.clientWidth  + 4);
 }
 
+// ── Range selection state ─────────────────────────────────────────────────
+// _rangeAnchor: the cell where the range began (stays fixed as end moves)
+// _rangeEnd:    the current far corner of the selection
+let _rangeAnchor = null;
+let _rangeEnd    = null;
+
+/** Return all refs in the rectangular bounding box [anchor..end]. */
+function _rangeRefs(anchorRef, endRef) {
+  const [r1, c1] = _parseRef(anchorRef);
+  const [r2, c2] = _parseRef(endRef);
+  const minR = Math.min(r1, r2), maxR = Math.max(r1, r2);
+  const minC = Math.min(c1, c2), maxC = Math.max(c1, c2);
+  const refs = [];
+  for (let r = minR; r <= maxR; r++) {
+    for (let c = minC; c <= maxC; c++) {
+      refs.push(_buildRef(r, c));
+    }
+  }
+  return refs;
+}
+
+/** Apply `.in-range` CSS to all cells in the bounding box; clear stale marks. */
+function _renderRangeHighlight() {
+  // Clear previous
+  document.querySelectorAll('td.in-range').forEach(td => td.classList.remove('in-range'));
+  if (!_rangeAnchor || !_rangeEnd) return;
+  const refs = _rangeRefs(_rangeAnchor, _rangeEnd);
+  refs.forEach(ref => {
+    const td = document.querySelector(`td[data-ref="${ref}"]`);
+    if (td) td.classList.add('in-range');
+  });
+  // Show selection dimensions in the status bar
+  const [r1, c1] = _parseRef(_rangeAnchor);
+  const [r2, c2] = _parseRef(_rangeEnd);
+  const rows = Math.abs(r2 - r1) + 1, cols = Math.abs(c2 - c1) + 1;
+  setStatus(`Range ${_rangeAnchor}:${_rangeEnd} — ${rows}×${cols} (${refs.length} cells) · press L/V/C/I to classify, Esc to cancel`);
+}
+
+/** Cancel any active range selection. */
+function _clearRange() {
+  _rangeAnchor = null;
+  _rangeEnd    = null;
+  document.querySelectorAll('td.in-range').forEach(td => td.classList.remove('in-range'));
+}
+
+/** Apply a batch classification to the current range.  Returns false if no range active. */
+async function _classifyRange(action) {
+  if (!_rangeAnchor || !_rangeEnd) return false;
+  const refs = _rangeRefs(_rangeAnchor, _rangeEnd);
+  if (refs.length === 0) return false;
+  const label = action === 'CLEAR' ? 'Clear' : action;
+  toast(`Classifying ${refs.length} cells as ${label}…`);
+  try {
+    const r = await fetch('/api/classify-batch', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ refs, action }),
+    });
+    const data = await r.json();
+    if (!data.ok) {
+      toast('Batch classify failed: ' + (data.detail || data.error || '?'), true);
+      return true;
+    }
+    const skipped = data.skipped && data.skipped.length ? ` (${data.skipped.length} merged skipped)` : '';
+    toast(`${data.n_classified} cells → ${label}${skipped}`);
+    if (data.stats) updateStats(data.stats);
+    // Update cellData locally and refresh the DOM for each classified cell.
+    // We do a single /api/cell fetch only for the currently selected cell (to update the sidebar);
+    // all other cells get a lightweight local-only refresh based on the action.
+    for (const ref of data.classified || []) {
+      if (action === 'CLEAR') {
+        if (cellData[ref]) { cellData[ref] = { ...cellData[ref], choice: '', name: '', type: '' }; }
+      } else {
+        const existing = cellData[ref] || {};
+        cellData[ref] = { ...existing, choice: action, table_role: '', row_class: '', is_table_end: false };
+      }
+      refreshCell(ref);
+    }
+    _clearRange();
+    // Refresh the sidebar for the currently focused cell
+    if (selectedRef) selectCell(selectedRef);
+  } catch (err) {
+    toast('Batch classify error: ' + err, true);
+  }
+  return true;
+}
+
 // ── Light navigation: update highlight immediately, defer API fetch ─────────
 let _arrowDebounce = null;
 function lightMoveToCell(ref) {
@@ -1907,7 +2149,7 @@ function loadKeyboardShortcuts() {
 
     if (e.ctrlKey && e.key === 'z') { e.preventDefault(); undoLast(); return; }
 
-    // ── Arrow-key cell navigation ──────────────────────────────────────────
+    // ── Arrow-key cell navigation (with optional Shift+Arrow range selection) ─
     // lightMoveToCell() updates highlight instantly; selectCell() (API fetch)
     // is debounced so rapid key-repeat doesn't flood the server.
     const arrowDeltas = { ArrowUp: [-1,0], ArrowDown: [1,0], ArrowLeft: [0,-1], ArrowRight: [0,1] };
@@ -1916,8 +2158,11 @@ function loadKeyboardShortcuts() {
       const match = selectedRef.match(/^([A-Z]+)(\d+)$/);
       if (match) {
         const [dr, dc] = arrowDeltas[e.key];
-        const curCol = colLetterToNum(match[1]);
-        const curRow = parseInt(match[2]);
+        // Extend from _rangeEnd (or selectedRef if no range yet) when Shift held
+        const fromRef = (e.shiftKey && _rangeEnd) ? _rangeEnd : selectedRef;
+        const fromMatch = fromRef.match(/^([A-Z]+)(\d+)$/);
+        const curCol = colLetterToNum(fromMatch ? fromMatch[1] : match[1]);
+        const curRow = parseInt(fromMatch ? fromMatch[2] : match[2]);
         let newRow = curRow + dr, newCol = curCol + dc;
         // Skip merged ghost cells (absent from DOM)
         for (let attempt = 0; attempt < 20; attempt++) {
@@ -1925,9 +2170,33 @@ function loadKeyboardShortcuts() {
           const newRef = numToColLetter(newCol) + newRow;
           const td = document.querySelector(`td[data-ref="${newRef}"]`);
           if (td) {
-            lightMoveToCell(newRef);         // instant visual feedback + sticky scroll
-            clearTimeout(_arrowDebounce);
-            _arrowDebounce = setTimeout(() => selectCell(selectedRef), 120);
+            if (e.shiftKey && selectedAction === 'T') {
+              // In T (table) mode: Shift+Arrow extends the end-ref range.
+              // Store the original anchor so openTableModal uses it, then
+              // move selectedRef to the cursor so subsequent Shift+Arrow
+              // steps accumulate from the right position.
+              if (!_tModeAnchor) _tModeAnchor = selectedRef;
+              handleShiftClick(newRef);   // updates f-T-end_ref
+              // Show the selection rectangle so the user sees the range growing
+              _rangeAnchor = _tModeAnchor;
+              _rangeEnd    = newRef;
+              _renderRangeHighlight();
+              lightMoveToCell(newRef);    // advances cursor (selectedRef)
+            } else if (e.shiftKey) {
+              // General range selection
+              if (!_rangeAnchor) _rangeAnchor = selectedRef;
+              _rangeEnd = newRef;
+              _renderRangeHighlight();
+              // Move the focus indicator to the far corner (no API call — stay fast)
+              lightMoveToCell(newRef);
+            } else {
+              // Plain Arrow — cancel any range and T-anchor, move normally
+              _clearRange();
+              _tModeAnchor = null;
+              lightMoveToCell(newRef);
+              clearTimeout(_arrowDebounce);
+              _arrowDebounce = setTimeout(() => selectCell(selectedRef), 120);
+            }
             break;
           }
           newRow += dr; newCol += dc;
@@ -1938,13 +2207,24 @@ function loadKeyboardShortcuts() {
 
     if (!selectedRef) return;
     const k = e.key.toUpperCase();
+
+    // ── Classification keys: apply to range if one is active ──────────────
+    if (['L','V','C','I'].includes(k) || k === 'DELETE' || k === 'BACKSPACE') {
+      const batchAction = k === 'DELETE' || k === 'BACKSPACE' ? 'CLEAR' : k;
+      if (_rangeAnchor && _rangeEnd) {
+        e.preventDefault();
+        _classifyRange(batchAction);
+        return;
+      }
+    }
+
     if (k === 'L') selectAction('L');
     else if (k === 'V') selectAction('V');
     else if (k === 'C') selectAction('C');
     else if (k === 'T') selectAction('T');
     else if (k === 'I') selectAction('I');
     else if (k === 'ENTER' && selectedAction) applyClassification();
-    else if (k === 'ESCAPE') cancelClassification();
+    else if (k === 'ESCAPE') { cancelClassification(); _clearRange(); }
   });
 }
 
@@ -2125,7 +2405,24 @@ async function _tRefreshTableCells(anchorRef) {
 // ── Modifier checkbox dropdown ────────────────────────────────────────────────
 function toggleModDropdown(e) {
   e && e.stopPropagation();
-  document.getElementById('mod-menu').classList.toggle('open');
+  const trigger = document.getElementById('mod-trigger');
+  const menu    = document.getElementById('mod-menu');
+  if (!trigger || !menu) return;
+  const isOpen = menu.classList.contains('open');
+  if (isOpen) {
+    menu.classList.remove('open');
+  } else {
+    // Position the fixed menu aligned to the trigger's viewport rect
+    const rect = trigger.getBoundingClientRect();
+    const menuMinW = 170;  // wide enough for "trim-whitespace"
+    menu.style.top      = (rect.bottom + 2) + 'px';
+    menu.style.minWidth = Math.max(menuMinW, rect.width) + 'px';
+    menu.style.width    = '';  // clear any previously forced width
+    // Prevent overflow on the right edge of the viewport
+    const leftPos = Math.min(rect.left, window.innerWidth - menuMinW - 8);
+    menu.style.left = Math.max(0, leftPos) + 'px';
+    menu.classList.add('open');
+  }
 }
 document.addEventListener('click', function(e) {
   const dd = document.getElementById('mod-dropdown');
@@ -2220,6 +2517,15 @@ function handleShiftClick(ref) {
   return true;  // consumed
 }
 
+// ── T-mode keyboard anchor tracking ──────────────────────────────────────
+// When the user uses Shift+Arrow in T mode to extend the end-ref range,
+// selectedRef moves to the cursor position so subsequent Shift+Arrow steps
+// accumulate correctly.  But openTableModal() must use the original anchor
+// (the cell that had T selected), not the cursor.  _tModeAnchor captures
+// that original anchor; openTableModal() prefers it over selectedRef.
+// It is cleared whenever the user makes a plain click / plain Arrow move.
+let _tModeAnchor = null;
+
 // ── Table Row Editor Modal ─────────────────────────────────────────────────
 
 let _trmAnchorRef   = '';   // anchor (top-left) ref being edited
@@ -2228,6 +2534,23 @@ let _trmHeaderNames = [];   // header col names collected at grid render (index 
 
 function _trmSlugify(s) {
   return String(s).toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '') || 'col';
+}
+
+/** Live-update the field preview hint when the user edits a data-row name input. */
+function _trmUpdateNameHint(input) {
+  const hint = input.closest('.trm-col-ed')?.querySelector('.trm-name-hint-field');
+  if (hint) hint.textContent = input.value.trim() || '…';
+}
+
+/** Refresh all .trm-name-hint-tbl spans when the table name changes.
+ *  Called by the trm-name input's oninput handler.
+ */
+function _trmRefreshTableNameHints() {
+  const name = (document.getElementById('trm-name')?.value || '').trim() || '…';
+  document.querySelectorAll('.trm-name-hint-tbl').forEach(el => {
+    el.textContent = name;
+    el.dataset.tbl = name;
+  });
 }
 
 // Ref ↔ (row, col) helpers for JS
@@ -2282,7 +2605,10 @@ async function openTableModal() {
   const nameEl   = document.getElementById('f-T-name');
   const multEl   = document.getElementById('f-T-mult');
   const endEl    = document.getElementById('f-T-end_ref');
-  const anchorRef = selectedRef || '';
+  // _tModeAnchor is set when Shift+Arrow was used to extend the T range;
+  // in that case selectedRef has moved to the cursor (end-ref position),
+  // so we must use the stored anchor instead.
+  const anchorRef = _tModeAnchor || selectedRef || '';
 
   if (!anchorRef) { toast('Select the top-left table cell first', true); return; }
 
@@ -2449,29 +2775,68 @@ function _trmColEditorHTML(rowType, cfg, ci, cell) {
   const hidden = role === 'I' || role === 'E';  // both I and E suppress name/type inputs
 
   if (isHeader || isFooter) {
-    // Header / footer: label name (slugified) + match mode + match pattern
-    const rawText   = String(cell?.raw ?? '');
+    // Header / footer: columns can be L (label anchor) or V (extract value).
+    // Both share the same HTML skeleton; visibility toggles per role so that
+    // _trmRoleChange can swap between label-style and variable-style controls
+    // without rebuilding the DOM.
+    const rawText  = String(cell?.raw ?? '');
+    const isHFVar  = (role === 'V');
+    const display  = hidden ? 'none' : 'block';
+
+    // Label-style controls
     const lmatch_mode = cfg?.lmatch_mode || 'literal';
-    // Label name: user-editable slug; default from stored name or auto-slugify raw text
-    const nameVal   = cfg?.name  || _trmSlugify(rawText);
-    // Match text: the actual text to match (lmatch); default = raw cell text
-    const lmatch    = cfg?.lmatch || rawText;
-    const display   = hidden ? 'none' : 'block';
+    const lmatch      = cfg?.lmatch || rawText;
+
+    // Variable-style controls
+    const suggestName = _trmHeaderNames[ci] || '';
+    const inferType   = (cell?.inferred_type && cell.inferred_type !== 'string') ? cell.inferred_type : 'string';
+    const ftype       = cfg?.ftype || inferType;
+    const match       = cfg?.match || '.*';
+    const mods        = cfg?.modifiers || 'none';
+
+    // Name: for V use suggested/slugified name;
+    //       for L use stored name or slugified raw text + _header_label suffix
+    const defaultLName = _trmSlugify(rawText) + (isHeader ? '_header_label' : (isFooter ? '_footer_label' : '_label'));
+    const nameVal = cfg?.name || (isHFVar ? suggestName || _trmSlugify(rawText) : defaultLName);
+
+    // What to show — label-mode dropdown only for L; type/mods only for V
+    const modeDisp = (!hidden && !isHFVar) ? 'block' : 'none';
+    const typeDisp = (!hidden && isHFVar)  ? 'block' : 'none';
+
+    // Match input value and placeholder differ by role
+    const matchVal  = isHFVar ? match : lmatch;
+    const matchPh   = isHFVar ? 'match (.*)' : 'match text';
+    const matchTip  = isHFVar
+      ? 'Regex match pattern for the value (validates the extracted cell)'
+      : 'Text to match in the spreadsheet header/footer cell';
+    const namePh    = isHFVar ? (suggestName ? `e.g. ${suggestName}` : 'field name') : 'label name (slug)';
+    const nameTip   = isHFVar
+      ? 'Variable field name in the extracted JSON'
+      : 'Short identifier used in the pattern (auto-slugified from cell text)';
+
     return `<div class="trm-col-ed">
       <select class="trm-col-role" onchange="_trmRoleChange(this)">
         ${_TRM_ROLES.map(r=>`<option value="${r}"${r===role?' selected':''}>${_TRM_ROLE_LABELS[r]||r}</option>`).join('')}
       </select>
-      <input type="text" placeholder="label name (slug)" value="${_esc(nameVal)}"
-             class="trm-col-name" style="display:${display}"
-             title="Short identifier used in the pattern (auto-slugified from cell text)">
-      <select class="trm-col-lmatch-mode" style="display:${display}" title="Match mode for this label">
+      <input type="text" placeholder="${namePh}" value="${_esc(nameVal)}"
+             class="trm-col-name" style="display:${display}" title="${nameTip}">
+      <select class="trm-col-lmatch-mode" style="display:${modeDisp}" title="Match mode for this label">
         <option value="literal"${lmatch_mode==='literal'?' selected':''}>literal</option>
         <option value="glob"${lmatch_mode==='glob'?' selected':''}>glob</option>
         <option value="regexp"${lmatch_mode==='regexp'?' selected':''}>regexp</option>
       </select>
-      <input type="text" placeholder="match text" value="${_esc(lmatch)}"
-             class="trm-col-match" style="display:${display}"
-             title="Text to match in the spreadsheet header/footer cell">
+      <select class="trm-col-type" style="display:${typeDisp}" title="Field data type">
+        ${_TRM_TYPES.map(t=>`<option value="${t}"${t===ftype?' selected':''}>${t}</option>`).join('')}
+      </select>
+      <input type="text" placeholder="${matchPh}" value="${_esc(matchVal)}"
+             class="trm-col-match" style="display:${display}" title="${matchTip}">
+      <select class="trm-col-mods" style="display:${typeDisp}" title="Field modifiers">
+        <option value="none"${mods==='none'?' selected':''}>no modifiers</option>
+        <option value="nullable"${mods==='nullable'?' selected':''}>nullable</option>
+        <option value="not-null"${mods==='not-null'?' selected':''}>not-null</option>
+        <option value="trim-whitespace"${mods==='trim-whitespace'?' selected':''}>trim whitespace</option>
+        <option value="nullable:trim-whitespace"${mods==='nullable:trim-whitespace'?' selected':''}>nullable + trim</option>
+      </select>
     </div>`;
   }
 
@@ -2486,13 +2851,21 @@ function _trmColEditorHTML(rowType, cfg, ci, cell) {
   const display  = hidden ? 'none' : 'block';
   const typeDisp = (role === 'V' && !hidden) ? 'block' : 'none';
 
+  // Table name prefix hint: reads trm-name input at render time (may be empty)
+  const tblNameNow = (document.getElementById('trm-name')?.value || '').trim() || '…';
+
   return `<div class="trm-col-ed">
     <select class="trm-col-role" onchange="_trmRoleChange(this)">
       ${_TRM_ROLES.map(r=>`<option value="${r}"${r===role?' selected':''}>${_TRM_ROLE_LABELS[r]||r}</option>`).join('')}
     </select>
     <input type="text" placeholder="${suggestedName ? `e.g. ${suggestedName}` : 'field name'}"
            value="${_esc(nameVal)}" class="trm-col-name" style="display:${display}"
-           title="Variable field name in the extracted JSON">
+           title="Variable field name in the extracted JSON&#10;Full path in output: &lt;table_name&gt;.&lt;field_name&gt;"
+           oninput="_trmUpdateNameHint(this)">
+    <div class="trm-name-hint" style="display:${role==='V'&&!hidden?'block':'none'}"
+         title="Full key path in the extracted JSON output">
+      <span class="trm-name-hint-tbl" data-tbl="${_esc(tblNameNow)}">${_esc(tblNameNow)}</span>.<span class="trm-name-hint-field">${_esc(nameVal || suggestedName || '…')}</span>
+    </div>
     <select class="trm-col-type" style="display:${typeDisp}"
             title="Field data type">
       ${_TRM_TYPES.map(t=>`<option value="${t}"${t===ftype?' selected':''}>${t}</option>`).join('')}
@@ -2540,17 +2913,23 @@ function _trmRoleChange(sel) {
   const role    = sel.value;
   const isI     = role === 'I' || role === 'E';  // E=Empty hides inputs same as I=Ignore
   const isV     = role === 'V';
-  const isHeader= td.closest('tr')?.dataset.rowType === 'header' || td.closest('tr')?.dataset.rowType === 'footer';
+  const rowType = td.closest('tr')?.dataset.rowType || 'data';
+  const isHF    = rowType === 'header' || rowType === 'footer';
   const nameEl  = td.querySelector('.trm-col-name');
   const modeEl  = td.querySelector('.trm-col-lmatch-mode');
   const typeEl  = td.querySelector('.trm-col-type');
   const matchEl = td.querySelector('.trm-col-match');
   const modsEl  = td.querySelector('.trm-col-mods');
   if (nameEl)  nameEl.style.display  = isI ? 'none' : 'block';
-  if (modeEl)  modeEl.style.display  = isI ? 'none' : (isHeader ? 'block' : 'none');
+  // lmatch-mode: shown only for L columns in header/footer (not for V, never for data)
+  if (modeEl)  modeEl.style.display  = (!isI && !isV && isHF) ? 'block' : 'none';
+  // type + mods: shown for V in all row types
   if (typeEl)  typeEl.style.display  = (isV && !isI) ? 'block' : 'none';
   if (matchEl) matchEl.style.display = isI ? 'none' : 'block';
   if (modsEl)  modsEl.style.display  = (isV && !isI) ? 'block' : 'none';
+  // table-name prefix hint: shown for V in data rows only
+  const hintEl = td.querySelector('.trm-name-hint');
+  if (hintEl) hintEl.style.display = (isV && !isI && !isHF) ? 'block' : 'none';
 }
 
 function _trmSkipCondChange(sel) {
@@ -2600,9 +2979,15 @@ function collectTableRowConfigs() {
         const ftype      = td.querySelector('.trm-col-type')?.value  || 'string';
         const matchV     = td.querySelector('.trm-col-match')?.value || '.*';
         if (rowType === 'header' || rowType === 'footer') {
-          // header/footer: name=slug, lmatch=match text, lmatch_mode=selector
-          const lmatch_mode = td.querySelector('.trm-col-lmatch-mode')?.value || 'literal';
-          cols.push({ role, name: nameV, lmatch: matchV, lmatch_mode, ftype });
+          if (role === 'V') {
+            // Variable column in H/F: extract a value — send var-style fields
+            const mods = td.querySelector('.trm-col-mods')?.value || 'none';
+            cols.push({ role, name: nameV, ftype, match: matchV, modifiers: mods !== 'none' ? mods : undefined });
+          } else {
+            // Label / Ignore / Empty column: send label-style fields
+            const lmatch_mode = td.querySelector('.trm-col-lmatch-mode')?.value || 'literal';
+            cols.push({ role, name: nameV, lmatch: matchV, lmatch_mode, ftype });
+          }
         } else {
           // data: name + type + match + modifiers
           const mods = td.querySelector('.trm-col-mods')?.value || 'none';

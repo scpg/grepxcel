@@ -1,17 +1,17 @@
 {
-  "table_0": [
+  "catalog": [
     {
       "_source": {
         "sheet": "Sheet1",
-        "ref": "A2:D5"
-      },
-      "header": {
-        "product": "Laptop",
-        "sku": "ELC001",
-        "qty": 5,
-        "price": 999
+        "ref": "A1:D5"
       },
       "data": [
+        {
+          "product": "Laptop",
+          "sku": "ELC001",
+          "qty": 5,
+          "price": 999
+        },
         {
           "product": "Mouse",
           "sku": "ELC002",
@@ -29,15 +29,15 @@
     {
       "_source": {
         "sheet": "Sheet1",
-        "ref": "A7:D9"
-      },
-      "header": {
-        "product": "Pen",
-        "sku": "STN001",
-        "qty": 500,
-        "price": 2
+        "ref": "A6:D9"
       },
       "data": [
+        {
+          "product": "Pen",
+          "sku": "STN001",
+          "qty": 500,
+          "price": 2
+        },
         {
           "product": "Notebook",
           "sku": "STN002",
@@ -49,15 +49,15 @@
     {
       "_source": {
         "sheet": "Sheet1",
-        "ref": "A11:D14"
-      },
-      "header": {
-        "product": "Chair",
-        "sku": "FRN001",
-        "qty": 10,
-        "price": 250
+        "ref": "A10:D14"
       },
       "data": [
+        {
+          "product": "Chair",
+          "sku": "FRN001",
+          "qty": 10,
+          "price": 250
+        },
         {
           "product": "Desk",
           "sku": "FRN002",

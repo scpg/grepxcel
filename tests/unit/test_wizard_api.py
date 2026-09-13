@@ -453,14 +453,16 @@ class TestExtractEndpoint:
     """Tests for the POST /api/extract endpoint (Phase A)."""
 
     def test_no_pattern_returns_ok_false(self, tmp_path):
-        """Without a pattern, extraction must return ok=False gracefully."""
-        client = _make_client(tmp_path)  # no pattern_path
+        """Without a pattern or classified cells, extraction must return ok=False."""
+        client = _make_client(tmp_path)  # no pattern_path, no choices
         r = client.post('/api/extract')
         assert r.status_code == 200
         data = r.json()
         assert data['ok'] is False
         assert 'error' in data
-        assert 'pattern' in data['error'].lower()
+        # Message must mention "classified" or "classify" (new behaviour: generate
+        # from choices when no pattern file is pre-loaded, fail early when empty)
+        assert any(w in data['error'].lower() for w in ('classif', 'field', 'pattern'))
 
     def test_with_real_pattern_returns_result(self):
         """With a real pattern, extraction must return ok=True and a non-empty result."""
@@ -1143,3 +1145,695 @@ class TestTableHeaderColSeparateNameLmatch:
         # Both name and lmatch should be preserved separately
         assert col0.get('name')   == 'product_name', f'expected name=product_name got {col0}'
         assert col0.get('lmatch') == 'Product Name',  f'expected lmatch=Product Name got {col0}'
+
+
+# ─── TABLE EDIT ROUND-TRIP ────────────────────────────────────────────────────
+# The "edit" flow: classify T → later re-open the modal pre-filled with the
+# stored _web_row_configs → submit (possibly changed) configs → verify the
+# updated state is consistent with the new config.
+#
+# This is qualitatively different from the initial classification because
+# (a) stale T-HEAD/T-DATA cells from the old range must be cleared and
+# (b) the _web_row_configs must be replaced, not merged.
+
+@_skip_no_api
+class TestTableEditRoundTrip:
+    """Verify that re-classifying (editing) an existing T cell updates state correctly."""
+
+    # Helper: workbook with item table + totals row
+    @staticmethod
+    def _make_table_xlsx(tmp_path: Path) -> str:
+        path = str(tmp_path / 'edit_test.xlsx')
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws['A1'] = 'Item';  ws['B1'] = 'Qty';  ws['C1'] = 'Price'
+        ws['A2'] = 'Alpha'; ws['B2'] = 3;      ws['C2'] = 100.0
+        ws['A3'] = 'Beta';  ws['B3'] = 5;      ws['C3'] = 200.0
+        ws['A4'] = 'Total'; ws['B4'] = 8;      ws['C4'] = 800.0
+        wb.save(path)
+        return path
+
+    @staticmethod
+    def _initial_configs():
+        return [
+            {'sheet_row': 1, 'row_type': 'header', 'row_n': 1, 'cols': [
+                {'role': 'L', 'name': 'item',  'lmatch': 'Item'},
+                {'role': 'L', 'name': 'qty',   'lmatch': 'Qty'},
+                {'role': 'L', 'name': 'price', 'lmatch': 'Price'},
+            ]},
+            {'sheet_row': 2, 'row_type': 'data', 'cols': [
+                {'role': 'V', 'name': 'item',  'ftype': 'string',   'match': '.*'},
+                {'role': 'V', 'name': 'qty',   'ftype': 'integer',  'match': r'\d+'},
+                {'role': 'V', 'name': 'price', 'ftype': 'currency', 'match': '.*'},
+            ]},
+            {'sheet_row': 3, 'row_type': 'data_inherited'},
+            {'sheet_row': 4, 'row_type': 'skip', 'cols': [
+                {'condition': 'label', 'lmatch': 'Total'},
+                {'condition': 'IGNORE'}, {'condition': 'IGNORE'},
+            ]},
+        ]
+
+    def test_initial_classify_creates_t_head_and_data(self, tmp_path):
+        path = self._make_table_xlsx(tmp_path)
+        app  = create_app(path)
+        client = TestClient(app)
+        client.post('/api/classify', json={
+            'ref': 'A1', 'action': 'T',
+            'fields': {'name': 'items', 'mult': '*', 'end_ref': 'C4',
+                       'row_configs': self._initial_configs()},
+        })
+        assert client.get('/api/cell/A1').json()['choice'] == 'T'
+        assert client.get('/api/cell/B1').json()['choice'] == 'T-HEAD'
+        assert client.get('/api/cell/A2').json()['choice'] == 'T-DATA'
+
+    def test_edit_changes_table_name_in_context(self, tmp_path):
+        """Re-classifying with a different name updates the context."""
+        path   = self._make_table_xlsx(tmp_path)
+        client = TestClient(create_app(path))
+        client.post('/api/classify', json={
+            'ref': 'A1', 'action': 'T',
+            'fields': {'name': 'items', 'mult': '*', 'end_ref': 'C4',
+                       'row_configs': self._initial_configs()},
+        })
+        # Edit: rename to 'products'
+        client.post('/api/classify', json={
+            'ref': 'A1', 'action': 'T',
+            'fields': {'name': 'products', 'mult': '*', 'end_ref': 'C4',
+                       'row_configs': self._initial_configs()},
+        })
+        ctx = client.get('/api/table-context/A1').json()
+        assert ctx['name'] == 'products', f'Expected name=products, got {ctx["name"]!r}'
+        csv_text = client.get('/api/preview').text
+        assert 'products.item' in csv_text
+        assert 'items.item'    not in csv_text
+
+    def test_edit_changes_multiplicity(self, tmp_path):
+        """Re-classifying with mult='1' changes CSV to table:1."""
+        path   = self._make_table_xlsx(tmp_path)
+        client = TestClient(create_app(path))
+        client.post('/api/classify', json={
+            'ref': 'A1', 'action': 'T',
+            'fields': {'name': 'items', 'mult': '*', 'end_ref': 'C4',
+                       'row_configs': self._initial_configs()},
+        })
+        client.post('/api/classify', json={
+            'ref': 'A1', 'action': 'T',
+            'fields': {'name': 'items', 'mult': '1', 'end_ref': 'C4',
+                       'row_configs': self._initial_configs()},
+        })
+        csv_text = client.get('/api/preview').text
+        assert 'table:1' in csv_text
+        assert 'table:*' not in csv_text
+
+    def test_edit_smaller_range_clears_stale_thead(self, tmp_path):
+        """Shrinking the range (removing col C) clears old T-HEAD cells at C1."""
+        path   = self._make_table_xlsx(tmp_path)
+        client = TestClient(create_app(path))
+        client.post('/api/classify', json={
+            'ref': 'A1', 'action': 'T',
+            'fields': {'name': 'items', 'mult': '*', 'end_ref': 'C4',
+                       'row_configs': self._initial_configs()},
+        })
+        # Verify C1 is T-HEAD after initial classify
+        assert client.get('/api/cell/C1').json()['choice'] == 'T-HEAD'
+
+        # Edit: reduce to 2 columns (A:B only)
+        narrow_configs = [
+            {'sheet_row': 1, 'row_type': 'header', 'row_n': 1, 'cols': [
+                {'role': 'L', 'name': 'item', 'lmatch': 'Item'},
+                {'role': 'L', 'name': 'qty',  'lmatch': 'Qty'},
+            ]},
+            {'sheet_row': 2, 'row_type': 'data', 'cols': [
+                {'role': 'V', 'name': 'item', 'ftype': 'string',  'match': '.*'},
+                {'role': 'V', 'name': 'qty',  'ftype': 'integer', 'match': '.*'},
+            ]},
+            {'sheet_row': 3, 'row_type': 'data_inherited'},
+        ]
+        client.post('/api/classify', json={
+            'ref': 'A1', 'action': 'T',
+            'fields': {'name': 'items', 'mult': '*', 'end_ref': 'B3',
+                       'row_configs': narrow_configs},
+        })
+        c1 = client.get('/api/cell/C1').json()
+        assert c1['choice'] != 'T-HEAD', 'C1 should be cleared after shrinking range'
+
+    def test_edit_updates_web_row_configs(self, tmp_path):
+        """After edit, table-context must return the NEW _web_row_configs."""
+        path   = self._make_table_xlsx(tmp_path)
+        client = TestClient(create_app(path))
+        client.post('/api/classify', json={
+            'ref': 'A1', 'action': 'T',
+            'fields': {'name': 'items', 'mult': '*', 'end_ref': 'C4',
+                       'row_configs': self._initial_configs()},
+        })
+        # Edit: remove the skip row (only 3 rows in new config)
+        no_skip_configs = [r for r in self._initial_configs()
+                           if r['row_type'] != 'skip']
+        client.post('/api/classify', json={
+            'ref': 'A1', 'action': 'T',
+            'fields': {'name': 'items', 'mult': '*', 'end_ref': 'C3',
+                       'row_configs': no_skip_configs},
+        })
+        ctx = client.get('/api/table-context/A1').json()
+        wrc = ctx.get('_web_row_configs', [])
+        row_types_got = [r['row_type'] for r in wrc]
+        assert 'skip' not in row_types_got, 'skip row should be gone after edit'
+
+    def test_edit_then_undo_restores_previous_state(self, tmp_path):
+        """Undo after an edit must revert to the pre-edit classification."""
+        path   = self._make_table_xlsx(tmp_path)
+        client = TestClient(create_app(path))
+        # Initial classify
+        client.post('/api/classify', json={
+            'ref': 'A1', 'action': 'T',
+            'fields': {'name': 'items', 'mult': '*', 'end_ref': 'C4',
+                       'row_configs': self._initial_configs()},
+        })
+        # Edit: change name
+        client.post('/api/classify', json={
+            'ref': 'A1', 'action': 'T',
+            'fields': {'name': 'products', 'mult': '*', 'end_ref': 'C4',
+                       'row_configs': self._initial_configs()},
+        })
+        assert client.get('/api/table-context/A1').json()['name'] == 'products'
+        # Undo → should restore 'items'
+        client.post('/api/undo')
+        ctx = client.get('/api/table-context/A1').json()
+        assert ctx['name'] == 'items', 'undo should restore previous name'
+
+    def test_web_row_configs_feeds_back_into_modal_correctly(self, tmp_path):
+        """The _web_row_configs returned by table-context must round-trip through
+        re-classification without data loss.  Simulate: classify → fetch context
+        → re-classify with same configs → verify CSV unchanged."""
+        path   = self._make_table_xlsx(tmp_path)
+        client = TestClient(create_app(path))
+        client.post('/api/classify', json={
+            'ref': 'A1', 'action': 'T',
+            'fields': {'name': 'items', 'mult': '*', 'end_ref': 'C4',
+                       'row_configs': self._initial_configs()},
+        })
+        csv_v1 = client.get('/api/preview').text
+
+        # Fetch existing configs (simulates what the modal does on open)
+        ctx = client.get('/api/table-context/A1').json()
+        saved_wrc = ctx['_web_row_configs']
+
+        # Re-apply with the same fetched configs (no changes — pure round-trip)
+        client.post('/api/classify', json={
+            'ref': 'A1', 'action': 'T',
+            'fields': {'name': ctx['name'], 'mult': ctx['mult'],
+                       'end_ref': ctx['end_ref'], 'row_configs': saved_wrc},
+        })
+        csv_v2 = client.get('/api/preview').text
+
+        assert csv_v1 == csv_v2, (
+            'CSV changed after a no-op round-trip through table-context edit.\n'
+            f'Before:\n{csv_v1[:400]}\nAfter:\n{csv_v2[:400]}'
+        )
+
+
+# ─── FOOTER V COLUMN EXTRACTION ───────────────────────────────────────────────
+
+@_skip_no_api
+class TestFooterVColumnExtraction:
+    """Footer rows can contain V (variable) columns that extract values.
+    Tests verify the full pipeline: classify → CSV → extract → result."""
+
+    @staticmethod
+    def _make_footer_xlsx(tmp_path: Path) -> str:
+        path = str(tmp_path / 'footer_v.xlsx')
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        # Header row
+        ws['A1'] = 'Item';  ws['B1'] = 'Amount'
+        # Data rows
+        ws['A2'] = 'Widget'; ws['B2'] = 500.0
+        ws['A3'] = 'Gadget'; ws['B3'] = 300.0
+        # Footer row with label + variable
+        ws['A4'] = 'Grand Total'; ws['B4'] = 800.0
+        wb.save(path)
+        return path
+
+    def test_footer_v_col_appears_in_csv_as_var(self, tmp_path):
+        path   = self._make_footer_xlsx(tmp_path)
+        client = TestClient(create_app(path))
+        client.post('/api/classify', json={
+            'ref': 'A1', 'action': 'T',
+            'fields': {'name': 'sales', 'mult': '*', 'end_ref': 'B4',
+                       'row_configs': [
+                           {'sheet_row': 1, 'row_type': 'header', 'row_n': 1, 'cols': [
+                               {'role': 'L', 'name': 'item',   'lmatch': 'Item'},
+                               {'role': 'L', 'name': 'amount', 'lmatch': 'Amount'},
+                           ]},
+                           {'sheet_row': 2, 'row_type': 'data', 'cols': [
+                               {'role': 'V', 'name': 'item',   'ftype': 'string',   'match': '.*'},
+                               {'role': 'V', 'name': 'amount', 'ftype': 'currency', 'match': '.*'},
+                           ]},
+                           {'sheet_row': 3, 'row_type': 'data_inherited'},
+                           {'sheet_row': 4, 'row_type': 'footer', 'row_n': 1, 'cols': [
+                               {'role': 'L', 'name': 'total_lbl',   'lmatch': 'Grand Total'},
+                               {'role': 'V', 'name': 'grand_total', 'ftype': 'currency', 'match': '.*'},
+                           ]},
+                       ]},
+        })
+        csv_text = client.get('/api/preview').text
+        assert 'FOOTER:1' in csv_text
+        assert 'grand_total' in csv_text, 'V column in footer should appear as var in CSV'
+        # The V col should generate a var: definition
+        assert 'sales.grand_total' in csv_text or 'grand_total' in csv_text
+
+    def test_footer_v_col_cell_marked_t_head_with_var_role(self, tmp_path):
+        """Footer V cells should be marked T-HEAD; the V role should appear in context cols."""
+        path   = self._make_footer_xlsx(tmp_path)
+        client = TestClient(create_app(path))
+        client.post('/api/classify', json={
+            'ref': 'A1', 'action': 'T',
+            'fields': {'name': 'sales', 'mult': '*', 'end_ref': 'B4',
+                       'row_configs': [
+                           {'sheet_row': 1, 'row_type': 'header', 'row_n': 1, 'cols': [
+                               {'role': 'L', 'name': 'item',   'lmatch': 'Item'},
+                               {'role': 'L', 'name': 'amount', 'lmatch': 'Amount'},
+                           ]},
+                           {'sheet_row': 2, 'row_type': 'data', 'cols': [
+                               {'role': 'V', 'name': 'item',   'ftype': 'string',   'match': '.*'},
+                               {'role': 'V', 'name': 'amount', 'ftype': 'currency', 'match': '.*'},
+                           ]},
+                           {'sheet_row': 3, 'row_type': 'data_inherited'},
+                           {'sheet_row': 4, 'row_type': 'footer', 'row_n': 1, 'cols': [
+                               {'role': 'L', 'name': 'total_lbl',   'lmatch': 'Grand Total'},
+                               {'role': 'V', 'name': 'grand_total', 'ftype': 'currency', 'match': '.*'},
+                           ]},
+                       ]},
+        })
+        # B4 (footer V cell) must be classified as T-HEAD at the cell level
+        b4 = client.get('/api/cell/B4').json()
+        assert b4['choice'] == 'T-HEAD', 'Footer V cell should be classified as T-HEAD'
+        assert b4.get('anchor') == 'A1', 'Footer V cell should point back to anchor'
+
+        # The V role must be preserved in the table context's _web_row_configs
+        ctx = client.get('/api/table-context/A1').json()
+        footer_rc = next(
+            (r for r in ctx.get('_web_row_configs', []) if r.get('row_type') == 'footer'),
+            None,
+        )
+        assert footer_rc is not None, 'footer row_config missing from context'
+        v_col = next((c for c in footer_rc.get('cols', []) if c.get('role') == 'V'), None)
+        assert v_col is not None, 'V column missing from footer row_config'
+        assert v_col.get('name') == 'grand_total'
+
+    def test_footer_v_col_extraction_produces_value(self, tmp_path):
+        """Full pipeline: classify with footer V → CSV → extract → grand_total present."""
+        import grepxcel as gx
+
+        path   = self._make_footer_xlsx(tmp_path)
+        client = TestClient(create_app(path))
+        client.post('/api/classify', json={
+            'ref': 'A1', 'action': 'T',
+            'fields': {'name': 'sales', 'mult': '*', 'end_ref': 'B4',
+                       'row_configs': [
+                           {'sheet_row': 1, 'row_type': 'header', 'row_n': 1, 'cols': [
+                               {'role': 'L', 'name': 'item',   'lmatch': 'Item'},
+                               {'role': 'L', 'name': 'amount', 'lmatch': 'Amount'},
+                           ]},
+                           {'sheet_row': 2, 'row_type': 'data', 'cols': [
+                               {'role': 'V', 'name': 'item',   'ftype': 'string',   'match': '.*'},
+                               {'role': 'V', 'name': 'amount', 'ftype': 'currency', 'match': '.*'},
+                           ]},
+                           {'sheet_row': 3, 'row_type': 'data_inherited'},
+                           {'sheet_row': 4, 'row_type': 'footer', 'row_n': 1, 'cols': [
+                               {'role': 'L', 'name': 'total_lbl',   'lmatch': 'Grand Total'},
+                               {'role': 'V', 'name': 'grand_total', 'ftype': 'currency', 'match': '.*'},
+                           ]},
+                       ]},
+        })
+        csv_text = client.get('/api/preview').text
+        csv_path = str(tmp_path / 'pattern.csv')
+        Path(csv_path).write_text(csv_text, encoding='utf-8')
+
+        result = gx.extract(csv_path, path, output_format='nested')
+        # The table should contain footer var 'sales.grand_total'
+        tables = result.get('sales', [])
+        assert isinstance(tables, list) and len(tables) >= 1, 'Expected table result'
+        first_group = tables[0]
+        # grand_total may appear at table-group level (footer var) or in footer sub-key
+        assert ('sales.grand_total' in first_group
+                or 'grand_total' in first_group
+                or any('grand_total' in str(v) for v in first_group.values())), (
+            f'grand_total not found in extraction result: {first_group}'
+        )
+
+    def test_footer_v_col_lmatch_preserved_in_context(self, tmp_path):
+        """The L column's lmatch text must be preserved in _web_row_configs."""
+        path   = self._make_footer_xlsx(tmp_path)
+        client = TestClient(create_app(path))
+        configs = [
+            {'sheet_row': 1, 'row_type': 'header', 'row_n': 1, 'cols': [
+                {'role': 'L', 'name': 'item',   'lmatch': 'Item'},
+                {'role': 'L', 'name': 'amount', 'lmatch': 'Amount'},
+            ]},
+            {'sheet_row': 2, 'row_type': 'data', 'cols': [
+                {'role': 'V', 'name': 'item',   'ftype': 'string',   'match': '.*'},
+                {'role': 'V', 'name': 'amount', 'ftype': 'currency', 'match': '.*'},
+            ]},
+            {'sheet_row': 4, 'row_type': 'footer', 'row_n': 1, 'cols': [
+                {'role': 'L', 'name': 'total_lbl',   'lmatch': 'Grand Total'},
+                {'role': 'V', 'name': 'grand_total', 'ftype': 'currency', 'match': '.*'},
+            ]},
+        ]
+        client.post('/api/classify', json={
+            'ref': 'A1', 'action': 'T',
+            'fields': {'name': 'sales', 'mult': '*', 'end_ref': 'B4',
+                       'row_configs': configs},
+        })
+        ctx = client.get('/api/table-context/A1').json()
+        wrc = ctx.get('_web_row_configs', [])
+        footer_row = next((r for r in wrc if r.get('row_type') == 'footer'), None)
+        assert footer_row is not None, 'footer row missing from _web_row_configs'
+        cols = footer_row.get('cols', [])
+        assert len(cols) == 2
+        l_col = cols[0]
+        v_col = cols[1]
+        assert l_col.get('role') == 'L'
+        assert l_col.get('lmatch') == 'Grand Total', f'lmatch mismatch: {l_col}'
+        assert v_col.get('role') == 'V'
+        assert v_col.get('name') == 'grand_total', f'V name mismatch: {v_col}'
+
+
+# ─── NOTE ENDPOINT ────────────────────────────────────────────────────────────
+
+@_skip_no_api
+class TestNoteEndpoint:
+    """POST /api/note — add, update, and clear per-cell notes."""
+
+    def test_add_note_to_classified_cell(self, tmp_path):
+        client = _make_client(tmp_path)
+        client.post('/api/classify', json={
+            'ref': 'A1', 'action': 'V',
+            'fields': {'name': 'invoice_no', 'type': 'string',
+                       'match_mode': '(default)', 'match': '.*', 'notes': ''},
+        })
+        r = client.post('/api/note', json={'ref': 'A1', 'note': 'This is the invoice identifier'})
+        assert r.status_code == 200
+        cell = client.get('/api/cell/A1').json()
+        assert cell.get('note') == 'This is the invoice identifier'
+
+    def test_clear_note_with_empty_string(self, tmp_path):
+        client = _make_client(tmp_path)
+        client.post('/api/classify', json={
+            'ref': 'A1', 'action': 'L',
+            'fields': {'name': 'lbl', 'type': 'string',
+                       'match_mode': '(default)', 'match': 'x', 'notes': ''},
+        })
+        client.post('/api/note', json={'ref': 'A1', 'note': 'temp note'})
+        client.post('/api/note', json={'ref': 'A1', 'note': ''})
+        cell = client.get('/api/cell/A1').json()
+        assert not cell.get('note'), 'Empty note string should clear the note'
+
+    def test_note_is_reverted_by_undo(self, tmp_path):
+        """Notes are part of the undo snapshot, so undo also reverts the note.
+        This is intentional: the undo stack captures the complete state (choices + notes)
+        at the moment just before each classify action."""
+        client = _make_client(tmp_path)
+        # Classify A1 with an inline note
+        client.post('/api/classify', json={
+            'ref': 'A1', 'action': 'V',
+            'fields': {'name': 'invoice_no', 'type': 'string',
+                       'match_mode': '(default)', 'match': '.*', 'notes': 'important note'},
+        })
+        assert client.get('/api/cell/A1').json().get('note') == 'important note'
+        # Undo → classification is reverted, note is reverted too
+        client.post('/api/undo')
+        cell = client.get('/api/cell/A1').json()
+        assert cell.get('note', '') == '', 'Note should be reverted together with the classification'
+
+
+# ─── ALL-VAR HEADER ───────────────────────────────────────────────────────────
+
+@_skip_no_api
+class TestAllVarHeader:
+    """HEADER row with all V columns (no L anchor columns).
+    The engine finds the table by trying every cell as a potential anchor."""
+
+    @staticmethod
+    def _make_all_var_header_xlsx(tmp_path: Path) -> str:
+        path = str(tmp_path / 'all_var.xlsx')
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        # Header has no label text — the columns ARE the data
+        ws['A1'] = 'Alpha'; ws['B1'] = 'Beta'; ws['C1'] = 'Gamma'
+        ws['A2'] = 'x1';    ws['B2'] = 10;     ws['C2'] = True
+        ws['A3'] = 'x2';    ws['B3'] = 20;     ws['C3'] = False
+        wb.save(path)
+        return path
+
+    def test_classify_all_var_header_creates_t_head(self, tmp_path):
+        path   = self._make_all_var_header_xlsx(tmp_path)
+        client = TestClient(create_app(path))
+        configs = [
+            {'sheet_row': 1, 'row_type': 'header', 'row_n': 1, 'cols': [
+                {'role': 'V', 'name': 'alpha', 'ftype': 'string',  'match': '.*'},
+                {'role': 'V', 'name': 'beta',  'ftype': 'string',  'match': '.*'},
+                {'role': 'V', 'name': 'gamma', 'ftype': 'string',  'match': '.*'},
+            ]},
+            {'sheet_row': 2, 'row_type': 'data', 'cols': [
+                {'role': 'V', 'name': 'alpha', 'ftype': 'string',  'match': '.*'},
+                {'role': 'V', 'name': 'beta',  'ftype': 'integer', 'match': '.*'},
+                {'role': 'V', 'name': 'gamma', 'ftype': 'boolean', 'match': '.*'},
+            ]},
+            {'sheet_row': 3, 'row_type': 'data_inherited'},
+        ]
+        r = client.post('/api/classify', json={
+            'ref': 'A1', 'action': 'T',
+            'fields': {'name': 'values', 'mult': '*', 'end_ref': 'C3',
+                       'row_configs': configs},
+        })
+        assert r.status_code == 200
+        assert client.get('/api/cell/A1').json()['choice'] == 'T'
+        assert client.get('/api/cell/B1').json()['choice'] == 'T-HEAD'
+
+    def test_all_var_header_csv_has_header_row(self, tmp_path):
+        path   = self._make_all_var_header_xlsx(tmp_path)
+        client = TestClient(create_app(path))
+        configs = [
+            {'sheet_row': 1, 'row_type': 'header', 'row_n': 1, 'cols': [
+                {'role': 'V', 'name': 'alpha', 'ftype': 'string',  'match': '.*'},
+                {'role': 'V', 'name': 'beta',  'ftype': 'string',  'match': '.*'},
+                {'role': 'V', 'name': 'gamma', 'ftype': 'string',  'match': '.*'},
+            ]},
+            {'sheet_row': 2, 'row_type': 'data', 'cols': [
+                {'role': 'V', 'name': 'alpha', 'ftype': 'string',  'match': '.*'},
+                {'role': 'V', 'name': 'beta',  'ftype': 'integer', 'match': '.*'},
+                {'role': 'V', 'name': 'gamma', 'ftype': 'boolean', 'match': '.*'},
+            ]},
+            {'sheet_row': 3, 'row_type': 'data_inherited'},
+        ]
+        client.post('/api/classify', json={
+            'ref': 'A1', 'action': 'T',
+            'fields': {'name': 'values', 'mult': '*', 'end_ref': 'C3',
+                       'row_configs': configs},
+        })
+        csv_text = client.get('/api/preview').text
+        assert 'HEADER:1' in csv_text
+        # All-var header: var names appear in both HEADER and DATA rows
+        assert 'values.alpha' in csv_text
+        assert 'values.beta'  in csv_text
+
+    def test_all_var_header_table_context_round_trips(self, tmp_path):
+        """_web_row_configs round-trips: V roles survive context fetch."""
+        path   = self._make_all_var_header_xlsx(tmp_path)
+        client = TestClient(create_app(path))
+        configs = [
+            {'sheet_row': 1, 'row_type': 'header', 'row_n': 1, 'cols': [
+                {'role': 'V', 'name': 'alpha', 'ftype': 'string', 'match': '.*'},
+            ]},
+            {'sheet_row': 2, 'row_type': 'data', 'cols': [
+                {'role': 'V', 'name': 'alpha', 'ftype': 'string', 'match': '.*'},
+            ]},
+        ]
+        client.post('/api/classify', json={
+            'ref': 'A1', 'action': 'T',
+            'fields': {'name': 'values', 'mult': '*', 'end_ref': 'A3',
+                       'row_configs': configs},
+        })
+        ctx = client.get('/api/table-context/A1').json()
+        wrc = ctx['_web_row_configs']
+        hdr = next((r for r in wrc if r['row_type'] == 'header'), None)
+        assert hdr is not None
+        assert hdr['cols'][0]['role'] == 'V', 'V role must survive context round-trip'
+
+
+# ─── DIRECTION-AWARE CSV ──────────────────────────────────────────────────────
+
+@_skip_no_api
+class TestDirectionAwareCSV:
+    """TD (top-down) read direction must be reflected in the generated CSV."""
+
+    def test_td_direction_appears_in_csv(self, tmp_path):
+        client = _make_client(tmp_path)
+        client.post('/api/config', json={'direction': 'TD'})
+        client.post('/api/classify', json={
+            'ref': 'A1', 'action': 'L',
+            'fields': {'name': 'lbl', 'type': 'string',
+                       'match_mode': '(default)', 'match': 'Invoice No:', 'notes': ''},
+        })
+        csv_text = client.get('/api/preview').text
+        assert 'TD' in csv_text, 'TD direction should appear in CSV config header'
+
+    def test_lr_direction_appears_in_csv(self, tmp_path):
+        client = _make_client(tmp_path)
+        client.post('/api/config', json={'direction': 'LR'})
+        csv_text = client.get('/api/preview').text
+        assert 'LR' in csv_text
+
+
+# ─── SAVE ENDPOINT EDGE CASES ────────────────────────────────────────────────
+
+@_skip_no_api
+class TestSaveEdgeCases:
+    """Edge cases around /api/save and /api/save-xlsx."""
+
+    def test_save_with_no_classifications_still_produces_csv(self, tmp_path):
+        """An empty classification should still produce a valid CSV (just config rows)."""
+        client = _make_client(tmp_path)
+        r = client.post('/api/save', json={})
+        assert r.status_code == 200
+        assert r.json()['ok'] is True
+        saved_to = r.json()['saved_to']
+        content = Path(saved_to).read_text(encoding='utf-8')
+        assert 'config:' in content, 'Even empty pattern must have config: header'
+
+    def test_save_xlsx_is_valid_workbook(self, tmp_path):
+        """The saved xlsx must be openable and contain a pattern sheet."""
+        client = _make_client(tmp_path)
+        client.post('/api/classify', json={
+            'ref': 'A1', 'action': 'V',
+            'fields': {'name': 'val', 'type': 'string',
+                       'match_mode': '(default)', 'match': '.*', 'notes': ''},
+        })
+        r = client.post('/api/save-xlsx', json={})
+        assert r.status_code == 200
+        saved_to = r.json()['saved_to']
+        wb = openpyxl.load_workbook(saved_to)
+        # Should have at least one sheet with pattern data
+        ws = wb.active
+        assert ws.max_row >= 1
+
+
+# ─── PRELOAD INTEGRATION ──────────────────────────────────────────────────────
+
+@_skip_no_api
+class TestPreloadFromPattern:
+    """When create_app is given a pattern_path, cells are pre-classified."""
+
+    def test_preload_populates_choices(self):
+        if not FIXTURE_01.exists() or not PATTERN_01.exists():
+            pytest.skip('fixture 01 or pattern not found')
+        client = _make_real_client_with_pattern()
+        state = client.get('/api/state').json()
+        assert state['stats']['classified'] > 0, \
+            'Preloading a pattern should classify at least some cells'
+
+    def test_preload_cells_have_correct_choice(self):
+        if not FIXTURE_01.exists() or not PATTERN_01.exists():
+            pytest.skip('fixture 01 or pattern not found')
+        client = _make_real_client_with_pattern()
+        d = client.get('/api/sheet').json()
+        # At least one cell should be classified as L or V
+        choices = {c['choice'] for row in d['rows'] for c in row if c.get('choice')}
+        assert 'L' in choices or 'V' in choices, \
+            f'Expected L or V choices after preload, got: {choices}'
+
+    def test_preload_csv_preview_matches_engine_output(self):
+        """Pattern from preload must parse without error."""
+        if not FIXTURE_01.exists() or not PATTERN_01.exists():
+            pytest.skip('fixture 01 or pattern not found')
+        from grepxcel.pattern_parser import PatternParser
+        client = _make_real_client_with_pattern()
+        csv_text = client.get('/api/preview').text
+        csv_path = str(FIXTURE_01.parent / '_test_preload_pattern.csv')
+        try:
+            Path(csv_path).write_text(csv_text, encoding='utf-8')
+            cfg, defs, seq = PatternParser().parse(csv_path)
+            assert cfg is not None
+        finally:
+            Path(csv_path).unlink(missing_ok=True)
+
+
+@_skip_no_api
+class TestClassifyBatch:
+    """POST /api/classify-batch applies a role to a rectangular range of cells."""
+
+    def test_classify_batch_sets_choice(self, tmp_path):
+        """All refs in the batch get the requested action."""
+        client = _make_client(tmp_path)
+        refs = ['A1', 'B1', 'A2']
+        r = client.post('/api/classify-batch', json={'refs': refs, 'action': 'V'})
+        assert r.status_code == 200
+        data = r.json()
+        assert data['ok'] is True
+        assert data['n_classified'] == 3
+        assert set(data['classified']) == {'A1', 'B1', 'A2'}
+        assert data['skipped'] == []
+        # Verify via /api/cell
+        for ref in refs:
+            cell = client.get(f'/api/cell/{ref}').json()
+            assert cell['choice'] == 'V', f'{ref} should be V, got {cell["choice"]}'
+
+    def test_classify_batch_label(self, tmp_path):
+        """Batch L action marks all cells as Label."""
+        client = _make_client(tmp_path)
+        r = client.post('/api/classify-batch', json={'refs': ['A1', 'A2'], 'action': 'L'})
+        assert r.status_code == 200
+        assert r.json()['ok'] is True
+        for ref in ['A1', 'A2']:
+            assert client.get(f'/api/cell/{ref}').json()['choice'] == 'L'
+
+    def test_classify_batch_ignore(self, tmp_path):
+        """Batch I action marks all cells as Ignore."""
+        client = _make_client(tmp_path)
+        r = client.post('/api/classify-batch', json={'refs': ['B1', 'B2'], 'action': 'I'})
+        assert r.status_code == 200
+        assert r.json()['ok'] is True
+        for ref in ['B1', 'B2']:
+            assert client.get(f'/api/cell/{ref}').json()['choice'] == 'I'
+
+    def test_classify_batch_clear(self, tmp_path):
+        """Batch CLEAR removes existing classifications."""
+        client = _make_client(tmp_path)
+        # First classify
+        client.post('/api/classify-batch', json={'refs': ['A1', 'B1'], 'action': 'V'})
+        # Then clear
+        r = client.post('/api/classify-batch', json={'refs': ['A1', 'B1'], 'action': 'CLEAR'})
+        assert r.status_code == 200
+        data = r.json()
+        assert data['ok'] is True
+        assert data['n_classified'] == 2
+        for ref in ['A1', 'B1']:
+            assert client.get(f'/api/cell/{ref}').json()['choice'] == ''
+
+    def test_classify_batch_updates_stats(self, tmp_path):
+        """Stats in the response reflect the new classification count."""
+        client = _make_client(tmp_path)
+        r = client.post('/api/classify-batch', json={'refs': ['A1', 'B1', 'A2'], 'action': 'C'})
+        data = r.json()
+        assert data['stats']['classified'] >= 3
+
+    def test_classify_batch_invalid_action(self, tmp_path):
+        """T action in batch is rejected with 422."""
+        client = _make_client(tmp_path)
+        r = client.post('/api/classify-batch', json={'refs': ['A1'], 'action': 'T'})
+        assert r.status_code == 400
+
+    def test_classify_batch_empty_refs_rejected(self, tmp_path):
+        """Empty refs list returns 400."""
+        client = _make_client(tmp_path)
+        r = client.post('/api/classify-batch', json={'refs': [], 'action': 'V'})
+        assert r.status_code == 400
+
+    def test_classify_batch_single_cell(self, tmp_path):
+        """Batch with a single ref works the same as /api/classify."""
+        client = _make_client(tmp_path)
+        r = client.post('/api/classify-batch', json={'refs': ['B2'], 'action': 'V'})
+        assert r.status_code == 200
+        assert r.json()['n_classified'] == 1
+        assert client.get('/api/cell/B2').json()['choice'] == 'V'

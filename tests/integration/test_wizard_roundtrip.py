@@ -163,6 +163,13 @@ def test_wizard_roundtrip(fixture_name, folder, data, manual_pattern, capsys):
         direction=direction,
         sheet_name=ws.title,
         currency_sign=currency_sign,
+        ignore_case_labels=preload_cfg.get('ignore_case_labels', False),
+        ignore_case_values=preload_cfg.get('ignore_case_values', False),
+        trim_whitespace_labels=preload_cfg.get('trim_whitespace_labels', False),
+        trim_whitespace_values=preload_cfg.get('trim_whitespace_values', False),
+        lbl_match=preload_cfg.get('lbl_match', ''),
+        var_match=preload_cfg.get('var_match', ''),
+        empty_aliases=preload_cfg.get('empty_aliases', []),
     )
 
     # Write wizard CSV to a temp file and extract
