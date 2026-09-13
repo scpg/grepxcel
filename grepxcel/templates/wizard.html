@@ -623,36 +623,13 @@ td.gx-cell[data-field]:not([data-field=""]):hover::before {
             <option value="TD">TD — top-down, left-to-right</option>
           </select>
         </div>
-        <div class="cfg-section-title">Behaviour</div>
-        <div class="switch-row">
-          <label>Template mode
-            <span class="info-icon" title="Enable for blank-form spreadsheets where value cells are empty.&#10;In template mode the engine accepts empty cells as valid extraction targets.">🛈</span>
-          </label>
-          <label class="toggle"><input type="checkbox" id="cfg-template"><span class="slider"></span></label>
-        </div>
-        <div class="switch-row">
-          <label>Ignore case (labels)
-            <span class="info-icon" title="When ON, label anchors are matched case-insensitively.&#10;e.g. 'Invoice No:' matches 'INVOICE NO:' or 'invoice no:'.">🛈</span>
-          </label>
-          <label class="toggle"><input type="checkbox" id="cfg-ignore_case"><span class="slider"></span></label>
-        </div>
-        <div class="switch-row">
-          <label>Trim whitespace (values)
-            <span class="info-icon" title="When ON, leading and trailing spaces are stripped from extracted values before returning them.&#10;Useful for poorly formatted spreadsheets.">🛈</span>
-          </label>
-          <label class="toggle"><input type="checkbox" id="cfg-trim_ws"><span class="slider"></span></label>
-        </div>
-        <div class="cfg-section-title">Currency sign
-          <span class="info-icon" title="A character stripped from cell values before number parsing.&#10;e.g. with €: the cell '€1,200.00' is extracted as the number 1200.">🛈</span>
+
+        <!-- Labels section -->
+        <div class="cfg-section-title" style="margin-top:10px">Labels
+          <span class="info-icon" title="Settings that control how label anchor cells are read and matched.&#10;Labels are the cells you classify as L — they anchor value cells nearby.">🛈</span>
         </div>
         <div class="form-group">
-          <input id="cfg-currency" type="text" maxlength="5" style="width:80px" placeholder="€">
-        </div>
-        <div class="cfg-section-title">Default match mode
-          <span class="info-icon" title="Overrides the built-in matching defaults for all fields in this pattern.&#10;Per-field overrides (set in the Classify form) still take priority over this global default.">🛈</span>
-        </div>
-        <div class="form-group">
-          <label style="font-size:11px;color:var(--text-muted);margin-bottom:2px">Labels (lbl.match)
+          <label style="font-size:11px;color:var(--text-muted);margin-bottom:2px">Match mode (lbl.match)
             <span class="info-icon" title="How label anchor text is matched against spreadsheet cells.&#10;literal: exact text match (default, safe for most cases).&#10;glob: wildcard patterns (* matches anything, ? matches one char).&#10;regexp: full Python regular expressions.">🛈</span>
           </label>
           <select id="cfg-lbl_match">
@@ -661,8 +638,43 @@ td.gx-cell[data-field]:not([data-field=""]):hover::before {
             <option value="regexp">regexp</option>
           </select>
         </div>
-        <div class="form-group">
-          <label style="font-size:11px;color:var(--text-muted);margin-bottom:2px">Values (var.match)
+        <div class="switch-row">
+          <label>Ignore case
+            <span class="info-icon" title="When ON, label anchors are matched case-insensitively.&#10;e.g. 'Invoice No:' matches 'INVOICE NO:' or 'invoice no:'.">🛈</span>
+          </label>
+          <label class="toggle"><input type="checkbox" id="cfg-ignore_case_labels"><span class="slider"></span></label>
+        </div>
+        <div class="switch-row">
+          <label>Trim whitespace
+            <span class="info-icon" title="When ON, leading and trailing spaces are stripped from label cell text before matching.&#10;Helps when spreadsheets have accidentally padded label cells.">🛈</span>
+          </label>
+          <label class="toggle"><input type="checkbox" id="cfg-trim_ws_labels"><span class="slider"></span></label>
+        </div>
+
+        <!-- Values section -->
+        <div class="cfg-section-title" style="margin-top:10px">Values
+          <span class="info-icon" title="Settings that control how value cells are read and extracted.&#10;Values are the cells you classify as V — the data the engine extracts.">🛈</span>
+        </div>
+        <div class="switch-row">
+          <label>Allow empty cells
+            <span class="info-icon" title="Enable for blank-form spreadsheets where value cells are empty.&#10;In template mode the engine accepts empty cells as valid extraction targets.">🛈</span>
+          </label>
+          <label class="toggle"><input type="checkbox" id="cfg-template"><span class="slider"></span></label>
+        </div>
+        <div class="switch-row">
+          <label>Ignore case
+            <span class="info-icon" title="When ON, value pattern matching and empty-alias lookup are case-insensitive.&#10;e.g. match pattern 'active' also matches 'ACTIVE' or 'Active'.">🛈</span>
+          </label>
+          <label class="toggle"><input type="checkbox" id="cfg-ignore_case_values"><span class="slider"></span></label>
+        </div>
+        <div class="switch-row">
+          <label>Trim whitespace
+            <span class="info-icon" title="When ON, leading and trailing spaces are stripped from extracted values before returning them.&#10;Useful for poorly formatted spreadsheets.">🛈</span>
+          </label>
+          <label class="toggle"><input type="checkbox" id="cfg-trim_ws_values"><span class="slider"></span></label>
+        </div>
+        <div class="form-group" style="margin-top:6px">
+          <label style="font-size:11px;color:var(--text-muted);margin-bottom:2px">Match mode (var.match)
             <span class="info-icon" title="How value field match patterns are interpreted.&#10;regexp: patterns are regular expressions (default).&#10;literal: patterns are plain text.&#10;glob: patterns use * and ? wildcards.">🛈</span>
           </label>
           <select id="cfg-var_match">
@@ -671,13 +683,20 @@ td.gx-cell[data-field]:not([data-field=""]):hover::before {
             <option value="glob">glob</option>
           </select>
         </div>
-        <div class="cfg-section-title">Empty aliases
-          <span class="info-icon" title="Values treated as empty/null during extraction.&#10;Comma-separated list. Any cell whose content matches one of these strings is returned as null instead of the raw text.&#10;Useful for placeholder text like '#N/A' or '—'.">🛈</span>
+        <div class="form-group">
+          <label style="font-size:11px;color:var(--text-muted);margin-bottom:2px">Currency sign
+            <span class="info-icon" title="A character stripped from cell values before number parsing.&#10;e.g. with €: the cell '€1,200.00' is extracted as the number 1200.">🛈</span>
+          </label>
+          <input id="cfg-currency" type="text" maxlength="5" style="width:80px" placeholder="€">
         </div>
         <div class="form-group">
+          <label style="font-size:11px;color:var(--text-muted);margin-bottom:2px">Empty aliases
+            <span class="info-icon" title="Values treated as empty/null during extraction.&#10;Comma-separated list. Any cell whose content matches one of these strings is returned as null instead of the raw text.&#10;Useful for placeholder text like '#N/A' or '—'.">🛈</span>
+          </label>
           <input id="cfg-aliases" type="text" placeholder="#N/A, N/A, —">
           <div class="aliases-help">Comma-separated values treated as empty/null</div>
         </div>
+
         <button class="btn btn-primary" style="width:100%;margin-top:8px" onclick="saveConfig()">
           ✓ Save Config
         </button>
@@ -1073,28 +1092,36 @@ function renderStats(stats) {
 
 // ── Config ────────────────────────────────────────────────────────────────
 function populateConfigPanel(cfg) {
-  setVal('cfg-direction',  cfg.direction  || 'LR');
-  setChk('cfg-template',   cfg.template   || false);
-  setChk('cfg-ignore_case', cfg.ignore_case || false);
-  setChk('cfg-trim_ws',    cfg.trim_whitespace || false);
-  setVal('cfg-currency',   cfg.currency_sign || '€');
-  setVal('cfg-lbl_match',  cfg.lbl_match  || '');
-  setVal('cfg-var_match',  cfg.var_match  || '');
-  setVal('cfg-aliases',    (cfg.empty_aliases || []).join(', '));
+  setVal('cfg-direction',         cfg.direction  || 'LR');
+  setChk('cfg-template',          cfg.template   || false);
+  // split ignore_case flags (server returns split keys; fall back to legacy ignore_case for old sessions)
+  const legacyIC = cfg.ignore_case || false;
+  setChk('cfg-ignore_case_labels', cfg.ignore_case_labels != null ? cfg.ignore_case_labels : legacyIC);
+  setChk('cfg-ignore_case_values', cfg.ignore_case_values != null ? cfg.ignore_case_values : legacyIC);
+  // split trim_whitespace flags
+  const legacyTW = cfg.trim_whitespace || false;
+  setChk('cfg-trim_ws_labels',    cfg.trim_whitespace_labels != null ? cfg.trim_whitespace_labels : legacyTW);
+  setChk('cfg-trim_ws_values',    cfg.trim_whitespace_values != null ? cfg.trim_whitespace_values : legacyTW);
+  setVal('cfg-currency',          cfg.currency_sign || '€');
+  setVal('cfg-lbl_match',         cfg.lbl_match  || '');
+  setVal('cfg-var_match',         cfg.var_match  || '');
+  setVal('cfg-aliases',           (cfg.empty_aliases || []).join(', '));
 }
 
 async function saveConfig() {
   const aliases = document.getElementById('cfg-aliases').value
     .split(',').map(s => s.trim()).filter(Boolean);
   const cfg = {
-    direction:       document.getElementById('cfg-direction').value,
-    template:        document.getElementById('cfg-template').checked,
-    ignore_case:     document.getElementById('cfg-ignore_case').checked,
-    trim_whitespace: document.getElementById('cfg-trim_ws').checked,
-    currency_sign:   document.getElementById('cfg-currency').value || '€',
-    lbl_match:       document.getElementById('cfg-lbl_match').value,
-    var_match:       document.getElementById('cfg-var_match').value,
-    empty_aliases:   aliases,
+    direction:             document.getElementById('cfg-direction').value,
+    template:              document.getElementById('cfg-template').checked,
+    ignore_case_labels:    document.getElementById('cfg-ignore_case_labels').checked,
+    ignore_case_values:    document.getElementById('cfg-ignore_case_values').checked,
+    trim_whitespace_labels: document.getElementById('cfg-trim_ws_labels').checked,
+    trim_whitespace_values: document.getElementById('cfg-trim_ws_values').checked,
+    currency_sign:         document.getElementById('cfg-currency').value || '€',
+    lbl_match:             document.getElementById('cfg-lbl_match').value,
+    var_match:             document.getElementById('cfg-var_match').value,
+    empty_aliases:         aliases,
   };
   await fetch('/api/config', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(cfg) });
   toast('Config saved');
