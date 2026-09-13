@@ -441,24 +441,29 @@ td.gx-T-bottom { border-bottom: 2px solid rgba(124,58,237,0.5) !important; }
 .mod-trigger {
   display: flex; align-items: center; justify-content: space-between;
   width: 100%; padding: 5px 8px; border: 1px solid var(--border);
-  border-radius: 4px; background: var(--input-bg); color: var(--text);
+  border-radius: 4px; background: var(--bg); color: var(--text);
   font-size: 13px; cursor: pointer; text-align: left; box-sizing: border-box;
 }
 .mod-trigger:focus { outline: 1px solid var(--accent); }
 .mod-chevron { font-size: 10px; opacity: 0.55; flex-shrink: 0; margin-left: 6px; }
 .mod-menu {
-  display: none; position: absolute; top: calc(100% + 2px); left: 0; right: 0;
-  background: var(--panel-bg); border: 1px solid var(--border); border-radius: 4px;
-  z-index: 300; padding: 4px 0;
+  display: none; position: fixed;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 4px;
+  z-index: 9999; padding: 3px 0; min-width: 160px;
   box-shadow: 0 4px 12px rgba(0,0,0,0.35);
 }
 .mod-menu.open { display: block; }
+/* Use higher specificity (.form-group .mod-item) so .form-group label doesn't override flex/uppercase/margin */
+.form-group .mod-item,
 .mod-item {
-  display: flex; align-items: center; gap: 8px;
-  padding: 6px 12px; font-size: 13px; cursor: pointer; color: var(--text);
-  user-select: none;
+  display: flex !important; align-items: center; gap: 7px;
+  padding: 4px 10px; font-size: 12px; font-weight: 400; cursor: pointer;
+  color: var(--text) !important; user-select: none;
+  text-transform: none !important; letter-spacing: 0 !important;
+  margin-bottom: 0 !important; border-radius: 3px;
 }
-.mod-item:hover { background: var(--hover); }
+.form-group .mod-item:hover,
+.mod-item:hover { background: var(--border); }
 .mod-item input[type=checkbox] { margin: 0; cursor: pointer; accent-color: var(--accent); flex-shrink: 0; }
 .info-icon {
   cursor: help; font-size: 11px; color: var(--text-muted);
@@ -2127,7 +2132,20 @@ async function _tRefreshTableCells(anchorRef) {
 // ── Modifier checkbox dropdown ────────────────────────────────────────────────
 function toggleModDropdown(e) {
   e && e.stopPropagation();
-  document.getElementById('mod-menu').classList.toggle('open');
+  const trigger = document.getElementById('mod-trigger');
+  const menu    = document.getElementById('mod-menu');
+  if (!trigger || !menu) return;
+  const isOpen = menu.classList.contains('open');
+  if (isOpen) {
+    menu.classList.remove('open');
+  } else {
+    // Position the fixed menu aligned to the trigger's viewport rect
+    const rect = trigger.getBoundingClientRect();
+    menu.style.top   = (rect.bottom + 2) + 'px';
+    menu.style.left  = rect.left + 'px';
+    menu.style.width = rect.width + 'px';
+    menu.classList.add('open');
+  }
 }
 document.addEventListener('click', function(e) {
   const dd = document.getElementById('mod-dropdown');
