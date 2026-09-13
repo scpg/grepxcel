@@ -1172,7 +1172,9 @@ document.addEventListener('mouseup', () => {
 function _cellContent(choice, table_role, row_class, is_table_end, valRaw, note, cellType) {
   const badge = _tableBadge(choice, table_role, row_class, is_table_end);
   const val   = escHtml(valRaw);
-  const isRight = (cellType === 'num' || cellType === 'date' || cellType === 'bool');
+  const isRight = (cellType === 'num' || cellType === 'number' ||
+                   cellType === 'date' ||
+                   cellType === 'bool' || cellType === 'boolean');
   const alignCls = isRight ? ' v-right' : '';
   if (!badge) {
     return `<div class="gx-inner"><span class="cell-value${alignCls}">${val}${note}</span></div>`;
