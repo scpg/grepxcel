@@ -233,6 +233,7 @@ def _build_stats() -> dict:
         for c in range(1, (ws.max_column or 1) + 1)
         if ws.cell(row=r, column=c).value is not None
     ) if ws else 0
+    classified = sum(counts.values())
     return {
         'L': counts.get('L', 0),
         'V': counts.get('V', 0),
@@ -240,7 +241,8 @@ def _build_stats() -> dict:
         'T': counts.get('T', 0),
         'I': counts.get('I', 0),
         'total': total,
-        'classified': sum(counts.values()),
+        'classified': classified,             # L+V+C+T+I (ignored cells count as handled)
+        'unclassified': max(0, total - classified),  # non-empty cells with no type yet
     }
 
 

@@ -232,22 +232,29 @@ td.gx-I.selected { background: var(--I-sel) !important; }
 
 /* ── Stats Bar (persistent bottom strip) ───────────────────────── */
 #stats-bar {
-  flex-shrink: 0; height: 40px;
+  flex-shrink: 0; height: 44px;
   background: var(--surface); border-top: 1px solid var(--border);
-  display: flex; align-items: center; gap: 10px; padding: 0 14px;
+  display: flex; align-items: center; gap: 8px; padding: 0 14px;
+  overflow-x: auto;
 }
 .sb-chip {
   display: inline-flex; align-items: center; gap: 5px;
   padding: 3px 10px; border-radius: 5px; font-size: 12px; font-weight: 700;
-  white-space: nowrap;
+  white-space: nowrap; flex-shrink: 0;
 }
+.sb-chip .sb-n { font-size: 14px; }
 .sb-L { background: var(--L); color: var(--L-dark); }
 .sb-V { background: var(--V); color: var(--V-dark); }
 .sb-C { background: var(--C); color: var(--C-dark); }
 .sb-T { background: var(--T); color: var(--T-dark); }
 .sb-I { background: var(--I); color: var(--I-dark); }
-.sb-sep { width: 1px; height: 18px; background: var(--border); flex-shrink: 0; }
-.sb-progress-wrap { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 100px; }
+.sb-U {
+  background: transparent; color: var(--text-muted);
+  border: 1px dashed var(--border);
+}
+.sb-U.has-pending { color: #f59e0b; border-color: #f59e0b; }
+.sb-sep { width: 1px; height: 20px; background: var(--border); flex-shrink: 0; }
+.sb-progress-wrap { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 140px; }
 .sb-progress-bar { flex: 1; height: 5px; background: var(--border); border-radius: 3px; overflow: hidden; }
 .sb-fill { height: 100%; background: var(--accent); border-radius: 3px; transition: width 0.35s ease; width: 0%; }
 .sb-pct { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
@@ -549,15 +556,17 @@ td.gx-I.selected { background: var(--I-sel) !important; }
 
 <!-- ── Stats Bar ─────────────────────────────────────────────────────────── -->
 <div id="stats-bar">
-  <span class="sb-chip sb-L" title="Labels"><span id="sb-L">0</span> L</span>
-  <span class="sb-chip sb-V" title="Values"><span id="sb-V">0</span> V</span>
-  <span class="sb-chip sb-C" title="Headers"><span id="sb-C">0</span> C</span>
-  <span class="sb-chip sb-T" title="Tables"><span id="sb-T">0</span> T</span>
-  <span class="sb-chip sb-I" title="Ignored"><span id="sb-I">0</span> I</span>
+  <span class="sb-chip sb-L" title="Label cells — identify a nearby value"><span class="sb-n" id="sb-L">0</span> Labels</span>
+  <span class="sb-chip sb-V" title="Variable cells — fields to extract"><span class="sb-n" id="sb-V">0</span> Variables</span>
+  <span class="sb-chip sb-C" title="Header cells — section titles"><span class="sb-n" id="sb-C">0</span> Headers</span>
+  <span class="sb-chip sb-T" title="Mini Table anchors"><span class="sb-n" id="sb-T">0</span> Mini Tables</span>
+  <span class="sb-chip sb-I" title="Ignored — skipped during extraction"><span class="sb-n" id="sb-I">0</span> Ignored</span>
+  <div class="sb-sep"></div>
+  <span class="sb-chip sb-U" id="sb-U-chip" title="Cells with data not yet classified"><span class="sb-n" id="sb-U">0</span> Unclassified</span>
   <div class="sb-sep"></div>
   <div class="sb-progress-wrap">
     <div class="sb-progress-bar"><div id="sb-fill" class="sb-fill"></div></div>
-    <span id="sb-pct" class="sb-pct">0 / 0 cells classified</span>
+    <span id="sb-pct" class="sb-pct">0 / 0 classified</span>
   </div>
 </div>
 
@@ -848,16 +857,27 @@ async function undoLast() {
 
 // ── Stats bar (always-visible bottom strip) ───────────────────────────────
 function renderStats(stats) {
-  const pct = stats.total > 0 ? Math.round((stats.classified / stats.total) * 100) : 0;
+  // classified = L+V+C+T+I (Ignored cells count as handled for progress)
+  const classified   = (stats.L||0)+(stats.V||0)+(stats.C||0)+(stats.T||0)+(stats.I||0);
+  const unclassified = stats.unclassified != null ? stats.unclassified : Math.max(0, (stats.total||0) - classified);
+  const total        = stats.total || 0;
+  const pct          = total > 0 ? Math.round((classified / total) * 100) : 0;
+
   const setText = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
-  setText('sb-L', stats.L);
-  setText('sb-V', stats.V);
-  setText('sb-C', stats.C);
-  setText('sb-T', stats.T);
-  setText('sb-I', stats.I);
-  setText('sb-pct', `${stats.classified} / ${stats.total} cells classified (${pct}%)`);
+  setText('sb-L', stats.L || 0);
+  setText('sb-V', stats.V || 0);
+  setText('sb-C', stats.C || 0);
+  setText('sb-T', stats.T || 0);
+  setText('sb-I', stats.I || 0);
+  setText('sb-U', unclassified);
+  setText('sb-pct', `${classified} / ${total} classified (${pct}%)`);
+
   const fill = document.getElementById('sb-fill');
-  if (fill) fill.style.width = pct + '%';
+  if (fill) fill.style.width = Math.min(pct, 100) + '%';
+
+  // Highlight Unclassified chip in amber when there are pending cells
+  const uChip = document.getElementById('sb-U-chip');
+  if (uChip) uChip.classList.toggle('has-pending', unclassified > 0);
 }
 
 // ── Config ────────────────────────────────────────────────────────────────
