@@ -831,12 +831,59 @@ def _preload_from_pattern(ws, pattern_path: str) -> tuple[dict, dict, list[str]]
             continue
 
         if isinstance(instr, TableInstruction):
-            # Delegate to _preload_table — populates choices with T/T-HEAD/T-DATA
-            tbl_warns = _preload_table(
-                ws, instr, defs, global_config,
-                choices, claimed, max_row, max_col,
-            )
-            warnings.extend(tbl_warns)
+            # Respect multiplicity: call _preload_table once per instance.
+            # 'claimed' prevents re-finding the same occurrence each pass.
+            #   table:1  → 1 pass
+            #   table:2  → up to 2 passes, warn if fewer found
+            #   table:*  → passes until header not found (capped at 200, no warning)
+            #   {n,m}    → up to m passes
+            mult_s = instr.multiplicity or '1'
+            unbounded = (mult_s == '*')
+            if unbounded:
+                max_passes = 200
+            elif mult_s.startswith('{') and ',' in mult_s:
+                try:
+                    max_passes = int(mult_s.strip('{}').split(',')[1])
+                except (ValueError, IndexError):
+                    max_passes = 1
+            else:
+                try:
+                    max_passes = int(mult_s)
+                except ValueError:
+                    max_passes = 1
+
+            found_count = 0
+            for _ in range(max(1, max_passes)):
+                tbl_warns = _preload_table(
+                    ws, instr, defs, global_config,
+                    choices, claimed, max_row, max_col,
+                )
+                miss = any(
+                    'not found' in w or 'not pre-loaded' in w
+                    or 'cannot auto-locate' in w
+                    for w in tbl_warns
+                )
+                if miss:
+                    if unbounded:
+                        # For table:* "0 or more" is valid — swallow "not found".
+                        # Only structural errors (no HEADER, cannot auto-locate)
+                        # that don't mention "not found" are forwarded.
+                        pass
+                    else:
+                        if found_count == 0:
+                            # Zero found: emit the normal _preload_table warning
+                            warnings.extend(tbl_warns)
+                        else:
+                            # Found some but fewer than requested
+                            warnings.append(
+                                f'TABLE {mult_s}: only {found_count} instance(s) '
+                                f'found in sheet (expected {max_passes}); '
+                                f'classify remaining rows manually'
+                            )
+                    break
+                warnings.extend(tbl_warns)
+                found_count += 1
+
             last_lbl_pos = None   # table breaks scalar adjacency tracking
             continue
 

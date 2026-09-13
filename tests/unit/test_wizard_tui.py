@@ -1807,24 +1807,37 @@ class TestPreloadTable:
     # ── Header not found ──────────────────────────────────────────────────────
 
     def test_table_header_not_found_warning(self, tmp_path):
-        """When the lbl header text is absent, emit a 'not found' warning."""
+        """table:1 with absent header → 'not found' warning; table:* silently allows 0."""
         ws = _make_ws({
             (1, 1): 'Product', (1, 2): 'Price',   # different headers
             (2, 1): 'Widget',  (2, 2): 9.99,
         })
-        pat = tmp_path / 'p.csv'
-        self._write_simple_pattern(pat)   # looks for 'Date' / 'Amount'
+        # table:* is 0-or-more — no warning expected even when header is absent
+        pat_star = tmp_path / 'p_star.csv'
+        self._write_simple_pattern(pat_star)   # uses table:*
+        choices_star, _, warns_star = _preload_from_pattern(ws, str(pat_star))
+        assert not warns_star, f'table:* should not warn for 0 instances; got: {warns_star}'
+        assert all(v.get('choice') != 'T' for v in choices_star.values())
 
-        choices, _, warns = _preload_from_pattern(ws, str(pat))
-
+        # table:1 is exactly-1 — must warn when header is absent
+        pat_one = tmp_path / 'p_one.csv'
+        _write_pattern_csv(pat_one, [
+            ['lbl:', 'date_lbl',   'string', 'Date'],
+            ['lbl:', 'amount_lbl', 'string', 'Amount'],
+            ['var:', 'date',       'string', '.*'],
+            ['var:', 'amount',     'currency', r'\d+'],
+            ['START:'],
+            ['table:1', ''],
+            ['', 'HEADER:1', 'date_lbl', 'amount_lbl'],
+            ['', 'DATA:*',   'date',     'amount'],
+            ['END:'],
+        ])
+        choices_one, _, warns_one = _preload_from_pattern(ws, str(pat_one))
         assert any(
             'not found' in w.lower() or 'header' in w.lower()
-            for w in warns
-        ), f'Expected header-not-found warning; got: {warns}'
-        # No T anchor should be placed
-        assert all(
-            v.get('choice') != 'T' for v in choices.values()
-        ), f'No T anchor expected when header is absent; choices: {list(choices)}'
+            for w in warns_one
+        ), f'table:1 expected header-not-found warning; got: {warns_one}'
+        assert all(v.get('choice') != 'T' for v in choices_one.values())
 
     # ── Multi-table same header ───────────────────────────────────────────────
 
