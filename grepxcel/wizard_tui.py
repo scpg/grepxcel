@@ -932,6 +932,14 @@ def _preload_table(
         )
         return warnings
 
+    # ── Derive anchor cell's role (usually L — first header lbl col) ─────────
+    _anchor_col_role = (
+        h_rows_sheet[0]['cols'][0].get('role', 'ignore')
+        if h_rows_sheet and h_rows_sheet[0]['cols']
+        else 'ignore'
+    )
+    _anchor_table_role = 'L' if _anchor_col_role == 'label' else ('V' if _anchor_col_role == 'var' else 'I')
+
     # ── Write anchor T entry ──────────────────────────────────────────────────
     meta: dict = {
         'choice':           'T',
@@ -948,6 +956,8 @@ def _preload_table(
         'skip_rows':        skip_rows,
         'row_types':        row_types,
         '_web_row_configs': web_row_configs,
+        'table_role':       _anchor_table_role,
+        'row_class':        'header',
     }
     choices[anchor_ref] = meta
     claimed.add(anchor_ref)
@@ -957,7 +967,10 @@ def _preload_table(
         for col_dict in hd['cols']:
             ref = col_dict['ref']
             if ref != anchor_ref and ref not in claimed:
-                choices[ref] = {'choice': 'T-HEAD', 'anchor': anchor_ref}
+                role = col_dict.get('role', 'ignore')
+                t_role = 'L' if role == 'label' else ('V' if role == 'var' else 'I')
+                choices[ref] = {'choice': 'T-HEAD', 'anchor': anchor_ref,
+                                'table_role': t_role, 'row_class': 'header'}
                 claimed.add(ref)
 
     # ── Write T-HEAD for footer cells ────────────────────────────────────────
@@ -965,7 +978,10 @@ def _preload_table(
         for col_dict in fr['cols']:
             ref = col_dict['ref']
             if ref not in claimed:
-                choices[ref] = {'choice': 'T-HEAD', 'anchor': anchor_ref}
+                role = col_dict.get('role', 'ignore')
+                t_role = 'L' if role == 'label' else ('V' if role == 'var' else 'I')
+                choices[ref] = {'choice': 'T-HEAD', 'anchor': anchor_ref,
+                                'table_role': t_role, 'row_class': 'footer'}
                 claimed.add(ref)
 
     # ── Write T-DATA for data row cells ──────────────────────────────────────
@@ -973,7 +989,11 @@ def _preload_table(
         for ci in range(num_cols):
             ref = _cell_ref(r, start_col + ci)
             if ref not in claimed:
-                choices[ref] = {'choice': 'T-DATA', 'anchor': anchor_ref}
+                dv = data_vars[ci] if ci < len(data_vars) else {'role': 'ignore'}
+                dv_role = dv.get('role', 'ignore')
+                t_role = 'V' if dv_role == 'var' else ('L' if dv_role == 'label' else 'I')
+                choices[ref] = {'choice': 'T-DATA', 'anchor': anchor_ref,
+                                'table_role': t_role, 'row_class': 'data'}
                 claimed.add(ref)
 
     n_d = len(d_rows_sheet)

@@ -166,9 +166,16 @@ td.gx-T-HEAD.selected, td.gx-T-DATA.selected { outline: 2px solid var(--accent);
 .badge-C { background: var(--C-dark); color: #fff; }
 .badge-T { background: var(--T-dark); color: #fff; }
 .badge-I { background: var(--I-dark); color: #fff; }
-/* Table sub-role badges — purple family */
+/* Table type badges */
 .badge-T-HEAD { background: #7c3aed; color: #fff; }
 .badge-T-DATA { background: rgba(124, 58, 237, 0.55); color: #fff; }
+/* Role-within-table badges (small, appear after the type badge) */
+.badge-role-L { background: #15803d; color: #fff; }
+.badge-role-V { background: #b45309; color: #fff; }
+/* Footer anchor badge */
+.badge-T-FOOT { background: #0e7490; color: #fff; }
+/* EMPTY marker in footer/header ignore cols */
+.badge-empty-col { color: #ef4444; font-weight: 700; font-style: italic; font-size: 9px; }
 
 /* ── Extract result tree ─────────────────────────────────────────── */
 #tab-extract { display:flex; flex-direction:column; height:100%; }
@@ -1014,6 +1021,43 @@ async function loadStats() {
   renderStats(s.stats);
 }
 
+// ── Table role badge builder ──────────────────────────────────────────────
+/**
+ * Generate badge HTML for a cell, incorporating table_role and row_class when
+ * the choice is T / T-HEAD / T-DATA.
+ *
+ * T anchor (choice='T'):        [T][L|V|I]
+ * Header col (T-HEAD, header):  [T-H][L|V]  (I = no role badge)
+ * Footer label (T-HEAD, footer): [T-▶][L]
+ * Footer var   (T-HEAD, footer): [T-D][V]   (same styling as data var)
+ * Footer empty (T-HEAD, footer, role=I): EMPTY in red
+ * Data var     (T-DATA, data):  [T-D][V]
+ * Data label   (T-DATA, data):  [T-D][L]
+ * Data ignore  (T-DATA, data):  [T-D]
+ */
+function _tableBadge(choice, table_role, row_class) {
+  const B = (cls, txt) => `<span class="cell-badge ${cls}">${txt}</span>`;
+  const roleBadge = (r) => r === 'L' ? B('badge-role-L','L') : r === 'V' ? B('badge-role-V','V') : '';
+  if (!choice) return '';
+  if (choice === 'T') {
+    return B('badge-T','T') + roleBadge(table_role);
+  }
+  if (choice === 'T-HEAD') {
+    if (row_class === 'footer') {
+      if (table_role === 'I') return `<span class="badge-empty-col">EMPTY</span>`;
+      const typeBadge = table_role === 'V' ? B('badge-T-DATA','T-D') : B('badge-T-FOOT','T-▶');
+      return typeBadge + roleBadge(table_role);
+    }
+    // header row (or unset row_class)
+    return B('badge-T-HEAD','T-H') + roleBadge(table_role);
+  }
+  if (choice === 'T-DATA') {
+    return B('badge-T-DATA','T-D') + roleBadge(table_role);
+  }
+  // non-table choices: L, V, C, I
+  return B(`badge-${choice}`, choice);
+}
+
 // ── Grid rendering ────────────────────────────────────────────────────────
 function renderGrid(data) {
   // Header row
@@ -1036,7 +1080,7 @@ function renderGrid(data) {
       let cls = cell.choice ? `gx-cell gx-${cell.choice}` : 'gx-cell' + (cell.empty ? ' empty' : '');
       if (cell.merged) cls += ' gx-merged';   // anchor of a merged region
 
-      const badge = cell.choice ? `<span class="cell-badge badge-${cell.choice}">${cell.choice}</span>` : '';
+      const badge = _tableBadge(cell.choice, cell.table_role || '', cell.row_class || '');
       const note  = cell.note  ? ' 📝' : '';
       const val   = escHtml(cell.value || '');
 
@@ -1067,7 +1111,7 @@ function refreshCell(ref) {
   const isMerged = td.dataset.merged === '1';
   td.className = 'gx-cell' + (ch ? ` gx-${ch}` : '') + (info.empty ? ' empty' : '') + (isMerged ? ' gx-merged' : '');
   if (ref === selectedRef) td.classList.add('selected');
-  const badge = ch ? `<span class="cell-badge badge-${ch}">${ch}</span>` : '';
+  const badge = _tableBadge(ch, info.table_role || '', info.row_class || '');
   const note  = info.note ? ' 📝' : '';
   td.innerHTML = badge + escHtml(info.value || '') + note;
   // Phase B: keep provenance data-field and title in sync after reclassification

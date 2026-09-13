@@ -386,10 +386,12 @@ def _build_sheet_data() -> dict:
                 'value':     _cell_display(cell.value),
                 'raw':       str(cell.value) if cell.value is not None else '',
                 'type':      _cell_type_display(cell.value),
-                'choice':    choice_info.get('choice', ''),
-                'name':      choice_info.get('name', ''),
-                'anchor':    choice_info.get('anchor', ''),  # set for T-HEAD / T-DATA
-                'note':      notes.get(ref, ''),
+                'choice':      choice_info.get('choice', ''),
+                'name':        choice_info.get('name', ''),
+                'anchor':      choice_info.get('anchor', ''),  # set for T-HEAD / T-DATA
+                'table_role':  choice_info.get('table_role', ''),  # L/V/I within the table row
+                'row_class':   choice_info.get('row_class', ''),   # header/data/footer
+                'note':        notes.get(ref, ''),
                 'empty':     cell.value is None and not is_anchor,
                 'colspan':   colspan,
                 'rowspan':   rowspan,
@@ -706,28 +708,44 @@ def create_app(
                 choices[ref] = meta_dict
 
                 # Mark T-HEAD cells (all cells in header rows, except the anchor itself)
+                _anchor_col_role = (meta_dict.get('header_rows') or [{}])[0]
+                _anchor_col_role = (_anchor_col_role.get('cols') or [{}])[0].get('role', 'ignore') if _anchor_col_role else 'ignore'
+                choices[ref]['table_role'] = 'L' if _anchor_col_role == 'label' else ('V' if _anchor_col_role == 'var' else 'I')
+                choices[ref]['row_class']  = 'header'
                 for h_row in meta_dict.get('header_rows', []):
                     for col_d in h_row.get('cols', []):
                         cref = col_d.get('ref', '')
                         if cref and cref != ref:
-                            choices[cref] = {'choice': 'T-HEAD', 'anchor': ref}
+                            role   = col_d.get('role', 'ignore')
+                            t_role = 'L' if role == 'label' else ('V' if role == 'var' else 'I')
+                            choices[cref] = {'choice': 'T-HEAD', 'anchor': ref,
+                                             'table_role': t_role, 'row_class': 'header'}
 
                 # Mark T-HEAD cells for footer rows
                 for f_row in meta_dict.get('footer_rows', []):
                     for col_d in f_row.get('cols', []):
                         cref = col_d.get('ref', '')
                         if cref and cref != ref:
-                            choices[cref] = {'choice': 'T-HEAD', 'anchor': ref}
+                            role   = col_d.get('role', 'ignore')
+                            t_role = 'L' if role == 'label' else ('V' if role == 'var' else 'I')
+                            choices[cref] = {'choice': 'T-HEAD', 'anchor': ref,
+                                             'table_role': t_role, 'row_class': 'footer'}
 
                 # Mark T-DATA cells (all non-header/footer/skip rows in range)
                 start_col_ = meta_dict['start_col']
                 end_col_   = meta_dict['end_col']
+                _data_vars = meta_dict.get('data_vars') or []
                 for rt_row, rt_type in meta_dict.get('row_types', {}).items():
                     if rt_type == 'D':
                         for c_ in range(start_col_, end_col_ + 1):
-                            dref = _cell_ref(rt_row, c_)
+                            ci     = c_ - start_col_
+                            dv     = _data_vars[ci] if ci < len(_data_vars) else {}
+                            dv_r   = dv.get('role', 'ignore')
+                            t_role = 'V' if dv_r == 'var' else ('L' if dv_r == 'label' else 'I')
+                            dref   = _cell_ref(rt_row, c_)
                             if dref not in choices:
-                                choices[dref] = {'choice': 'T-DATA', 'anchor': ref}
+                                choices[dref] = {'choice': 'T-DATA', 'anchor': ref,
+                                                 'table_role': t_role, 'row_class': 'data'}
 
             else:
                 # Minimal anchor-only (modal not yet confirmed; placeholder)
