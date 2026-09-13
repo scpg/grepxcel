@@ -1757,3 +1757,83 @@ class TestPreloadFromPattern:
             assert cfg is not None
         finally:
             Path(csv_path).unlink(missing_ok=True)
+
+
+@_skip_no_api
+class TestClassifyBatch:
+    """POST /api/classify-batch applies a role to a rectangular range of cells."""
+
+    def test_classify_batch_sets_choice(self, tmp_path):
+        """All refs in the batch get the requested action."""
+        client = _make_client(tmp_path)
+        refs = ['A1', 'B1', 'A2']
+        r = client.post('/api/classify-batch', json={'refs': refs, 'action': 'V'})
+        assert r.status_code == 200
+        data = r.json()
+        assert data['ok'] is True
+        assert data['n_classified'] == 3
+        assert set(data['classified']) == {'A1', 'B1', 'A2'}
+        assert data['skipped'] == []
+        # Verify via /api/cell
+        for ref in refs:
+            cell = client.get(f'/api/cell/{ref}').json()
+            assert cell['choice'] == 'V', f'{ref} should be V, got {cell["choice"]}'
+
+    def test_classify_batch_label(self, tmp_path):
+        """Batch L action marks all cells as Label."""
+        client = _make_client(tmp_path)
+        r = client.post('/api/classify-batch', json={'refs': ['A1', 'A2'], 'action': 'L'})
+        assert r.status_code == 200
+        assert r.json()['ok'] is True
+        for ref in ['A1', 'A2']:
+            assert client.get(f'/api/cell/{ref}').json()['choice'] == 'L'
+
+    def test_classify_batch_ignore(self, tmp_path):
+        """Batch I action marks all cells as Ignore."""
+        client = _make_client(tmp_path)
+        r = client.post('/api/classify-batch', json={'refs': ['B1', 'B2'], 'action': 'I'})
+        assert r.status_code == 200
+        assert r.json()['ok'] is True
+        for ref in ['B1', 'B2']:
+            assert client.get(f'/api/cell/{ref}').json()['choice'] == 'I'
+
+    def test_classify_batch_clear(self, tmp_path):
+        """Batch CLEAR removes existing classifications."""
+        client = _make_client(tmp_path)
+        # First classify
+        client.post('/api/classify-batch', json={'refs': ['A1', 'B1'], 'action': 'V'})
+        # Then clear
+        r = client.post('/api/classify-batch', json={'refs': ['A1', 'B1'], 'action': 'CLEAR'})
+        assert r.status_code == 200
+        data = r.json()
+        assert data['ok'] is True
+        assert data['n_classified'] == 2
+        for ref in ['A1', 'B1']:
+            assert client.get(f'/api/cell/{ref}').json()['choice'] == ''
+
+    def test_classify_batch_updates_stats(self, tmp_path):
+        """Stats in the response reflect the new classification count."""
+        client = _make_client(tmp_path)
+        r = client.post('/api/classify-batch', json={'refs': ['A1', 'B1', 'A2'], 'action': 'C'})
+        data = r.json()
+        assert data['stats']['classified'] >= 3
+
+    def test_classify_batch_invalid_action(self, tmp_path):
+        """T action in batch is rejected with 422."""
+        client = _make_client(tmp_path)
+        r = client.post('/api/classify-batch', json={'refs': ['A1'], 'action': 'T'})
+        assert r.status_code == 400
+
+    def test_classify_batch_empty_refs_rejected(self, tmp_path):
+        """Empty refs list returns 400."""
+        client = _make_client(tmp_path)
+        r = client.post('/api/classify-batch', json={'refs': [], 'action': 'V'})
+        assert r.status_code == 400
+
+    def test_classify_batch_single_cell(self, tmp_path):
+        """Batch with a single ref works the same as /api/classify."""
+        client = _make_client(tmp_path)
+        r = client.post('/api/classify-batch', json={'refs': ['B2'], 'action': 'V'})
+        assert r.status_code == 200
+        assert r.json()['n_classified'] == 1
+        assert client.get('/api/cell/B2').json()['choice'] == 'V'

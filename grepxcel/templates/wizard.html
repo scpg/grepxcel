@@ -163,6 +163,18 @@ td.gx-T.selected { background: var(--T-sel) !important; }
 td.gx-I.selected { background: var(--I-sel) !important; }
 td.gx-T-HEAD.selected, td.gx-T-DATA.selected { outline: 2px solid var(--accent); outline-offset: -2px; }
 
+/* ── Range selection (Shift+Arrow / Shift+Click) ─────────────────── */
+td.gx-cell.in-range {
+  background: rgba(99, 102, 241, 0.18) !important;
+  outline: 1px dashed rgba(99, 102, 241, 0.7);
+  outline-offset: -1px;
+}
+td.gx-cell.in-range.selected {
+  background: rgba(99, 102, 241, 0.35) !important;
+  outline: 2px solid rgba(99, 102, 241, 0.9);
+  outline-offset: -2px;
+}
+
 /* ── Cell badge base (smaller, subtler) ──────────────────────────── */
 .cell-badge {
   display: inline-block; font-size: 7px; font-weight: 600;
@@ -1011,7 +1023,7 @@ td.gx-T-bottom { border-bottom: 2px solid rgba(124,58,237,0.5) !important; }
 <!-- ── Footer ───────────────────────────────────────────────────────────── -->
 <div id="footer">
   <span class="status-msg" id="status-msg">Ready — click a cell to classify it</span>
-  <span><kbd class="kbd">Click</kbd> select · <kbd class="kbd">↑↓←→</kbd> navigate · <kbd class="kbd">L V C I T</kbd> classify · <kbd class="kbd">Enter</kbd> apply · <kbd class="kbd">Ctrl+Z</kbd> undo · <kbd class="kbd">Ctrl+G</kbd> jump</span>
+  <span><kbd class="kbd">Click</kbd> select · <kbd class="kbd">↑↓←→</kbd> navigate · <kbd class="kbd">Shift+↑↓←→</kbd>/<kbd class="kbd">Shift+Click</kbd> range · <kbd class="kbd">L V C I T</kbd> classify · <kbd class="kbd">Enter</kbd> apply · <kbd class="kbd">Ctrl+Z</kbd> undo · <kbd class="kbd">Ctrl+G</kbd> jump</span>
   <span>grepxcel v{{ gx_version }}</span>
 </div>
 
@@ -1279,7 +1291,7 @@ function renderGrid(data) {
         : `${cell.ref}${cell.merged ? ` [merged ${cell.colspan}×${cell.rowspan}]` : ''}: ${escHtml(cell.value)}`;
       html += `<td class="${cls}" data-ref="${cell.ref}" data-merged="${cell.merged ? '1' : ''}"${fieldAttr}
                    ${csAttr}${rsAttr}
-                   onclick="if(event.shiftKey&&selectedAction==='T'){handleShiftClick('${cell.ref}');return}selectCell('${cell.ref}')"
+                   onclick="if(event.shiftKey&&selectedAction==='T'){handleShiftClick('${cell.ref}');return}if(event.shiftKey&&selectedRef){_rangeAnchor=_rangeAnchor||selectedRef;_rangeEnd='${cell.ref}';_renderRangeHighlight();return}selectCell('${cell.ref}')"
                    title="${titleTxt}">${content}</td>`;
     }
     html += '</tr>';
@@ -1312,6 +1324,8 @@ function refreshCell(ref) {
 
 // ── Cell selection ─────────────────────────────────────────────────────────
 async function selectCell(ref) {
+  // Clear any active range selection when navigating to a new cell normally
+  _clearRange();
   // Deselect old
   if (selectedRef) {
     const old = document.querySelector(`td[data-ref="${selectedRef}"]`);
@@ -2001,6 +2015,93 @@ function scrollCellIntoView(td) {
   if (relRight  > wrap.clientWidth)  wrap.scrollLeft += (relRight   - wrap.clientWidth  + 4);
 }
 
+// ── Range selection state ─────────────────────────────────────────────────
+// _rangeAnchor: the cell where the range began (stays fixed as end moves)
+// _rangeEnd:    the current far corner of the selection
+let _rangeAnchor = null;
+let _rangeEnd    = null;
+
+/** Return all refs in the rectangular bounding box [anchor..end]. */
+function _rangeRefs(anchorRef, endRef) {
+  const [r1, c1] = _parseRef(anchorRef);
+  const [r2, c2] = _parseRef(endRef);
+  const minR = Math.min(r1, r2), maxR = Math.max(r1, r2);
+  const minC = Math.min(c1, c2), maxC = Math.max(c1, c2);
+  const refs = [];
+  for (let r = minR; r <= maxR; r++) {
+    for (let c = minC; c <= maxC; c++) {
+      refs.push(_buildRef(r, c));
+    }
+  }
+  return refs;
+}
+
+/** Apply `.in-range` CSS to all cells in the bounding box; clear stale marks. */
+function _renderRangeHighlight() {
+  // Clear previous
+  document.querySelectorAll('td.in-range').forEach(td => td.classList.remove('in-range'));
+  if (!_rangeAnchor || !_rangeEnd) return;
+  const refs = _rangeRefs(_rangeAnchor, _rangeEnd);
+  refs.forEach(ref => {
+    const td = document.querySelector(`td[data-ref="${ref}"]`);
+    if (td) td.classList.add('in-range');
+  });
+  // Show selection dimensions in the status bar
+  const [r1, c1] = _parseRef(_rangeAnchor);
+  const [r2, c2] = _parseRef(_rangeEnd);
+  const rows = Math.abs(r2 - r1) + 1, cols = Math.abs(c2 - c1) + 1;
+  setStatus(`Range ${_rangeAnchor}:${_rangeEnd} — ${rows}×${cols} (${refs.length} cells) · press L/V/C/I to classify, Esc to cancel`);
+}
+
+/** Cancel any active range selection. */
+function _clearRange() {
+  _rangeAnchor = null;
+  _rangeEnd    = null;
+  document.querySelectorAll('td.in-range').forEach(td => td.classList.remove('in-range'));
+}
+
+/** Apply a batch classification to the current range.  Returns false if no range active. */
+async function _classifyRange(action) {
+  if (!_rangeAnchor || !_rangeEnd) return false;
+  const refs = _rangeRefs(_rangeAnchor, _rangeEnd);
+  if (refs.length === 0) return false;
+  const label = action === 'CLEAR' ? 'Clear' : action;
+  toast(`Classifying ${refs.length} cells as ${label}…`);
+  try {
+    const r = await fetch('/api/classify-batch', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ refs, action }),
+    });
+    const data = await r.json();
+    if (!data.ok) {
+      toast('Batch classify failed: ' + (data.detail || data.error || '?'), true);
+      return true;
+    }
+    const skipped = data.skipped && data.skipped.length ? ` (${data.skipped.length} merged skipped)` : '';
+    toast(`${data.n_classified} cells → ${label}${skipped}`);
+    if (data.stats) updateStats(data.stats);
+    // Update cellData locally and refresh the DOM for each classified cell.
+    // We do a single /api/cell fetch only for the currently selected cell (to update the sidebar);
+    // all other cells get a lightweight local-only refresh based on the action.
+    for (const ref of data.classified || []) {
+      if (action === 'CLEAR') {
+        if (cellData[ref]) { cellData[ref] = { ...cellData[ref], choice: '', name: '', type: '' }; }
+      } else {
+        const existing = cellData[ref] || {};
+        cellData[ref] = { ...existing, choice: action, table_role: '', row_class: '', is_table_end: false };
+      }
+      refreshCell(ref);
+    }
+    _clearRange();
+    // Refresh the sidebar for the currently focused cell
+    if (selectedRef) selectCell(selectedRef);
+  } catch (err) {
+    toast('Batch classify error: ' + err, true);
+  }
+  return true;
+}
+
 // ── Light navigation: update highlight immediately, defer API fetch ─────────
 let _arrowDebounce = null;
 function lightMoveToCell(ref) {
@@ -2031,7 +2132,7 @@ function loadKeyboardShortcuts() {
 
     if (e.ctrlKey && e.key === 'z') { e.preventDefault(); undoLast(); return; }
 
-    // ── Arrow-key cell navigation ──────────────────────────────────────────
+    // ── Arrow-key cell navigation (with optional Shift+Arrow range selection) ─
     // lightMoveToCell() updates highlight instantly; selectCell() (API fetch)
     // is debounced so rapid key-repeat doesn't flood the server.
     const arrowDeltas = { ArrowUp: [-1,0], ArrowDown: [1,0], ArrowLeft: [0,-1], ArrowRight: [0,1] };
@@ -2040,8 +2141,11 @@ function loadKeyboardShortcuts() {
       const match = selectedRef.match(/^([A-Z]+)(\d+)$/);
       if (match) {
         const [dr, dc] = arrowDeltas[e.key];
-        const curCol = colLetterToNum(match[1]);
-        const curRow = parseInt(match[2]);
+        // Extend from _rangeEnd (or selectedRef if no range yet) when Shift held
+        const fromRef = (e.shiftKey && _rangeEnd) ? _rangeEnd : selectedRef;
+        const fromMatch = fromRef.match(/^([A-Z]+)(\d+)$/);
+        const curCol = colLetterToNum(fromMatch ? fromMatch[1] : match[1]);
+        const curRow = parseInt(fromMatch ? fromMatch[2] : match[2]);
         let newRow = curRow + dr, newCol = curCol + dc;
         // Skip merged ghost cells (absent from DOM)
         for (let attempt = 0; attempt < 20; attempt++) {
@@ -2049,9 +2153,20 @@ function loadKeyboardShortcuts() {
           const newRef = numToColLetter(newCol) + newRow;
           const td = document.querySelector(`td[data-ref="${newRef}"]`);
           if (td) {
-            lightMoveToCell(newRef);         // instant visual feedback + sticky scroll
-            clearTimeout(_arrowDebounce);
-            _arrowDebounce = setTimeout(() => selectCell(selectedRef), 120);
+            if (e.shiftKey) {
+              // Start range if not already started
+              if (!_rangeAnchor) _rangeAnchor = selectedRef;
+              _rangeEnd = newRef;
+              _renderRangeHighlight();
+              // Move the focus indicator to the far corner (no API call — stay fast)
+              lightMoveToCell(newRef);
+            } else {
+              // Plain Arrow — cancel any range, move normally
+              _clearRange();
+              lightMoveToCell(newRef);
+              clearTimeout(_arrowDebounce);
+              _arrowDebounce = setTimeout(() => selectCell(selectedRef), 120);
+            }
             break;
           }
           newRow += dr; newCol += dc;
@@ -2062,13 +2177,24 @@ function loadKeyboardShortcuts() {
 
     if (!selectedRef) return;
     const k = e.key.toUpperCase();
+
+    // ── Classification keys: apply to range if one is active ──────────────
+    if (['L','V','C','I'].includes(k) || k === 'DELETE' || k === 'BACKSPACE') {
+      const batchAction = k === 'DELETE' || k === 'BACKSPACE' ? 'CLEAR' : k;
+      if (_rangeAnchor && _rangeEnd) {
+        e.preventDefault();
+        _classifyRange(batchAction);
+        return;
+      }
+    }
+
     if (k === 'L') selectAction('L');
     else if (k === 'V') selectAction('V');
     else if (k === 'C') selectAction('C');
     else if (k === 'T') selectAction('T');
     else if (k === 'I') selectAction('I');
     else if (k === 'ENTER' && selectedAction) applyClassification();
-    else if (k === 'ESCAPE') cancelClassification();
+    else if (k === 'ESCAPE') { cancelClassification(); _clearRange(); }
   });
 }
 

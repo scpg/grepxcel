@@ -829,6 +829,87 @@ def create_app(
             'stats':  _build_stats(),
         })
 
+    @app.post('/api/classify-batch')
+    async def api_classify_batch(request: Request):
+        """Classify a rectangular range of cells with a single action.
+
+        Body: {"refs": ["A1","B1",...], "action": "L"|"V"|"C"|"I"|"CLEAR"}
+        Returns: {"ok": true, "n_classified": N, "skipped": [...], "stats": {...}}
+
+        Each cell gets auto-derived defaults (name from cell value, type inferred).
+        T action is not supported for batch — use the table modal for table anchors.
+        """
+        body   = await request.json()
+        refs   = [r.upper() for r in body.get('refs', []) if isinstance(r, str)]
+        action = body.get('action', '')
+
+        if not refs:
+            raise HTTPException(400, 'refs list is empty')
+        if action not in ('L', 'V', 'C', 'I', 'CLEAR'):
+            raise HTTPException(400, f'action must be L, V, C, I, or CLEAR (got {action!r}); '
+                                    'T is not supported for batch classification')
+
+        _, merge_skip = _build_merge_info(_STATE['ws'])
+        choices: dict = _STATE['choices']
+        ws_: openpyxl.worksheet.worksheet.Worksheet = _STATE['ws']
+
+        # Push a single undo snapshot covering the whole batch (keyed to first ref)
+        if refs:
+            _push_undo(refs[0])
+
+        skipped: list[str] = []
+        classified: list[str] = []
+
+        for ref in refs:
+            if ref in merge_skip:
+                skipped.append(ref)
+                continue
+
+            try:
+                row_, col_ = _parse_ref(ref)
+                cell_value = ws_.cell(row=row_, column=col_).value
+            except Exception:
+                cell_value = None
+                row_, col_ = 0, 0
+
+            if action == 'CLEAR':
+                choices.pop(ref, None)
+                _STATE['notes'].pop(ref, None)
+            elif action == 'L':
+                choices[ref] = {
+                    'choice':   'L',
+                    'name':     _slugify(str(cell_value or '')) + '_label',
+                    'ltype':    'string',
+                    'lmatch':   str(cell_value or ''),
+                    'lbl_mode': '',
+                }
+            elif action == 'V':
+                choices[ref] = {
+                    'choice':      'V',
+                    'name':        _slugify(str(cell_value or '')),
+                    'ftype':       _infer_cell_type(ws_.cell(row=row_, column=col_)) if row_ else 'string',
+                    'match':       '.*',
+                    'col_a_extra': '',
+                }
+            elif action == 'C':
+                choices[ref] = {
+                    'choice': 'C',
+                    'name':   _slugify(str(cell_value or '')),
+                }
+            elif action == 'I':
+                choices[ref] = {'choice': 'I'}
+
+            classified.append(ref)
+
+        _STATE['log'].write('CLASSIFY-BATCH', f'{action} × {len(classified)} cells; skipped {len(skipped)}')
+        return JSONResponse({
+            'ok':           True,
+            'n_classified': len(classified),
+            'classified':   classified,
+            'skipped':      skipped,
+            'stats':        _build_stats(),
+        })
+
     @app.post('/api/undo')
     async def api_undo():
         stack: list = _STATE.get('undo_stack', [])
