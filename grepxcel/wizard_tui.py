@@ -223,11 +223,16 @@ def _build_state_from_choices(
                     for col in hf_row['cols']:
                         role = col.get('role', 'label')
                         if role == 'ignore':
-                            col_names.append('IGNORE')
+                            # Preserve EMPTY vs IGNORE from original pattern (round-trip fidelity)
+                            orig = col.get('orig_field', 'IGNORE')
+                            col_names.append(orig if orig in ('EMPTY', 'IGNORE') else 'IGNORE')
                         elif role == 'var':
                             vn = col.get('var_name', 'IGNORE')
+                            # Don't auto-prefix vars that are already namespace-qualified
+                            # (e.g. po.grand_total in an 'item' table → stay po.grand_total)
                             if (table_name and vn and vn != 'IGNORE'
-                                    and not vn.startswith(table_name + '.')):
+                                    and not vn.startswith(table_name + '.')
+                                    and '.' not in vn):
                                 vn = f'{table_name}.{vn}'
                             col_names.append(vn)
                             if vn and vn != 'IGNORE':
@@ -293,9 +298,10 @@ def _build_state_from_choices(
                             vtype = item.get('var_type', 'string')
                             vmatch= item.get('var_match', '.*')
                             vcol_a = item.get('col_a_extra', '')
-                            # Auto-prefix with table name unless already namespaced
+                            # Auto-prefix unless already table-namespaced or cross-namespace
                             if (table_name and vn and vn != 'IGNORE'
-                                    and not vn.startswith(table_name + '.')):
+                                    and not vn.startswith(table_name + '.')
+                                    and '.' not in vn):
                                 vn = f'{table_name}.{vn}'
                             var_names.append(vn)
                             if vn and vn != 'IGNORE':
@@ -304,12 +310,15 @@ def _build_state_from_choices(
                         vn = item
                         vtype, vmatch = 'string', '.*'
                         if (table_name and vn and vn != 'IGNORE'
-                                and not vn.startswith(table_name + '.')):
+                                and not vn.startswith(table_name + '.')
+                                and '.' not in vn):
                             vn = f'{table_name}.{vn}'
                         var_names.append(vn)
                         if vn and vn != 'IGNORE':
                             state.var_defs.append((vn, vtype, vmatch, ''))
-                state.body_rows.append(['', f'DATA:{mult}'] + var_names)
+                # DATA rows always repeat within a table instance; mult is the TABLE-level
+                # multiplicity (how many times the whole table appears), which is separate.
+                state.body_rows.append(['', 'DATA:*'] + var_names)
 
                 # SKIP_IF rows from web wizard (each skip_cfg defines one SKIP_IF row)
                 for skip_cfg in meta.get('_web_skip_configs', []):
@@ -350,7 +359,7 @@ def _build_state_from_choices(
                     lbl_names.append(lbl_name)
                     var_names.append(var_name)
                 state.body_rows.append(['', 'HEADER:1'] + lbl_names)
-                state.body_rows.append(['', f'DATA:{mult}'] + var_names)
+                state.body_rows.append(['', 'DATA:*'] + var_names)   # DATA always repeats
         elif choice in ('T-HEAD', 'T-DATA'):
             pass  # handled by the anchor cell above
         elif choice == 'I':
@@ -608,6 +617,7 @@ def _preload_table(
                     'row':        sheet_r, 'col': sheet_c,
                     'cell_value': val_s,
                     'role':       'ignore',
+                    'orig_field': field if field in ('IGNORE', 'EMPTY') else 'IGNORE',
                     'lbl_name':   'IGNORE', 'lbl_type': 'string', 'lbl_match': val_s,
                     'var_name':   'IGNORE', 'var_type': 'string', 'var_match': '.*',
                     'notes':      '',
@@ -754,6 +764,7 @@ def _preload_table(
                     'row': matched_row, 'col': sheet_c,
                     'cell_value': val_s,
                     'role': 'ignore',
+                    'orig_field': field if field in ('IGNORE', 'EMPTY') else 'IGNORE',
                     'lbl_name': 'IGNORE', 'lbl_type': 'string', 'lbl_match': val_s,
                     'var_name': 'IGNORE', 'var_type': 'string', 'var_match': '.*',
                     'notes': '',
@@ -851,7 +862,7 @@ def _preload_table(
                     'modifiers': mods,
                 })
             else:
-                cols_cfg.append({'role': 'I'})
+                cols_cfg.append({'role': 'I', 'orig_field': col_dict.get('orig_field', 'IGNORE')})
         web_row_configs.append({
             'sheet_row': h_row['row'],
             'row_type': 'header',
@@ -882,7 +893,7 @@ def _preload_table(
                         'lmatch_mode': lbl_mode,
                     })
                 else:
-                    cols_cfg.append({'role': 'I'})
+                    cols_cfg.append({'role': 'I', 'orig_field': dv.get('orig_field', 'IGNORE')})
             web_row_configs.append({
                 'sheet_row': r,
                 'row_type': 'data',
@@ -916,7 +927,7 @@ def _preload_table(
                     'modifiers': mods,
                 })
             else:
-                cols_cfg.append({'role': 'I'})
+                cols_cfg.append({'role': 'I', 'orig_field': col_dict.get('orig_field', 'IGNORE')})
         web_row_configs.append({
             'sheet_row': f_row['row'],
             'row_type': 'footer',

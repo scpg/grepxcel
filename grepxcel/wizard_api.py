@@ -174,9 +174,11 @@ def _web_row_configs_to_meta(anchor_ref: str, end_ref: str, name: str, mult: str
                    role_default: str = 'V', hf_mode: bool = False) -> dict:
         """Build a column descriptor dict for one cell in a table row.
 
-        hf_mode=True (header/footer rows): label cols use the lmatch text or
-        spreadsheet cell value as the label name — matching the natural pattern
-        format ``HEADER:1,Item,Description,...`` (no table-prefix on label names).
+        hf_mode=True (header/footer rows): label columns.
+          - If a field name was given (raw_name, e.g. ``header_item_lbl``): use it as
+            the HEADER/FOOTER column identifier AND emit a global lbl: definition.
+          - If no field name: fall back to the cell text as an implicit literal identifier
+            (the engine matches it directly without a global lbl: def; no_global_lbl=True).
         """
         c = start_col + i
         role = _ui_role_to_meta(col_cfg.get('role', role_default))
@@ -184,15 +186,13 @@ def _web_row_configs_to_meta(anchor_ref: str, end_ref: str, name: str, mult: str
         cell_val = ws.cell(row=sheet_row, column=c).value
         cell_str = str(cell_val).strip() if cell_val is not None else ''
 
-        # For HEADER/FOOTER label columns use the actual column-header text as the
-        # label name so the generated HEADER:1 row looks like the fixture format
-        # (e.g. ",HEADER:1,Item,Description,…") rather than introducing a name
-        # that conflicts with the DATA-row variable names.
         if hf_mode and role == 'label':
             lmatch_text = (col_cfg.get('lmatch') or '').strip() or cell_str
-            fn = lmatch_text or raw_name or 'IGNORE'
+            # Prefer explicit field name; fall back to cell text as implicit identifier.
+            fn = raw_name or lmatch_text or 'IGNORE'
         elif (table_name and raw_name and raw_name.upper() != 'IGNORE'
-                and not raw_name.startswith(table_name + '.')):
+                and not raw_name.startswith(table_name + '.')
+                and '.' not in raw_name):   # already namespace-qualified → don't add prefix
             fn = f'{table_name}.{raw_name}'
         else:
             fn = raw_name or 'IGNORE'
@@ -200,6 +200,10 @@ def _web_row_configs_to_meta(anchor_ref: str, end_ref: str, name: str, mult: str
         # Propagate modifiers → col_a_extra (e.g. 'nullable', 'not-null', 'trim-whitespace')
         modifiers_raw = col_cfg.get('modifiers') or 'none'
         col_a_extra   = _col_a_extra_from_parts('', modifiers_raw)
+
+        # For ignore-role columns, preserve the EMPTY vs IGNORE distinction from
+        # the original pattern so round-trip CSV generation is lossless.
+        orig_field_ignore = col_cfg.get('orig_field', 'IGNORE') if role == 'ignore' else ''
 
         return {
             'ref':          _cell_ref(sheet_row, c),
@@ -213,11 +217,11 @@ def _web_row_configs_to_meta(anchor_ref: str, end_ref: str, name: str, mult: str
             'lbl_match':    (col_cfg.get('lmatch') or '').strip() or cell_str,
             'lbl_mode':     col_cfg.get('lbl_mode', ''),
             'cell_value':   cell_str,
-            # hf_mode label columns use the cell text as the identifier; the engine
-            # handles HEADER:1 column names implicitly as literal text matchers — no
-            # global lbl: definition is needed or wanted (it would cause the cell to be
-            # "consumed" in the global label phase and interfere with table scanning).
-            'no_global_lbl': hf_mode and role == 'label',
+            'orig_field':   orig_field_ignore,
+            # Suppress global lbl: def only when the column identifier IS the raw cell
+            # text (no explicit field name given).  Named fields (e.g. header_item_lbl)
+            # require a global def so the engine can locate and match them.
+            'no_global_lbl': hf_mode and role == 'label' and not raw_name,
         }
 
     header_rows: list = []
