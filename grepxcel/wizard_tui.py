@@ -709,42 +709,50 @@ def _preload_table(
             if fd and fd.role == 'lbl' and fd.regex:
                 f_scan.append((col_idx, fd))
 
-        if not f_scan:
-            # No label anchors — cannot locate this footer row
-            warnings.append(
-                f'TABLE footer row {fi + 1} has no label columns to match; '
-                f'skipped (classify manually)'
-            )
-            continue
-
-        # Scan d_rows_sheet for the first row matching all f_scan targets
         matched_row: int | None = None
-        for r in d_rows_sheet:
-            if r in f_row_nums:
-                continue
-            ok = True
-            for col_off, fd in f_scan:
-                sheet_c = start_col + col_off
-                if sheet_c > max_col:
-                    ok = False
-                    break
-                v      = ws.cell(row=r, column=sheet_c).value
-                f_mode = fd.lbl_match or global_config.lbl_match
-                if not _lbl_cell_matches(v, fd.regex, f_mode, ic):
-                    ok = False
-                    break
-            if ok:
-                matched_row = r
-                break
 
-        if matched_row is None:
-            probe = [fd.regex for _, fd in f_scan[:2]]
-            warnings.append(
-                f'TABLE footer row {fi + 1}: label not matched in data rows '
-                f'(looking for: {", ".join(repr(t) for t in probe)}); '
-                f'classify manually'
-            )
-            continue
+        if not f_scan:
+            # No label anchors — positional fallback: last remaining row.
+            # Footer rows with only var/empty columns (no label to match) still
+            # appear at the bottom of the table, so the last unclassified row
+            # is the safest positional candidate.
+            available = sorted(r for r in d_rows_sheet if r not in f_row_nums)
+            if available:
+                matched_row = available[-1]
+            else:
+                warnings.append(
+                    f'TABLE footer row {fi + 1} has no label columns and no '
+                    f'remaining rows; skipped (classify manually)'
+                )
+                continue
+        else:
+            # Scan d_rows_sheet for the first row matching all f_scan targets
+            for r in d_rows_sheet:
+                if r in f_row_nums:
+                    continue
+                ok = True
+                for col_off, fd in f_scan:
+                    sheet_c = start_col + col_off
+                    if sheet_c > max_col:
+                        ok = False
+                        break
+                    v      = ws.cell(row=r, column=sheet_c).value
+                    f_mode = fd.lbl_match or global_config.lbl_match
+                    if not _lbl_cell_matches(v, fd.regex, f_mode, ic):
+                        ok = False
+                        break
+                if ok:
+                    matched_row = r
+                    break
+
+            if matched_row is None:
+                probe = [fd.regex for _, fd in f_scan[:2]]
+                warnings.append(
+                    f'TABLE footer row {fi + 1}: label not matched in data rows '
+                    f'(looking for: {", ".join(repr(t) for t in probe)}); '
+                    f'classify manually'
+                )
+                continue
 
         # Build the footer col descriptors (same shape as header cols)
         f_row_nums.add(matched_row)
