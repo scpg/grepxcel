@@ -978,3 +978,168 @@ class TestTableIntegrationFixture3:
         # Grand Total row should be skipped by SKIP_IF (engine label match)
         items = [r.get('item') for r in data_rows]
         assert 'Grand Total' not in items, 'Grand Total should be skipped by SKIP_IF'
+
+@_skip_no_api
+class TestTableColModifiers:
+    """Verify that data-col modifiers flow through _build_col → col_a_extra → CSV."""
+
+    def _make_client_with_table(self, tmp_path, row_configs, end_ref='B4'):
+        xlsx_path = str(tmp_path / 'mod_test.xlsx')
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws['A3'] = 'Name';  ws['B3'] = 'Amount'
+        ws['A4'] = 'Alice'; ws['B4'] = 1500.0
+        wb.save(xlsx_path)
+
+        from grepxcel.wizard_api import create_app
+        app = create_app(xlsx_path)
+        client = TestClient(app)
+        client.post('/api/classify', json={
+            'ref': 'A3', 'action': 'T',
+            'fields': {'name': 'rows', 'mult': '*', 'end_ref': end_ref,
+                       'row_configs': row_configs},
+        })
+        return client
+
+    def test_nullable_modifier_appears_in_csv(self, tmp_path):
+        row_configs = [
+            {'sheet_row': 3, 'row_type': 'header', 'row_n': 1, 'cols': [
+                {'role': 'L', 'name': 'name',   'lmatch': 'Name'},
+                {'role': 'L', 'name': 'amount', 'lmatch': 'Amount'},
+            ]},
+            {'sheet_row': 4, 'row_type': 'data', 'cols': [
+                {'role': 'V', 'name': 'name',   'ftype': 'string',   'match': '.*', 'modifiers': 'nullable'},
+                {'role': 'V', 'name': 'amount', 'ftype': 'currency', 'match': '.*'},
+            ]},
+        ]
+        client = self._make_client_with_table(tmp_path, row_configs)
+        csv_text = client.get('/api/preview').text
+        assert 'nullable' in csv_text, 'nullable modifier should appear in generated CSV'
+
+    def test_trim_whitespace_modifier_appears_in_csv(self, tmp_path):
+        row_configs = [
+            {'sheet_row': 3, 'row_type': 'header', 'row_n': 1, 'cols': [
+                {'role': 'L', 'name': 'name',   'lmatch': 'Name'},
+                {'role': 'L', 'name': 'amount', 'lmatch': 'Amount'},
+            ]},
+            {'sheet_row': 4, 'row_type': 'data', 'cols': [
+                {'role': 'V', 'name': 'name',   'ftype': 'string',   'match': '.*', 'modifiers': 'trim-whitespace'},
+                {'role': 'V', 'name': 'amount', 'ftype': 'currency', 'match': '.*'},
+            ]},
+        ]
+        client = self._make_client_with_table(tmp_path, row_configs)
+        csv_text = client.get('/api/preview').text
+        assert 'trim-whitespace' in csv_text
+
+    def test_no_modifiers_gives_clean_col_a(self, tmp_path):
+        row_configs = [
+            {'sheet_row': 3, 'row_type': 'header', 'row_n': 1, 'cols': [
+                {'role': 'L', 'name': 'name', 'lmatch': 'Name'},
+                {'role': 'L', 'name': 'amount', 'lmatch': 'Amount'},
+            ]},
+            {'sheet_row': 4, 'row_type': 'data', 'cols': [
+                {'role': 'V', 'name': 'name',   'ftype': 'string',   'match': '.*'},
+                {'role': 'V', 'name': 'amount', 'ftype': 'currency', 'match': '.*'},
+            ]},
+        ]
+        client = self._make_client_with_table(tmp_path, row_configs)
+        csv_text = client.get('/api/preview').text
+        # no modifiers means no extra col_a token between var name and comma
+        assert 'nullable' not in csv_text
+        assert 'not-null'  not in csv_text
+        assert 'trim-whitespace' not in csv_text
+
+    def test_modifiers_round_trip_via_table_context(self, tmp_path):
+        """Modifiers stored in _web_row_configs are returned by /api/table-context."""
+        row_configs = [
+            {'sheet_row': 3, 'row_type': 'header', 'row_n': 1, 'cols': [
+                {'role': 'L', 'name': 'name', 'lmatch': 'Name'},
+                {'role': 'L', 'name': 'amount', 'lmatch': 'Amount'},
+            ]},
+            {'sheet_row': 4, 'row_type': 'data', 'cols': [
+                {'role': 'V', 'name': 'name',   'ftype': 'string',   'match': '.*', 'modifiers': 'nullable'},
+                {'role': 'V', 'name': 'amount', 'ftype': 'currency', 'match': '.*'},
+            ]},
+        ]
+        client = self._make_client_with_table(tmp_path, row_configs)
+        ctx = client.get('/api/table-context/A3').json()
+        web_configs = ctx.get('_web_row_configs') or []
+        data_row = next((r for r in web_configs if r.get('row_type') == 'data'), None)
+        assert data_row is not None, 'data row should be in _web_row_configs'
+        first_col = data_row.get('cols', [{}])[0]
+        assert first_col.get('modifiers') == 'nullable', 'modifiers should round-trip through context'
+
+
+@_skip_no_api
+class TestTableHeaderColSeparateNameLmatch:
+    """Header cols now have separate name (slug) and lmatch (match text) fields.
+    Verify that the backend correctly uses lmatch for the HEADER row label
+    and name as the slugified identifier."""
+
+    def test_header_col_uses_lmatch_not_name_in_header_row(self, tmp_path):
+        """When name='item_col' and lmatch='Item No.', HEADER row should have 'Item No.'."""
+        xlsx_path = str(tmp_path / 'sep_test.xlsx')
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws['A3'] = 'Item No.'; ws['B3'] = 'Unit Price'
+        ws['A4'] = 'L-001';    ws['B4'] = 99.0
+        wb.save(xlsx_path)
+
+        from grepxcel.wizard_api import create_app
+        app = create_app(xlsx_path)
+        client = TestClient(app)
+        client.post('/api/classify', json={
+            'ref': 'A3', 'action': 'T',
+            'fields': {'name': 'items', 'mult': '*', 'end_ref': 'B4',
+                       'row_configs': [
+                           {'sheet_row': 3, 'row_type': 'header', 'row_n': 1, 'cols': [
+                               # name = slug, lmatch = exact cell text to match in spreadsheet
+                               {'role': 'L', 'name': 'item_no',    'lmatch': 'Item No.'},
+                               {'role': 'L', 'name': 'unit_price', 'lmatch': 'Unit Price'},
+                           ]},
+                           {'sheet_row': 4, 'row_type': 'data', 'cols': [
+                               {'role': 'V', 'name': 'item_no',    'ftype': 'string',   'match': '.*'},
+                               {'role': 'V', 'name': 'unit_price', 'ftype': 'currency', 'match': '.*'},
+                           ]},
+                       ]},
+        })
+        csv_text = client.get('/api/preview').text
+        # HEADER row should contain the lmatch text, not the slug name
+        assert 'Item No.' in csv_text, 'HEADER row should contain the lmatch text'
+        assert 'Unit Price' in csv_text
+        # DATA row should use the table-prefixed var name
+        assert 'items.item_no' in csv_text
+
+    def test_header_col_separate_name_and_lmatch_round_trip(self, tmp_path):
+        """After classify, table-context should return separate name and lmatch in _web_row_configs."""
+        xlsx_path = str(tmp_path / 'rt_test.xlsx')
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws['A3'] = 'Product Name'; ws['A4'] = 'Widget A'
+        wb.save(xlsx_path)
+
+        from grepxcel.wizard_api import create_app
+        app = create_app(xlsx_path)
+        client = TestClient(app)
+        client.post('/api/classify', json={
+            'ref': 'A3', 'action': 'T',
+            'fields': {'name': 'products', 'mult': '*', 'end_ref': 'A4',
+                       'row_configs': [
+                           {'sheet_row': 3, 'row_type': 'header', 'row_n': 1, 'cols': [
+                               {'role': 'L', 'name': 'product_name', 'lmatch': 'Product Name'},
+                           ]},
+                           {'sheet_row': 4, 'row_type': 'data', 'cols': [
+                               {'role': 'V', 'name': 'product_name', 'ftype': 'string', 'match': '.*'},
+                           ]},
+                       ]},
+        })
+        ctx = client.get('/api/table-context/A3').json()
+        web_configs = ctx.get('_web_row_configs') or []
+        hdr_row = next((r for r in web_configs if r.get('row_type') == 'header'), None)
+        assert hdr_row is not None
+        cols = hdr_row.get('cols', [])
+        assert len(cols) >= 1
+        col0 = cols[0]
+        # Both name and lmatch should be preserved separately
+        assert col0.get('name')   == 'product_name', f'expected name=product_name got {col0}'
+        assert col0.get('lmatch') == 'Product Name',  f'expected lmatch=Product Name got {col0}'

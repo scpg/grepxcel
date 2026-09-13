@@ -197,13 +197,17 @@ def _web_row_configs_to_meta(anchor_ref: str, end_ref: str, name: str, mult: str
         else:
             fn = raw_name or 'IGNORE'
 
+        # Propagate modifiers → col_a_extra (e.g. 'nullable', 'not-null', 'trim-whitespace')
+        modifiers_raw = col_cfg.get('modifiers') or 'none'
+        col_a_extra   = _col_a_extra_from_parts('', modifiers_raw)
+
         return {
             'ref':          _cell_ref(sheet_row, c),
             'role':         role,
             'var_name':     fn if role == 'var'   else 'IGNORE',
             'var_type':     col_cfg.get('ftype', 'string'),
             'var_match':    col_cfg.get('match', '.*'),
-            'col_a_extra':  '',
+            'col_a_extra':  col_a_extra,
             'lbl_name':     fn if role == 'label' else 'IGNORE',
             'lbl_type':     'string',
             'lbl_match':    (col_cfg.get('lmatch') or '').strip() or cell_str,
