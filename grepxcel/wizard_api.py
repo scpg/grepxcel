@@ -143,6 +143,145 @@ def _cell_ref(row: int, col: int) -> str:
     return f'{get_column_letter(col)}{row}'
 
 
+def _ui_role_to_meta(role: str) -> str:
+    """Map UI role V/L/C/I → internal meta role var/label/label/ignore."""
+    r = (role or 'V').upper()
+    if r == 'V':    return 'var'
+    if r in ('L', 'C'): return 'label'
+    return 'ignore'
+
+
+def _web_row_configs_to_meta(anchor_ref: str, end_ref: str, name: str, mult: str,
+                              row_configs: list,
+                              ws: 'openpyxl.worksheet.worksheet.Worksheet') -> dict:
+    """Convert the web modal row_configs list to a standard T-anchor meta dict.
+
+    This meta dict is understood by ``_choices_to_csv`` in wizard_tui.py.
+    row_configs is a list of dicts with keys:
+      sheet_row   int             — the actual worksheet row number
+      row_type    str             — 'header', 'data', 'data_inherited',
+                                    'footer', 'skip', 'ignore'
+      row_n       int (optional)  — for header/footer, the :N suffix (default 1)
+      cols        list (optional) — per-column config (not present for data_inherited)
+    """
+    ar, ac = _parse_ref(anchor_ref)
+    er, ec = _parse_ref(end_ref)
+    start_row, end_row = min(ar, er), max(ar, er)
+    start_col, end_col = min(ac, ec), max(ac, ec)
+    table_name = name.strip()
+
+    def _build_col(i: int, sheet_row: int, col_cfg: dict,
+                   role_default: str = 'V', hf_mode: bool = False) -> dict:
+        """Build a column descriptor dict for one cell in a table row.
+
+        hf_mode=True (header/footer rows): label cols use the lmatch text or
+        spreadsheet cell value as the label name — matching the natural pattern
+        format ``HEADER:1,Item,Description,...`` (no table-prefix on label names).
+        """
+        c = start_col + i
+        role = _ui_role_to_meta(col_cfg.get('role', role_default))
+        raw_name = (col_cfg.get('name') or '').strip()
+        cell_val = ws.cell(row=sheet_row, column=c).value
+        cell_str = str(cell_val).strip() if cell_val is not None else ''
+
+        # For HEADER/FOOTER label columns use the actual column-header text as the
+        # label name so the generated HEADER:1 row looks like the fixture format
+        # (e.g. ",HEADER:1,Item,Description,…") rather than introducing a name
+        # that conflicts with the DATA-row variable names.
+        if hf_mode and role == 'label':
+            lmatch_text = (col_cfg.get('lmatch') or '').strip() or cell_str
+            fn = lmatch_text or raw_name or 'IGNORE'
+        elif (table_name and raw_name and raw_name.upper() != 'IGNORE'
+                and not raw_name.startswith(table_name + '.')):
+            fn = f'{table_name}.{raw_name}'
+        else:
+            fn = raw_name or 'IGNORE'
+
+        return {
+            'ref':          _cell_ref(sheet_row, c),
+            'role':         role,
+            'var_name':     fn if role == 'var'   else 'IGNORE',
+            'var_type':     col_cfg.get('ftype', 'string'),
+            'var_match':    col_cfg.get('match', '.*'),
+            'col_a_extra':  '',
+            'lbl_name':     fn if role == 'label' else 'IGNORE',
+            'lbl_type':     'string',
+            'lbl_match':    (col_cfg.get('lmatch') or '').strip() or cell_str,
+            'lbl_mode':     col_cfg.get('lbl_mode', ''),
+            'cell_value':   cell_str,
+            # hf_mode label columns use the cell text as the identifier; the engine
+            # handles HEADER:1 column names implicitly as literal text matchers — no
+            # global lbl: definition is needed or wanted (it would cause the cell to be
+            # "consumed" in the global label phase and interfere with table scanning).
+            'no_global_lbl': hf_mode and role == 'label',
+        }
+
+    header_rows: list = []
+    data_vars: list | None = None
+    footer_rows: list = []
+    skip_configs: list = []
+    row_types: dict = {}
+
+    for rc in row_configs:
+        sheet_row = int(rc.get('sheet_row', 0))
+        rtype     = (rc.get('row_type') or '').lower()
+        cols      = rc.get('cols') or []
+
+        if rtype.startswith('header'):
+            row_types[sheet_row] = 'H'
+            header_rows.append({'row': sheet_row, 'cols': [
+                _build_col(i, sheet_row, c, role_default='L', hf_mode=True) for i, c in enumerate(cols)
+            ]})
+
+        elif rtype == 'data':
+            row_types[sheet_row] = 'D'
+            if data_vars is None:           # first data row defines the schema
+                data_vars = [
+                    _build_col(i, sheet_row, c) for i, c in enumerate(cols)
+                ]
+
+        elif rtype == 'data_inherited':
+            row_types[sheet_row] = 'D'     # schema inherited from first data row
+
+        elif rtype.startswith('footer'):
+            row_types[sheet_row] = 'F'
+            footer_rows.append({'row': sheet_row, 'cols': [
+                _build_col(i, sheet_row, c, role_default='L', hf_mode=True) for i, c in enumerate(cols)
+            ]})
+
+        elif rtype == 'skip':
+            row_types[sheet_row] = 'S'
+            s_cols = []
+            for i, col in enumerate(cols):
+                cond   = col.get('condition', 'IGNORE').upper()
+                lmatch = (col.get('lmatch') or '').strip()
+                if cond == 'LABEL' and lmatch:
+                    # Auto-generate an lbl_name scoped to the table
+                    lbl_name = f'{table_name}.skip_{sheet_row}_{i}' if table_name else f'skip_{sheet_row}_{i}'
+                else:
+                    lbl_name = 'IGNORE'
+                s_cols.append({'condition': cond, 'lmatch': lmatch, 'lbl_name': lbl_name})
+            skip_configs.append({'cols': s_cols})
+
+    return {
+        'choice':           'T',
+        'name':             table_name,
+        'mult':             mult,
+        'start_ref':        anchor_ref,
+        'end_ref':          end_ref,
+        'start_row':        start_row,
+        'end_row':          end_row,
+        'start_col':        start_col,
+        'end_col':          end_col,
+        'header_rows':      header_rows,
+        'data_vars':        data_vars if data_vars is not None else [],
+        'footer_rows':      footer_rows,
+        '_web_skip_configs': skip_configs,
+        '_web_row_configs': row_configs,   # preserved for round-trip edit
+        'row_types':        row_types,
+    }
+
+
 def _parse_ref(ref: str) -> tuple[int, int]:
     """'B3' → (row=3, col=2)."""
     col_str = ''.join(c for c in ref if c.isalpha()).upper()
@@ -541,9 +680,10 @@ def create_app(
         elif action == 'I':
             choices[ref] = {'choice': 'I'}
         elif action == 'T':
-            table_name = fields.get('name', _slugify(str(cell_value or '')) + '_table')
-            mult       = fields.get('mult', '*')
-            cols_cfg   = fields.get('columns', [])  # list of {ref, header, field_name, var_type, var_match}
+            table_name  = (fields.get('name') or _slugify(str(cell_value or '')) + '_table').strip()
+            mult        = fields.get('mult', '*')
+            end_ref_raw = (fields.get('end_ref') or '').strip().upper()
+            row_configs = fields.get('row_configs', [])
 
             # Clear any previous T-HEAD/T-DATA cells that belonged to this anchor
             stale = [r for r, m in choices.items()
@@ -552,52 +692,33 @@ def create_app(
             for r in stale:
                 choices.pop(r, None)
 
-            if cols_cfg:
-                # Full table config — build the legacy columns structure and mark adjacent cells
-                columns = []
-                for col_cfg in cols_cfg:
-                    fn = col_cfg.get('field_name', '').strip()
-                    if fn and fn.upper() != 'IGNORE' and table_name and not fn.startswith(table_name + '.'):
-                        fn = f'{table_name}.{fn}'
-                    fn = fn or 'IGNORE'
-                    columns.append({
-                        'lbl_name':  fn,
-                        'var_name':  fn,
-                        'var_type':  col_cfg.get('var_type', 'string'),
-                        'var_match': col_cfg.get('var_match', '.*'),
-                        'cell_value': col_cfg.get('header', ''),
-                    })
-                    # Mark each header cell as T-HEAD (except the anchor itself)
-                    cref = col_cfg.get('ref', '')
-                    if cref and cref.upper() != ref:
-                        choices[cref.upper()] = {'choice': 'T-HEAD', 'anchor': ref}
+            ws_: openpyxl.worksheet.worksheet.Worksheet = _STATE['ws']
 
-                choices[ref] = {
-                    'choice':  'T',
-                    'name':    table_name,
-                    'mult':    mult,
-                    'columns': columns,
-                }
+            if row_configs and end_ref_raw:
+                # Full table modal config — convert to the standard meta format
+                meta_dict = _web_row_configs_to_meta(
+                    ref, end_ref_raw, table_name, mult, row_configs, ws_)
+                choices[ref] = meta_dict
 
-                # Mark data rows below the anchor row as T-DATA
-                ws_: openpyxl.worksheet.worksheet.Worksheet = _STATE['ws']
-                anchor_row_, anchor_col_ = _parse_ref(ref)
-                end_col_ = anchor_col_ + len(cols_cfg) - 1
-                data_r = anchor_row_ + 1
-                while data_r <= ws_.max_row:
-                    has_content = any(
-                        ws_.cell(row=data_r, column=c_).value is not None
-                        for c_ in range(anchor_col_, end_col_ + 1)
-                    )
-                    if not has_content:
-                        break
-                    for c_ in range(anchor_col_, end_col_ + 1):
-                        dref = _cell_ref(data_r, c_)
-                        choices[dref] = {'choice': 'T-DATA', 'anchor': ref}
-                    data_r += 1
+                # Mark T-HEAD cells (all cells in header rows, except the anchor itself)
+                for h_row in meta_dict.get('header_rows', []):
+                    for col_d in h_row.get('cols', []):
+                        cref = col_d.get('ref', '')
+                        if cref and cref != ref:
+                            choices[cref] = {'choice': 'T-HEAD', 'anchor': ref}
+
+                # Mark T-DATA cells (all non-header/footer/skip rows in range)
+                start_col_ = meta_dict['start_col']
+                end_col_   = meta_dict['end_col']
+                for rt_row, rt_type in meta_dict.get('row_types', {}).items():
+                    if rt_type == 'D':
+                        for c_ in range(start_col_, end_col_ + 1):
+                            dref = _cell_ref(rt_row, c_)
+                            if dref not in choices:
+                                choices[dref] = {'choice': 'T-DATA', 'anchor': ref}
 
             else:
-                # Minimal anchor-only (user hasn't confirmed columns yet)
+                # Minimal anchor-only (modal not yet confirmed; placeholder)
                 choices[ref] = {
                     'choice': 'T',
                     'name':   table_name,
@@ -648,6 +769,52 @@ def create_app(
         else:
             _STATE['notes'].pop(ref, None)
         return JSONResponse({'ok': True})
+
+    @app.get('/api/table-range/{start_ref}/{end_ref}')
+    async def api_table_range(start_ref: str, end_ref: str):
+        """Return all cell values in the rectangular range start_ref:end_ref.
+
+        Rows are ordered top-to-bottom; each row carries its current choice
+        (T / T-HEAD / T-DATA / '') so the modal can pre-assign row types.
+        """
+        start_ref = start_ref.upper()
+        end_ref   = end_ref.upper()
+        ws: openpyxl.worksheet.worksheet.Worksheet = _STATE['ws']
+        try:
+            sr, sc = _parse_ref(start_ref)
+            er, ec = _parse_ref(end_ref)
+        except Exception:
+            raise HTTPException(400, f'Invalid refs {start_ref!r}:{end_ref!r}')
+
+        r0, r1 = min(sr, er), max(sr, er)
+        c0, c1 = min(sc, ec), max(sc, ec)
+        choices = _STATE['choices']
+
+        rows_out = []
+        for r in range(r0, r1 + 1):
+            cells_out = []
+            for c in range(c0, c1 + 1):
+                cref = _cell_ref(r, c)
+                cell = ws.cell(row=r, column=c)
+                ch   = choices.get(cref, {}).get('choice', '')
+                cells_out.append({
+                    'ref':          cref,
+                    'value':        _cell_display(cell.value, 60),
+                    'raw':          str(cell.value).strip() if cell.value is not None else '',
+                    'inferred_type': _infer_cell_type(cell),
+                    'choice':       ch,
+                })
+            rows_out.append({'sheet_row': r, 'cells': cells_out})
+
+        return JSONResponse({
+            'start_ref': start_ref,
+            'end_ref':   end_ref,
+            'start_row': r0, 'end_row': r1,
+            'start_col': c0, 'end_col': c1,
+            'col_count': c1 - c0 + 1,
+            'row_count': r1 - r0 + 1,
+            'rows':      rows_out,
+        })
 
     @app.get('/api/table-scan/{ref}')
     async def api_table_scan(ref: str):
@@ -720,7 +887,10 @@ def create_app(
 
     @app.get('/api/table-context/{ref}')
     async def api_table_context(ref: str):
-        """Given any T/T-HEAD/T-DATA cell, return the anchor ref + full table config."""
+        """Given any T/T-HEAD/T-DATA cell, return the anchor ref + full table config.
+
+        Returns ``_web_row_configs`` so the table modal can pre-populate for editing.
+        """
         ref     = ref.upper()
         choices = _STATE['choices']
         meta    = choices.get(ref, {})
@@ -735,11 +905,18 @@ def create_app(
 
         anchor_meta = choices.get(anchor_ref, {})
         return JSONResponse({
-            'anchor':   anchor_ref,
-            'name':     anchor_meta.get('name', ''),
-            'mult':     anchor_meta.get('mult', '*'),
-            'columns':  anchor_meta.get('columns', []),
-            'range':    anchor_meta.get('range', anchor_ref),
+            'anchor':          anchor_ref,
+            'name':            anchor_meta.get('name', ''),
+            'mult':            anchor_meta.get('mult', '*'),
+            'end_ref':         anchor_meta.get('end_ref', anchor_ref),
+            'start_ref':       anchor_meta.get('start_ref', anchor_ref),
+            # Full row configs for modal edit mode
+            '_web_row_configs': anchor_meta.get('_web_row_configs', []),
+            # Legacy columns (backward compat)
+            'columns':         anchor_meta.get('columns', []),
+            'header_rows':     anchor_meta.get('header_rows', []),
+            'data_vars':       anchor_meta.get('data_vars', []),
+            'footer_rows':     anchor_meta.get('footer_rows', []),
         })
 
     def _make_csv() -> str:

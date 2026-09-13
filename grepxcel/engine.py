@@ -927,7 +927,7 @@ class Engine:
 
                 # SKIP_IF — silently skip matching rows (still counts toward bounds)
                 if skip_if_rows and self._row_matches_any_skip_if(
-                    current_row, anchor_col, skip_if_rows, config, scanner
+                    current_row, anchor_col, skip_if_rows, config, scanner, defs
                 ):
                     logger.data_row_skipped(current_row)
                     total_scanned += 1
@@ -1066,21 +1066,28 @@ class Engine:
 
     def _row_matches_any_skip_if(self, sheet_row: int, anchor_col: int,
                                   skip_if_rows: list, config: Config,
-                                  scanner) -> bool:
+                                  scanner, defs: dict | None = None) -> bool:
         """Return True if the sheet row matches ANY SKIP_IF template (OR logic)."""
         return any(
-            self._row_matches_skip_if(sheet_row, anchor_col, tmpl, config, scanner)
+            self._row_matches_skip_if(sheet_row, anchor_col, tmpl, config, scanner, defs or {})
             for tmpl in skip_if_rows
         )
 
     def _row_matches_skip_if(self, sheet_row: int, anchor_col: int,
                               skip_tmpl: TemplateRow, config: Config,
-                              scanner) -> bool:
+                              scanner, defs: dict | None = None) -> bool:
+        """Return True if every non-IGNORE column in skip_tmpl matches its condition.
+
+        Conditions (AND logic — ALL non-IGNORE columns must match):
+          IGNORE → always match (skip this column check).
+          EMPTY  → cell must be empty / null / in config.empty_aliases.
+          <name> → cell must match the label field named ``<name>`` in defs.
+                   An empty cell does NOT match a label condition (label must
+                   find a value).  If ``<name>`` is unknown in defs the column
+                   check is skipped (treated as IGNORE) so the SKIP_IF degrades
+                   gracefully when defs are incomplete.
         """
-        Return True if every non-IGNORE column in skip_tmpl matches its condition.
-        EMPTY → cell must be empty/null.
-        IGNORE → don't check this column.
-        """
+        defs = defs or {}
         for c_offset, tmpl_col in enumerate(skip_tmpl.columns):
             if tmpl_col.field == 'IGNORE':
                 continue
@@ -1089,6 +1096,15 @@ class Engine:
             if tmpl_col.field == 'EMPTY':
                 if not is_empty(val, config.empty_aliases, config.ignore_case_values):
                     return False
+                continue
+            # Label-based condition: the cell must match the named label field
+            fd = defs.get(tmpl_col.field)
+            if fd is None:
+                continue   # unknown label → treat as IGNORE
+            if is_empty(val, config.empty_aliases, config.ignore_case_values):
+                return False  # empty cell never matches a label condition
+            if not _validate_field(fd, _apply_trim(val, fd, config), config, self._max_cell_len):
+                return False
         return True
 
     def _row_is_end_of_data(self, sheet_row: int, anchor_col: int,

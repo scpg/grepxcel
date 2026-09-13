@@ -240,7 +240,12 @@ def _build_state_from_choices(
                         else:  # label (default for H/F)
                             ln = col.get('lbl_name', 'IGNORE')
                             col_names.append(ln)
-                            if ln and ln != 'IGNORE':
+                            # no_global_lbl: HEADER/FOOTER column identifiers whose name
+                            # equals the spreadsheet's column-header text.  The engine
+                            # resolves them implicitly as literals in the HEADER:1 row —
+                            # adding a global lbl: definition would cause the cell to be
+                            # consumed in the global phase and break table extraction.
+                            if ln and ln != 'IGNORE' and not col.get('no_global_lbl'):
                                 state.lbl_defs.append((
                                     ln,
                                     col.get('lbl_type', 'string'),
@@ -305,6 +310,23 @@ def _build_state_from_choices(
                         if vn and vn != 'IGNORE':
                             state.var_defs.append((vn, vtype, vmatch, ''))
                 state.body_rows.append(['', f'DATA:{mult}'] + var_names)
+
+                # SKIP_IF rows from web wizard (each skip_cfg defines one SKIP_IF row)
+                for skip_cfg in meta.get('_web_skip_configs', []):
+                    skip_col_names = []
+                    for s_col in skip_cfg.get('cols', []):
+                        cond = (s_col.get('condition') or 'IGNORE').upper()
+                        if cond == 'IGNORE':
+                            skip_col_names.append('IGNORE')
+                        elif cond == 'EMPTY':
+                            skip_col_names.append('EMPTY')
+                        else:  # LABEL condition
+                            ln     = s_col.get('lbl_name', 'IGNORE')
+                            lmatch = s_col.get('lmatch', '')
+                            skip_col_names.append(ln)
+                            if ln and ln != 'IGNORE' and lmatch:
+                                state.lbl_defs.append((ln, 'string', lmatch, ''))
+                    state.body_rows.append(['', 'SKIP_IF'] + skip_col_names)
 
                 # SPLITTER between data and footer
                 if _d_nums and _f_nums and _p_nums:
