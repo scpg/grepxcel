@@ -265,13 +265,20 @@ def _build_stats() -> dict:
         ch = info.get('choice', '')
         counts[ch] = counts.get(ch, 0) + 1
 
-    total = sum(
-        1 for r in range(1, (ws.max_row or 1) + 1)
-        for c in range(1, (ws.max_column or 1) + 1)
-        if ws.cell(row=r, column=c).value is not None
-           and _cell_ref(r, c) not in merge_skip
-    ) if ws else 0
-    classified = sum(counts.values())
+    # "Total" = cells the user needs to make a decision about: non-empty cells
+    # OR cells that already have a classification (e.g. empty T-DATA cells in a
+    # table range are structurally classified even though their value is None).
+    non_empty_refs: set[str] = set()
+    if ws:
+        for r in range(1, (ws.max_row or 1) + 1):
+            for c in range(1, (ws.max_column or 1) + 1):
+                ref = _cell_ref(r, c)
+                if ref not in merge_skip and ws.cell(row=r, column=c).value is not None:
+                    non_empty_refs.add(ref)
+    classified_refs = set(choices) - merge_skip
+    # Union so that classified empty cells also count in total → classified ≤ total
+    total      = len(non_empty_refs | classified_refs)
+    classified = len(classified_refs)
     return {
         'L':      counts.get('L', 0),
         'V':      counts.get('V', 0),
@@ -281,8 +288,8 @@ def _build_stats() -> dict:
         'T_DATA': counts.get('T-DATA', 0),   # table data-row cells (from preload)
         'I':      counts.get('I', 0),
         'total':      total,
-        'classified': classified,                        # all typed cells count as handled
-        'unclassified': max(0, total - classified),
+        'classified': classified,
+        'unclassified': max(0, len(non_empty_refs) - classified),
     }
 
 

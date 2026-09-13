@@ -1013,12 +1013,12 @@ function switchTab(name) {
 // ── Jump to cell ──────────────────────────────────────────────────────────
 function jumpToCell(ref) {
   if (!ref) return;
-  // Normalise: "b3" → "B3"
   ref = ref.toUpperCase().trim();
   const td = document.querySelector(`td[data-ref="${ref}"]`);
   if (!td) { toast(`Cell ${ref} not found in visible grid`, true); return; }
-  td.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' });
   selectCell(ref);
+  // Use sticky-aware scroll after a brief tick so selectCell's DOM update settles
+  setTimeout(() => scrollCellIntoView(td), 20);
   document.getElementById('cell-jump').value = '';
 }
 
@@ -1032,6 +1032,47 @@ function numToColLetter(n) {
   let s = '';
   while (n > 0) { n--; s = String.fromCharCode(65 + (n % 26)) + s; n = Math.floor(n / 26); }
   return s;
+}
+
+// ── Sticky-aware scroll: bring a <td> into view inside #grid-wrap ──────────
+function scrollCellIntoView(td) {
+  const wrap = document.getElementById('grid-wrap');
+  if (!wrap || !td) return;
+
+  // Measure live sticky offsets from the DOM (handles any zoom/font size)
+  const headRow = document.querySelector('#grid-head tr');
+  const rowHdr  = document.querySelector('#grid-body td.row-header');
+  const stickyTop  = headRow ? headRow.getBoundingClientRect().height : 24;
+  const stickyLeft = rowHdr  ? rowHdr.getBoundingClientRect().width  : 30;
+
+  const wrapRect = wrap.getBoundingClientRect();
+  const tdRect   = td.getBoundingClientRect();
+
+  // Positions relative to the grid-wrap viewport
+  const relTop    = tdRect.top    - wrapRect.top;
+  const relBottom = tdRect.bottom - wrapRect.top;
+  const relLeft   = tdRect.left   - wrapRect.left;
+  const relRight  = tdRect.right  - wrapRect.left;
+
+  if (relTop    < stickyTop)         wrap.scrollTop  -= (stickyTop  - relTop  + 4);
+  if (relBottom > wrap.clientHeight) wrap.scrollTop  += (relBottom  - wrap.clientHeight + 4);
+  if (relLeft   < stickyLeft)        wrap.scrollLeft -= (stickyLeft - relLeft + 4);
+  if (relRight  > wrap.clientWidth)  wrap.scrollLeft += (relRight   - wrap.clientWidth  + 4);
+}
+
+// ── Light navigation: update highlight immediately, defer API fetch ─────────
+let _arrowDebounce = null;
+function lightMoveToCell(ref) {
+  if (selectedRef) {
+    const old = document.querySelector(`td[data-ref="${selectedRef}"]`);
+    if (old) old.classList.remove('selected');
+  }
+  selectedRef = ref;
+  const td = document.querySelector(`td[data-ref="${ref}"]`);
+  if (td) {
+    td.classList.add('selected');
+    scrollCellIntoView(td);
+  }
 }
 
 // ── Keyboard shortcuts ─────────────────────────────────────────────────────
@@ -1050,6 +1091,8 @@ function loadKeyboardShortcuts() {
     if (e.ctrlKey && e.key === 'z') { e.preventDefault(); undoLast(); return; }
 
     // ── Arrow-key cell navigation ──────────────────────────────────────────
+    // lightMoveToCell() updates highlight instantly; selectCell() (API fetch)
+    // is debounced so rapid key-repeat doesn't flood the server.
     const arrowDeltas = { ArrowUp: [-1,0], ArrowDown: [1,0], ArrowLeft: [0,-1], ArrowRight: [0,1] };
     if (arrowDeltas[e.key] && selectedRef) {
       e.preventDefault();
@@ -1059,13 +1102,17 @@ function loadKeyboardShortcuts() {
         const curCol = colLetterToNum(match[1]);
         const curRow = parseInt(match[2]);
         let newRow = curRow + dr, newCol = curCol + dc;
-        // Skip over merged ghost cells: keep moving in the same direction until
-        // we find a renderable td (skip cells are absent from the DOM entirely)
+        // Skip merged ghost cells (absent from DOM)
         for (let attempt = 0; attempt < 20; attempt++) {
           if (newRow < 1 || newCol < 1) break;
           const newRef = numToColLetter(newCol) + newRow;
           const td = document.querySelector(`td[data-ref="${newRef}"]`);
-          if (td) { selectCell(newRef); td.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' }); break; }
+          if (td) {
+            lightMoveToCell(newRef);         // instant visual feedback + sticky scroll
+            clearTimeout(_arrowDebounce);
+            _arrowDebounce = setTimeout(() => selectCell(selectedRef), 120);
+            break;
+          }
           newRow += dr; newCol += dc;
         }
       }
