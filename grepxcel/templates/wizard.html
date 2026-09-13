@@ -1356,6 +1356,14 @@ function prefillForm(info) {
     // These are part of a table entity — open the anchor's table editor instead
     const anchorRef = info.anchor || '';
     if (anchorRef) {
+      // Move the .selected highlight from the clicked cell to the anchor cell.
+      // selectCell() already added .selected to `ref`; we must remove it and
+      // point it at the anchor so subsequent clicks deselect the right cell.
+      const clickedTd = document.querySelector(`td[data-ref="${ref}"]`);
+      if (clickedTd) clickedTd.classList.remove('selected');
+      const anchorTd = document.querySelector(`td[data-ref="${anchorRef}"]`);
+      if (anchorTd) anchorTd.classList.add('selected');
+
       // Highlight that we're editing the whole table via the anchor
       document.getElementById('ph-val').textContent =
         `[${ch}] part of table at ${anchorRef}`;
