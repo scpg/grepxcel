@@ -162,6 +162,23 @@ def _cell_display(value: Any, max_len: int = 28) -> str:
     return s
 
 
+def _to_json_safe(obj: Any) -> Any:
+    """Recursively convert non-JSON-serialisable types for API responses.
+
+    Specifically converts ``datetime`` objects to ISO-8601 strings so that the
+    extraction result can be returned directly as JSON without a custom encoder.
+    """
+    if isinstance(obj, dict):
+        return {k: _to_json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_to_json_safe(v) for v in obj]
+    if isinstance(obj, datetime):
+        return obj.isoformat()
+    if obj is None or isinstance(obj, (bool, int, float, str)):
+        return obj
+    return str(obj)
+
+
 def _cell_type_display(value: Any) -> str:
     if value is None:
         return 'empty'
@@ -679,6 +696,36 @@ def create_app(
             'modifiers':    ex_modifiers,
             'note':         _STATE['notes'].get(ref, ''),
         })
+
+    @app.post('/api/extract')
+    async def api_extract():
+        """Run extraction with the current pattern; return result + approximate provenance."""
+        pattern_path_ = _STATE.get('pattern_path')
+        xlsx_path_    = _STATE.get('xlsx_path')
+        if not pattern_path_:
+            return JSONResponse({
+                'ok': False,
+                'error': 'No pattern loaded — restart the wizard with -p pattern.xlsx',
+            })
+        try:
+            import grepxcel as _gx
+            result = _gx.extract(pattern_path_, xlsx_path_, output_format='nested')
+            safe   = _to_json_safe(result)
+        except Exception as exc:
+            _STATE['log'].write('EXTRACT', f'ok=False error={exc}')
+            return JSONResponse({'ok': False, 'error': str(exc)})
+
+        # Provenance: field name → [cell refs] derived from the current choices dict.
+        # Using the leaf name (what the user typed in the classify form) as the key,
+        # which matches the leaf key in the nested extraction result.
+        provenance: dict[str, list[str]] = {}
+        for ref, info in _STATE.get('choices', {}).items():
+            name = info.get('name', '')
+            if name:
+                provenance.setdefault(name, []).append(ref)
+
+        _STATE['log'].write('EXTRACT', f'ok=True fields={len(provenance)}')
+        return JSONResponse({'ok': True, 'result': safe, 'provenance': provenance})
 
     @app.get('/api/shutdown')
     async def api_shutdown():

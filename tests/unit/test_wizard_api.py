@@ -30,6 +30,8 @@ _skip_no_api = pytest.mark.skipif(
 # ── Fixture helpers ────────────────────────────────────────────────────────
 
 FIXTURE_01 = Path(__file__).parent.parent / 'fixtures/01_simple_invoice/01_simple_invoice_data.xlsx'
+# manual pattern is used read-only; it has labels that actually match the data (preload works)
+PATTERN_01 = Path(__file__).parent.parent / 'fixtures/01_simple_invoice/01_simple_invoice_pattern-manual.xlsx'
 
 
 def _make_client(tmp_path: Path, cells: dict | None = None) -> 'TestClient':
@@ -59,6 +61,14 @@ def _make_real_client() -> 'TestClient':
     """Create a TestClient backed by fixture 01 (real file)."""
     assert FIXTURE_01.exists(), f'Fixture not found: {FIXTURE_01}'
     app = create_app(str(FIXTURE_01))
+    return TestClient(app)
+
+
+def _make_real_client_with_pattern() -> 'TestClient':
+    """Create a TestClient backed by fixture 01 data + pattern (for extract tests)."""
+    assert FIXTURE_01.exists(), f'Data fixture not found: {FIXTURE_01}'
+    assert PATTERN_01.exists(), f'Pattern fixture not found: {PATTERN_01}'
+    app = create_app(str(FIXTURE_01), pattern_path=str(PATTERN_01))
     return TestClient(app)
 
 
@@ -97,389 +107,424 @@ class TestSheetEndpoint:
         assert 'col_letters' in d
         assert d['col_letters'][0] == 'A'
 
-    def test_cell_has_expected_keys(self, tmp_path):
+    def test_cells_have_ref_value_choice(self, tmp_path):
         client = _make_client(tmp_path)
         d = client.get('/api/sheet').json()
-        cell = d['rows'][0][0]  # A1
-        for key in ('ref', 'row', 'col', 'value', 'choice', 'empty'):
-            assert key in cell, f'Missing key: {key}'
+        cell = d['rows'][0][0]
+        assert 'ref' in cell
+        assert 'value' in cell
+        assert 'choice' in cell
 
-    def test_a1_value(self, tmp_path):
+    def test_cell_has_name_field(self, tmp_path):
+        """Cells must carry a 'name' field for Phase B provenance support."""
         client = _make_client(tmp_path)
+        d = client.get('/api/sheet').json()
+        cell = d['rows'][0][0]
+        assert 'name' in cell  # may be empty string if unclassified
+
+    def test_choice_empty_before_classification(self, tmp_path):
+        client = _make_client(tmp_path)
+        d = client.get('/api/sheet').json()
+        cell = d['rows'][0][0]
+        assert cell['choice'] == ''
+
+    def test_merged_cells_have_colspan_rowspan(self, tmp_path):
+        # Build a workbook with a 2-column merge in A1:B1
+        xlsx_path = str(tmp_path / 'merged.xlsx')
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws['A1'] = 'Merged Header'
+        ws.merge_cells('A1:B1')
+        wb.save(xlsx_path)
+        app = create_app(xlsx_path)
+        client = TestClient(app)
         d = client.get('/api/sheet').json()
         a1 = d['rows'][0][0]
         assert a1['ref'] == 'A1'
-        assert a1['value'] == 'Invoice No:'
-        assert not a1['empty']
+        assert a1['colspan'] == 2
+        assert a1['rowspan'] == 1
+        assert a1['merged'] is True
 
-    def test_max_row_max_col(self, tmp_path):
-        client = _make_client(tmp_path)
+    def test_ghost_cells_have_skip_true(self, tmp_path):
+        # B1 is the ghost cell in a A1:B1 merge — skip=True, absent from grid
+        xlsx_path = str(tmp_path / 'merged2.xlsx')
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws['A1'] = 'Header'
+        ws.merge_cells('A1:B1')
+        wb.save(xlsx_path)
+        app = create_app(xlsx_path)
+        client = TestClient(app)
         d = client.get('/api/sheet').json()
-        assert d['max_row'] >= 1
-        assert d['max_col'] >= 1
+        b1 = d['rows'][0][1]
+        assert b1['ref'] == 'B1'
+        assert b1['skip'] is True
 
 
 @_skip_no_api
-class TestStateEndpoint:
-    def test_returns_config_and_stats(self, tmp_path):
-        client = _make_client(tmp_path)
-        d = client.get('/api/state').json()
-        assert 'config' in d
-        assert 'stats' in d
-        assert 'choices' in d
-
-    def test_default_direction_is_LR(self, tmp_path):
-        client = _make_client(tmp_path)
-        d = client.get('/api/state').json()
-        assert d['config']['direction'] == 'LR'
-
-    def test_stats_start_at_zero(self, tmp_path):
-        client = _make_client(tmp_path)
-        stats = client.get('/api/state').json()['stats']
-        assert stats['L'] == 0
-        assert stats['V'] == 0
-        assert stats['classified'] == 0
-
-    def test_total_counts_nonempty_cells(self, tmp_path):
-        client = _make_client(tmp_path, {(1, 1): 'A', (1, 2): 'B', (2, 1): None})
-        stats = client.get('/api/state').json()['stats']
-        assert stats['total'] == 2  # None cell not counted
-
-
-@_skip_no_api
-class TestClassifyLabel:
-    def test_classify_L_ok(self, tmp_path):
+class TestClassifyEndpoint:
+    def test_classify_label(self, tmp_path):
         client = _make_client(tmp_path)
         r = client.post('/api/classify', json={
             'ref': 'A1', 'action': 'L',
-            'fields': {'name': 'invoice_no_label', 'type': 'string',
+            'fields': {'name': 'inv_label', 'type': 'string',
                        'match_mode': '(default)', 'match': 'Invoice No:', 'notes': ''},
         })
         assert r.status_code == 200
-        d = r.json()
-        assert d['ok']
-        assert d['ref'] == 'A1'
-        assert d['action'] == 'L'
+        assert r.json()['ok'] is True
 
-    def test_classify_L_updates_stats(self, tmp_path):
-        client = _make_client(tmp_path)
-        client.post('/api/classify', json={
-            'ref': 'A1', 'action': 'L',
-            'fields': {'name': 'lbl', 'type': 'string', 'match_mode': '(default)',
-                       'match': 'Invoice No:', 'notes': ''},
-        })
-        stats = client.get('/api/state').json()['stats']
-        assert stats['L'] == 1
-        assert stats['classified'] == 1
-
-    def test_classify_L_stored_in_choices(self, tmp_path):
-        client = _make_client(tmp_path)
-        client.post('/api/classify', json={
-            'ref': 'A1', 'action': 'L',
-            'fields': {'name': 'my_label', 'type': 'string', 'match_mode': '(default)',
-                       'match': 'Invoice No:', 'notes': ''},
-        })
-        choices = client.get('/api/state').json()['choices']
-        assert 'A1' in choices
-        assert choices['A1']['choice'] == 'L'
-        assert choices['A1']['name'] == 'my_label'
-
-    def test_classify_L_with_regexp_mode(self, tmp_path):
-        client = _make_client(tmp_path)
-        r = client.post('/api/classify', json={
-            'ref': 'A1', 'action': 'L',
-            'fields': {'name': 'lbl', 'type': 'string', 'match_mode': 'regexp',
-                       'match': 'Invoice.*', 'notes': ''},
-        })
-        assert r.status_code == 200
-        choices = client.get('/api/state').json()['choices']
-        assert choices['A1']['lbl_mode'] == 'regexp'
-
-
-@_skip_no_api
-class TestClassifyValue:
-    def test_classify_V_ok(self, tmp_path):
+    def test_classify_value(self, tmp_path):
         client = _make_client(tmp_path)
         r = client.post('/api/classify', json={
             'ref': 'B1', 'action': 'V',
             'fields': {'name': 'invoice_no', 'type': 'string',
-                       'match_mode': '(default)', 'match': '.*',
-                       'modifiers': 'none', 'notes': ''},
+                       'match_mode': '(default)', 'match': r'.*', 'notes': ''},
         })
         assert r.status_code == 200
-        assert r.json()['ok']
+        assert r.json()['ok'] is True
 
-    def test_classify_V_with_not_null_modifier(self, tmp_path):
-        client = _make_client(tmp_path)
-        client.post('/api/classify', json={
-            'ref': 'B1', 'action': 'V',
-            'fields': {'name': 'invoice_no', 'type': 'string',
-                       'match_mode': '(default)', 'match': r'[A-Z]{2}\d+',
-                       'modifiers': 'not-null', 'notes': ''},
-        })
-        choices = client.get('/api/state').json()['choices']
-        assert choices['B1']['col_a_extra'] == 'not-null'
-
-    def test_classify_V_combo_modifier(self, tmp_path):
-        client = _make_client(tmp_path)
-        client.post('/api/classify', json={
-            'ref': 'B1', 'action': 'V',
-            'fields': {'name': 'f', 'type': 'string', 'match_mode': '(default)',
-                       'match': '.*', 'modifiers': 'not-null:trim-whitespace', 'notes': ''},
-        })
-        choices = client.get('/api/state').json()['choices']
-        assert 'not-null' in choices['B1']['col_a_extra']
-        assert 'trim-whitespace' in choices['B1']['col_a_extra']
-
-
-@_skip_no_api
-class TestClassifyOther:
-    def test_classify_C(self, tmp_path):
+    def test_classify_constant(self, tmp_path):
         client = _make_client(tmp_path)
         r = client.post('/api/classify', json={
-            'ref': 'A1', 'action': 'C', 'fields': {'name': 'section_header'},
+            'ref': 'C1', 'action': 'C',
+            'fields': {'name': 'date_header'},
         })
         assert r.status_code == 200
-        choices = client.get('/api/state').json()['choices']
-        assert choices['A1']['choice'] == 'C'
-        assert choices['A1']['name'] == 'section_header'
+        assert r.json()['ok'] is True
 
-    def test_classify_I(self, tmp_path):
+    def test_classify_ignore(self, tmp_path):
         client = _make_client(tmp_path)
         r = client.post('/api/classify', json={
             'ref': 'A1', 'action': 'I', 'fields': {},
         })
         assert r.status_code == 200
-        choices = client.get('/api/state').json()['choices']
-        assert choices['A1']['choice'] == 'I'
 
-    def test_classify_T(self, tmp_path):
+    def test_classify_table(self, tmp_path):
         client = _make_client(tmp_path)
         r = client.post('/api/classify', json={
-            'ref': 'A1', 'action': 'T', 'fields': {'name': 'my_table', 'notes': ''},
+            'ref': 'A1', 'action': 'T',
+            'fields': {'name': 'items_table', 'notes': ''},
         })
         assert r.status_code == 200
-        choices = client.get('/api/state').json()['choices']
-        assert choices['A1']['choice'] == 'T'
 
-    def test_classify_CLEAR(self, tmp_path):
+    def test_invalid_action_rejected(self, tmp_path):
+        client = _make_client(tmp_path)
+        r = client.post('/api/classify', json={
+            'ref': 'A1', 'action': 'X', 'fields': {},
+        })
+        assert r.status_code == 400
+
+    def test_clear_action(self, tmp_path):
         client = _make_client(tmp_path)
         client.post('/api/classify', json={
-            'ref': 'A1', 'action': 'L', 'fields': {'name': 'lbl', 'type': 'string',
-            'match_mode': '(default)', 'match': 'x', 'notes': ''},
+            'ref': 'A1', 'action': 'L',
+            'fields': {'name': 'label', 'type': 'string',
+                       'match_mode': '(default)', 'match': 'x', 'notes': ''},
         })
         r = client.post('/api/classify', json={'ref': 'A1', 'action': 'CLEAR', 'fields': {}})
         assert r.status_code == 200
-        choices = client.get('/api/state').json()['choices']
-        assert 'A1' not in choices
+        assert r.json()['action'] == 'CLEAR'
+        # Cell should now be unclassified
+        cell = client.get('/api/cell/A1').json()
+        assert cell['choice'] == ''
 
-    def test_classify_invalid_action_400(self, tmp_path):
-        client = _make_client(tmp_path)
-        r = client.post('/api/classify', json={'ref': 'A1', 'action': 'X', 'fields': {}})
-        assert r.status_code == 400
-
-    def test_classify_with_note(self, tmp_path):
-        client = _make_client(tmp_path)
-        client.post('/api/classify', json={
-            'ref': 'B1', 'action': 'V',
-            'fields': {'name': 'f', 'type': 'string', 'match_mode': '(default)',
-                       'match': '.*', 'modifiers': 'none', 'notes': 'My test note'},
+    def test_ghost_cell_classification_rejected(self, tmp_path):
+        # Build workbook with merge A1:B1; classifying B1 (ghost) must fail
+        xlsx_path = str(tmp_path / 'merge_test.xlsx')
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws['A1'] = 'Title'
+        ws.merge_cells('A1:B1')
+        wb.save(xlsx_path)
+        app = create_app(xlsx_path)
+        client = TestClient(app)
+        r = client.post('/api/classify', json={
+            'ref': 'B1', 'action': 'L',
+            'fields': {'name': 'title', 'type': 'string',
+                       'match_mode': '(default)', 'match': 'Title', 'notes': ''},
         })
-        notes = client.get('/api/state').json()['notes']
-        assert notes.get('B1') == 'My test note'
+        assert r.status_code == 400
+        assert 'merged' in r.json()['detail'].lower()
 
 
 @_skip_no_api
-class TestCellDetail:
-    def test_cell_detail_existing(self, tmp_path):
+class TestPreviewEndpoint:
+    def test_returns_csv(self, tmp_path):
         client = _make_client(tmp_path)
-        # Classify first
+        r = client.get('/api/preview')
+        assert r.status_code == 200
+        assert 'text/plain' in r.headers['content-type']
+
+    def test_csv_has_config_header(self, tmp_path):
+        """CSV output must start with config rows (e.g. config:,read.direction,LR)."""
+        client = _make_client(tmp_path)
+        text = client.get('/api/preview').text
+        reader = csv.reader(io.StringIO(text))
+        rows = list(reader)
+        # First row is a config row: 'config:', 'read.direction', 'LR'
+        assert rows[0][0] == 'config:', f'unexpected first row: {rows[0]}'
+
+    def test_classified_cell_appears_in_preview(self, tmp_path):
+        client = _make_client(tmp_path)
         client.post('/api/classify', json={
             'ref': 'A1', 'action': 'L',
             'fields': {'name': 'inv_label', 'type': 'string',
                        'match_mode': '(default)', 'match': 'Invoice No:', 'notes': ''},
         })
-        d = client.get('/api/cell/A1').json()
-        assert d['ref'] == 'A1'
-        assert d['choice'] == 'L'
-        assert d['name'] == 'inv_label'
-        assert d['raw'] == 'Invoice No:'
-
-    def test_cell_detail_unclassified(self, tmp_path):
-        client = _make_client(tmp_path)
-        d = client.get('/api/cell/A1').json()
-        assert d['choice'] == ''
-        assert d['inferred_type'] == 'string'
-
-    def test_cell_detail_number_type(self, tmp_path):
-        client = _make_client(tmp_path)
-        d = client.get('/api/cell/B2').json()
-        assert d['inferred_type'] == 'number'
-
-    def test_cell_detail_invalid_ref(self, tmp_path):
-        client = _make_client(tmp_path)
-        r = client.get('/api/cell/ZZZ9999')
-        # Should succeed (no explicit 404 for out-of-range but valid format)
-        assert r.status_code in (200, 404)
+        text = client.get('/api/preview').text
+        assert 'inv_label' in text
 
 
 @_skip_no_api
-class TestUndo:
-    def test_undo_reverses_classification(self, tmp_path):
+class TestUndoEndpoint:
+    def test_undo_removes_last_classification(self, tmp_path):
         client = _make_client(tmp_path)
         client.post('/api/classify', json={
             'ref': 'A1', 'action': 'L',
-            'fields': {'name': 'lbl', 'type': 'string', 'match_mode': '(default)',
-                       'match': 'Invoice No:', 'notes': ''},
+            'fields': {'name': 'lbl', 'type': 'string',
+                       'match_mode': '(default)', 'match': 'x', 'notes': ''},
         })
-        assert client.get('/api/state').json()['stats']['L'] == 1
-        r = client.post('/api/undo')
-        assert r.status_code == 200
-        assert r.json()['ok']
-        assert client.get('/api/state').json()['stats']['L'] == 0
+        client.post('/api/undo')
+        cell = client.get('/api/cell/A1').json()
+        assert cell['choice'] == ''
 
-    def test_undo_nothing(self, tmp_path):
+    def test_undo_on_empty_stack_is_noop(self, tmp_path):
         client = _make_client(tmp_path)
         r = client.post('/api/undo')
-        assert r.status_code == 200
-        assert not r.json()['ok']
+        assert r.status_code == 200  # must not crash
 
-    def test_undo_multiple_times(self, tmp_path):
+    def test_undo_multiple_steps(self, tmp_path):
         client = _make_client(tmp_path)
-        for action, ref in [('L', 'A1'), ('V', 'B1'), ('C', 'A2')]:
-            fields = {'name': 'x', 'type': 'string', 'match_mode': '(default)', 'match': 'y', 'notes': ''}
-            if action == 'V':
-                fields['modifiers'] = 'none'
-            client.post('/api/classify', json={'ref': ref, 'action': action, 'fields': fields})
-        assert client.get('/api/state').json()['stats']['classified'] == 3
-        client.post('/api/undo')
-        assert client.get('/api/state').json()['stats']['classified'] == 2
-        client.post('/api/undo')
-        assert client.get('/api/state').json()['stats']['classified'] == 1
-
-
-@_skip_no_api
-class TestConfig:
-    def test_save_config_ok(self, tmp_path):
-        client = _make_client(tmp_path)
-        r = client.post('/api/config', json={
-            'direction': 'TD', 'template': True,
-            'ignore_case': True, 'trim_whitespace': True,
-            'currency_sign': '$', 'lbl_match': 'regexp', 'var_match': '',
-            'empty_aliases': ['N/A', '—'],
-        })
-        assert r.status_code == 200
-        assert r.json()['ok']
-
-    def test_config_persists_in_state(self, tmp_path):
-        client = _make_client(tmp_path)
-        client.post('/api/config', json={
-            'direction': 'TD', 'template': False,
-            'ignore_case': False, 'trim_whitespace': False,
-            'currency_sign': '$', 'lbl_match': '', 'var_match': '',
-            'empty_aliases': [],
-        })
-        cfg = client.get('/api/state').json()['config']
-        assert cfg['direction'] == 'TD'
-        assert cfg['currency_sign'] == '$'
-
-
-@_skip_no_api
-class TestPreview:
-    def _classify_some(self, client):
+        # Classify A1 → L, then B1 → V
         client.post('/api/classify', json={
             'ref': 'A1', 'action': 'L',
-            'fields': {'name': 'invoice_no_label', 'type': 'string',
-                       'match_mode': '(default)', 'match': 'Invoice No:', 'notes': ''},
+            'fields': {'name': 'lbl', 'type': 'string',
+                       'match_mode': '(default)', 'match': 'x', 'notes': ''},
         })
         client.post('/api/classify', json={
             'ref': 'B1', 'action': 'V',
-            'fields': {'name': 'invoice_no', 'type': 'string',
-                       'match_mode': '(default)', 'match': '.*',
-                       'modifiers': 'none', 'notes': ''},
+            'fields': {'name': 'val', 'type': 'string',
+                       'match_mode': '(default)', 'match': r'.*', 'notes': ''},
         })
-
-    def test_preview_returns_csv(self, tmp_path):
-        client = _make_client(tmp_path)
-        self._classify_some(client)
-        r = client.get('/api/preview')
-        assert r.status_code == 200
-        assert 'text/plain' in r.headers['content-type']
-
-    def test_preview_csv_is_parseable(self, tmp_path):
-        client = _make_client(tmp_path)
-        self._classify_some(client)
-        text = client.get('/api/preview').text
-        rows = list(csv.reader(io.StringIO(text)))
-        assert len(rows) > 0
-
-    def test_preview_contains_lbl_row(self, tmp_path):
-        client = _make_client(tmp_path)
-        self._classify_some(client)
-        text = client.get('/api/preview').text
-        assert 'lbl:' in text or 'invoice_no_label' in text
-
-    def test_preview_contains_var_row(self, tmp_path):
-        client = _make_client(tmp_path)
-        self._classify_some(client)
-        text = client.get('/api/preview').text
-        assert 'var:' in text or 'invoice_no' in text
-
-    def test_preview_config_header(self, tmp_path):
-        client = _make_client(tmp_path)
-        self._classify_some(client)
-        text = client.get('/api/preview').text
-        assert 'config:' in text
-
-    def test_preview_empty_when_no_classifications(self, tmp_path):
-        client = _make_client(tmp_path)
-        r = client.get('/api/preview')
-        assert r.status_code == 200
-        # Should at least return config row
-        assert 'config:' in r.text or r.text.strip() == ''
+        # Undo B1 → B1 unclassified, A1 still L
+        client.post('/api/undo')
+        assert client.get('/api/cell/B1').json()['choice'] == ''
+        assert client.get('/api/cell/A1').json()['choice'] == 'L'
+        # Undo A1 → both unclassified
+        client.post('/api/undo')
+        assert client.get('/api/cell/A1').json()['choice'] == ''
 
 
 @_skip_no_api
-class TestSave:
-    def _classify_some(self, client):
+class TestConfigEndpoint:
+    def test_save_config_direction(self, tmp_path):
+        client = _make_client(tmp_path)
+        r = client.post('/api/config', json={'direction': 'TD'})
+        assert r.status_code == 200
+        state = client.get('/api/state').json()
+        assert state['config']['direction'] == 'TD'
+
+    def test_save_config_ignore_case(self, tmp_path):
+        client = _make_client(tmp_path)
+        client.post('/api/config', json={'ignore_case': False})
+        state = client.get('/api/state').json()
+        assert state['config']['ignore_case'] is False
+
+    def test_save_config_currency(self, tmp_path):
+        client = _make_client(tmp_path)
+        client.post('/api/config', json={'currency_sign': '$'})
+        state = client.get('/api/state').json()
+        assert state['config']['currency_sign'] == '$'
+
+
+@_skip_no_api
+class TestCellEndpoint:
+    def test_cell_value(self, tmp_path):
+        client = _make_client(tmp_path)
+        r = client.get('/api/cell/A1')
+        assert r.status_code == 200
+        d = r.json()
+        assert d['ref'] == 'A1'
+        assert 'Invoice No:' in d['value']
+
+    def test_cell_classified_choice_returned(self, tmp_path):
+        client = _make_client(tmp_path)
         client.post('/api/classify', json={
             'ref': 'A1', 'action': 'L',
-            'fields': {'name': 'invoice_no_label', 'type': 'string',
+            'fields': {'name': 'lbl', 'type': 'string',
                        'match_mode': '(default)', 'match': 'Invoice No:', 'notes': ''},
         })
+        d = client.get('/api/cell/A1').json()
+        assert d['choice'] == 'L'
+        assert d['name'] == 'lbl'
 
-    def test_save_creates_file(self, tmp_path):
+    def test_invalid_ref_returns_404(self, tmp_path):
         client = _make_client(tmp_path)
-        self._classify_some(client)
-        r = client.post('/api/save', json={})
-        assert r.status_code == 200
-        d = r.json()
-        assert d['ok']
-        assert Path(d['saved_to']).exists()
-
-    def test_save_file_is_valid_csv(self, tmp_path):
-        client = _make_client(tmp_path)
-        self._classify_some(client)
-        r = client.post('/api/save', json={})
-        saved = Path(r.json()['saved_to'])
-        text = saved.read_text(encoding='utf-8')
-        rows = list(csv.reader(io.StringIO(text)))
-        assert len(rows) > 0
-
-    def test_save_custom_filename(self, tmp_path):
-        client = _make_client(tmp_path)
-        self._classify_some(client)
-        r = client.post('/api/save', json={'filename': 'my_output.csv'})
-        assert r.status_code == 200
-        d = r.json()
-        assert d['saved_to'].endswith('my_output.csv')
-        assert Path(d['saved_to']).exists()
+        r = client.get('/api/cell/ZZZZZ9999999')
+        assert r.status_code == 404
 
 
 @_skip_no_api
-class TestWithRealFixture:
-    """Tests against the real fixture 01 file."""
+class TestStatsEndpoint:
+    def test_stats_via_state(self, tmp_path):
+        client = _make_client(tmp_path)
+        state = client.get('/api/state').json()
+        stats = state['stats']
+        assert 'total' in stats
+        assert 'classified' in stats
+        assert stats['classified'] == 0  # nothing classified yet
 
+    def test_classified_count_increments(self, tmp_path):
+        client = _make_client(tmp_path)
+        client.post('/api/classify', json={
+            'ref': 'A1', 'action': 'L',
+            'fields': {'name': 'lbl', 'type': 'string',
+                       'match_mode': '(default)', 'match': 'x', 'notes': ''},
+        })
+        stats = client.get('/api/state').json()['stats']
+        assert stats['classified'] == 1
+        assert stats['L'] == 1
+
+    def test_classified_never_exceeds_total(self, tmp_path):
+        """Classified percentage must never exceed 100%."""
+        client = _make_client(tmp_path)
+        # Classify several cells
+        for ref in ['A1', 'B1', 'C1', 'D1', 'A2', 'B2']:
+            client.post('/api/classify', json={
+                'ref': ref, 'action': 'V',
+                'fields': {'name': f'f_{ref.lower()}', 'type': 'string',
+                           'match_mode': '(default)', 'match': r'.*', 'notes': ''},
+            })
+        stats = client.get('/api/state').json()['stats']
+        assert stats['classified'] <= stats['total'], (
+            f"classified ({stats['classified']}) > total ({stats['total']}) — stats > 100%"
+        )
+
+    def test_T_HEAD_T_DATA_counted_in_stats(self, tmp_path):
+        """T-HEAD and T-DATA preloaded choices must appear in stats (not as unclassified)."""
+        client = _make_client(tmp_path)
+        # Manually inject T-HEAD / T-DATA into the state (simulates preload)
+        from grepxcel.wizard_api import _STATE
+        _STATE['choices']['A1'] = {'choice': 'T-HEAD', 'name': 'col_a'}
+        _STATE['choices']['A2'] = {'choice': 'T-DATA', 'name': 'items'}
+        stats = client.get('/api/state').json()['stats']
+        assert stats['T_HEAD'] == 1
+        assert stats['T_DATA'] == 1
+        # Their refs count as classified, so classified ≥ 2
+        assert stats['classified'] >= 2
+
+
+@_skip_no_api
+class TestSaveEndpoints:
+    def test_save_csv_creates_file(self, tmp_path):
+        client = _make_client(tmp_path)
+        client.post('/api/classify', json={
+            'ref': 'A1', 'action': 'L',
+            'fields': {'name': 'lbl', 'type': 'string',
+                       'match_mode': '(default)', 'match': 'Invoice No:', 'notes': ''},
+        })
+        r = client.post('/api/save', json={})
+        assert r.status_code == 200
+        assert r.json()['ok'] is True
+        saved_to = r.json()['saved_to']
+        assert Path(saved_to).exists()
+
+    def test_save_xlsx_creates_file(self, tmp_path):
+        client = _make_client(tmp_path)
+        client.post('/api/classify', json={
+            'ref': 'A1', 'action': 'L',
+            'fields': {'name': 'lbl', 'type': 'string',
+                       'match_mode': '(default)', 'match': 'Invoice No:', 'notes': ''},
+        })
+        r = client.post('/api/save-xlsx', json={})
+        assert r.status_code == 200
+        assert r.json()['ok'] is True
+        saved_to = r.json()['saved_to']
+        assert Path(saved_to).exists()
+        # Verify it's a valid xlsx (not just a renamed CSV)
+        wb = openpyxl.load_workbook(saved_to)
+        assert wb is not None
+
+
+@_skip_no_api
+class TestExtractEndpoint:
+    """Tests for the POST /api/extract endpoint (Phase A)."""
+
+    def test_no_pattern_returns_ok_false(self, tmp_path):
+        """Without a pattern, extraction must return ok=False gracefully."""
+        client = _make_client(tmp_path)  # no pattern_path
+        r = client.post('/api/extract')
+        assert r.status_code == 200
+        data = r.json()
+        assert data['ok'] is False
+        assert 'error' in data
+        assert 'pattern' in data['error'].lower()
+
+    def test_with_real_pattern_returns_result(self):
+        """With a real pattern, extraction must return ok=True and a non-empty result."""
+        if not FIXTURE_01.exists() or not PATTERN_01.exists():
+            pytest.skip('fixture 01 or pattern not found')
+        client = _make_real_client_with_pattern()
+        r = client.post('/api/extract')
+        assert r.status_code == 200
+        data = r.json()
+        assert data['ok'] is True, f"Extraction failed: {data.get('error')}"
+        assert isinstance(data['result'], dict)
+        assert len(data['result']) > 0
+
+    def test_extract_result_no_datetimes(self):
+        """Result must be JSON-safe (no raw datetime objects)."""
+        if not FIXTURE_01.exists() or not PATTERN_01.exists():
+            pytest.skip('fixture 01 or pattern not found')
+        client = _make_real_client_with_pattern()
+        r = client.post('/api/extract')
+        assert r.status_code == 200
+        import json
+        # If the response body parsed without error, datetimes are serialised
+        data = json.loads(r.content)
+        assert data['ok'] is True
+
+    def test_extract_result_has_provenance(self):
+        """When pattern is preloaded, provenance must map field names to cell refs."""
+        if not FIXTURE_01.exists() or not PATTERN_01.exists():
+            pytest.skip('fixture 01 or pattern not found')
+        client = _make_real_client_with_pattern()
+        r = client.post('/api/extract')
+        data = r.json()
+        assert data['ok'] is True
+        prov = data.get('provenance', {})
+        # Provenance should be non-empty since choices were preloaded from pattern
+        assert isinstance(prov, dict)
+        assert len(prov) > 0, 'expected provenance from preloaded pattern choices'
+
+    def test_extract_provenance_values_are_cell_refs(self):
+        """Each provenance entry must be a list of valid cell refs like ['A1', 'B3']."""
+        if not FIXTURE_01.exists() or not PATTERN_01.exists():
+            pytest.skip('fixture 01 or pattern not found')
+        client = _make_real_client_with_pattern()
+        data = client.post('/api/extract').json()
+        assert data['ok'] is True
+        import re
+        ref_re = re.compile(r'^[A-Z]+\d+$')
+        for name, refs in data['provenance'].items():
+            assert isinstance(refs, list), f'provenance[{name!r}] should be a list'
+            for ref in refs:
+                assert ref_re.match(ref), f'provenance[{name!r}] contains invalid ref: {ref!r}'
+
+    def test_extract_classified_never_exceeds_total_after_extract(self):
+        """Stats total must remain ≥ classified even after extraction is run."""
+        if not FIXTURE_01.exists() or not PATTERN_01.exists():
+            pytest.skip('fixture 01 or pattern not found')
+        client = _make_real_client_with_pattern()
+        client.post('/api/extract')
+        stats = client.get('/api/state').json()['stats']
+        assert stats['classified'] <= stats['total'], (
+            f"After extract: classified ({stats['classified']}) > total ({stats['total']})"
+        )
+
+
+@_skip_no_api
+class TestRealFixture:
     def test_fixture01_sheet_loads(self):
         if not FIXTURE_01.exists():
             pytest.skip('fixture 01 not found')

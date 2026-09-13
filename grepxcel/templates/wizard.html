@@ -170,6 +170,85 @@ td.gx-T-HEAD.selected, td.gx-T-DATA.selected { outline: 2px solid var(--accent);
 .badge-T-HEAD { background: #7c3aed; color: #fff; }
 .badge-T-DATA { background: rgba(124, 58, 237, 0.55); color: #fff; }
 
+/* ── Extract result tree ─────────────────────────────────────────── */
+#tab-extract { display:flex; flex-direction:column; height:100%; }
+#ext-controls { padding: 10px 12px; border-bottom: 1px solid var(--border); }
+#ext-result {
+  flex: 1; overflow-y: auto; padding: 8px 10px;
+  font-size: 12px; font-family: var(--mono);
+}
+.et-group { margin-bottom: 6px; }
+.et-group-title {
+  font-weight: 700; font-size: 11px;
+  color: var(--accent); margin-bottom: 2px;
+  cursor: pointer; user-select: none;
+  display: flex; align-items: center; gap: 4px;
+}
+.et-group-body { padding-left: 10px; border-left: 2px solid var(--border); }
+.et-row {
+  display: flex; align-items: center; gap: 4px;
+  padding: 1px 0; flex-wrap: wrap;
+}
+.et-key { color: var(--text-muted); min-width: 90px; flex-shrink: 0; }
+.et-colon { color: var(--text-muted); flex-shrink: 0; }
+.et-val { color: var(--text); word-break: break-all; }
+.et-null { color: var(--text-muted); font-style: italic; }
+.et-ref {
+  font-size: 10px; background: var(--accent-dim);
+  color: var(--accent); border-radius: 3px;
+  padding: 0 4px; cursor: pointer;
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  font-family: var(--mono); line-height: 16px;
+  transition: background 0.1s;
+}
+.et-ref:hover { background: var(--accent); color: #fff; }
+.et-source-ref {
+  font-size: 10px; color: var(--text-muted);
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 3px; padding: 0 4px;
+  cursor: pointer; font-family: var(--mono); line-height: 16px;
+}
+.et-source-ref:hover { border-color: var(--accent); color: var(--accent); }
+.et-table-instance {
+  margin: 4px 0 8px 0;
+  border: 1px solid var(--border); border-radius: 4px;
+  overflow: hidden;
+}
+.et-instance-hdr {
+  display: flex; align-items: center; gap: 6px;
+  padding: 3px 8px; background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  font-weight: 600; font-size: 11px; color: var(--text-muted);
+}
+.et-instance-body { padding: 4px 8px; }
+.et-count { color: var(--text-muted); font-size: 11px; }
+.et-data-rows { margin-top: 2px; }
+.et-data-row {
+  display: flex; gap: 6px; font-size: 11px;
+  padding: 1px 0; border-bottom: 1px solid var(--border);
+}
+.et-data-row:last-child { border-bottom: none; }
+.et-data-cell { color: var(--text); min-width: 60px; }
+.et-error {
+  color: var(--V-dark); font-size: 12px; padding: 10px;
+  background: rgba(239,68,68,0.08); border-radius: 4px;
+  border: 1px solid rgba(239,68,68,0.2);
+}
+.et-no-pattern {
+  color: var(--text-muted); font-size: 12px; padding: 10px;
+  text-align: center; line-height: 1.6;
+}
+#ext-status { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+
+/* Provenance tooltip in grid: field-name badge on hover */
+td.gx-cell[data-field]:not([data-field=""]):hover::before {
+  content: attr(data-field);
+  position: absolute; top: -18px; left: 0; z-index: 100;
+  background: rgba(0,0,0,0.8); color: #fff;
+  font-size: 9px; padding: 1px 4px; border-radius: 3px;
+  white-space: nowrap; pointer-events: none; font-family: var(--mono);
+}
+
 /* ── Side Panel ─────────────────────────────────────────────────── */
 #panel {
   width: var(--panel-w); min-width: var(--panel-w);
@@ -406,6 +485,7 @@ td.gx-T-HEAD.selected, td.gx-T-DATA.selected { outline: 2px solid var(--accent);
     </div>
     <div id="panel-tabs">
       <div class="ptab active" data-tab="classify" onclick="switchTab('classify')">Classify</div>
+      <div class="ptab" data-tab="extract"  onclick="switchTab('extract')">🔎 Extract</div>
       <div class="ptab" data-tab="config"   onclick="switchTab('config')">Config</div>
     </div>
     <div id="panel-body">
@@ -569,6 +649,22 @@ td.gx-T-HEAD.selected, td.gx-T-DATA.selected { outline: 2px solid var(--accent);
         </button>
       </div>
 
+      <!-- ── Extract Tab ── -->
+      <div id="tab-extract" style="display:none;height:100%;display:none;flex-direction:column">
+        <div id="ext-controls">
+          <button class="btn btn-primary" id="ext-run-btn"
+                  onclick="runExtraction()" style="width:100%">
+            ▶ Run Extraction
+          </button>
+          <div id="ext-status"></div>
+        </div>
+        <div id="ext-result">
+          <div class="et-no-pattern" id="ext-placeholder">
+            Run extraction to see the fields<br>your pattern pulls from this file.
+          </div>
+        </div>
+      </div>
+
     </div><!-- /panel-body -->
   </div><!-- /panel -->
 </div><!-- /main -->
@@ -684,10 +780,15 @@ function renderGrid(data) {
       const csAttr = (cell.colspan && cell.colspan > 1) ? ` colspan="${cell.colspan}"` : '';
       const rsAttr = (cell.rowspan && cell.rowspan > 1) ? ` rowspan="${cell.rowspan}"` : '';
 
-      html += `<td class="${cls}" data-ref="${cell.ref}" data-merged="${cell.merged ? '1' : ''}"
+      // Phase B provenance: data-field lets CSS show a hover tooltip with the field name
+      const fieldAttr = cell.name ? ` data-field="${escHtml(cell.name)}"` : '';
+      const titleTxt  = cell.name
+        ? `${cell.ref}: ${escHtml(cell.value)} · field: ${escHtml(cell.name)}`
+        : `${cell.ref}${cell.merged ? ` [merged ${cell.colspan}×${cell.rowspan}]` : ''}: ${escHtml(cell.value)}`;
+      html += `<td class="${cls}" data-ref="${cell.ref}" data-merged="${cell.merged ? '1' : ''}"${fieldAttr}
                    ${csAttr}${rsAttr}
                    onclick="selectCell('${cell.ref}')"
-                   title="${cell.ref}${cell.merged ? ` [merged ${cell.colspan}×${cell.rowspan}]` : ''}: ${escHtml(cell.value)}">${badge}${val}${note}</td>`;
+                   title="${titleTxt}">${badge}${val}${note}</td>`;
     }
     html += '</tr>';
   }
@@ -705,6 +806,15 @@ function refreshCell(ref) {
   const badge = ch ? `<span class="cell-badge badge-${ch}">${ch}</span>` : '';
   const note  = info.note ? ' 📝' : '';
   td.innerHTML = badge + escHtml(info.value || '') + note;
+  // Phase B: keep provenance data-field and title in sync after reclassification
+  const fname = info.name || '';
+  if (fname) {
+    td.dataset.field = fname;
+    td.title = `${ref}: ${info.value || ''} · field: ${fname}`;
+  } else {
+    delete td.dataset.field;
+    td.title = `${ref}: ${info.value || ''}`;
+  }
 }
 
 // ── Cell selection ─────────────────────────────────────────────────────────
@@ -1005,9 +1115,157 @@ async function savePatternXlsx() {
 // ── Tabs ──────────────────────────────────────────────────────────────────
 function switchTab(name) {
   document.querySelectorAll('.ptab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
-  ['classify','config'].forEach(n =>
-    document.getElementById('tab-' + n).style.display = n === name ? 'block' : 'none');
+  ['classify','extract','config'].forEach(n => {
+    const el = document.getElementById('tab-' + n);
+    if (!el) return;
+    if (n === 'extract') {
+      // extract tab uses flex column — must show as flex, not block
+      el.style.display = n === name ? 'flex' : 'none';
+      el.style.flexDirection = 'column';
+      el.style.height = '100%';
+    } else {
+      el.style.display = n === name ? 'block' : 'none';
+    }
+  });
   if (name === 'config') loadConfig();
+}
+
+// ── Extract panel ─────────────────────────────────────────────────────────
+let _extractProvenance = {};
+
+async function runExtraction() {
+  const btn    = document.getElementById('ext-run-btn');
+  const status = document.getElementById('ext-status');
+  const result = document.getElementById('ext-result');
+  btn.disabled = true;
+  btn.textContent = '⏳ Running…';
+  status.textContent = '';
+  result.innerHTML = '';
+  try {
+    const r = await fetch('/api/extract', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+    });
+    const data = await r.json();
+    if (!data.ok) {
+      result.innerHTML = `<div class="et-error">❌ ${escHtml(data.error || 'Extraction failed')}</div>`;
+      status.textContent = 'Extraction failed';
+      return;
+    }
+    _extractProvenance = data.provenance || {};
+    result.innerHTML = renderExtractTree(data.result);
+    // Attach range-jump handlers to source refs (set via data-range attr)
+    result.querySelectorAll('[data-range]').forEach(el => {
+      el.addEventListener('click', () => jumpToCell(el.dataset.range.split(':')[0]));
+    });
+    // Count extracted scalars/tables for status line
+    const scalars = Object.entries(data.result || {})
+      .filter(([k, v]) => v !== null && typeof v !== 'object').length;
+    const tables = Object.entries(data.result || {})
+      .filter(([k, v]) => Array.isArray(v)).length;
+    status.textContent = `✓ ${scalars} scalars · ${tables} table group${tables !== 1 ? 's' : ''}`;
+  } catch (e) {
+    result.innerHTML = `<div class="et-error">❌ ${escHtml(e.message)}</div>`;
+    status.textContent = 'Error';
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '▶ Run Extraction';
+  }
+}
+
+function renderExtractTree(result) {
+  if (!result || typeof result !== 'object') return '<span class="et-null">null</span>';
+  return renderExtObject(result, '');
+}
+
+function renderExtObject(obj, parentPath) {
+  const entries = Object.entries(obj);
+  if (entries.length === 0) return '<span class="et-null">{}</span>';
+  return entries.map(([k, v]) => renderExtEntry(k, v, parentPath ? parentPath + '.' + k : k)).join('');
+}
+
+function renderExtEntry(key, val, path) {
+  if (key === '_source') return '';          // skip internal source metadata
+  if (val === null || val === undefined) {
+    return `<div class="et-row">
+      <span class="et-key">${escHtml(key)}</span>
+      <span class="et-colon">:</span>
+      <span class="et-null">null</span>
+    </div>`;
+  }
+  if (Array.isArray(val)) {
+    // Table group (array of instances)
+    return renderExtTableGroup(key, val, path);
+  }
+  if (typeof val === 'object') {
+    // Nested block
+    return `<div class="et-group">
+      <div class="et-group-title">📂 ${escHtml(key)}</div>
+      <div class="et-group-body">${renderExtObject(val, path)}</div>
+    </div>`;
+  }
+  // Scalar leaf — look up provenance refs
+  const leafKey = path.split('.').pop();
+  const refs = (_extractProvenance[leafKey] || []).slice(0, 4);
+  const refChips = refs.map(r =>
+    `<span class="et-ref" onclick="jumpToCell('${r}')">${r}</span>`
+  ).join(' ');
+  return `<div class="et-row">
+    <span class="et-key">${escHtml(key)}</span>
+    <span class="et-colon">:</span>
+    <span class="et-val">${escHtml(String(val))}</span>
+    ${refChips}
+  </div>`;
+}
+
+function renderExtTableGroup(key, instances, path) {
+  if (instances.length === 0) {
+    return `<div class="et-group">
+      <div class="et-group-title">📊 ${escHtml(key)}</div>
+      <div class="et-group-body"><span class="et-null">0 instances</span></div>
+    </div>`;
+  }
+  const items = instances.map((inst, i) => {
+    const src = inst._source;
+    const srcRef = src ? `<span class="et-source-ref" data-range="${escHtml(src.ref)}"
+      title="Jump to ${src.ref}">${escHtml(src.ref)}</span>` : '';
+    // Gather data rows
+    const dataRows = inst.data || [];
+    const headerObj = inst.header || {};
+    const footerObj = inst.footer || {};
+    // Build header labels from first data row keys
+    const colKeys = dataRows.length ? Object.keys(dataRows[0]) : Object.keys(headerObj);
+    const headerHtml = Object.keys(headerObj).length
+      ? `<div class="et-row" style="font-weight:600;font-size:11px;color:var(--text-muted)">
+          header: ${Object.entries(headerObj).map(([k,v]) => `${escHtml(k)}=${escHtml(String(v))}`).join(', ')}
+         </div>` : '';
+    const rowsHtml = dataRows.slice(0, 5).map(row => {
+      const cells = colKeys.map(k => `<span class="et-data-cell">${escHtml(String(row[k] ?? ''))}</span>`).join('');
+      return `<div class="et-data-row">${cells}</div>`;
+    }).join('');
+    const moreHtml = dataRows.length > 5
+      ? `<div class="et-count">…${dataRows.length - 5} more rows</div>` : '';
+    const footerHtml = Object.keys(footerObj).length
+      ? `<div class="et-row" style="font-style:italic;font-size:11px;color:var(--text-muted)">
+          footer: ${Object.entries(footerObj).map(([k,v]) => `${escHtml(k)}=${escHtml(String(v))}`).join(', ')}
+         </div>` : '';
+    return `<div class="et-table-instance">
+      <div class="et-instance-hdr">
+        <span>Instance ${i + 1}</span>
+        <span class="et-count">(${dataRows.length} data rows)</span>
+        ${srcRef}
+      </div>
+      <div class="et-instance-body">
+        ${headerHtml}
+        <div class="et-data-rows">${rowsHtml}${moreHtml}</div>
+        ${footerHtml}
+      </div>
+    </div>`;
+  }).join('');
+  return `<div class="et-group">
+    <div class="et-group-title">📊 ${escHtml(key)} <span class="et-count">(${instances.length} instance${instances.length !== 1 ? 's' : ''})</span></div>
+    <div class="et-group-body">${items}</div>
+  </div>`;
 }
 
 // ── Jump to cell ──────────────────────────────────────────────────────────
