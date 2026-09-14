@@ -1315,7 +1315,6 @@ def create_app(
 
             from .security import validate_pattern_file
             validate_pattern_file(tmp_path)
-
             ws_ = _STATE['ws']
             choices, cfg, warnings = _preload_from_pattern(ws_, tmp_path)
 
