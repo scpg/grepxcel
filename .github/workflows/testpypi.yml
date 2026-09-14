@@ -150,14 +150,12 @@ jobs:
           grepxcel generate-examples -o /tmp/gx-smoke
           grepxcel extract \
             -p /tmp/gx-smoke/01_simple_invoice/pattern.xlsx \
-               /tmp/gx-smoke/01_simple_invoice/invoice.xlsx \
+               /tmp/gx-smoke/01_simple_invoice/data.xlsx \
             -q
 
       # Validate-pattern on the same example just to exercise that code path too.
-      - name: Validate pattern file
-        run: |
-          grepxcel validate-pattern \
-            /tmp/gx-smoke/01_simple_invoice/pattern.xlsx -q
+      - name: Validate pattern (no engine needed)
+        run: grepxcel validate-pattern /tmp/gx-smoke/01_simple_invoice/pattern.xlsx -q
 
       - name: Write step summary
         if: always()
