@@ -1,0 +1,22 @@
+# CODEOWNERS — automatic review assignment
+#
+# GitHub Copilot is requested as a reviewer on every PR automatically.
+# This uses your GitHub Copilot Individual subscription — no extra cost.
+#
+# How it works:
+#   - Any PR that touches files matching a pattern below auto-requests
+#     the listed reviewer(s).
+#   - Copilot posts inline comments and an overall review (approve /
+#     request changes) just like a human reviewer.
+#   - Copilot's review is advisory: it is NOT a required approval gate
+#     (to require it, enable "Require review from code owners" in
+#     Settings → Branches → main protection rule).
+#
+# To add yourself as a second auto-reviewer on all PRs, uncomment the
+# last line and replace the handle with your GitHub username.
+
+# All files → request Copilot review on every PR
+*   @copilot
+
+# Uncomment to also auto-request yourself:
+# *   @scpg
