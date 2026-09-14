@@ -107,15 +107,22 @@ jobs:
         run: sleep 30
 
       # Install the exact pre-release version we just published.
-      # --index-url        → prefer test.pypi.org for the grepxcel package itself
-      # --extra-index-url  → fall back to real PyPI for dependencies (openpyxl,
-      #                      fastapi, uvicorn, etc.) that aren't on test.pypi.org
-      - name: Install grepxcel[web] from TestPyPI
+      #
+      # Why two steps?  test.pypi.org is a sandbox and contains name-squatted
+      # or broken stub packages for popular names (e.g. FASTAPI-1.0.tar.gz).
+      # If we ask pip to satisfy the [web] extras from --index-url=test.pypi.org
+      # it will find those stubs first and fail.  Solution: install the base
+      # grepxcel package from test.pypi.org (proving the upload is correct), then
+      # install the [web] extra dependencies separately from the real PyPI.
+      - name: Install grepxcel (base) from TestPyPI
         run: |
           pip install --pre \
             --index-url https://test.pypi.org/simple/ \
             --extra-index-url https://pypi.org/simple/ \
-            "grepxcel[web]==${{ needs.build.outputs.version }}"
+            "grepxcel==${{ needs.build.outputs.version }}"
+
+      - name: Install web-extra dependencies from real PyPI
+        run: pip install "fastapi>=0.141" "uvicorn>=0.52" "jinja2>=3.1"
 
       # Verify the installed __version__ matches what was published.
       - name: Verify installed version
