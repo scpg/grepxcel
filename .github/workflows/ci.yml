@@ -69,7 +69,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        extra: [mcp, draft-cloud]
+        extra: [mcp, draft-cloud, web]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
@@ -87,6 +87,9 @@ jobs:
           grepxcel --help
           if [ "${{ matrix.extra }}" = "mcp" ]; then
             grepxcel mcp-config
+          fi
+          if [ "${{ matrix.extra }}" = "web" ]; then
+            python -c "from grepxcel.wizard_api import create_app; print('web import ok')"
           fi
 
   test-dataframe:
