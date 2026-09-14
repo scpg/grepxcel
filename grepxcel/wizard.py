@@ -862,18 +862,22 @@ def run_wizard(
             _save_state_json(state, save_state)
         return 0
 
-    # Try TUI first — falls back if textual not installed or not a TTY
-    _force_seq = no_tui or os.environ.get('GREPXCEL_NO_TUI', '') not in ('', '0')
-    if not _force_seq and sys.stdout.isatty():
-        try:
-            from .wizard_tui import run_wizard_tui
-            rc = run_wizard_tui(data_file, sheet=sheet, output=output, fmt=fmt,
-                                save_state=save_state,
-                                load_pattern=load_pattern)
-            if rc != 2:          # 2 = textual not installed → fall through
-                return rc
-        except Exception:
-            pass                 # unexpected TUI error → fall through to sequential
+    # TUI wizard is deprecated in favour of the browser-based web-wizard.
+    # It is disabled here; the sequential terminal wizard below is the fallback.
+    # NOTE: wizard_tui.py is NOT removed — wizard_api.py imports pure-Python
+    #       utilities from it (_infer_cell_type, _preload_from_pattern, etc.).
+    _c_dim = '\033[2m'
+    _c_rst = '\033[0m'
+    if sys.stdout.isatty():
+        print(
+            f'{_c_dim}ℹ  The TUI wizard is deprecated.  '
+            f'For the best experience use:\n'
+            f'   grepxcel web-wizard {data_file}\n'
+            f'Continuing with the sequential terminal wizard…{_c_rst}',
+            file=sys.stderr,
+        )
+    # _force_seq kept for the env-var / --no-tui path; TUI branch is intentionally skipped
+    _force_seq = True  # noqa: F841 (kept for readability / future re-enable)
     try:
         import openpyxl
         wb = openpyxl.load_workbook(data_file, data_only=True)
