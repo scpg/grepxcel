@@ -43,6 +43,13 @@ output/*
 *.swp
 *.swo
 
+# ── Knowledge graph build output (graphify, local only) ──────────────────────
+graphify-out/
+
+# ── Drafter output / failed runs (local only) ────────────────────────────────
+draft_pattern.xlsx
+draft_pattern_FAILED.txt
+
 # ── Throwaway scripts (ad-hoc, never synced) ─────────────────────────────────
 tmp.local/
 
