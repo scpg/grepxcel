@@ -13,18 +13,27 @@ name: TestPyPI dry-run
 # Each run auto-derives a unique pre-release version X.Y.Zrc<run_number> from the
 # current __version__ and rewrites it in the CI checkout only (never committed).
 # So every dispatch uploads a FRESH version — no manual bumps, and the real
-# __version__ (e.g. 0.1.0) stays untouched for the actual release.yml publish.
+# __version__ (e.g. 0.3.0) stays untouched for the actual release.yml publish.
 # (skip-existing stays on as a belt-and-suspenders for re-runs of the same run.)
+#
+# Pipeline:
+#   build  →  publish-testpypi  →  smoke-test
+#
+# The smoke-test job installs the just-published package FROM test.pypi.org and
+# runs an end-to-end extraction so we know the real PyPI release will work too.
 
 on:
   workflow_dispatch:
 
-permissions: {}            # default: nothing; the publish job opts in below
+permissions: {}            # default: nothing; each job opts in below
 
 jobs:
   build:
     name: Build sdist + wheel
     runs-on: ubuntu-latest
+    # Expose the derived version string so downstream jobs know what to install.
+    outputs:
+      version: ${{ steps.derive-version.outputs.version }}
     permissions:
       contents: read         # required to check out the repo (esp. while private)
     steps:
@@ -35,6 +44,7 @@ jobs:
           python-version: "3.12"
 
       - name: Derive a unique pre-release version (X.Y.Zrc<run_number>)
+        id: derive-version
         env:
           RUN_NUMBER: ${{ github.run_number }}
         run: |
@@ -43,6 +53,7 @@ jobs:
           ver="${base}rc${RUN_NUMBER}"
           sed -i "s/^__version__ = .*/__version__ = \"${ver}\"/" grepxcel/__init__.py
           echo "Building TestPyPI version: ${ver}"
+          echo "version=${ver}" >> "$GITHUB_OUTPUT"
           echo "### TestPyPI build: \`${ver}\`  (install with \`pip install --pre\`)" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Build distributions
@@ -78,3 +89,80 @@ jobs:
         with:
           repository-url: https://test.pypi.org/legacy/
           skip-existing: true
+
+  smoke-test:
+    name: Smoke-test install from TestPyPI
+    needs: [build, publish-testpypi]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v6
+        with:
+          python-version: "3.12"
+
+      # TestPyPI propagates new releases within ~30 s; give it a moment before
+      # the first install attempt to avoid a confusing "version not found" error.
+      - name: Wait for TestPyPI index propagation (~30 s)
+        run: sleep 30
+
+      # Install the exact pre-release version we just published.
+      # --index-url        → prefer test.pypi.org for the grepxcel package itself
+      # --extra-index-url  → fall back to real PyPI for dependencies (openpyxl,
+      #                      fastapi, uvicorn, etc.) that aren't on test.pypi.org
+      - name: Install grepxcel[web] from TestPyPI
+        run: |
+          pip install --pre \
+            --index-url https://test.pypi.org/simple/ \
+            --extra-index-url https://pypi.org/simple/ \
+            "grepxcel[web]==${{ needs.build.outputs.version }}"
+
+      # Verify the installed __version__ matches what was published.
+      - name: Verify installed version
+        run: |
+          installed=$(python -c "import grepxcel; print(grepxcel.__version__)")
+          expected="${{ needs.build.outputs.version }}"
+          echo "Installed: ${installed}   Expected: ${expected}"
+          if [ "$installed" != "$expected" ]; then
+            echo "VERSION MISMATCH — smoke test failed" >&2
+            exit 1
+          fi
+
+      # Basic CLI checks: version flag + top-level help + web-wizard sub-help.
+      - name: CLI help and version flag
+        run: |
+          grepxcel --version
+          grepxcel --help
+          grepxcel web-wizard --help
+
+      # End-to-end extract: generate the built-in examples then run the engine on
+      # one of them.  This exercises openpyxl, the pattern parser, and the engine
+      # with zero external data files needed.
+      - name: End-to-end extract (built-in example)
+        run: |
+          grepxcel generate-examples -o /tmp/gx-smoke
+          grepxcel extract \
+            -p /tmp/gx-smoke/01_simple_invoice/pattern.xlsx \
+               /tmp/gx-smoke/01_simple_invoice/invoice.xlsx \
+            -q
+
+      # Validate-pattern on the same example just to exercise that code path too.
+      - name: Validate pattern file
+        run: |
+          grepxcel validate-pattern \
+            /tmp/gx-smoke/01_simple_invoice/pattern.xlsx -q
+
+      - name: Write step summary
+        if: always()
+        run: |
+          echo "### Smoke-test result: grepxcel \`${{ needs.build.outputs.version }}\` from TestPyPI" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Check | Status |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|---|---|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| pip install (TestPyPI) | see job steps |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| version pin match | see job steps |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| CLI help / version flag | see job steps |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| end-to-end extract | see job steps |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| validate-pattern | see job steps |" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Install command: \`pip install --pre --index-url https://test.pypi.org/simple/ grepxcel==${{ needs.build.outputs.version }}\`" >> "$GITHUB_STEP_SUMMARY"
