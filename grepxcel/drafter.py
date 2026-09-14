@@ -107,6 +107,14 @@ In your output, separate columns with ' | ' (space-pipe-space).
    Modifiers can combine: var:not-null:trim-whitespace | field | type | PO-.*
    You do NOT need modifiers in a basic pattern — they are optional quality gates.
 
+   Optional modifiers on column A (order-independent, colon-separated):
+     var:not-null | field | type |        ← fatal error if the cell is empty
+     var:glob     | field | type | SKU-*  ← column D is a glob pattern, not regex
+     var:literal  | field | type | Active ← column D is an exact string, not regex
+   These can be combined: var:not-null:glob | field | type | SKU-*
+   For lbl:, use lbl:not-null to assert the label must be present.
+   You do NOT need to use these in a basic pattern — they are optional quality gates.
+
 
 4. Extraction sequence between START: and END:
    Important: HEADER: rows reference lbl: names; DATA: rows reference var: names.
