@@ -1,10 +1,24 @@
 # grepxcel
 
-**Stop writing custom Python for every Excel template.** Define the layout once, extract clean JSON from any file that follows it.
+[![PyPI](https://img.shields.io/pypi/v/grepxcel?color=blue)](https://pypi.org/project/grepxcel/)
+[![Python](https://img.shields.io/pypi/pyversions/grepxcel)](https://pypi.org/project/grepxcel/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/scpg/grepxcel/blob/main/LICENSE)
+[![Downloads](https://img.shields.io/pypi/dm/grepxcel)](https://pypi.org/project/grepxcel/)
+
+**Stop writing custom Python for every Excel template.** Define the layout once in a pattern spreadsheet, extract clean JSON from any file that follows it.
 
 ```
 pip install grepxcel
 ```
+
+**Capabilities at a glance:**
+- **Pattern file** — describe any spreadsheet's layout once; reuse it across all matching files with no code changes
+- **Anchor-based** — finds data even when row or column positions shift between files
+- **LLM drafter** — auto-generate a starter pattern from any file in ~30 seconds (`grepxcel draft file.xlsx`)
+- **Visual wizard** — browser UI: click cells to classify, download the pattern (`grepxcel web-wizard file.xlsx`)
+- **CI-ready** — deterministic, `--strict` exit-2 mode, JSON / CSV / colored-Excel output, Python 3.11–3.15
+- **Security-hardened** — ReDoS guard, ZIP-bomb protection, CSRF hardening on the web wizard
+- **MCP server** — expose grepxcel as a tool in Claude, Cursor, and any MCP-compatible AI agent (`pip install 'grepxcel[mcp]'`)
 
 ---
 
@@ -19,8 +33,6 @@ Describe the layout once in a **pattern file**. Run `grepxcel extract`. Get clea
 ```
 pattern.xlsx  +  data.xlsx  →  { "po": { "number": "PO-2026" }, "line": [ {…} ] }
 ```
-
----
 
 ## See it in action (2 minutes)
 
@@ -56,8 +68,6 @@ grepxcel extract -p pattern.xlsx data.xlsx
 
 That's it. Same pattern works on next month's invoice, and the one after that.
 
----
-
 ## Who is this for?
 
 - **Data teams** drowning in Excel reports from different sources
@@ -66,8 +76,6 @@ That's it. Same pattern works on next month's invoice, and the one after that.
 - **Research and clinical data** — reject files that deviate from the expected structure before they corrupt your dataset
 
 You don't need to be a programmer to use grepxcel. You do need to be comfortable editing a simple spreadsheet to create your first pattern.
-
----
 
 ## Install
 
@@ -102,8 +110,6 @@ Windows (PowerShell): use `.venv\Scripts\` instead of `.venv/bin/`.
 
 </details>
 
----
-
 ## How patterns work
 
 A pattern file is a simple spreadsheet (`.xlsx` or `.csv`) with four types of rows:
@@ -130,8 +136,6 @@ Dot notation creates nested output: `inv.number` → `{"inv": {"number": …}}`.
 
 > **Full reference:** [docs/pattern-file.md](https://github.com/scpg/grepxcel/blob/main/docs/pattern-file.md) covers every
 > instruction, type, and config option in detail.
-
----
 
 ## Describing what cells look like
 
@@ -171,8 +175,6 @@ var:glob       sku              string   PROD-*     # glob match
 var:literal    status           string   Active     # exact string
 ```
 
----
-
 ## CLI commands
 
 ```bash
@@ -201,8 +203,6 @@ grepxcel mcp-config                            # print config for Claude / Curso
 
 Run `grepxcel <command> --help` for all options.
 
----
-
 ## Python API
 
 ```python
@@ -217,8 +217,6 @@ frames = grepxcel.extract_df("pattern.xlsx", "data.xlsx")
 frames["line"]                       # pandas or polars DataFrame of all table rows
 frames["_scalars"]                   # one-row DataFrame of scalar fields
 ```
-
----
 
 ## Output format
 
@@ -240,7 +238,13 @@ Fields with dot notation are grouped into nested objects. Tables produce arrays.
 }
 ```
 
----
+## What's new in v0.3.0
+
+- **Browser-based wizard** — `grepxcel web-wizard file.xlsx` opens a point-and-click UI to classify cells visually
+- **Security hardening** — CSRF protection on the web wizard, config validation, ReDoS guard on custom match patterns, narrowed exception handling
+- **Preload fixes** — footer rows with no label columns now pre-populate correctly in the wizard
+
+Full history: [CHANGELOG.md](https://github.com/scpg/grepxcel/blob/main/CHANGELOG.md)
 
 ## Learn more
 
@@ -252,8 +256,6 @@ Fields with dot notation are grouped into nested objects. Tables produce arrays.
 | CLI flags and options (full reference) | [docs/cli-reference.md](https://github.com/scpg/grepxcel/blob/main/docs/cli-reference.md) |
 | Security model and vulnerability reporting | [SECURITY.md](https://github.com/scpg/grepxcel/blob/main/SECURITY.md) |
 | Contributing guidelines | [CONTRIBUTING.md](https://github.com/scpg/grepxcel/blob/main/CONTRIBUTING.md) |
-
----
 
 ## Support
 

@@ -5,25 +5,35 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "grepxcel"
 dynamic = ["version"]
-description = "Pattern-based data extraction for Excel"
+description = "Extract structured data from Excel files using a reusable pattern spreadsheet — no hardcoded row numbers"
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "scpg" }]
-keywords = ["excel", "xlsx", "spreadsheet", "data-extraction", "pattern", "etl", "openpyxl"]
+keywords = [
+    "excel", "xlsx", "spreadsheet", "data-extraction", "pattern", "etl", "openpyxl",
+    "automation", "invoice", "structured-data", "data-pipeline", "mcp", "ai-agent",
+    "extraction", "report", "template", "json", "csv",
+]
 classifiers = [
-    "Development Status :: 4 - Beta",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
     "Intended Audience :: End Users/Desktop",
+    "Intended Audience :: Science/Research",
+    "Environment :: Console",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3.15",
     "Topic :: Office/Business :: Financial :: Spreadsheet",
     "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+    "Topic :: Utilities",
     "Operating System :: OS Independent",
+    "Typing :: Typed",
 ]
 dependencies = [
     "openpyxl>=3.1",
