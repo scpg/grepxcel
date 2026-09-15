@@ -655,20 +655,36 @@ def create_app(
             'log_lines':        [l.rstrip('\n') for l in recent_lines],
         })
 
+    _VALID_DIRECTIONS   = frozenset({'LR', 'TD'})
+    _VALID_MATCH_MODES  = frozenset({'', 'literal', 'glob', 'regexp'})
+
     @app.post('/api/config')
     async def api_config(request: Request):
         body = await request.json()
         st: WizardState = _STATE['state']
-        st.direction       = body.get('direction',       st.direction)
+        # Validate enum fields at API entry time so invalid values are rejected
+        # immediately rather than surfacing as opaque PatternError at extraction.
+        direction = body.get('direction', st.direction)
+        if direction not in _VALID_DIRECTIONS:
+            raise HTTPException(400, f"Invalid direction {direction!r}; must be 'LR' or 'TD'")
+        lbl_match = body.get('lbl_match', st.lbl_match)
+        if lbl_match not in _VALID_MATCH_MODES:
+            raise HTTPException(400,
+                f"Invalid lbl_match {lbl_match!r}; must be one of {sorted(_VALID_MATCH_MODES)}")
+        var_match = body.get('var_match', st.var_match)
+        if var_match not in _VALID_MATCH_MODES:
+            raise HTTPException(400,
+                f"Invalid var_match {var_match!r}; must be one of {sorted(_VALID_MATCH_MODES)}")
+        st.direction              = direction
         st.template               = body.get('template',               st.template)
         st.ignore_case_labels     = body.get('ignore_case_labels',     st.ignore_case_labels)
         st.ignore_case_values     = body.get('ignore_case_values',     st.ignore_case_values)
         st.trim_whitespace_labels = body.get('trim_whitespace_labels', st.trim_whitespace_labels)
         st.trim_whitespace_values = body.get('trim_whitespace_values', st.trim_whitespace_values)
-        st.currency_sign   = body.get('currency_sign',   st.currency_sign)
-        st.lbl_match       = body.get('lbl_match',       st.lbl_match)
-        st.var_match       = body.get('var_match',       st.var_match)
-        st.empty_aliases   = body.get('empty_aliases',   st.empty_aliases)
+        st.currency_sign          = body.get('currency_sign',          st.currency_sign)
+        st.lbl_match              = lbl_match
+        st.var_match              = var_match
+        st.empty_aliases          = body.get('empty_aliases',          st.empty_aliases)
         _STATE['log'].write('CONFIG',
             f'direction={st.direction} '
             f'ic_labels={st.ignore_case_labels} ic_values={st.ignore_case_values} '
@@ -707,9 +723,12 @@ def create_app(
         ws: openpyxl.worksheet.worksheet.Worksheet = _STATE['ws']
         try:
             row, col = _parse_ref(ref)
+        except (ValueError, IndexError):
+            raise HTTPException(400, f'Cannot parse cell reference {ref!r}')
+        try:
             cell_value = ws.cell(row=row, column=col).value
-        except Exception:
-            cell_value = None
+        except Exception as exc:
+            raise HTTPException(400, f'Cannot read cell {ref}: {exc}')
 
         if action == 'L':
             lbl_mode_raw = fields.get('match_mode', '')
@@ -726,11 +745,20 @@ def create_app(
             var_mode_raw  = fields.get('match_mode', '(default)')
             modifiers_raw = fields.get('modifiers', 'none')
             col_a_extra   = _col_a_extra_from_parts(var_mode_raw, modifiers_raw)
+            match_pattern = fields.get('match', '.*')
+            # ReDoS guard: validate the user-supplied regex before storing it.
+            # Patterns are saved to disk and later passed to the engine's regex
+            # engine against potentially large cell values.
+            from .security import check_regex_safety, SecurityError as _SecErr
+            try:
+                check_regex_safety(match_pattern, field_name=fields.get('name', ref))
+            except _SecErr as exc:
+                raise HTTPException(400, str(exc))
             choices[ref] = {
                 'choice':      'V',
                 'name':        fields.get('name', _slugify(str(cell_value or ''))),
                 'ftype':       fields.get('type', _infer_cell_type(ws.cell(row=row, column=col))),
-                'match':       fields.get('match', '.*'),
+                'match':       match_pattern,
                 'col_a_extra': col_a_extra,
             }
         elif action == 'C':
@@ -874,9 +902,12 @@ def create_app(
             try:
                 row_, col_ = _parse_ref(ref)
                 cell_value = ws_.cell(row=row_, column=col_).value
+            except (ValueError, IndexError):
+                skipped.append(ref)
+                continue
             except Exception:
-                cell_value = None
-                row_, col_ = 0, 0
+                skipped.append(ref)
+                continue
 
             if action == 'CLEAR':
                 choices.pop(ref, None)
@@ -958,6 +989,19 @@ def create_app(
 
         r0, r1 = min(sr, er), max(sr, er)
         c0, c1 = min(sc, ec), max(sc, ec)
+
+        # DoS guard: a large range request (even via a CSRF <img> tag) would
+        # spin in a near-infinite loop.  Cap the rectangle before iterating.
+        _MAX_TABLE_RANGE_CELLS = 10_000
+        row_count = r1 - r0 + 1
+        col_count = c1 - c0 + 1
+        if row_count * col_count > _MAX_TABLE_RANGE_CELLS:
+            raise HTTPException(
+                400,
+                f'Requested range {row_count}×{col_count} exceeds the '
+                f'{_MAX_TABLE_RANGE_CELLS}-cell limit. Select a smaller range.',
+            )
+
         choices = _STATE['choices']
 
         rows_out = []
@@ -1356,8 +1400,24 @@ def create_app(
             raise HTTPException(500, str(exc))
 
     @app.post('/api/shutdown')
-    async def api_shutdown():
+    async def api_shutdown(request: Request):
         """Graceful shutdown — called by the browser when user clicks 'Done'."""
+        # CSRF guard: form POSTs are simple requests (no preflight). Reject any
+        # cross-origin Origin header that is not localhost / 127.0.0.1.
+        origin = request.headers.get('origin', '')
+        if origin and not (
+            origin.startswith('http://localhost:')
+            or origin.startswith('http://127.0.0.1:')
+        ):
+            raise HTTPException(403, 'Cross-origin shutdown rejected')
+        # Clean up any uploaded temp pattern file before exiting.
+        import tempfile as _tmpmod
+        _tmp_pat = _STATE.get('pattern_path')
+        if _tmp_pat and _tmp_pat.startswith(_tmpmod.gettempdir()):
+            try:
+                os.unlink(_tmp_pat)
+            except OSError:
+                pass
         _STATE['log'].close(_STATE.get('choices', {}), _STATE.get('notes', {}))
         def _stop():
             time.sleep(0.3)

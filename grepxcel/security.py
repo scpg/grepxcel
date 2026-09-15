@@ -17,8 +17,10 @@ Regex check (run at pattern-file parse time for every def: entry):
 
 import os
 import re
+import struct
 import urllib.parse
 import zipfile
+import zlib
 
 # Python 3.11+ exposes the regex parser internals at re._parser / re._constants.
 # We require >=3.11 (see pyproject) so there is a single import path: no version
@@ -300,10 +302,10 @@ def _check_zip_safety(path: str, max_uncompressed_mb: float) -> None:
                                 f'uncompressed limit. This may be a ZIP bomb or '
                                 f'an unusually large workbook.'
                             )
-    except zipfile.BadZipFile:
+    except (zipfile.BadZipFile, RuntimeError, zlib.error, struct.error) as exc:
         raise SecurityError(
-            f'{path!r} is not a valid ZIP archive. '
-            f'The file may be corrupted.'
+            f'{path!r} could not be read as a valid ZIP archive: {exc}. '
+            f'The file may be encrypted, corrupted, or not an xlsx file.'
         )
 
     compressed = os.path.getsize(path)
