@@ -1,3 +1,3 @@
 pytest>=8.0
-hypothesis>=6.165.9
+hypothesis>=6.167.1
 jsonschema>=4.20

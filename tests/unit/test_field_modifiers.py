@@ -1,9 +1,11 @@
-"""Unit tests for the col-A modifier system (not-null, var:glob, var:literal, var:re).
+"""Unit tests for the col-A modifier system (not-null, var:glob, var:literal, var:re,
+trim-whitespace).
 
 These tests verify:
 1. Parser: modifier tokens produce the correct FieldDef attributes.
 2. Engine: _validate_field dispatches correctly for each var_mode.
 3. Engine: required (not-null) check fires a fatal error when the value is empty.
+4. Engine: trim-whitespace strips leading/trailing spaces before matching and extraction.
 """
 from pathlib import Path
 
@@ -92,7 +94,7 @@ class TestValidateFieldVarGlob:
         assert not _validate_field(fd, 200.0, _CFG, _MAX_LEN)
 
     def test_glob_ignore_case(self):
-        cfg = Config(ignore_case=True)
+        cfg = Config(ignore_case_values=True)
         fd = _field(regex='prod-*', var_mode='glob')
         assert _validate_field(fd, 'PROD-99', cfg, _MAX_LEN)
 
@@ -113,7 +115,7 @@ class TestValidateFieldVarLiteral:
         assert not _validate_field(fd, 'active', _CFG, _MAX_LEN)
 
     def test_ignore_case(self):
-        cfg = Config(ignore_case=True)
+        cfg = Config(ignore_case_values=True)
         fd = _field(regex='Active', var_mode='literal')
         assert _validate_field(fd, 'ACTIVE', cfg, _MAX_LEN)
 
@@ -189,3 +191,309 @@ class TestRequiredEnforcement:
     def test_not_null_with_glob_logs_fatal_on_empty(self, tmp_path):
         _, lg = _run(_req_rows('var:not-null:glob', 'hello*'), {}, tmp_path)
         assert lg.has_errors()
+
+
+# ── trim-whitespace modifier ──────────────────────────────────────────────────
+
+class TestTrimWhitespaceParser:
+    """Parser correctly sets trim_whitespace on FieldDef and Config."""
+
+    def test_var_trim_sets_field_flag(self, tmp_path):
+        path = _write_pattern([
+            ['var:trim-whitespace', 'v', 'string', '.*'],
+            ['START:'],
+            ['cell:A1', 'v'],
+            ['END:'],
+        ], tmp_path)
+        _, defs, _ = PatternParser().parse(path)
+        assert defs['v'].trim_whitespace is True
+
+    def test_plain_var_trim_whitespace_is_false(self, tmp_path):
+        path = _write_pattern([
+            ['var:', 'v', 'string', '.*'],
+            ['START:'],
+            ['cell:A1', 'v'],
+            ['END:'],
+        ], tmp_path)
+        _, defs, _ = PatternParser().parse(path)
+        assert defs['v'].trim_whitespace is False
+
+    def test_lbl_trim_sets_field_flag(self, tmp_path):
+        path = _write_pattern([
+            ['lbl:trim-whitespace', 'lbl', 'string', 'Invoice:'],
+            ['var:', 'v', 'string', '.*'],
+            ['START:'],
+            ['cell:A1', 'lbl'],
+            ['cell:next', 'v'],
+            ['END:'],
+        ], tmp_path)
+        _, defs, _ = PatternParser().parse(path)
+        assert defs['lbl'].trim_whitespace is True
+
+    def test_trim_whitespace_combines_with_not_null(self, tmp_path):
+        path = _write_pattern([
+            ['var:not-null:trim-whitespace', 'v', 'string', '.*'],
+            ['START:'],
+            ['cell:A1', 'v'],
+            ['END:'],
+        ], tmp_path)
+        _, defs, _ = PatternParser().parse(path)
+        assert defs['v'].trim_whitespace is True
+        assert defs['v'].required is True
+
+    def test_trim_whitespace_combines_with_glob(self, tmp_path):
+        path = _write_pattern([
+            ['var:glob:trim-whitespace', 'v', 'string', 'hello*'],
+            ['START:'],
+            ['cell:A1', 'v'],
+            ['END:'],
+        ], tmp_path)
+        _, defs, _ = PatternParser().parse(path)
+        assert defs['v'].trim_whitespace is True
+        assert defs['v'].var_mode == 'glob'
+
+    def test_global_config_trim_whitespace(self, tmp_path):
+        path = _write_pattern([
+            ['config:', 'trim.whitespace', 'yes'],
+            ['var:', 'v', 'string', '.*'],
+            ['START:'],
+            ['cell:A1', 'v'],
+            ['END:'],
+        ], tmp_path)
+        cfg, _, _ = PatternParser().parse(path)
+        # backward-compat: old trim.whitespace key sets trim_whitespace_values
+        assert cfg.trim_whitespace_values is True
+
+    def test_global_config_trim_whitespace_false(self, tmp_path):
+        path = _write_pattern([
+            ['config:', 'trim.whitespace', 'no'],
+            ['var:', 'v', 'string', '.*'],
+            ['START:'],
+            ['cell:A1', 'v'],
+            ['END:'],
+        ], tmp_path)
+        cfg, _, _ = PatternParser().parse(path)
+        assert cfg.trim_whitespace_values is False
+
+
+class TestTrimWhitespaceEngine:
+    """Engine strips whitespace before matching and stores the trimmed value."""
+
+    def _trim_rows(self, col_a='var:trim-whitespace', regex='.*') -> list:
+        return [
+            [col_a, 'v', 'string', regex],
+            ['START:'],
+            ['cell:A1', 'v'],
+            ['END:'],
+        ]
+
+    def test_no_trim_by_default_whitespace_stored_raw(self, tmp_path):
+        """Without trim-whitespace, raw value (with spaces) is stored."""
+        result, lg = _run(
+            [['var:', 'v', 'string', r'\S+'], ['START:'], ['cell:A1', 'v'], ['END:']],
+            {'A1': ' hello '},
+            tmp_path,
+        )
+        # '\S+' does NOT match ' hello ' — warning expected, raw value stored
+        assert result.get('v') == ' hello '
+        assert lg.has_warnings()  # validation warning because of spaces
+
+    def test_trim_removes_leading_trailing_spaces(self, tmp_path):
+        result, lg = _run(self._trim_rows(), {'A1': '  hello  '}, tmp_path)
+        assert not lg.has_errors()
+        assert result.get('v') == 'hello'
+
+    def test_trim_enables_regex_match_that_would_fail_raw(self, tmp_path):
+        result, lg = _run(self._trim_rows(regex=r'\w+'), {'A1': ' world '}, tmp_path)
+        assert not lg.has_errors()
+        assert result.get('v') == 'world'
+
+    def test_trim_glob_mode(self, tmp_path):
+        result, lg = _run(
+            self._trim_rows(col_a='var:glob:trim-whitespace', regex='hello*'),
+            {'A1': '  hello world  '},
+            tmp_path,
+        )
+        assert not lg.has_errors()
+        assert result.get('v') == 'hello world'
+
+    def test_trim_literal_mode(self, tmp_path):
+        result, lg = _run(
+            self._trim_rows(col_a='var:literal:trim-whitespace', regex='Active'),
+            {'A1': '  Active  '},
+            tmp_path,
+        )
+        assert not lg.has_errors()
+        assert result.get('v') == 'Active'
+
+    def test_global_trim_config_applies_to_all_fields(self, tmp_path):
+        """config: | trim.whitespace | yes trims all fields without per-field modifier."""
+        rows = [
+            ['config:', 'trim.whitespace', 'yes'],
+            ['var:', 'v', 'string', r'\w+'],
+            ['START:'],
+            ['cell:A1', 'v'],
+            ['END:'],
+        ]
+        result, lg = _run(rows, {'A1': '  trimmed  '}, tmp_path)
+        assert not lg.has_errors()
+        assert result.get('v') == 'trimmed'
+
+    def test_trim_does_not_affect_non_string_types(self, tmp_path):
+        """Numeric values are Python objects — trim has no effect."""
+        result, lg = _run(
+            self._trim_rows(col_a='var:trim-whitespace', regex='.*'),
+            {'A1': 42.5},
+            tmp_path,
+        )
+        assert not lg.has_errors()
+        assert result.get('v') == 42.5  # numeric value unchanged
+
+
+class TestTrimWhitespaceWarning:
+    """Logger emits a targeted hint when whitespace causes a validation mismatch."""
+
+    def test_whitespace_hint_shown_when_trimming_fixes_mismatch(self, tmp_path):
+        """When the raw value fails but trimmed value would pass, the warning says so."""
+        rows = [
+            ['var:', 'v', 'string', r'\w+'],  # no trim-whitespace
+            ['START:'],
+            ['cell:A1', 'v'],
+            ['END:'],
+        ]
+        result, lg = _run(rows, {'A1': ' hello '}, tmp_path)
+        issues = lg.issues()
+        assert issues  # a validation warning must have fired
+        # The hint in the warning record must mention whitespace / trim-whitespace
+        hints = [i.hint for i in issues if hasattr(i, 'hint') and i.hint]
+        assert any('trim-whitespace' in h for h in hints), (
+            f'Expected whitespace hint in warnings; got hints: {hints}'
+        )
+
+
+# ── var.match global config ───────────────────────────────────────────────────
+
+class TestVarMatchGlobalConfig:
+    """config: | var.match | ... sets the default var: column-D matching mode."""
+
+    def _var_match_rows(self, var_match_val: str, col_d: str = 'Active') -> list:
+        return [
+            ['config:', 'var.match', var_match_val],
+            ['var:', 'v', 'string', col_d],
+            ['START:'],
+            ['cell:A1', 'v'],
+            ['END:'],
+        ]
+
+    def test_default_is_regexp(self, tmp_path):
+        """Without var.match, plain var: uses regexp (regex) mode."""
+        rows = [
+            ['var:', 'v', 'string', r'\d+'],
+            ['START:'], ['cell:A1', 'v'], ['END:'],
+        ]
+        result, lg = _run(rows, {'A1': '42'}, tmp_path)
+        assert not lg.has_errors()
+        assert result.get('v') == '42'
+
+    def test_var_match_glob_matches(self, tmp_path):
+        result, lg = _run(self._var_match_rows('glob', 'Act*'), {'A1': 'Active'}, tmp_path)
+        assert not lg.has_errors()
+        assert result.get('v') == 'Active'
+
+    def test_var_match_glob_no_match_warns(self, tmp_path):
+        _, lg = _run(self._var_match_rows('glob', 'Inv*'), {'A1': 'Active'}, tmp_path)
+        assert lg.has_warnings()
+
+    def test_var_match_literal_matches(self, tmp_path):
+        result, lg = _run(self._var_match_rows('literal', 'Active'), {'A1': 'Active'}, tmp_path)
+        assert not lg.has_errors()
+        assert result.get('v') == 'Active'
+
+    def test_var_match_literal_no_match_warns(self, tmp_path):
+        _, lg = _run(self._var_match_rows('literal', 'Active'), {'A1': 'active'}, tmp_path)
+        assert lg.has_warnings()
+
+    def test_var_match_regexp_explicit(self, tmp_path):
+        result, lg = _run(self._var_match_rows('regexp', r'[A-Z][a-z]+'), {'A1': 'Active'}, tmp_path)
+        assert not lg.has_errors()
+        assert result.get('v') == 'Active'
+
+    def test_per_field_overrides_global_var_match(self, tmp_path):
+        """A per-field var:literal modifier overrides config: | var.match | glob."""
+        rows = [
+            ['config:', 'var.match', 'glob'],
+            ['var:literal', 'v', 'string', 'Active'],
+            ['START:'], ['cell:A1', 'v'], ['END:'],
+        ]
+        result, lg = _run(rows, {'A1': 'Active'}, tmp_path)
+        assert not lg.has_errors()
+        assert result.get('v') == 'Active'
+
+    def test_invalid_var_match_raises(self, tmp_path):
+        from grepxcel.pattern_parser import PatternError
+        path = _write_pattern(self._var_match_rows('fuzzy'), tmp_path)
+        with pytest.raises(PatternError, match='Invalid var.match'):
+            PatternParser().parse(path)
+
+
+# ── ignore.case + empty.aliases case-insensitive matching ────────────────────
+
+class TestIgnoreCaseEmptyAliases:
+    """ignore.case makes empty.aliases matching case-insensitive.
+
+    empty.aliases affect two behaviors:
+      1. cell:next skips alias-matched cells (they are treated as empty in the scan).
+      2. In table DATA rows, alias-matched cells are stored as None (same as a blank cell).
+
+    For absolute cell: references the raw value is always read and stored — the alias
+    only affects whether the cell is considered 'empty' for scan ordering and required checks.
+    """
+
+    def test_alias_case_insensitive_skips_cell_in_scan(self, tmp_path):
+        """'n/a' treated as empty → cell:next skips it → picks up next non-empty cell."""
+        rows = [
+            ['config:', 'ignore.case', 'yes'],
+            ['config:', 'empty.aliases', 'N/A'],
+            ['var:', 'v', 'string', '.*'],
+            ['START:'], ['cell:next', 'v'], ['END:'],
+        ]
+        # A1='n/a' is skipped (empty alias, case-insensitive); A2='hello' is picked up.
+        result, lg = _run(rows, {'A1': 'n/a', 'A2': 'hello'}, tmp_path)
+        assert not lg.has_errors()
+        assert result.get('v') == 'hello'
+
+    def test_alias_case_sensitive_does_not_skip(self, tmp_path):
+        """Without ignore.case, 'n/a' does NOT match alias 'N/A' → cell is NOT skipped."""
+        rows = [
+            ['config:', 'empty.aliases', 'N/A'],
+            ['var:', 'v', 'string', '.*'],
+            ['START:'], ['cell:next', 'v'], ['END:'],
+        ]
+        # 'n/a' is NOT treated as empty (case-sensitive) → cell:next picks it up
+        result, lg = _run(rows, {'A1': 'n/a', 'A2': 'hello'}, tmp_path)
+        assert not lg.has_errors()
+        assert result.get('v') == 'n/a'
+
+    def test_alias_mixed_case_skips(self, tmp_path):
+        """'N/a' (mixed) also skipped when alias 'N/A' + ignore.case is on."""
+        rows = [
+            ['config:', 'ignore.case', 'yes'],
+            ['config:', 'empty.aliases', 'N/A'],
+            ['var:', 'v', 'string', '.*'],
+            ['START:'], ['cell:next', 'v'], ['END:'],
+        ]
+        result, lg = _run(rows, {'A1': 'N/a', 'A2': 'ok'}, tmp_path)
+        assert not lg.has_errors()
+        assert result.get('v') == 'ok'
+
+    def test_alias_with_surrounding_spaces_case_insensitive(self, tmp_path):
+        """'  TBD  ' → stripped to 'TBD' → matches alias 'tbd' case-insensitively → skipped."""
+        rows = [
+            ['config:', 'ignore.case', 'yes'],
+            ['config:', 'empty.aliases', 'tbd'],
+            ['var:', 'v', 'string', '.*'],
+            ['START:'], ['cell:next', 'v'], ['END:'],
+        ]
+        result, lg = _run(rows, {'A1': '  TBD  ', 'A2': 'real'}, tmp_path)
+        assert not lg.has_errors()
+        assert result.get('v') == 'real'

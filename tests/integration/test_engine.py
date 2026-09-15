@@ -2121,7 +2121,7 @@ class TestIgnoreCaseEndToEnd:
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# Verbose per-field extraction trace (-v): 'field ← cell = value ✓/✗'
+# Verbose per-field extraction trace (-v): 'field ← cell = value 🟢/🔴'
 # ═════════════════════════════════════════════════════════════════════════════
 
 class TestVerboseExtractionTrace:
@@ -2146,15 +2146,15 @@ class TestVerboseExtractionTrace:
         self._verbose_run('03_purchase_order')
         err = capsys.readouterr().err
         assert 'po.number' in err and '←' in err          # scalar cell trace
-        assert 'row.item' in err and '✓' in err           # table DATA field, passing
-        assert '✗' in err and 'does not match' in err     # the failing 'X' item
+        assert 'row.item' in err and '🟢' in err          # table DATA field, passing
+        assert '🔴' in err and 'does not match' in err    # the failing 'X' item
 
     def test_clean_fixture_has_no_fail_marks(self, capsys):
-        # fixture 01 is all-valid → every field passes, no ✗ in the trace.
+        # fixture 01 is all-valid → every field passes, no 🔴 in the trace.
         self._verbose_run('01_simple_invoice')
         err = capsys.readouterr().err
-        assert '✓' in err
-        assert '✗' not in err
+        assert '🟢' in err
+        assert '🔴' not in err
 
     def test_quiet_emits_no_trace(self, capsys):
         folder = os.path.join(FIXTURES, '01_simple_invoice')

@@ -281,18 +281,22 @@ class TestEngineFatalErrors:
         )
         assert lg.has_errors()
 
-    def test_cursor_past_absolute_target(self, tmp_path):
+    def test_backward_abs_ref_no_longer_fatal(self, tmp_path):
+        # cell:next consumes A1 (cursor past index 0), then cell:A1 is a
+        # backward jump.  The engine removed the "unreachable" fatal check
+        # because seek: + dir: patterns make this a legitimate operation.
+        # Backward abs refs are now silently allowed — no error is produced.
         lg = _engine_run(
             [['var:', 'a.v', 'string', '.*'],
              ['var:', 'b.v', 'string', '.*'],
              ['START:'],
              ['cell:next', 'a.v'],   # consumes A1, cursor past index 0
-             ['cell:A1',   'b.v'],   # A1 already past → fatal
+             ['cell:A1',   'b.v'],   # backward jump — allowed, re-reads A1
              ['END:']],
             {'A1': 'val', 'B1': 'other'},
             tmp_path,
         )
-        assert lg.has_errors()
+        assert not lg.has_errors()
 
     def test_pattern_syntax_error_propagates_to_engine(self, tmp_path):
         # PatternError from parser becomes engine fatal

@@ -9,15 +9,18 @@ Verbosity levels:
   0  QUIET   — no console output during processing
   1  NORMAL  — summary + ISSUES recap (one line per problem cell) (default)
   2  VERBOSE — + detailed per-cell warnings (Found/Expected/→) + per-field
-                trace (field ← cell = value ✓/✗), tables matched
+                trace (🟢/🔴 field ← cell = value), tables matched
   3  DEBUG   — + every anchor attempted and why it was accepted or rejected
 """
 
 from __future__ import annotations
+import re as _re_stdlib
 from dataclasses import dataclass, field as dc_field
 from datetime import datetime, timezone
 from enum import IntEnum
 from typing import Optional, NoReturn
+
+from .utils import _safe_match, _MAX_REGEX_INPUT_LEN
 import hashlib
 import json
 import os
@@ -90,7 +93,7 @@ def render_json(event_dict: dict) -> str:
     return d
 
 
-from .color import colorize_marks, should_color
+from .color import MARK_FAIL, MARK_OK, MARK_WARN, colorize_marks, paint, should_color
 
 
 # ---------------------------------------------------------------------------
@@ -295,21 +298,48 @@ class Logger:
     # --- Engine lifecycle ---------------------------------------------------
 
     def engine_start(self, pattern_file: str, data_file: str):
+        pf = paint(os.path.basename(pattern_file), 'cyan', self._color)
+        df = paint(os.path.basename(data_file), 'cyan', self._color)
         self._emit(
             Severity.INFO, Category.ENGINE,
-            f'Pattern: {os.path.basename(pattern_file)} | '
-            f'Data: {os.path.basename(data_file)}',
+            f'Pattern: {pf} | Data: {df}',
             min_level=VerbosityLevel.NORMAL,
             prefix='ENGINE START',
         )
 
     def sheet_info(self, sheet_name: str, max_row: int, max_col: int, direction: str):
+        sname = paint(sheet_name, 'bold', self._color)
         self._emit(
             Severity.INFO, Category.ENGINE,
-            f'Sheet: {sheet_name}  |  {max_row} rows × {max_col} cols  |  '
+            f'Sheet: {sname}  |  {max_row} rows × {max_col} cols  |  '
             f'Scan direction: {direction}',
             min_level=VerbosityLevel.NORMAL,
         )
+
+    def config_verbose(self, config) -> None:
+        """Print the active pattern config at VERBOSE level (shown with extract -v).
+
+        Uses the same 8-key layout as validate-pattern -v so config is readable
+        in both commands.  Only emitted when verbosity >= VERBOSE.
+        """
+        def _key(k):   return paint(k, 'dim', self._color)
+        def _faint(v): return paint(str(v), 'dim', self._color)
+        aliases_val = (', '.join(config.empty_aliases)
+                       if config.empty_aliases else _faint('(none)'))
+        lines = [
+            f'   {_faint("config:")}',
+            f'     {_key("pattern.version")} {config.pattern_version}',
+            f'     {_key("read.direction")}  {config.read_direction}',
+            f'     {_key("currency.sign")}   {config.currency_sign}',
+            f'     {_key("ignore.case.labels")}  {config.ignore_case_labels}',
+            f'     {_key("ignore.case.values")}  {config.ignore_case_values}',
+            f'     {_key("trim.ws.labels")}      {config.trim_whitespace_labels}',
+            f'     {_key("trim.ws.values")}      {config.trim_whitespace_values}',
+            f'     {_key("lbl.match")}       {config.lbl_match}',
+            f'     {_key("var.match")}       {config.var_match}',
+            f'     {_key("empty.aliases")}   {aliases_val}',
+        ]
+        self._write(VerbosityLevel.VERBOSE, '\n'.join(lines))
 
     def begin_summary_scope(self) -> None:
         """Mark the start of a new sheet's records.
@@ -333,26 +363,34 @@ class Logger:
         warnings = [r for r in scoped if r.severity == Severity.WARNING]
         errors = [r for r in scoped if r.severity == Severity.ERROR]
 
+        div     = paint('─' * 62, 'dim', self._color)
+        header  = paint('EXTRACTION SUMMARY', 'bold', self._color)
+        n_warn  = len(warnings)
+        n_err   = len(errors)
+        w_count = paint(str(n_warn), 'yellow', self._color) if n_warn else str(n_warn)
+        e_count = paint(str(n_err),  'red',    self._color) if n_err  else str(n_err)
         lines = [
             '',
-            '─' * 62,
-            'EXTRACTION SUMMARY',
+            div,
+            header,
             f'  Cells extracted   : {cells_count}',
             f'  Mini-tables found : {sum(by_group.values())}',
         ]
         for idx, count in sorted(by_group.items()):
             lines.append(f'    Table group {idx}   : {count} instance(s)')
         lines += [
-            f'  Warnings          : {len(warnings)}',
-            f'  Errors            : {len(errors)}',
-            '─' * 62,
+            f'  Warnings          : {w_count}',
+            f'  Errors            : {e_count}',
+            div,
         ]
         issues = warnings + errors
         if issues:
-            lines.append('ISSUES (cell — reason):')
+            lines.append(paint('ISSUES (cell — reason):', 'bold', self._color))
             for rec in issues:
                 lines.append('  ' + self.issue_line(rec))
-            lines.append('─' * 62)
+                if getattr(rec, 'hint', ''):
+                    lines.append('       ' + paint(f'→ {rec.hint}', 'dim', self._color))
+            lines.append(div)
         self._write(VerbosityLevel.NORMAL, '\n'.join(lines))
 
         self._last_stats = self.build_stats(result)
@@ -440,7 +478,7 @@ class Logger:
         Used both in the NORMAL-level summary block and by --quiet mode, which
         suppresses the summary header/stats but still surfaces each issue.
         """
-        mark = '✗' if rec.severity == Severity.ERROR else '⚠'
+        mark = MARK_FAIL if rec.severity == Severity.ERROR else MARK_WARN
         where = rec.location or '(no cell)'
         field = f' [{rec.field}]' if rec.field else ''
         if rec.found and rec.expected:
@@ -474,11 +512,23 @@ class Logger:
     def _trace_line(self, field: str, location: str, value,
                     ok: Optional[bool] = None, regex: str = '',
                     kind: str = 'CELL') -> str:
-        """Render one per-field extraction-trace line."""
-        mark = '' if ok is None else (' ✓' if ok else ' ✗')
-        line = f'  [{kind}] {field:<20} ← {location:<10} = {repr(value)}{mark}'
+        """Render one per-field extraction-trace line.
+
+        Layout: 🟢/🔴 [KIND] field ← Sheet!ref = value   (reason if any)
+        The status mark is leftmost so the eye can scan the left edge for pass/fail.
+        """
+        bracket = paint(f'[{kind}]', 'dim', self._color)
+        fname   = paint(f'{field:<20}', 'cyan', self._color)
+        loc     = paint(f'{location:<10}', 'dim', self._color)
+        if ok is True:
+            mark = f'{MARK_OK} '
+        elif ok is False:
+            mark = f'{MARK_FAIL} '
+        else:
+            mark = '   '          # 3 spaces: emoji width (2) + separator (1)
+        line = f'  {mark}{bracket} {fname} ← {loc} = {repr(value)}'
         if ok is False and regex:
-            line += f'   (does not match /{regex}/)'
+            line += paint(f'   (does not match /{regex}/)', 'dim', self._color)
         return line
 
     def trace_field(self, row: int, col: int, field: str, value,
@@ -499,22 +549,26 @@ class Logger:
         rec = LogRecord(Severity.INFO, Category.ENGINE,
                         f'IGNORE: {repr(value)}', location=location)
         self._store(rec)
+        bracket = paint('[CELL]', 'dim', self._color)
+        loc     = paint(f'{location:<12}', 'dim', self._color)
         self._write(VerbosityLevel.VERBOSE,
-                    f'  [CELL]  {location:<12} IGNORE  →  {repr(value)}')
+                    f'  {bracket}  {loc} IGNORE  →  {repr(value)}')
 
     def direction_changed(self, direction: str):
         rec = LogRecord(Severity.INFO, Category.ENGINE,
                         f'Scan direction changed to {direction}')
         self._store(rec)
+        bracket = paint('[DIR]', 'dim', self._color)
         self._write(VerbosityLevel.VERBOSE,
-                    f'  [DIR]   scan direction → {direction}')
+                    f'  {bracket}   scan direction → {direction}')
 
     def table_group_start(self, table_index: int, direction: str):
         rec = LogRecord(Severity.INFO, Category.ENGINE,
                         f'Table group {table_index}: scanning (direction: {direction})')
         self._store(rec)
+        label = paint(f'[TABLE {table_index}]', 'cyan', self._color)
         self._write(VerbosityLevel.VERBOSE,
-                    f'\n  [TABLE {table_index}]  Scanning for mini-tables  '
+                    f'\n  {label}  Scanning for mini-tables  '
                     f'(direction: {direction})')
 
     def table_group_done(self, table_index: int, count: int):
@@ -522,8 +576,9 @@ class Logger:
                if count else f'Table group {table_index}: no instances found')
         rec = LogRecord(Severity.INFO, Category.ENGINE, msg)
         self._store(rec)
-        text = (f'  [TABLE {table_index}]  {count} instance(s) extracted'
-                if count else f'  [TABLE {table_index}]  No instances found')
+        label = paint(f'[TABLE {table_index}]', 'cyan', self._color)
+        text = (f'  {label}  {count} instance(s) extracted'
+                if count else f'  {label}  No instances found')
         self._write(VerbosityLevel.VERBOSE, text)
 
     def mini_table_matched(self, table_index: int, instance: int,
@@ -536,8 +591,9 @@ class Logger:
                         f'Mini-table matched at {anchor}, span {span}',
                         location=anchor)
         self._store(rec)
+        label = paint('[MATCH]', 'cyan', self._color)
         self._write(VerbosityLevel.VERBOSE,
-                    f'    [MATCH]  instance {instance}  anchor {anchor}  '
+                    f'    {label}  instance {instance}  anchor {anchor}  '
                     f'span {span}')
 
     # --- Debug probes (DEBUG) -----------------------------------------------
@@ -548,30 +604,34 @@ class Logger:
                         f'Probing anchor {location}: {repr(value)}',
                         location=location)
         self._store(rec)
+        label = paint('[PROBE]', 'dim', self._color)
         self._write(VerbosityLevel.DEBUG,
-                    f'    [PROBE]  {location}: {repr(value)}')
+                    f'    {label}  {location}: {repr(value)}')
 
     def anchor_rejected(self, row: int, col: int, reason: str):
         location = cell_ref(row, col, self.sheet_name)
         rec = LogRecord(Severity.DEBUG, Category.ENGINE,
                         f'Anchor rejected: {reason}', location=location)
         self._store(rec)
+        label = paint('[REJECT]', 'dim', self._color)
         self._write(VerbosityLevel.DEBUG,
-                    f'    [REJECT] {location}: {reason}')
+                    f'    {label} {location}: {reason}')
 
     def data_row(self, row: int, col_count: int):
         rec = LogRecord(Severity.DEBUG, Category.ENGINE,
                         f'Data row {row}: {col_count} column(s)')
         self._store(rec)
+        label = paint('[DATA]', 'dim', self._color)
         self._write(VerbosityLevel.DEBUG,
-                    f'      [DATA]  row {row}: {col_count} column(s)')
+                    f'      {label}  row {row}: {col_count} column(s)')
 
     def data_row_skipped(self, row: int):
         rec = LogRecord(Severity.DEBUG, Category.ENGINE,
                         f'Data row {row}: skipped (matches SKIP_IF)')
         self._store(rec)
+        label = paint('[SKIP]', 'dim', self._color)
         self._write(VerbosityLevel.DEBUG,
-                    f'      [SKIP]  row {row}: matches SKIP_IF — skipped')
+                    f'      {label}  row {row}: matches SKIP_IF — skipped')
 
     def warn_data_min_not_reached(self, min_rows: int, found: int) -> LogRecord:
         """Warn when a DATA:{n,m} section has fewer physical rows than declared minimum."""
@@ -590,7 +650,7 @@ class Logger:
             hint=hint,
         )
         lines = [
-            f'\n  ⚠  [DATA min not reached]',
+            f'\n  {MARK_WARN}  [DATA min not reached]',
             f'     Found:    {found} physical row(s)',
             f'     Expected: ≥{min_rows} row(s)',
             f'     → {hint}',
@@ -604,8 +664,9 @@ class Logger:
                         f'Footer detected at {location}: {repr(value)}',
                         location=location)
         self._store(rec)
+        label = paint('[FOOTER]', 'dim', self._color)
         self._write(VerbosityLevel.DEBUG,
-                    f'    [FOOTER] {location}: {repr(value)} — ending DATA section')
+                    f'    {label} {location}: {repr(value)} — ending DATA section')
 
     # --- Validation warnings (NORMAL) ---------------------------------------
 
@@ -634,7 +695,7 @@ class Logger:
         if value is not None:
             rec.value_len, rec.value_sha8 = _value_fingerprint(value)
         lines = [
-            f'\n  ⚠  {location}  [{field} / {field_type}]',
+            f'\n  {MARK_WARN}  {location}  [{field} / {field_type}]',
             f'     Found:    {found_repr}',
             f'     Expected: matches /{regex}/',
         ]
@@ -668,7 +729,7 @@ class Logger:
             event='empty_required',
         )
         lines = [
-            f'\n  ⚠  {location}  [{field} / {field_type}]',
+            f'\n  {MARK_WARN}  {location}  [{field} / {field_type}]',
             f'     Found:    empty cell',
             f'     Expected: non-empty {field_type} value',
             f'     → {hint}',
@@ -706,7 +767,7 @@ class Logger:
             event='undefined_field',
         )
         lines = [
-            f'\n  ⚠  {location}  [{field} / undefined]',
+            f'\n  {MARK_WARN}  {location}  [{field} / undefined]',
             f'     Field {field!r} is not defined in the pattern def: section.',
             f'     → Add a def: row to the pattern file for this field name.',
         ]
@@ -720,7 +781,7 @@ class Logger:
             'Open the file in Excel or LibreOffice, save it, and re-run grepxcel '
             'to ensure formula results are available.'
         )
-        self._write(VerbosityLevel.NORMAL, f'\n  ⚠  {msg}')
+        self._write(VerbosityLevel.NORMAL, f'\n  {MARK_WARN}  {msg}')
 
     def fatal(self, message: str, location: str = '',
               expected: str = '', found: str = '') -> NoReturn:
@@ -735,7 +796,8 @@ class Logger:
         )
         self._store(rec)
 
-        lines = [f'\n  ✗  FATAL ERROR: {message}']
+        label = paint('FATAL ERROR', 'bold', self._color)
+        lines = [f'\n  {MARK_FAIL}  {label}: {message}']
         if location:
             lines.append(f'     Location: {location}')
         if expected:
@@ -754,7 +816,11 @@ class Logger:
               prefix: str = ''):
         rec = LogRecord(severity=severity, category=category, message=message)
         self._store(rec)
-        text = f'[{prefix}] {message}' if prefix else message
+        if prefix:
+            tag = paint(f'[{prefix}]', 'bold', self._color)
+            text = f'{tag} {message}'
+        else:
+            text = message
         self._write(min_level, text)
 
     def _write(self, min_level: VerbosityLevel, text: str):
@@ -767,6 +833,24 @@ class Logger:
             self._file.flush()
 
     def _hint_validation(self, field_type: str, regex: str, value) -> str:
+        # Leading/trailing whitespace — most actionable when trimming fixes the mismatch.
+        if isinstance(value, str) and value != value.strip():
+            trimmed = value.strip()
+            if trimmed and _safe_match(regex, trimmed, _re_stdlib.DOTALL, _MAX_REGEX_INPUT_LEN):
+                return (
+                    f"The cell value has leading or trailing whitespace. "
+                    f"The trimmed value {trimmed!r} DOES match /{regex}/. "
+                    f"Add 'trim-whitespace' to this field in column A "
+                    f"(e.g. 'var:trim-whitespace') or set "
+                    f"'config: | trim.whitespace | yes' to strip whitespace globally."
+                )
+            elif trimmed:
+                return (
+                    f"The cell value {value!r} has leading or trailing whitespace — "
+                    f"trimmed to {trimmed!r}, which still does not match /{regex}/. "
+                    f"The mismatch is not caused solely by whitespace."
+                )
+
         if isinstance(value, str):
             if '\n' in value or '\r' in value:
                 if '.*' not in regex and r'[\s\S]' not in regex and r'\n' not in regex:

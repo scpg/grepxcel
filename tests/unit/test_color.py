@@ -41,13 +41,15 @@ class TestShouldColor:
 
 class TestColorizeMarks:
     def test_disabled_is_identity(self):
-        line = '  ✓  ready'
+        # colorize_marks is now a pass-through (emoji are self-coloured)
+        line = '  🟢  ready'
         assert colorize_marks(line, enabled=False) == line
 
-    def test_each_glyph_wrapped(self):
-        for glyph in ('✓', '✗', '⚠'):
-            out = colorize_marks(f'x {glyph} y', enabled=True)
-            assert ESC in out and glyph in out and out.endswith('y')
+    def test_pass_through_when_enabled(self):
+        # colorize_marks no longer injects ANSI — emoji need no wrapping
+        for emoji in ('🟢', '🔴', '🟡', '🔵'):
+            out = colorize_marks(f'x {emoji} y', enabled=True)
+            assert out == f'x {emoji} y'   # unchanged
 
     def test_plain_line_unchanged(self):
         assert colorize_marks('no marks here', enabled=True) == 'no marks here'

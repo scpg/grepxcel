@@ -272,44 +272,83 @@ class TestBuildNestedOutput:
 # ── _expand_merged_cells ──────────────────────────────────────────────────────
 
 class TestExpandMergedCells:
-    def test_merged_range_filled(self):
+    """_expand_merged_cells() unmerges ranges, fills ALL cells with the anchor
+    value, and returns a merge-map so the scanner can consume the entire logical
+    cell at once when the anchor is read.
+    """
+
+    def test_merged_range_filled_in_all_cells(self):
         wb = openpyxl.Workbook()
         ws = wb.active
         ws['A1'] = 'Merged Value'
         ws.merge_cells('A1:C1')
-        # Before expansion, B1 and C1 are None
-        assert ws['B1'].value is None
+        assert ws['B1'].value is None  # before
         _expand_merged_cells(ws)
-        assert ws['B1'].value == 'Merged Value'
-        assert ws['C1'].value == 'Merged Value'
+        assert ws['A1'].value == 'Merged Value'
+        assert ws['B1'].value == 'Merged Value'  # filled
+        assert ws['C1'].value == 'Merged Value'  # filled
 
-    def test_non_merged_cells_unchanged(self):
+    def test_returns_merge_map_covers_all_cells_in_range(self):
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws['A1'] = 'Merged'
+        ws.merge_cells('A1:C1')
+        merge_map = _expand_merged_cells(ws)
+        expected = {(1, 1), (1, 2), (1, 3)}
+        assert merge_map[(1, 1)] == expected
+        assert merge_map[(1, 2)] == expected
+        assert merge_map[(1, 3)] == expected
+
+    def test_non_merged_cells_unchanged_and_empty_map(self):
         wb = openpyxl.Workbook()
         ws = wb.active
         ws['A1'] = 'Hello'
         ws['B1'] = 'World'
-        _expand_merged_cells(ws)
+        merge_map = _expand_merged_cells(ws)
         assert ws['A1'].value == 'Hello'
         assert ws['B1'].value == 'World'
+        assert merge_map == {}
 
-    def test_multiple_merged_ranges(self):
+    def test_multiple_merged_ranges_each_filled(self):
         wb = openpyxl.Workbook()
         ws = wb.active
         ws['A1'] = 'Alpha'
         ws.merge_cells('A1:B1')
         ws['C1'] = 'Beta'
         ws.merge_cells('C1:D1')
-        _expand_merged_cells(ws)
-        assert ws['B1'].value == 'Alpha'
-        assert ws['D1'].value == 'Beta'
+        merge_map = _expand_merged_cells(ws)
+        assert ws['B1'].value == 'Alpha'   # filled
+        assert ws['D1'].value == 'Beta'    # filled
+        assert merge_map[(1, 1)] == {(1, 1), (1, 2)}
+        assert merge_map[(1, 2)] == {(1, 1), (1, 2)}
+        assert merge_map[(1, 3)] == {(1, 3), (1, 4)}
+        assert merge_map[(1, 4)] == {(1, 3), (1, 4)}
 
-    def test_none_value_merged_range(self):
+    def test_none_value_merge_fills_none_everywhere(self):
         wb = openpyxl.Workbook()
         ws = wb.active
-        # Merge without setting a value — top-left is None
+        # Merge without a value — all cells including non-anchors stay None
         ws.merge_cells('A1:B1')
-        _expand_merged_cells(ws)
-        assert ws['B1'].value is None
+        merge_map = _expand_merged_cells(ws)
+        assert ws['A1'].value is None
+        assert ws['B1'].value is None  # fill of None == still None
+        assert (1, 1) in merge_map
+        assert (1, 2) in merge_map
+
+    def test_2d_merged_range_all_cells_filled(self):
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws['B2'] = 'Header'
+        ws.merge_cells('B2:D3')
+        merge_map = _expand_merged_cells(ws)
+        expected = {(2, 2), (2, 3), (2, 4), (3, 2), (3, 3), (3, 4)}
+        assert merge_map[(2, 2)] == expected
+        assert merge_map[(3, 4)] == expected
+        # ALL cells in range carry the anchor value
+        assert ws.cell(2, 2).value == 'Header'
+        assert ws.cell(2, 3).value == 'Header'
+        assert ws.cell(3, 2).value == 'Header'
+        assert ws.cell(3, 4).value == 'Header'
 
 
 class TestJsonDefault:

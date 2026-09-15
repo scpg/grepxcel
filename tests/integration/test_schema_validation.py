@@ -51,10 +51,15 @@ _SHEET_OVERRIDES: dict[str, str] = {
 }
 
 # Fixtures whose drafted patterns have known data-quality issues (e.g. a totals
-# row leaking text into a currency field because SKIP_IF/FOOTER is missing).
+# row leaking text into a currency field because SKIP_IF/FOOTER is missing, or
+# Excel formula errors such as #N/A in cells the pattern expects to be numeric).
 # The schema correctly rejects these — xfail proves the schema catches the bug.
 _XFAIL_DATA_QUALITY: set[str] = {
     '18_billing_statement',
+    # 22: the rolling weekly timesheet has #N/A formula errors in cumulative
+    # cells (pay.vacation, pay.grand_total) when the current week has no data
+    # yet; the schema correctly rejects '#N/A' as non-numeric.
+    '22_weekly_timesheet',
 }
 
 

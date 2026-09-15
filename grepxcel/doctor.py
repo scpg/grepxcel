@@ -25,10 +25,10 @@ import urllib.parse
 import urllib.request
 
 from . import proxy_support
-from .color import colorize_marks, should_color
+from .color import MARK_FAIL, MARK_OK, MARK_WARN, colorize_marks, paint, should_color
 
 OK, WARN, FAIL = 'ok', 'warn', 'fail'
-_MARK = {OK: '✓', WARN: '⚠', FAIL: '✗'}
+_MARK = {OK: MARK_OK, WARN: MARK_WARN, FAIL: MARK_FAIL}
 
 # A single check result: (status, name, detail/hint).
 Result = tuple
@@ -129,6 +129,19 @@ def check_draft_cloud() -> list[Result]:
     res.append((WARN, 'github backend',
                 'currently unavailable — GitHub retired the free-tier Models endpoint '
                 '(HTTP 410 retirement brownout); implementation preserved for future re-enable'))
+    have_openai = _have('openai')
+    nv_key = bool(os.environ.get('NVIDIA_API_KEY'))
+    if have_openai and nv_key:
+        res.append((OK, 'nvidia backend',
+                    'openai installed, NVIDIA_API_KEY set — free-tier NVIDIA NIM available'))
+    elif have_openai:
+        res.append((WARN, 'nvidia backend',
+                    'openai installed but NVIDIA_API_KEY not set — '
+                    'get a free key at https://build.nvidia.com'))
+    else:
+        res.append((WARN, 'nvidia backend',
+                    "not configured — pip install openai and set NVIDIA_API_KEY "
+                    "(free key at https://build.nvidia.com)"))
     return res
 
 
@@ -284,7 +297,9 @@ def run_doctor(area: str = 'all', probe: bool = True, out=None,
 
     print('\n' + '─' * 62, file=out)
     if any_fail:
-        print(colorize_marks('  ✗ Not ready — resolve the ✗ items above.', color), file=out)
+        msg = paint('Not ready', 'red', color) + f' — resolve the {MARK_FAIL} items above.'
+        print(f'  {MARK_FAIL} {msg}', file=out)
     else:
-        print(colorize_marks('  ✓ Ready. (⚠ items are optional / situational.)', color), file=out)
+        msg = paint('Ready.', 'green', color) + f' ({MARK_WARN} items are optional / situational.)'
+        print(f'  {MARK_OK} {msg}', file=out)
     return 1 if any_fail else 0

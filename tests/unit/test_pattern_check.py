@@ -98,7 +98,8 @@ def test_verbose_shows_seek_instruction(tmp_path):
 
 
 def test_verbose_table_columnar_format(tmp_path):
-    """Table rows render as a columnar grid, one column-position per line."""
+    """Table grid matches the pattern file orientation: one display-row per
+    table row type, one display-column per column position."""
     rows = [
         ['lbl:', 'h1', 'string', 'Name'],
         ['lbl:', 'h2', 'string', 'Age'],
@@ -114,21 +115,23 @@ def test_verbose_table_columnar_format(tmp_path):
     run_validate([_write(rows, tmp_path)], verbose=True, out=buf)
     out = buf.getvalue()
     lines = out.splitlines()
-    # Find the table block
     table_idx = next(i for i, l in enumerate(lines) if 'table:1' in l)
-    # Next line should be the header row with row-type labels
+    # HEADER row: row-type label + both field names on the same line
     header_line = lines[table_idx + 1]
     assert 'HEADER:1' in header_line
-    assert 'DATA:*' in header_line
-    # Column positions follow, one per line
-    col1_line = lines[table_idx + 2]
-    assert 'h1' in col1_line and 'name' in col1_line
-    col2_line = lines[table_idx + 3]
-    assert 'h2' in col2_line and 'age' in col2_line
+    assert 'h1' in header_line
+    assert 'h2' in header_line
+    # DATA row: row-type label + both var names on the same line
+    data_line = lines[table_idx + 2]
+    assert 'DATA:*' in data_line
+    assert 'name' in data_line
+    assert 'age' in data_line
+    # DATA:* must NOT appear in the header line (it is its own row)
+    assert 'DATA:*' not in header_line
 
 
 def test_verbose_table_with_skip_if(tmp_path):
-    """SKIP_IF rows appear in the columnar table grid."""
+    """SKIP_IF appears as its own display-row, not as a column header."""
     rows = [
         ['lbl:', 'h', 'string', 'Val'],
         ['var:', 'v', 'string', '.*'],
@@ -144,11 +147,79 @@ def test_verbose_table_with_skip_if(tmp_path):
     out = buf.getvalue()
     lines = out.splitlines()
     table_idx = next(i for i, l in enumerate(lines) if 'table:1' in l)
+    # Three display rows: HEADER:1, SKIP_IF, DATA:*
     header_line = lines[table_idx + 1]
-    assert 'SKIP_IF' in header_line
-    # The single column position should show all three row types
-    col_line = lines[table_idx + 2]
-    assert 'h' in col_line and 'EMPTY' in col_line and 'v' in col_line
+    skip_line   = lines[table_idx + 2]
+    data_line   = lines[table_idx + 3]
+    assert 'HEADER:1' in header_line and 'h' in header_line
+    assert 'SKIP_IF'  in skip_line   and 'EMPTY' in skip_line
+    assert 'DATA:*'   in data_line   and 'v' in data_line
+    # SKIP_IF must appear as its own row, not in the same line as HEADER:1
+    assert 'SKIP_IF' not in header_line
+
+
+def test_verbose_table_per_table_config_shown(tmp_path):
+    """A per-table config: row is shown between 'table:N' and the grid."""
+    rows = [
+        ['lbl:', 'h', 'string', 'Name'],
+        ['var:', 'v', 'string', '.*'],
+        ['START:'],
+        ['table:1'],
+        ['', 'config:', 'read.direction', 'TD'],
+        ['', 'HEADER:1', 'h'],
+        ['', 'DATA:*', 'v'],
+        ['END:'],
+    ]
+    buf = io.StringIO()
+    run_validate([_write(rows, tmp_path)], verbose=True, out=buf)
+    out = buf.getvalue()
+    lines = out.splitlines()
+    table_idx = next(i for i, l in enumerate(lines) if 'table:1' in l)
+    cfg_line = lines[table_idx + 1]
+    assert 'config:' in cfg_line
+    assert 'read.direction' in cfg_line
+    assert 'TD' in cfg_line
+
+
+def test_verbose_table_per_table_config_same_as_global_still_shown(tmp_path):
+    """Per-table config is shown even when the value matches the global default —
+    it was explicitly written in the pattern file."""
+    rows = [
+        ['lbl:', 'h', 'string', 'Name'],
+        ['var:', 'v', 'string', '.*'],
+        ['START:'],
+        ['table:1'],
+        ['', 'config:', 'read.direction', 'LR'],  # LR is the global default
+        ['', 'HEADER:1', 'h'],
+        ['', 'DATA:*', 'v'],
+        ['END:'],
+    ]
+    buf = io.StringIO()
+    run_validate([_write(rows, tmp_path)], verbose=True, out=buf)
+    out = buf.getvalue()
+    assert 'read.direction' in out   # must appear even though LR == global default
+    assert 'LR' in out
+
+
+def test_verbose_table_no_per_table_config_no_config_line(tmp_path):
+    """A table without any config: row shows no config line under 'table:N'."""
+    rows = [
+        ['lbl:', 'h', 'string', 'Name'],
+        ['var:', 'v', 'string', '.*'],
+        ['START:'],
+        ['table:1'],
+        ['', 'HEADER:1', 'h'],
+        ['', 'DATA:*', 'v'],
+        ['END:'],
+    ]
+    buf = io.StringIO()
+    run_validate([_write(rows, tmp_path)], verbose=True, out=buf)
+    out = buf.getvalue()
+    lines = out.splitlines()
+    table_idx = next(i for i, l in enumerate(lines) if 'table:1' in l)
+    first_sub_line = lines[table_idx + 1]
+    # The first line under table:1 should be the grid row, not a config: line
+    assert 'HEADER:1' in first_sub_line
 
 
 # ── lbl.match warnings ────────────────────────────────────────────────────────
@@ -221,3 +292,301 @@ def test_verbose_shows_per_field_mode_tag(tmp_path):
     buf = io.StringIO()
     run_validate([_write(_lbl_base('Hello *', 'lbl:glob'), tmp_path)], verbose=True, out=buf)
     assert '[glob]' in buf.getvalue()
+
+
+def test_verbose_shows_nullable_tag(tmp_path):
+    """var:nullable fields show [nullable] in the verbose fields listing."""
+    rows = [
+        ['var:nullable', 'x.v', 'string', '.*'],
+        ['START:'], ['cell:A1', 'x.v'], ['END:'],
+    ]
+    buf = io.StringIO()
+    run_validate([_write(rows, tmp_path)], verbose=True, out=buf)
+    assert '[nullable]' in buf.getvalue()
+
+
+def test_verbose_shows_not_null_tag(tmp_path):
+    """var:not-null fields show [not-null] in the verbose fields listing."""
+    rows = [
+        ['var:not-null', 'x.v', 'string', '.*'],
+        ['START:'], ['cell:A1', 'x.v'], ['END:'],
+    ]
+    buf = io.StringIO()
+    run_validate([_write(rows, tmp_path)], verbose=True, out=buf)
+    assert '[not-null]' in buf.getvalue()
+
+
+def test_verbose_shows_trim_tag(tmp_path):
+    """var:trim-whitespace fields show [trim] in the verbose fields listing."""
+    rows = [
+        ['var:trim-whitespace', 'x.v', 'string', '.*'],
+        ['START:'], ['cell:A1', 'x.v'], ['END:'],
+    ]
+    buf = io.StringIO()
+    run_validate([_write(rows, tmp_path)], verbose=True, out=buf)
+    assert '[trim]' in buf.getvalue()
+
+
+def test_verbose_shows_multiple_tags_combined(tmp_path):
+    """A field with both not-null and trim-whitespace shows both tags."""
+    rows = [
+        ['var:not-null:trim-whitespace', 'x.v', 'string', '.*'],
+        ['START:'], ['cell:A1', 'x.v'], ['END:'],
+    ]
+    buf = io.StringIO()
+    run_validate([_write(rows, tmp_path)], verbose=True, out=buf)
+    out = buf.getvalue()
+    assert '[not-null, trim]' in out
+
+
+def test_verbose_plain_var_has_no_modifier_tag(tmp_path):
+    """A plain var: field with no modifiers shows no [...] tag."""
+    rows = [
+        ['var:', 'x.v', 'string', '.*'],
+        ['START:'], ['cell:A1', 'x.v'], ['END:'],
+    ]
+    buf = io.StringIO()
+    run_validate([_write(rows, tmp_path)], verbose=True, out=buf)
+    # No modifier tag should appear for this field's line
+    field_line = next(l for l in buf.getvalue().splitlines() if 'x.v' in l and 'var' in l)
+    assert '[' not in field_line
+
+
+# ── verbose config: complete defaults ────────────────────────────────────────
+
+def _run_verbose(rows, tmp_path):
+    """Write pattern rows, run validate-pattern -v, return output string."""
+    buf = io.StringIO()
+    run_validate([_write(rows, tmp_path)], verbose=True, out=buf)
+    return buf.getvalue()
+
+
+def test_verbose_config_shows_all_keys(tmp_path):
+    """All config keys must appear in verbose output for any valid pattern."""
+    out = _run_verbose(_VALID, tmp_path)
+    for key in ('pattern.version', 'read.direction', 'currency.sign',
+                'ignore.case.labels', 'ignore.case.values',
+                'trim.ws.labels', 'trim.ws.values',
+                'lbl.match', 'var.match', 'empty.aliases'):
+        assert key in out, f'Missing config key in -v output: {key!r}'
+
+
+def test_verbose_config_defaults_pattern_version(tmp_path):
+    """pattern.version without an explicit declaration shows the 'defaulted' note."""
+    out = _run_verbose(_VALID, tmp_path)
+    assert 'defaulted' in out
+
+
+def test_verbose_config_default_read_direction(tmp_path):
+    out = _run_verbose(_VALID, tmp_path)
+    assert 'read.direction  LR' in out
+
+
+def test_verbose_config_default_currency_sign(tmp_path):
+    out = _run_verbose(_VALID, tmp_path)
+    assert 'currency.sign   €' in out
+
+
+def test_verbose_config_default_ignore_case(tmp_path):
+    out = _run_verbose(_VALID, tmp_path)
+    assert 'ignore.case.labels' in out
+    assert 'ignore.case.values' in out
+    assert 'False' in out  # both default to False
+
+
+def test_verbose_config_default_trim_whitespace(tmp_path):
+    """trim.ws.* defaults to False and must appear in verbose output."""
+    out = _run_verbose(_VALID, tmp_path)
+    assert 'trim.ws.labels' in out
+    assert 'trim.ws.values' in out
+
+
+def test_verbose_config_default_lbl_match(tmp_path):
+    out = _run_verbose(_VALID, tmp_path)
+    assert 'lbl.match       literal' in out
+
+
+def test_verbose_config_default_var_match(tmp_path):
+    """var.match defaults to regexp and must appear in verbose output."""
+    out = _run_verbose(_VALID, tmp_path)
+    assert 'var.match       regexp' in out
+
+
+def test_verbose_config_default_empty_aliases_none(tmp_path):
+    """empty.aliases shows (none) when no aliases are configured."""
+    out = _run_verbose(_VALID, tmp_path)
+    assert 'empty.aliases   (none)' in out
+
+
+def test_verbose_config_section_key_order(tmp_path):
+    """Config keys must appear in the documented order in -v output."""
+    out = _run_verbose(_VALID, tmp_path)
+    keys = ('pattern.version', 'read.direction', 'currency.sign',
+            'ignore.case.labels', 'ignore.case.values',
+            'trim.ws.labels', 'trim.ws.values',
+            'lbl.match', 'var.match', 'empty.aliases')
+    positions = [out.index(k) for k in keys]
+    assert positions == sorted(positions), (
+        f'Config keys out of order. Positions: {list(zip(keys, positions))}'
+    )
+
+
+# ── verbose config: non-default values ───────────────────────────────────────
+
+def _cfg_pattern(config_rows, tmp_path):
+    """Build a pattern with the given config rows prepended to _VALID fields."""
+    rows = config_rows + list(_VALID)
+    return _run_verbose(rows, tmp_path)
+
+
+def test_verbose_config_trim_whitespace_true(tmp_path):
+    out = _cfg_pattern([['config:', 'trim.whitespace', 'yes']], tmp_path)
+    # backward-compat: old key sets trim.ws.values (shown in output)
+    assert 'trim.ws.values' in out
+    assert 'True' in out
+
+
+def test_verbose_config_var_match_glob(tmp_path):
+    out = _cfg_pattern([['config:', 'var.match', 'glob']], tmp_path)
+    assert 'var.match       glob' in out
+
+
+def test_verbose_config_var_match_literal(tmp_path):
+    out = _cfg_pattern([['config:', 'var.match', 'literal']], tmp_path)
+    assert 'var.match       literal' in out
+
+
+def test_verbose_config_empty_aliases_single(tmp_path):
+    out = _cfg_pattern([['config:', 'empty.aliases', 'N/A']], tmp_path)
+    assert 'empty.aliases   N/A' in out
+
+
+def test_verbose_config_empty_aliases_multiple(tmp_path):
+    """Multiple empty.aliases config rows are shown comma-separated."""
+    rows = [
+        ['config:', 'empty.aliases', 'N/A'],
+        ['config:', 'empty.aliases', 'TBD'],
+        ['config:', 'empty.aliases', '-'],
+    ]
+    out = _cfg_pattern(rows, tmp_path)
+    assert 'N/A' in out and 'TBD' in out and '-' in out
+
+
+def test_verbose_config_ignore_case_true(tmp_path):
+    out = _cfg_pattern([['config:', 'ignore.case', 'yes']], tmp_path)
+    # backward-compat: old key sets both labels and values (both shown in output)
+    assert 'ignore.case.labels' in out
+    assert 'ignore.case.values' in out
+    assert 'True' in out
+
+
+def test_verbose_config_pattern_version_explicit(tmp_path):
+    """Explicitly declared pattern.version must NOT show the 'defaulted' note."""
+    out = _cfg_pattern([['config:', 'pattern.version', '1']], tmp_path)
+    assert 'pattern.version 1' in out
+    assert 'defaulted' not in out
+
+
+# ── empty.aliases validation warnings ────────────────────────────────────────
+
+def _alias_pattern(alias_rows, tmp_path, extra_config=None):
+    """Build and check a pattern with the given empty.aliases config rows."""
+    rows = (extra_config or []) + alias_rows + list(_VALID)
+    return check_pattern(_write(rows, tmp_path))
+
+
+def test_alias_known_excel_error_no_warning(tmp_path):
+    """A well-formed Excel error string like '#N/A' must not trigger any warning."""
+    r = _alias_pattern([['config:', 'empty.aliases', '#N/A']], tmp_path)
+    assert r.valid
+    assert not any('#N/A' in w and 'not a recognised' in w for w in r.warnings)
+    assert not any('#N/A' in w and 'capitalisation' in w for w in r.warnings)
+
+
+def test_alias_all_known_excel_errors_accepted(tmp_path):
+    """Every canonical Excel error string is recognised without a warning."""
+    known = ['#N/A', '#REF!', '#VALUE!', '#DIV/0!', '#NAME?', '#NUM!', '#NULL!']
+    for err in known:
+        r = _alias_pattern([['config:', 'empty.aliases', err]], tmp_path)
+        assert r.valid, f'Unexpected invalid for {err!r}'
+        assert not any('not a recognised' in w for w in r.warnings), \
+            f'False-positive "not recognised" warning for {err!r}'
+
+
+def test_alias_unknown_hash_string_warns(tmp_path):
+    """A '#'-prefixed alias that is not a known Excel error triggers a warning."""
+    r = _alias_pattern([['config:', 'empty.aliases', '#UNKNOWN!']], tmp_path)
+    assert r.valid   # warning, not error
+    assert any('not a recognised' in w for w in r.warnings)
+
+
+def test_alias_wrong_case_warns_without_ignore_case(tmp_path):
+    """'#n/a' (wrong case) warns about capitalisation when ignore.case is off."""
+    r = _alias_pattern([['config:', 'empty.aliases', '#n/a']], tmp_path)
+    assert r.valid
+    assert any('capitalisation' in w for w in r.warnings)
+
+
+def test_alias_wrong_case_no_warn_with_ignore_case(tmp_path):
+    """'#n/a' with ignore.case yes: no capitalisation warning (case won't matter)."""
+    r = _alias_pattern(
+        [['config:', 'empty.aliases', '#n/a']],
+        tmp_path,
+        extra_config=[['config:', 'ignore.case', 'yes']],
+    )
+    assert r.valid
+    assert not any('capitalisation' in w for w in r.warnings)
+
+
+def test_alias_duplicate_warns(tmp_path):
+    """Two identical aliases produce a 'Duplicate' warning."""
+    r = _alias_pattern([
+        ['config:', 'empty.aliases', 'N/A'],
+        ['config:', 'empty.aliases', 'N/A'],
+    ], tmp_path)
+    assert r.valid
+    assert any('Duplicate' in w for w in r.warnings)
+
+
+def test_alias_duplicate_case_insensitive_warns(tmp_path):
+    """'N/A' and 'n/a' are duplicates when ignore.case is on."""
+    r = _alias_pattern(
+        [['config:', 'empty.aliases', 'N/A'],
+         ['config:', 'empty.aliases', 'n/a']],
+        tmp_path,
+        extra_config=[['config:', 'ignore.case', 'yes']],
+    )
+    assert r.valid
+    assert any('Duplicate' in w for w in r.warnings)
+
+
+def test_alias_duplicate_case_sensitive_no_warn(tmp_path):
+    """'N/A' and 'n/a' are NOT duplicates when ignore.case is off."""
+    r = _alias_pattern([
+        ['config:', 'empty.aliases', 'N/A'],
+        ['config:', 'empty.aliases', 'n/a'],
+    ], tmp_path)
+    assert r.valid
+    assert not any('Duplicate' in w for w in r.warnings)
+
+
+def test_alias_regex_metacharacter_warns(tmp_path):
+    """An alias containing regex metacharacters (e.g. '.*') warns that it is
+    matched as a plain string, not a regex."""
+    r = _alias_pattern([['config:', 'empty.aliases', '.*']], tmp_path)
+    assert r.valid
+    assert any('metacharacter' in w for w in r.warnings)
+
+
+def test_alias_plain_string_no_metachar_warning(tmp_path):
+    """A plain alias like 'N/A' or '-' has no metacharacter warning."""
+    r = _alias_pattern([['config:', 'empty.aliases', 'N/A']], tmp_path)
+    assert r.valid
+    assert not any('metacharacter' in w for w in r.warnings)
+
+
+def test_alias_no_warnings_when_no_aliases(tmp_path):
+    """A pattern with no empty.aliases config produces no alias-related warnings."""
+    r = check_pattern(_write(list(_VALID), tmp_path))
+    assert r.valid
+    assert not any('alias' in w.lower() for w in r.warnings)

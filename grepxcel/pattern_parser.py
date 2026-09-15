@@ -6,7 +6,7 @@ import openpyxl
 from openpyxl.utils import get_column_letter
 from openpyxl.utils.cell import coordinate_to_tuple
 
-from .models import Config, FieldDef, TemplateColumn, TemplateRow, CellInstruction, TableInstruction, SeekInstruction, DirectionInstruction, LBL_MATCH_MODES
+from .models import Config, FieldDef, TemplateColumn, TemplateRow, CellInstruction, TableInstruction, SeekInstruction, DirectionInstruction, LBL_MATCH_MODES, VAR_MATCH_MODES
 from .security import check_regex_safety, SecurityError
 
 _MAX_PATTERN_CELL_LEN = 1_000  # max characters in any pattern file cell value
@@ -29,10 +29,18 @@ MIN_SUPPORTED_PATTERN_VERSION = 1
 _TRUTHY = frozenset({'1', 'true', 'yes', 'on', 'y'})
 _FALSY  = frozenset({'0', 'false', 'no', 'off', 'n', ''})
 
+# Excel constant formulas that are safe to accept in pattern config cells.
+# =TRUE() / =FALSE() appear when a user types TRUE/FALSE without an apostrophe
+# and Excel auto-converts them.  They carry no dynamic logic.
+_SAFE_CONSTANT_FORMULAS: dict[str, str] = {
+    '=TRUE()':  'True',
+    '=FALSE()': 'False',
+}
+
 # Modifier tokens recognised in column-A field rows ('lbl:...' / 'var:...').
 # Mode tokens map to their canonical name; 're' normalises to 'regexp'.
 _MODE_TOKENS = {'literal': 'literal', 'glob': 'glob', 're': 'regexp', 'regexp': 'regexp'}
-_CONSTRAINT_TOKENS = frozenset({'not-null', 'not-empty'})
+_CONSTRAINT_TOKENS = frozenset({'not-null', 'not-empty', 'trim-whitespace', 'nullable'})
 
 
 def _parse_col_a_modifiers(col_a: str, row_num: int) -> tuple:
@@ -42,16 +50,22 @@ def _parse_col_a_modifiers(col_a: str, row_num: int) -> tuple:
     the caller).  Each subsequent token is either a matching-mode name or a
     constraint keyword.  Order does not matter.
 
-    Returns ``(mode, required)``:
-      * mode     – ``None | 'literal' | 'glob' | 'regexp'``  (normalised;
-                   None means "use the default for this role")
-      * required – ``True`` when ``not-null`` or ``not-empty`` is present.
+    Returns ``(mode, required, trim_whitespace, nullable)``:
+      * mode            – ``None | 'literal' | 'glob' | 'regexp'``  (normalised;
+                          None means "use the default for this role")
+      * required        – ``True`` when ``not-null`` or ``not-empty`` is present.
+      * trim_whitespace – ``True`` when ``trim-whitespace`` is present.
+      * nullable        – ``True`` when ``nullable`` is present (var: fields only;
+                          empty/null is silently accepted without a warning).
 
-    Raises ``PatternError`` on unknown tokens or duplicate mode modifiers.
+    Raises ``PatternError`` on unknown tokens, duplicate mode modifiers, or the
+    contradictory combination of ``nullable`` + ``not-null``/``not-empty``.
     """
     parts = col_a.lower().split(':')
     mode: str | None = None
     required = False
+    trim_whitespace = False
+    nullable = False
     seen_mode = False
 
     for token in parts[1:]:
@@ -66,14 +80,27 @@ def _parse_col_a_modifiers(col_a: str, row_num: int) -> tuple:
             mode = _MODE_TOKENS[token]
             seen_mode = True
         elif token in _CONSTRAINT_TOKENS:
-            required = True
+            if token == 'trim-whitespace':
+                trim_whitespace = True
+            elif token == 'nullable':
+                nullable = True
+            else:  # not-null / not-empty
+                required = True
         else:
             raise PatternError(
                 f"Unknown modifier {token!r} in {col_a!r} at pattern row {row_num}. "
-                f"Valid modifiers: literal, glob, re, regexp, not-null, not-empty."
+                f"Valid modifiers: literal, glob, re, regexp, not-null, not-empty, "
+                f"trim-whitespace, nullable."
             )
 
-    return mode, required
+    if nullable and required:
+        raise PatternError(
+            f"Contradictory modifiers in {col_a!r} at pattern row {row_num}: "
+            f"'nullable' (empty is accepted) and 'not-null'/'not-empty' (empty is "
+            f"fatal) cannot both be specified."
+        )
+
+    return mode, required, trim_whitespace, nullable
 
 # Field types the engine knows how to validate (see utils.validate_type).
 # Keep this in lockstep with that function — a name here that it can't handle
@@ -195,16 +222,24 @@ class PatternParser:
                     self._check_comment_zone(row, 3, i + 1, 'config:')    # D+ comment
                 elif isinstance(col_a_l, str) and (col_a_l.startswith('var:')
                                                     or col_a_l.startswith('def:')):
-                    var_mode, required = _parse_col_a_modifiers(col_a_l, i + 1)
+                    var_mode, required, trim_ws, nullable = _parse_col_a_modifiers(col_a_l, i + 1)
                     fd = self._parse_field(row, role='var', row_num=i + 1,
-                                           var_mode=var_mode, required=required)
+                                           var_mode=var_mode, required=required,
+                                           trim_whitespace=trim_ws, nullable=nullable)
                     defs[fd.name] = fd
                     self._check_comment_zone(row, 4, i + 1, col_a_l)      # E+ comment
                 elif isinstance(col_a_l, str) and col_a_l.startswith('lbl:'):
-                    lbl_mode, required = _parse_col_a_modifiers(col_a_l, i + 1)
+                    lbl_mode, required, trim_ws, nullable = _parse_col_a_modifiers(col_a_l, i + 1)
+                    if nullable:
+                        raise PatternError(
+                            f"'nullable' modifier is not valid for lbl: fields at pattern row "
+                            f"{i + 1}. lbl: fields are anchors and are always required. "
+                            f"Use 'nullable' only on var: fields."
+                        )
                     fd = self._parse_field(row, role='lbl', row_num=i + 1,
                                            lbl_match_override=lbl_mode, required=required,
-                                           global_lbl_match=global_config.lbl_match)
+                                           global_lbl_match=global_config.lbl_match,
+                                           trim_whitespace=trim_ws)
                     defs[fd.name] = fd
                     self._check_comment_zone(row, 4, i + 1, col_a_l)
                 elif col_a_l in ('doc:', 'info:'):
@@ -214,6 +249,30 @@ class PatternParser:
                         f"Unrecognised row {col_a!r} at pattern row {i + 1} "
                         f"(before START:). Expected config:, var:, lbl:, def:, "
                         f"doc:, info:, or START:."
+                    )
+                elif row[1] is not None and str(row[1]).strip():
+                    # Column A is empty but column B has content — likely a
+                    # config: row where the author forgot to add 'config:' in A.
+                    _KNOWN_CFG = frozenset({
+                        'pattern.version', 'version', 'read.direction',
+                        'currency.sign', 'ignore.case',
+                        'ignore.case.labels', 'ignore.case.values',
+                        'trim.whitespace', 'trim.whitespace.labels', 'trim.whitespace.values',
+                        'lbl.match', 'var.match', 'empty.aliases',
+                    })
+                    col_b = str(row[1]).strip()
+                    if col_b.lower() in _KNOWN_CFG:
+                        raise PatternError(
+                            f"Pattern row {i + 1}: column A is empty but column B "
+                            f"contains config key {col_b!r}. Add 'config:' in column A "
+                            f"so the parser reads this as a config row "
+                            f"(same as row with 'config: | {col_b} | <value>')."
+                        )
+                    raise PatternError(
+                        f"Pattern row {i + 1}: column A is empty but column B "
+                        f"contains {row[1]!r}. Each row before START: must begin "
+                        f"with a recognised marker in column A "
+                        f"(config:, var:, lbl:, def:, doc:, info:, or START:)."
                     )
                 i += 1
                 continue
@@ -290,9 +349,11 @@ class PatternParser:
                     read_direction=global_config.read_direction,
                     currency_sign=global_config.currency_sign,
                     empty_aliases=list(global_config.empty_aliases),
-                    ignore_case=global_config.ignore_case,
+                    ignore_case_labels=global_config.ignore_case_labels,
+                    ignore_case_values=global_config.ignore_case_values,
                     lbl_match=global_config.lbl_match,
                 )
+                explicit_table_cfg_keys: set[str] = set()
                 template_rows = []
                 i += 1
 
@@ -320,8 +381,19 @@ class PatternParser:
                                     f"Invalid read.direction '{val}' in table config. "
                                     f"Valid values: LR (left-to-right), TD (top-down)")
                             table_config.read_direction = direction
+                            explicit_table_cfg_keys.add('read.direction')
                         elif key == 'ignore.case' and val is not None:
-                            table_config.ignore_case = _truthy(val)
+                            # Backward compat: set both flags for tables too.
+                            v = _truthy(val)
+                            table_config.ignore_case_labels = v
+                            table_config.ignore_case_values = v
+                            explicit_table_cfg_keys.add('ignore.case')
+                        elif key == 'ignore.case.labels' and val is not None:
+                            table_config.ignore_case_labels = _truthy(val)
+                            explicit_table_cfg_keys.add('ignore.case.labels')
+                        elif key == 'ignore.case.values' and val is not None:
+                            table_config.ignore_case_values = _truthy(val)
+                            explicit_table_cfg_keys.add('ignore.case.values')
                         i += 1
                         continue
 
@@ -456,6 +528,7 @@ class PatternParser:
                     multiplicity=mult,
                     config=table_config,
                     rows=template_rows,
+                    explicit_config_keys=frozenset(explicit_table_cfg_keys),
                 ))
 
             elif col_a_l in ('doc:', 'info:'):
@@ -582,6 +655,10 @@ class PatternParser:
                             row_values.append(None)
                             continue
                         if val.startswith('='):
+                            mapped = _SAFE_CONSTANT_FORMULAS.get(val.strip().upper())
+                            if mapped is not None:
+                                row_values.append(mapped)
+                                continue
                             coord = f'{get_column_letter(col_idx + 1)}{line_no}'
                             raise SecurityError(
                                 f'Formulas are not allowed in pattern files. '
@@ -626,8 +703,16 @@ class PatternParser:
                     row_values.append(None)
                     continue
 
-                # Formulas are never allowed in pattern files
+                # Formulas are never allowed in pattern files.
+                # Exception: =TRUE() and =FALSE() are safe constant expressions
+                # that Excel auto-inserts when a user types TRUE/FALSE without
+                # quoting.  We substitute their boolean equivalent and continue.
                 if cell.data_type == 'f' or (isinstance(val, str) and val.startswith('=')):
+                    if isinstance(val, str):
+                        mapped = _SAFE_CONSTANT_FORMULAS.get(val.strip().upper())
+                        if mapped is not None:
+                            row_values.append(mapped)
+                            continue
                     raise SecurityError(
                         f'Formulas are not allowed in pattern files. '
                         f'Cell {cell.coordinate} contains: {val!r}  '
@@ -713,9 +798,23 @@ class PatternParser:
         elif key == 'currency.sign' and val:
             config.currency_sign = str(val)
         elif key == 'empty.aliases' and val:
-            config.empty_aliases.append(str(val))
+            config.empty_aliases.append(str(val).strip())
         elif key == 'ignore.case' and val is not None:
-            config.ignore_case = _truthy(val)
+            # Backward compat: old single key sets both labels and values.
+            v = _truthy(val)
+            config.ignore_case_labels = v
+            config.ignore_case_values = v
+        elif key == 'ignore.case.labels' and val is not None:
+            config.ignore_case_labels = _truthy(val)
+        elif key == 'ignore.case.values' and val is not None:
+            config.ignore_case_values = _truthy(val)
+        elif key == 'trim.whitespace' and val is not None:
+            # Backward compat: old single key sets values only (was values-only before).
+            config.trim_whitespace_values = _truthy(val)
+        elif key == 'trim.whitespace.labels' and val is not None:
+            config.trim_whitespace_labels = _truthy(val)
+        elif key == 'trim.whitespace.values' and val is not None:
+            config.trim_whitespace_values = _truthy(val)
         elif key == 'lbl.match' and val is not None:
             mode = str(val).strip().lower()
             if mode not in LBL_MATCH_MODES:
@@ -724,6 +823,14 @@ class PatternParser:
                     f"{', '.join(sorted(LBL_MATCH_MODES))}."
                 )
             config.lbl_match = mode
+        elif key == 'var.match' and val is not None:
+            mode = str(val).strip().lower()
+            if mode not in VAR_MATCH_MODES:
+                raise PatternError(
+                    f"Invalid var.match value {val!r}. Valid values: "
+                    f"{', '.join(sorted(VAR_MATCH_MODES))}."
+                )
+            config.var_match = mode
         elif key in ('pattern.version', 'version') and val is not None:
             config.pattern_version = _parse_pattern_version(val)
             config.pattern_version_explicit = True
@@ -735,7 +842,9 @@ class PatternParser:
                      lbl_match_override: str | None = None,
                      global_lbl_match: str = 'literal',
                      var_mode: str | None = None,
-                     required: bool = False) -> FieldDef:
+                     required: bool = False,
+                     trim_whitespace: bool = False,
+                     nullable: bool = False) -> FieldDef:
         where = f' at pattern row {row_num}' if row_num is not None else ''
         name  = str(row[1]) if row[1] else ''
         if not name:
@@ -765,7 +874,8 @@ class PatternParser:
             check_regex_safety(regex, field_name=name)
 
         return FieldDef(name=name, type=type_, regex=regex, role=role,
-                        lbl_match=lbl_match_override, var_mode=var_mode, required=required)
+                        lbl_match=lbl_match_override, var_mode=var_mode, required=required,
+                        trim_whitespace=trim_whitespace, nullable=nullable)
 
     # backward-compat alias
     def _parse_def(self, row) -> FieldDef:

@@ -36,20 +36,36 @@ In your output, separate columns with ' | ' (space-pipe-space).
 ─── SECTIONS (in order) ───────────────────────────────────────────────────────
 
 1. Config rows (optional):
-   config: | read.direction | LR          (or TD for top-down column scanning)
-   config: | currency.sign  | €
-   config: | ignore.case    | no          (yes = case-insensitive regex matching)
+   config: | read.direction  | LR     (LR = left-to-right scan; TD = top-down)
+   config: | currency.sign   | €
+   config: | ignore.case     | no     (yes = case-insensitive matching for all fields)
+   config: | trim.whitespace | no     (yes = strip leading/trailing whitespace before matching)
+   config: | lbl.match       | literal  (global default match mode for lbl: fields:
+                                          literal = exact string, no escaping needed;
+                                          glob    = shell-style wildcards (*, ?);
+                                          regexp  = Python regex fullmatch)
+   config: | empty.aliases   | N/A,-, (comma-separated strings treated as empty)
+
+   Tip: the default lbl.match is already 'literal', so you rarely need to set it.
+   Use 'ignore.case | yes' when header labels differ in capitalisation across files.
 
 2. Label definitions — anchor cells, NEVER written to output JSON:
-   lbl: | FieldName | type | plain text
+   lbl: | FieldName | string | plain text
 
    Use lbl: for literal text that marks where a value lives (e.g. "Invoice No:",
    column headers like "Product", "Qty").  These are matched as exact strings by default
-   (lbl.match = literal), so copy the cell text verbatim — NO regex escaping.
-   Parentheses, dots, brackets etc. are matched as-is. They will allow you to confirm
-   that the analysis and extraction of data is being done correctly and that the file
-   being processed respects the structure that has been defined it should have.
-   Optional: use lbl:not-null to assert the label must be present (fatal if missing).
+   (lbl.match = literal), so copy the cell text verbatim — NO regex escaping needed.
+   Parentheses, dots, brackets etc. are matched as-is.  Labels confirm that the file
+   being processed has the expected structure; they are never written to the output JSON.
+
+   Optional modifiers on column A (order-independent, colon-separated):
+     lbl:not-null  | lbl_name | string | Invoice No:   ← fatal if label is missing
+     lbl:glob      | lbl_name | string | Total *       ← shell wildcard match
+     lbl:regexp    | lbl_name | string | Total\\s*:    ← Python regex fullmatch
+     lbl:literal   | lbl_name | string | exact text    ← explicit literal (the default)
+   Modifiers can combine: lbl:not-null:glob | lbl_name | string | Total *
+
+   Per-field modifiers override the global config: lbl.match setting.
 
 3. Variable definitions — extracted to the output JSON:
    var: | field.name | type | regex
@@ -78,8 +94,18 @@ In your output, separate columns with ' | ' (space-pipe-space).
      var: | day.clock_in | time       |
 
    Important notes:
-     - integers can be negative too — include a leading -? in the regex if needed.
-     - same applies for currency amounts — they often can be negative (e.g. credit notes, negative adjustments).
+     - integers can be negative — include a leading -? in the regex if needed.
+     - currency amounts can be negative too (credit notes, adjustments).
+     - for optional table columns that may sometimes be blank, use var:nullable.
+
+   Optional modifiers on column A (order-independent, colon-separated):
+     var:not-null        | field | type |        ← fatal error if the cell is empty
+     var:nullable        | field | type |        ← empty cell is accepted (no warning)
+     var:trim-whitespace | field | type |        ← strip whitespace before matching
+     var:glob            | field | type | SKU-*  ← column D is a glob pattern, not regex
+     var:literal         | field | type | Active ← column D is an exact string, not regex
+   Modifiers can combine: var:not-null:trim-whitespace | field | type | PO-.*
+   You do NOT need modifiers in a basic pattern — they are optional quality gates.
 
    Optional modifiers on column A (order-independent, colon-separated):
      var:not-null | field | type |        ← fatal error if the cell is empty
@@ -91,7 +117,8 @@ In your output, separate columns with ' | ' (space-pipe-space).
 
 
 4. Extraction sequence between START: and END:
-   Important note: Headers are "in general" associated to lables, and data cells to variables.  The pattern must reflect this association by referencing the lbl: names in the HEADER: row and the var: names in the DATA: row. (there are exceptions to these rules, but following them will make the pattern easier to understand and maintain).
+   Important: HEADER: rows reference lbl: names; DATA: rows reference var: names.
+   Never mix them: no var: name in a HEADER: row, no lbl: name in a DATA: row.
 
    For scattered key-value cells — two addressing modes:
 
@@ -123,12 +150,17 @@ In your output, separate columns with ' | ' (space-pipe-space).
    steps and restarts scanning over the not-yet-read cells. Use it when one region
    of the sheet reads naturally top-down and another reads left-to-right.
 
-   For repeating tables:
-     table:*                   (bare keyword, no pipe, starts a table block)
+   For repeating tables — table:* (appears multiple times) or table:1 (once):
+     table:*                   (or table:1 for a table that appears exactly once)
        | HEADER:1 | ColA | ColB | ColC
        | DATA:*   | ColA | ColB | ColC
        | FOOTER:1 | ColA | ColB | ColC
      (Table template rows have a blank column A — start the line with ' | ')
+
+   A table block may begin with per-table config: overrides (blank col A):
+       | config: | read.direction | TD
+       | config: | ignore.case    | yes
+   These override the global config only for this table block.
 
    Row type suffixes:  :1 (exactly one)  :* (greedy)  :{n,m} (bounded: min n, max m total rows)
    Column keywords:  FieldName  IGNORE  EMPTY
@@ -136,10 +168,10 @@ In your output, separate columns with ' | ' (space-pipe-space).
    For fixed-slot templates (pre-allocated empty rows before the footer), use DATA:{n,m}
    with one or more SKIP_IF rows to silently skip empty rows:
      table:1
-       | HEADER:1  | col_desc | col_qty
-       | SKIP_IF   | EMPTY    | IGNORE
+       | HEADER:1    | col_desc         | col_qty
+       | SKIP_IF     | EMPTY            | IGNORE
        | DATA:{0,15} | line.description | line.qty
-       | FOOTER:1  | lbl_total | inv.total
+       | FOOTER:1    | lbl_total        | inv.total
    SKIP_IF uses EMPTY (cell must be null) and IGNORE (don't check). A row matching
    any SKIP_IF condition is silently excluded from output but still counts toward {n,m}.
    SKIP_IF is only valid with DATA:{n,m}.
@@ -195,7 +227,9 @@ Use consistent, conventional names. Group every monetary total under one prefix
 - Use var: for the values that follow those labels.
 - In HEADER rows, use lbl: field names.  In DATA rows, use var: field names.
 - Give var: fields a dot-notation name: group.field (e.g. po.number, line.qty).
-- Use percentage for cells that hold a percentage (e.g. 0.625 representing 62.5%).
+- Use percentage for cells formatted as percentages (e.g. 62.5%, stored as 0.625).
+- For optional fields that may legitimately be blank, add var:nullable.
+- lbl: fields are matched as exact strings by default — no regex escaping needed.
 
 ─── OUTPUT RULES ──────────────────────────────────────────────────────────────
 
@@ -203,28 +237,33 @@ Use consistent, conventional names. Group every monetary total under one prefix
 - One row per line, columns separated by ' | '.
 - Table template rows must start with ' | ' (blank column A).
 - START: and END: are bare keywords with no pipe separator.
+- Do NOT output a config: row unless it is actually needed (non-default values).
 
 ─── EXAMPLE OUTPUT ────────────────────────────────────────────────────────────
 
 config: | read.direction | LR
-lbl: | inv_label | string | Invoice No:
-lbl: | total_label | string | Total
-lbl: | col_product | string | Product
-lbl: | col_qty | string | Qty
-var: | inv.number | string | INV-\\d+
-var: | inv.total | currency | \\d+(\\.\\d{2})?
-var: | inv.date | date |
-var: | line.product | string | .*
-var: | line.qty | integer | \\d+
+lbl: | lbl_inv_no   | string | Invoice No:
+lbl: | lbl_date     | string | Date:
+lbl: | lbl_total    | string | Total Amount:
+lbl: | col_product  | string | Product
+lbl: | col_qty      | string | Qty
+lbl: | col_price    | string | Unit Price
+var: | inv.number   | string   | INV-\\d+
+var: | inv.date     | date     |
+var: | inv.total    | currency |
+var: | line.product | string   | .*
+var: | line.qty     | integer  | \\d+
+var: | line.price   | currency |
 START:
-cell:next | inv_label
+cell:next | lbl_inv_no
 cell:next | inv.number
-cell:next | total_label
-cell:next | inv.total
+cell:next | lbl_date
 cell:next | inv.date
+cell:next | lbl_total
+cell:next | inv.total
 table:*
- | HEADER:1 | col_product | col_qty
- | DATA:* | line.product | line.qty
+ | HEADER:1 | col_product | col_qty | col_price
+ | DATA:*   | line.product | line.qty | line.price
 END:
 """
 
@@ -232,6 +271,13 @@ _USER_PROMPT_TEMPLATE = """\
 Analyse the Excel structure below and produce a grepxcel pattern file that would extract its key data.
 
 {analysis}
+
+Reminders before you write:
+- LABEL lines in the analysis → lbl: definitions + cell:next steps in the sequence.
+- HEADER lines in tables → lbl: definitions; DATA lines → var: definitions.
+- HEADER: rows in table blocks use lbl: names; DATA: rows use var: names. Never mix.
+- lbl: column D is verbatim text — no regex escaping. var: column D is a Python regex (or blank).
+- Output ONLY the pattern rows. No explanations, no markdown fences, no comments.
 
 Generate the pattern file now:
 """
@@ -1098,6 +1144,93 @@ class GitHubModelsBackend:
             rate_limit_tokens=self._int_header(h, 'x-ratelimit-limit-tokens'),
         )
         return completion.choices[0].message.content
+
+
+# ── NVIDIA NIM backend ────────────────────────────────────────────────────
+
+class NvidiaBackend:
+    """Sends inference requests to NVIDIA NIM (OpenAI-compatible endpoint).
+
+    Free-tier access via build.nvidia.com — no credit card required, governed
+    by generous rate limits.  Requires NVIDIA_API_KEY in the environment (obtain
+    from https://build.nvidia.com after signing in with your NVIDIA account).
+
+    Model ids follow NVIDIA NIM naming, e.g. 'meta/llama-3.1-8b-instruct',
+    'meta/llama-3.3-70b-instruct', 'nvidia/llama-3.1-nemotron-70b-instruct'.
+    Only the Excel structure description is transmitted — raw bytes never leave
+    the machine.
+    """
+
+    ENDPOINT = 'https://integrate.api.nvidia.com/v1'
+    DEFAULT_MODEL = 'mistralai/mistral-nemotron'  # benchmark winner (22/22 parse, 12s/call)
+
+    def __init__(self, model: str = DEFAULT_MODEL):
+        self._model     = model
+        self._last_cost: CostRecord | None = None
+
+    def last_cost(self) -> CostRecord | None:
+        return self._last_cost
+
+    @staticmethod
+    def _int_header(headers, name: str) -> int | None:
+        try:
+            v = headers.get(name)
+            return int(v) if v is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    def chat(self, system: str, user: str) -> str:
+        try:
+            from openai import OpenAI
+        except ImportError:
+            print(
+                "Error: the NVIDIA backend needs the 'openai' package.\n"
+                "Fix:   pip install openai",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        api_key = os.environ.get('NVIDIA_API_KEY')
+        if not api_key:
+            raise RuntimeError(
+                'NVIDIA_API_KEY is not set. Create a free API key at '
+                'https://build.nvidia.com and add NVIDIA_API_KEY=... to your '
+                'environment or .env file.'
+            )
+        from .proxy_support import make_httpx_client
+        _http = make_httpx_client()
+        _kw = {'http_client': _http} if _http is not None else {}
+        client = OpenAI(base_url=self.ENDPOINT, api_key=api_key, **_kw)
+        raw = client.chat.completions.with_raw_response.create(
+            model=self._model,
+            messages=[
+                {'role': 'system', 'content': system},
+                {'role': 'user',   'content': user},
+            ],
+            temperature=0.1,
+            max_tokens=4096,
+        )
+        completion = raw.parse()
+        usage = completion.usage
+        in_tok  = getattr(usage, 'prompt_tokens', 0) or 0
+        out_tok = getattr(usage, 'completion_tokens', 0) or 0
+        h = raw.headers
+        self._last_cost = CostRecord(
+            model=self._model,
+            input_tokens=in_tok,
+            output_tokens=out_tok,
+            input_cost_usd=0.0,   # free-tier quota, no per-token charge
+            output_cost_usd=0.0,
+            rate_remaining_requests=self._int_header(h, 'x-ratelimit-remaining-requests'),
+            rate_limit_requests=self._int_header(h, 'x-ratelimit-limit-requests'),
+            rate_remaining_tokens=self._int_header(h, 'x-ratelimit-remaining-tokens'),
+            rate_limit_tokens=self._int_header(h, 'x-ratelimit-limit-tokens'),
+        )
+        content = completion.choices[0].message.content
+        # Thinking models (e.g. openai/gpt-oss-20b) put the answer in
+        # reasoning_content when content is None — use that as fallback.
+        if content is None:
+            content = getattr(completion.choices[0].message, 'reasoning_content', None)
+        return content
 
 
 # ── OpenAI-compatible server backend ──────────────────────────────────────

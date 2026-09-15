@@ -13,7 +13,7 @@ import re
 import sys
 from dataclasses import dataclass, field
 
-from .color import colorize_marks, should_color
+from .color import MARK_FAIL, MARK_OK, MARK_WARN, colorize_marks, paint, should_color
 from .models import CellInstruction, TableInstruction, SeekInstruction, DirectionInstruction
 from .pattern_parser import PatternError, PatternParser
 from .security import SecurityError
@@ -21,7 +21,13 @@ from .security import SecurityError
 # Patterns that strongly suggest regex intent (backslash-escapes, lookahead)
 _REGEX_TELL = re.compile(r'\\[()[\]{}|+*.?^$]|[(][?]')
 
-_MARK_OK, _MARK_WARN, _MARK_FAIL = '✓', '⚠', '✗'
+# Excel formula-error strings that openpyxl returns as plain strings when a
+# data file is loaded with data_only=True.  Useful as empty.aliases values.
+_EXCEL_ERROR_STRINGS: frozenset[str] = frozenset({
+    '#N/A', '#REF!', '#VALUE!', '#DIV/0!', '#NAME?', '#NUM!', '#NULL!',
+})
+
+_MARK_OK, _MARK_WARN, _MARK_FAIL = MARK_OK, MARK_WARN, MARK_FAIL
 
 
 @dataclass
@@ -95,7 +101,7 @@ def check_pattern(path: str) -> CheckResult:
         result.warnings.append(
             f"Unknown config key {key!r} — ignored. "
             f"Valid keys: pattern.version (or version), read.direction, "
-            f"currency.sign, ignore.case, lbl.match, empty.aliases."
+            f"currency.sign, ignore.case, trim.whitespace, lbl.match, var.match, empty.aliases."
         )
 
     for name, fd in defs.items():
@@ -119,36 +125,112 @@ def check_pattern(path: str) -> CheckResult:
                     f"or change to plain var: for type-only validation."
                 )
 
+    # ── empty.aliases validation ──────────────────────────────────────────────
+    if config.empty_aliases:
+        seen_aliases: set[str] = set()
+        for alias in config.empty_aliases:
+
+            # 1. Duplicate alias
+            alias_key = alias.lower() if config.ignore_case_values else alias
+            if alias_key in seen_aliases:
+                result.warnings.append(
+                    f"Duplicate empty.aliases value {alias!r} — "
+                    f"the duplicate has no effect."
+                )
+            seen_aliases.add(alias_key)
+
+            # 2. Alias contains regex metacharacters — aliases are plain strings
+            if _REGEX_TELL.search(alias) or re.search(r'[.*+?^${}()|[\]\\]', alias):
+                result.warnings.append(
+                    f"empty.aliases value {alias!r} contains regex metacharacters, "
+                    f"but aliases are matched as plain strings, not regular expressions. "
+                    f"It will only match cells whose text is exactly {alias!r}."
+                )
+
+            # 3. Alias starts with '#' — validate it is a known Excel error string
+            if alias.startswith('#'):
+                if alias.upper() not in {e.upper() for e in _EXCEL_ERROR_STRINGS}:
+                    result.warnings.append(
+                        f"empty.aliases value {alias!r} starts with '#' but is not a "
+                        f"recognised Excel error string. "
+                        f"Known errors: {', '.join(sorted(_EXCEL_ERROR_STRINGS))}. "
+                        f"Verify this is the exact string the data file contains."
+                    )
+                elif not config.ignore_case_values and alias not in _EXCEL_ERROR_STRINGS:
+                    # Correct error string but wrong case and ignore_case is off
+                    canonical = next(e for e in _EXCEL_ERROR_STRINGS
+                                     if e.upper() == alias.upper())
+                    result.warnings.append(
+                        f"empty.aliases value {alias!r} is a known Excel error string "
+                        f"but the capitalisation differs from the canonical form "
+                        f"{canonical!r}. Excel always produces the canonical form — "
+                        f"use {canonical!r}, or add 'config: ignore.case yes' to "
+                        f"match case-insensitively."
+                    )
+
     result.valid = not result.errors
     return result
 
 
-def _render_table_grid(rows, out) -> None:
-    """Render table rows as a columnar grid: one column-position per line,
-    row types side by side so you can see what each position maps to."""
+def _render_table_grid(rows, out, color: bool = False) -> None:
+    """Render the table in the same orientation as the pattern file:
+    one display-row per table row (HEADER/SKIP_IF/DATA/FOOTER),
+    one display-column per column position within each row.
+
+    Example output for a 2-column table with HEADER + DATA rows::
+
+        HEADER:1  lbl_name  lbl_age
+        DATA:*    name      age
+    """
     if not rows:
         return
+
+    # ── row-type labels ───────────────────────────────────────────────────────
     headers = []
     for trow in rows:
         if trow.row_type == 'SKIP_IF':
             headers.append('SKIP_IF')
         else:
             headers.append(f'{trow.row_type}:{trow.multiplicity}')
+
+    # ── column widths (plain text only — ANSI codes must not inflate these) ───
+    # col 0  = row-type label column
+    # col i  = column position i-1 in the table
     n_cols = max(len(trow.columns) for trow in rows)
-    widths = []
-    for ri, trow in enumerate(rows):
-        w = len(headers[ri])
-        for ci in range(n_cols):
+    label_w = max(len(h) for h in headers)
+    field_ws = []
+    for ci in range(n_cols):
+        w = 0
+        for trow in rows:
             if ci < len(trow.columns):
                 w = max(w, len(trow.columns[ci].field))
-        widths.append(w)
-    parts = [f'{h:<{widths[i]}}' for i, h in enumerate(headers)]
-    print(f'        {"  ".join(parts)}', file=out)
-    for ci in range(n_cols):
-        parts = []
-        for ri, trow in enumerate(rows):
+        field_ws.append(w)
+
+    # ── color helpers — pad FIRST (plain length), then paint ──────────────────
+    _ROW_COLOR = {
+        'HEADER': 'cyan', 'DATA': 'green', 'FOOTER': 'dim', 'SKIP_IF': 'yellow',
+    }
+    _SENTINEL_FIELDS = {'EMPTY', 'IGNORE'}
+
+    def _pad_paint(plain: str, color_name: str, width: int) -> str:
+        """Right-pad *plain* to *width*, then apply color (preserving alignment)."""
+        padded = f'{plain:<{width}}'
+        return paint(padded, color_name, color)
+
+    # ── one display-row per table row ─────────────────────────────────────────
+    for h, trow in zip(headers, rows):
+        row_type = h.split(':')[0]
+        row_color = _ROW_COLOR.get(row_type, 'cyan')
+        parts = [_pad_paint(h, row_color, label_w)]
+        for ci in range(n_cols):
             val = trow.columns[ci].field if ci < len(trow.columns) else ''
-            parts.append(f'{val:<{widths[ri]}}')
+            w = field_ws[ci]
+            if val in _SENTINEL_FIELDS:
+                parts.append(_pad_paint(val, 'dim', w))
+            elif val:
+                parts.append(_pad_paint(val, 'cyan', w))
+            else:
+                parts.append(' ' * w)
         print(f'        {"  ".join(parts)}', file=out)
 
 
@@ -156,28 +238,48 @@ def render_result(result: CheckResult, verbose: bool = False, out=None) -> None:
     """Print a human-readable report for one CheckResult."""
     out = out or sys.stderr
     color = should_color(out)
+    fpath = paint(result.path, 'bold', color)
     if result.valid:
-        print(colorize_marks(f'{_MARK_OK}  {result.path}  —  VALID '
-              f'({result.n_fields} field(s), {result.n_steps} extraction step(s))',
-              color), file=out)
+        stats = paint(f'({result.n_fields} field(s), {result.n_steps} extraction step(s))',
+                      'dim', color)
+        valid = paint('VALID', 'bold_green', color)
+        print(colorize_marks(f'{_MARK_OK}  {fpath}  —  {valid} {stats}', color), file=out)
     else:
-        print(colorize_marks(f'{_MARK_FAIL}  {result.path}  —  INVALID', color), file=out)
+        invalid = paint('INVALID', 'bold_red', color)
+        print(colorize_marks(f'{_MARK_FAIL}  {fpath}  —  {invalid}', color), file=out)
     for err in result.errors:
-        print(colorize_marks(f'   {_MARK_FAIL} {err}', color), file=out)
+        print(colorize_marks(f'   {_MARK_FAIL} {paint(err, "red", color)}', color), file=out)
     for warn in result.warnings:
-        print(colorize_marks(f'   {_MARK_WARN} {warn}', color), file=out)
+        print(colorize_marks(f'   {_MARK_WARN} {paint(warn, "yellow", color)}', color), file=out)
 
     if verbose and result.defs is not None:
         cfg = result.config
-        ver = (f'{cfg.pattern_version}' if cfg.pattern_version_explicit
-               else f'{cfg.pattern_version} (defaulted — no pattern.version declared)')
-        print('\n   config:', file=out)
-        print(f'     pattern.version {ver}', file=out)
-        print(f'     read.direction  {cfg.read_direction}', file=out)
-        print(f'     currency.sign   {cfg.currency_sign}', file=out)
-        print(f'     ignore.case     {cfg.ignore_case}', file=out)
-        print(f'     lbl.match       {cfg.lbl_match}', file=out)
-        print('   fields:', file=out)
+        # ── helpers ──────────────────────────────────────────────────────────
+        def _key(k):   return paint(f'{k}', 'dim', color)
+        def _sec(s):   return paint(s, 'dim', color)
+        def _faint(v): return paint(str(v), 'dim', color)
+
+        # ── config block ──────────────────────────────────────────────────────
+        if cfg.pattern_version_explicit:
+            ver = str(cfg.pattern_version)
+        else:
+            ver = f'{cfg.pattern_version} {_faint("(defaulted — no pattern.version declared)")}'
+        aliases_val = (', '.join(cfg.empty_aliases)
+                       if cfg.empty_aliases else _faint('(none)'))
+        print(f'\n   {_sec("config:")}', file=out)
+        print(f'     {_key("pattern.version")} {ver}', file=out)
+        print(f'     {_key("read.direction")}  {cfg.read_direction}', file=out)
+        print(f'     {_key("currency.sign")}   {cfg.currency_sign}', file=out)
+        print(f'     {_key("ignore.case.labels")}  {cfg.ignore_case_labels}', file=out)
+        print(f'     {_key("ignore.case.values")}  {cfg.ignore_case_values}', file=out)
+        print(f'     {_key("trim.ws.labels")}      {cfg.trim_whitespace_labels}', file=out)
+        print(f'     {_key("trim.ws.values")}      {cfg.trim_whitespace_values}', file=out)
+        print(f'     {_key("lbl.match")}       {cfg.lbl_match}', file=out)
+        print(f'     {_key("var.match")}       {cfg.var_match}', file=out)
+        print(f'     {_key("empty.aliases")}   {aliases_val}', file=out)
+
+        # ── fields block ──────────────────────────────────────────────────────
+        print(f'   {_sec("fields:")}', file=out)
         for name, fd in result.defs.items():
             tags = []
             if fd.role == 'lbl' and fd.lbl_match is not None:
@@ -186,20 +288,65 @@ def render_result(result: CheckResult, verbose: bool = False, out=None) -> None:
                 tags.append(fd.var_mode)
             if fd.required:
                 tags.append('not-null')
-            mode_tag = f' [{", ".join(tags)}]' if tags else ''
-            print(f'     {fd.role:<4} {name:<24} {fd.type:<10} /{fd.regex}/{mode_tag}', file=out)
-        print('   extraction sequence:', file=out)
+            if fd.nullable:
+                tags.append('nullable')
+            if fd.trim_whitespace:
+                tags.append('trim')
+            mode_tag = _faint(f' [{", ".join(tags)}]') if tags else ''
+            role_color = 'yellow' if fd.role == 'lbl' else 'green'
+            role  = paint(f'{fd.role:<4}', role_color, color)
+            fname = paint(f'{name:<24}', 'cyan', color)
+            ftype = _faint(f'{fd.type:<10}')
+            regex = _faint(f'/{fd.regex}/')
+            print(f'     {role} {fname} {ftype} {regex}{mode_tag}', file=out)
+
+        # ── extraction sequence ───────────────────────────────────────────────
+        print(f'   {_sec("extraction sequence:")}', file=out)
+        arrow = paint('->', 'dim', color)
         for instr in (result.sequence or []):
             if isinstance(instr, CellInstruction):
-                tgt = instr.target or instr.multiplicity
-                print(f'     cell:{tgt:<6} -> {instr.field}', file=out)
+                tgt   = instr.target or instr.multiplicity
+                step  = paint(f'cell:{tgt:<6}', 'cyan', color)
+                fname = paint(instr.field, 'cyan', color)
+                print(f'     {step} {arrow} {fname}', file=out)
             elif isinstance(instr, SeekInstruction):
-                print(f'     seek:{instr.target}', file=out)
+                step = paint(f'seek:{instr.target}', 'yellow', color)
+                print(f'     {step}', file=out)
             elif isinstance(instr, DirectionInstruction):
-                print(f'     dir:{instr.direction}', file=out)
+                step = paint(f'dir:{instr.direction}', 'dim', color)
+                print(f'     {step}', file=out)
             elif isinstance(instr, TableInstruction):
-                print(f'     table:{instr.multiplicity}', file=out)
-                _render_table_grid(instr.rows, out)
+                step = paint(f'table:{instr.multiplicity}', 'green', color)
+                print(f'     {step}', file=out)
+                # Print per-table config entries that were explicitly declared
+                # in the pattern (tracked by explicit_config_keys on the
+                # instruction).  We show the actual values, not a diff — even
+                # if a value matches the global, it appeared in the file.
+                explicit = instr.explicit_config_keys
+                if explicit:
+                    tcfg = instr.config
+                    parts: list[str] = []
+                    if 'read.direction' in explicit:
+                        parts.append(
+                            f'read.direction {paint(tcfg.read_direction, "cyan", color)}'
+                        )
+                    if 'ignore.case' in explicit:
+                        parts.append(
+                            f'ignore.case {paint(str(tcfg.ignore_case_labels), "cyan", color)}'
+                            f'/{paint(str(tcfg.ignore_case_values), "cyan", color)}'
+                            f' (labels/values)'
+                        )
+                    if 'ignore.case.labels' in explicit:
+                        parts.append(
+                            f'ignore.case.labels {paint(str(tcfg.ignore_case_labels), "cyan", color)}'
+                        )
+                    if 'ignore.case.values' in explicit:
+                        parts.append(
+                            f'ignore.case.values {paint(str(tcfg.ignore_case_values), "cyan", color)}'
+                        )
+                    cfg_label = paint('config:', 'dim', color)
+                    print(f'        {cfg_label}  {"  ".join(parts)}', file=out)
+                _render_table_grid(instr.rows, out, color)
 
 
 def run_validate(paths: list[str], verbose: bool = False, quiet: bool = False,

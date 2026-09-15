@@ -16,7 +16,7 @@ import json
 import os
 import sys
 
-from .color import colorize_marks, should_color
+from .color import MARK_FAIL, MARK_OK, MARK_WARN, colorize_marks, should_color
 from .engine import Engine
 from .logger import Logger, VerbosityLevel
 
@@ -121,6 +121,7 @@ Run 'grepxcel <command> --help' for per-command options.
     _add_validate_subparser(sub)
     _add_draft_subparser(sub)
     _add_wizard_subparser(sub)
+    _add_web_wizard_subparser(sub)
     _add_docs_subparser(sub)
     _add_lint_subparser(sub)
     _add_schema_subparser(sub)
@@ -358,16 +359,22 @@ def _add_wizard_subparser(sub) -> None:
         help='Interactively build a pattern file cell by cell',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Walks you through your Excel file cell by cell and writes a valid CSV pattern.
+Walks you through your Excel file cell by cell and writes a grepxcel pattern.
 No LLM required. Ideal when you want full manual control or have no internet
 access.
+
+The default output file is named  <stem>-wizard-YYYYmmddHHMMSS.xlsx
+next to the data file (use -o to override).  Each run produces a unique
+timestamped file so repeated sessions never overwrite each other.
 
 examples:
   grepxcel wizard data.xlsx
   grepxcel wizard data.xlsx --sheet Sheet2
-  grepxcel wizard data.xlsx -o my-pattern.csv
+  grepxcel wizard data.xlsx -o my-pattern.xlsx
+  grepxcel wizard data.xlsx --format csv -o my-pattern.csv
   grepxcel wizard data.xlsx --save-state session.json
-  grepxcel wizard --load-state session.json -o my-pattern.csv
+  grepxcel wizard --load-state session.json -o my-pattern.xlsx
+  grepxcel wizard data.xlsx --load-pattern existing-pattern.xlsx
         """,
     )
     p.add_argument('file', metavar='FILE', nargs='?',
@@ -376,14 +383,54 @@ examples:
     p.add_argument('--sheet', metavar='NAME_OR_INDEX',
                    help='Sheet to use (default: active sheet)')
     p.add_argument('-o', '--output', metavar='FILE',
-                   help='Write the pattern CSV/XLSX to FILE '
-                        '(default: pattern-<stem>.csv next to the data file)')
+                   help='Write the pattern to FILE '
+                        '(default: <stem>-wizard-YYYYmmddHHMMSS.xlsx next to the data file)')
+    p.add_argument('--format', metavar='FORMAT', choices=['xlsx', 'csv'],
+                   default='xlsx',
+                   help='Output format when -o is not given (default: xlsx)')
     p.add_argument('--load-state', metavar='FILE',
                    help='Load a saved wizard state (JSON) and write the pattern '
                         'directly without any interactive session')
     p.add_argument('--save-state', metavar='FILE',
                    help='After saving the pattern, also write the wizard session '
                         'state to FILE as JSON (enables replay and scripted testing)')
+    p.add_argument('--load-pattern', metavar='FILE',
+                   help='Pre-populate the TUI from an existing pattern file '
+                        '(.xlsx or .csv) — opens the wizard with field classifications '
+                        'already filled in so you can review and adjust')
+
+
+def _add_web_wizard_subparser(sub) -> None:
+    p = sub.add_parser(
+        'web-wizard',
+        help='Build a pattern file visually in your browser (mouse-friendly)',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Opens a local web server and launches your default browser.  Click cells in
+the spreadsheet grid to classify them as Label / Value / Header / Table /
+Ignore.  Works with a mouse — no keyboard shortcuts required.
+
+Requires: pip install "grepxcel[web]"
+
+examples:
+  grepxcel web-wizard data.xlsx
+  grepxcel web-wizard data.xlsx -p existing-pattern.xlsx
+  grepxcel web-wizard data.xlsx --port 9000
+  grepxcel web-wizard data.xlsx --no-browser
+        """,
+    )
+    p.add_argument('file', metavar='FILE',
+                   help='Excel data file to inspect')
+    p.add_argument('-p', '--pattern', metavar='FILE', default=None,
+                   help='Pre-populate from an existing pattern file (.xlsx or .csv)')
+    p.add_argument('--port', metavar='PORT', type=int, default=8765,
+                   help='Local port to listen on (default: 8765)')
+    p.add_argument('--no-browser', action='store_true',
+                   help='Do not automatically open a browser window')
+    p.add_argument('--max-rows', metavar='N', type=int, default=150,
+                   help='Maximum rows to display in the grid (default: 150)')
+    p.add_argument('--max-cols', metavar='N', type=int, default=40,
+                   help='Maximum columns to display in the grid (default: 40)')
 
 
 def _add_quickstart_subparser(sub) -> None:
@@ -565,6 +612,12 @@ backends:
           Uses claude-sonnet-5 by default — high quality at reasonable cost.
           The raw file is NOT transmitted — only column types, sample
           values, and labels are sent.
+  nvidia  Send the Excel structure description to NVIDIA NIM (free-tier cloud).
+          Needs NVIDIA_API_KEY (free key at build.nvidia.com) and pip install openai.
+          Default model: mistralai/mistral-nemotron (override with --nvidia-model).
+          Other examples: nvidia/nemotron-3-super-120b-a12b, z-ai/glm-5.3-flash
+          The raw file is NOT transmitted — only column types, sample
+          values, and labels are sent.
   server  Send the Excel structure description to any OpenAI-compatible API
           server (LM Studio, Ollama, vLLM, text-generation-inference, etc.).
           Needs pip install openai. Default URL: http://localhost:1234/v1
@@ -630,14 +683,23 @@ def _draft_args(p: argparse.ArgumentParser) -> None:
     )
     p.add_argument(
         '--backend',
-        choices=['local', 'claude', 'gemini', 'github', 'server'],
+        choices=['local', 'claude', 'gemini', 'github', 'nvidia', 'server'],
         default='local',
         help='Inference backend: local (default, GGUF model), claude (requires '
-             'ANTHROPIC_API_KEY), '
+             'ANTHROPIC_API_KEY), nvidia (free-tier NVIDIA NIM, requires NVIDIA_API_KEY), '
              'server (any OpenAI-compatible server, e.g. LM Studio / Ollama / '
              'vLLM; use --server-url). '
              'gemini is planned for a future release. '
              'github is currently unavailable (GitHub retired the free-tier endpoint).',
+    )
+    p.add_argument(
+        '--nvidia-model',
+        default=os.environ.get('GREPXCEL_NVIDIA_MODEL', 'mistralai/mistral-nemotron'),
+        help="NVIDIA NIM model id when --backend nvidia, e.g. "
+             "'nvidia/nemotron-3-super-120b-a12b', 'z-ai/glm-5.3-flash' "
+             "(default: mistralai/mistral-nemotron — benchmark winner). "
+             "Available models vary by account tier — run `grepxcel doctor draft` to check. "
+             "Also via GREPXCEL_NVIDIA_MODEL.",
     )
     p.add_argument(
         '--github-model',
@@ -754,7 +816,7 @@ def _process_file(pattern: str, data_file: str, args,
             )
     except Exception as exc:
         print(colorize_marks(
-            f'\n  ✗  Unexpected error processing {data_file}: {exc}',
+            f'\n  {MARK_FAIL}  Unexpected error processing {data_file}: {exc}',
             should_color(sys.stderr)), file=sys.stderr)
         return False, []
     finally:
@@ -866,7 +928,7 @@ def _expand_files(paths: list[str], recursive: bool = False,
             result.append(p)
 
     if symlinks_found:
-        print(f'  ⚠  Skipped {len(symlinks_found)} symlink(s) '
+        print(f'  {MARK_WARN}  Skipped {len(symlinks_found)} symlink(s) '
               f'(not followed for safety):',
               file=sys.stderr)
         for s in symlinks_found[:5]:
@@ -1083,7 +1145,7 @@ def _run_draft(args) -> int:
     # (model download or cloud backend). Verification stays on.
     from .proxy_support import enable_corporate_tls
     enable_corporate_tls(getattr(args, 'ca_bundle', None))
-    from .drafter import ClaudeBackend, GitHubModelsBackend, OpenAICompatBackend, PatternDrafter
+    from .drafter import ClaudeBackend, GitHubModelsBackend, NvidiaBackend, OpenAICompatBackend, PatternDrafter
     sheet    = _resolve_sheet(args)
     selected = getattr(args, 'backend', 'local')
     backend  = None
@@ -1111,6 +1173,11 @@ def _run_draft(args) -> int:
         print("[!] Excel structure description will be sent to Anthropic's API.",
               file=sys.stderr)
         backend = ClaudeBackend()
+    elif selected == 'nvidia':
+        nv_model = getattr(args, 'nvidia_model', 'meta/llama-3.1-8b-instruct')
+        print(f"[!] Excel structure description will be sent to NVIDIA NIM ({nv_model}).",
+              file=sys.stderr)
+        backend = NvidiaBackend(model=nv_model)
     elif selected == 'github':
         gh_model = getattr(args, 'github_model', 'openai/gpt-4o-mini')
         print(f"[!] Excel structure description will be sent to GitHub Models ({gh_model}).",
@@ -1164,9 +1231,23 @@ def main(argv=None):
             data_file=args.file,
             sheet=getattr(args, 'sheet', None),
             output=getattr(args, 'output', None),
+            fmt=getattr(args, 'format', 'xlsx'),
             load_state=load_state,
             save_state=getattr(args, 'save_state', None),
+            load_pattern=getattr(args, 'load_pattern', None),
         ))
+
+    if args.command == 'web-wizard':
+        from .wizard_api import run as run_web
+        run_web(
+            xlsx_path=args.file,
+            pattern_path=getattr(args, 'pattern', None),
+            port=getattr(args, 'port', 8765),
+            open_browser=not getattr(args, 'no_browser', False),
+            max_rows=getattr(args, 'max_rows', 150),
+            max_cols=getattr(args, 'max_cols', 40),
+        )
+        sys.exit(0)
 
     if args.command == 'draft':
         sys.exit(_run_draft(args))
@@ -1227,7 +1308,7 @@ def main(argv=None):
 
     if fmt in ('csv', 'xlsx') and getattr(args, 'all_sheets', False):
         print(colorize_marks(
-            f'\n  ✗  --format {fmt} does not support --all-sheets '
+            f'\n  {MARK_FAIL}  --format {fmt} does not support --all-sheets '
             f'(a flat {fmt} cannot represent multiple sheets). '
             f'Use --sheet to pick one sheet, or --format nested for all sheets.',
             should_color(sys.stderr)), file=sys.stderr)
@@ -1238,7 +1319,7 @@ def main(argv=None):
         n_tables = count_table_instructions(args.pattern)
         if n_tables > 1:
             print(colorize_marks(
-                f'\n  ✗  --format csv requires at most one table: block, '
+                f'\n  {MARK_FAIL}  --format csv requires at most one table: block, '
                 f'but this pattern has {n_tables}. '
                 f'Use --format nested (JSON) for multi-table patterns.',
                 should_color(sys.stderr)), file=sys.stderr)
@@ -1247,7 +1328,7 @@ def main(argv=None):
     if fmt == 'xlsx':
         if not args.output:
             print(colorize_marks(
-                '\n  ✗  --format xlsx requires -o / --output (cannot write '
+                f'\n  {MARK_FAIL}  --format xlsx requires -o / --output (cannot write '
                 'binary Excel to stdout).',
                 should_color(sys.stderr)), file=sys.stderr)
             sys.exit(2)
@@ -1259,7 +1340,7 @@ def main(argv=None):
             )
             if os.path.abspath(data_file) == os.path.abspath(out_path):
                 print(colorize_marks(
-                    f'\n  ✗  --format xlsx would overwrite the source file '
+                    f'\n  {MARK_FAIL}  --format xlsx would overwrite the source file '
                     f'{data_file}. Use a different -o directory.',
                     should_color(sys.stderr)), file=sys.stderr)
                 sys.exit(2)
@@ -1272,18 +1353,18 @@ def main(argv=None):
     if not _pv.valid:
         color = should_color(sys.stderr)
         print(colorize_marks(
-            f'✗  Pattern invalid: {args.pattern}', color), file=sys.stderr)
+            f'{MARK_FAIL}  Pattern invalid: {args.pattern}', color), file=sys.stderr)
         for err in _pv.errors:
-            print(colorize_marks(f'   ✗ {err}', color), file=sys.stderr)
+            print(colorize_marks(f'   {MARK_FAIL} {err}', color), file=sys.stderr)
         sys.exit(1)
     if _pv.warnings:
         color = should_color(sys.stderr)
         quiet = getattr(args, 'quiet', False)
         if not quiet:
             print(colorize_marks(
-                f'⚠  Pattern warnings: {args.pattern}', color), file=sys.stderr)
+                f'{MARK_WARN}  Pattern warnings: {args.pattern}', color), file=sys.stderr)
         for warn in _pv.warnings:
-            print(colorize_marks(f'   ⚠ {warn}', color), file=sys.stderr)
+            print(colorize_marks(f'   {MARK_WARN} {warn}', color), file=sys.stderr)
 
     all_ok = True
     strict = getattr(args, 'strict', False)
@@ -1299,7 +1380,7 @@ def main(argv=None):
     if strict_failures:
         color = should_color(sys.stderr)
         print(colorize_marks(
-            '\n  ✗  --strict: missing fields detected',
+            f'\n  {MARK_FAIL}  --strict: missing fields detected',
             color), file=sys.stderr)
         for data_file, fields in strict_failures:
             if len(expanded) > 1:

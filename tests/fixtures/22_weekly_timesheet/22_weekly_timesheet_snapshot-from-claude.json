@@ -1,10 +1,10 @@
 {
   "company": {
-    "name": "TIME SHEET"
+    "name": "NOD PUBLISHERS"
   },
   "footer": {
-    "sig_val": "TIME SHEET",
-    "grand_total": "NOD PUBLISHERS"
+    "sig_val": "Employee name:",
+    "grand_total": "Apt. 100"
   },
   "pay": [
     {
@@ -24,8 +24,8 @@
           "regular": 675,
           "overtime": 52.5,
           "sick": 247.5,
-          "holiday": 0,
-          "vacation": 0
+          "holiday": 120,
+          "vacation": 120
         }
       ]
     }

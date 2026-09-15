@@ -176,12 +176,25 @@ def _detect_template(ws, data_file: str) -> bool:
 @dataclass
 class WizardState:
     direction: str = 'LR'
-    ignore_case: bool = False
+    ignore_case_labels: bool = False
+    ignore_case_values: bool = False
     currency_sign: str = '€'
     sheet_name: str | None = None
-    lbl_defs: list[tuple[str, str, str]] = field(default_factory=list)
-    var_defs: list[tuple[str, str, str]] = field(default_factory=list)
+    # Each lbl_def is a 4-tuple: (name, type, match, lbl_mode)
+    # lbl_mode: '' = use global lbl.match; 'glob' or 'regexp' = per-field override
+    lbl_defs: list[tuple] = field(default_factory=list)
+    # Each var_def is a 4-tuple: (name, type, match, col_a_extra)
+    # col_a_extra: '' = bare var:; otherwise colon-joined modifier tokens,
+    # e.g. 'nullable', 'not-null:trim-whitespace', 'literal', 'glob:nullable'
+    var_defs: list[tuple] = field(default_factory=list)
     body_rows: list[list[str]] = field(default_factory=list)
+    # ── New global config fields ───────────────────────────────────────────
+    template: bool = False                  # config: allow empty cells (blank-form spreadsheets)
+    trim_whitespace_labels: bool = False    # config: trim.whitespace.labels yes
+    trim_whitespace_values: bool = False    # config: trim.whitespace.values yes
+    lbl_match: str = ''               # config: lbl.match ('' = omit / use default)
+    var_match: str = ''               # config: var.match ('' = omit / use default)
+    empty_aliases: list[str] = field(default_factory=list)  # config: empty.aliases
 
     def to_dict(self) -> dict:
         """Serialise to a plain JSON-safe dict.  Tuples become lists."""
@@ -193,13 +206,21 @@ class WizardState:
         """Reconstruct from a plain dict (e.g. loaded from JSON)."""
         return cls(
             direction=d.get('direction', 'LR'),
-            ignore_case=d.get('ignore_case', False),
+            ignore_case_labels=d.get('ignore_case_labels', d.get('ignore_case', False)),
+            ignore_case_values=d.get('ignore_case_values', d.get('ignore_case', False)),
             currency_sign=d.get('currency_sign', '€'),
             sheet_name=d.get('sheet_name'),
             lbl_defs=[tuple(t) for t in d.get('lbl_defs', [])],
             var_defs=[tuple(t) for t in d.get('var_defs', [])],
             body_rows=[list(r) for r in d.get('body_rows', [])],
+            template=d.get('template', False),
+            trim_whitespace_labels=d.get('trim_whitespace_labels', d.get('trim_whitespace', False)),
+            trim_whitespace_values=d.get('trim_whitespace_values', d.get('trim_whitespace', False)),
+            lbl_match=d.get('lbl_match', ''),
+            var_match=d.get('var_match', ''),
+            empty_aliases=list(d.get('empty_aliases', [])),
         )
+
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -320,8 +341,10 @@ def _run_config_phase(state: WizardState) -> None:
     direction = _ask('Scan direction (LR / TD)', 'LR').upper()
     state.direction = direction if direction in ('LR', 'TD') else 'LR'
 
-    ic = _ask('Ignore case (yes/no)', 'no').lower()
-    state.ignore_case = ic in ('yes', 'y')
+    ic = _ask('Ignore case for labels (yes/no)', 'no').lower()
+    state.ignore_case_labels = ic in ('yes', 'y')
+    ic_v = _ask('Ignore case for values (yes/no)', 'no').lower()
+    state.ignore_case_values = ic_v in ('yes', 'y')
 
     currency = _ask('Currency symbol', '€')
     state.currency_sign = currency if currency else '€'
@@ -369,7 +392,7 @@ def _handle_field_label(state: WizardState, value: Any) -> str:
     if not name:
         name = default_name
     ltype = _var_type_from_proposal(_propose_type(value))
-    state.lbl_defs.append((name, ltype, str(value) if value is not None else ''))
+    state.lbl_defs.append((name, ltype, str(value) if value is not None else '', ''))
     state.body_rows.append(['cell:1', name])
     # Derive base for lookahead: strip _label suffix if present
     base = name[:-6] if name.endswith('_label') else name
@@ -386,7 +409,7 @@ def _handle_control_label(state: WizardState, value: Any) -> None:
     if not name:
         name = slug
     ltype = _var_type_from_proposal(_propose_type(value))
-    state.lbl_defs.append((name, ltype, str(value) if value is not None else ''))
+    state.lbl_defs.append((name, ltype, str(value) if value is not None else '', ''))
     state.body_rows.append(['cell:1', name])
 
 
@@ -405,7 +428,7 @@ def _handle_variable(state: WizardState, value: Any, proposal: str,
     type_default = _var_type_from_proposal(proposal)
     ftype = _ask(_c('  Type', _C.CYAN), type_default) or type_default
     match = _ask(_c('  Match pattern', _C.CYAN), '.*') or '.*'
-    state.var_defs.append((name, ftype, match))
+    state.var_defs.append((name, ftype, match, ''))
     state.body_rows.append(['cell:1', name])
 
 
@@ -479,7 +502,7 @@ def _run_cell_walk(ws, state: WizardState, data_file: str,
         print(line2)
 
         if ref in seen:
-            print(_c('  ⚠  Already classified this session'
+            print(_c('  🟡  Already classified this session'
                      ' — reclassifying adds a duplicate instruction.', _C.YELLOW))
 
         print(sep)
@@ -621,8 +644,8 @@ def _run_table_subflow(ws, state: WizardState,
     print(f'\n  {_c(f"--- Table columns (header row {start_row}) ---", _C.DIM)}')
     header_lbl_names: list[str] = []
     header_var_names: list[str] = []
-    new_lbl_defs: list[tuple[str, str, str]] = []
-    new_var_defs: list[tuple[str, str, str]] = []
+    new_lbl_defs: list[tuple] = []
+    new_var_defs: list[tuple] = []
     max_col = ws.max_column or 1
 
     for col in range(start_col, max_col + 1):
@@ -660,8 +683,8 @@ def _run_table_subflow(ws, state: WizardState,
         var_type = _ask(_c('    Type', _C.CYAN), type_proposal) or type_proposal
         var_match = _ask(_c('    Match pattern', _C.CYAN), '.*') or '.*'
 
-        new_lbl_defs.append((col_lbl, 'string', str(value)))
-        new_var_defs.append((var_name, var_type, var_match))
+        new_lbl_defs.append((col_lbl, 'string', str(value), ''))
+        new_var_defs.append((var_name, var_type, var_match, ''))
         header_lbl_names.append(col_lbl)
         header_var_names.append(var_name)
 
@@ -695,7 +718,7 @@ def _run_table_subflow(ws, state: WizardState,
                     default_name,
                 )
                 footer_fields.append(name)
-                new_var_defs.append((name, 'string', '.*'))
+                new_var_defs.append((name, 'string', '.*', ''))
         footer_row_vals = footer_fields
 
     state.lbl_defs.extend(new_lbl_defs)
@@ -726,13 +749,32 @@ def _pattern_rows(state: WizardState) -> list[list]:
     """Flat list of rows for the pattern — shared by CSV and xlsx writers."""
     rows: list[list] = []
     rows.append(['config:', 'read.direction', state.direction])
-    if state.ignore_case:
-        rows.append(['config:', 'ignore.case', 'yes'])
+    if state.ignore_case_labels:
+        rows.append(['config:', 'ignore.case.labels', 'yes'])
+    if state.ignore_case_values:
+        rows.append(['config:', 'ignore.case.values', 'yes'])
+    if state.trim_whitespace_labels:
+        rows.append(['config:', 'trim.whitespace.labels', 'yes'])
+    if state.trim_whitespace_values:
+        rows.append(['config:', 'trim.whitespace.values', 'yes'])
     rows.append(['config:', 'currency.sign', state.currency_sign])
-    for name, ltype, value in state.lbl_defs:
-        rows.append(['lbl:', name, ltype, value])
-    for name, vtype, match in state.var_defs:
-        rows.append(['var:', name, vtype, match])
+    if state.lbl_match:
+        rows.append(['config:', 'lbl.match', state.lbl_match])
+    if state.var_match:
+        rows.append(['config:', 'var.match', state.var_match])
+    for alias in state.empty_aliases:
+        rows.append(['config:', 'empty.aliases', alias])
+    for t in state.lbl_defs:
+        name, ltype, value = t[0], t[1], t[2]
+        lbl_mode = t[3] if len(t) > 3 else ''
+        # '(default)' is the UI sentinel for "use global default" — never write it
+        col_a = f'lbl:{lbl_mode}' if lbl_mode and lbl_mode != '(default)' else 'lbl:'
+        rows.append([col_a, name, ltype, value])
+    for t in state.var_defs:
+        name, vtype, match = t[0], t[1], t[2]
+        col_a_extra = t[3] if len(t) > 3 else ''
+        col_a = f'var:{col_a_extra}' if col_a_extra else 'var:'
+        rows.append([col_a, name, vtype, match])
     rows.append(['START:'])
     for row in state.body_rows:
         rows.append(row)
@@ -745,12 +787,14 @@ def _write_pattern(state: WizardState, output_path: str) -> None:
     rows = _pattern_rows(state)
     if os.path.splitext(output_path)[1].lower() == '.xlsx':
         import openpyxl as _openpyxl  # already a core dependency
+        from .pattern_colors import colorize_pattern_file
         wb = _openpyxl.Workbook()
         ws = wb.active
         ws.title = 'pattern'
         for row in rows:
             ws.append([str(c) if c is not None else '' for c in row])
         wb.save(output_path)
+        colorize_pattern_file(output_path)
     else:
         with open(output_path, 'w', newline='', encoding='utf-8') as f:
             writer = csv.writer(f)
@@ -771,11 +815,17 @@ def run_wizard(
     data_file: str | None,
     sheet: str | None = None,
     output: str | None = None,
+    fmt: str = 'xlsx',
     no_tui: bool = False,
     load_state: str | None = None,
     save_state: str | None = None,
+    load_pattern: str | None = None,
 ) -> int:
-    """Interactive wizard: loads *data_file*, walks cells, writes a CSV pattern.
+    """Interactive wizard: loads *data_file*, walks cells, writes a pattern file.
+
+    *fmt* controls the default output format when *output* is not given —
+    ``'xlsx'`` (default) or ``'csv'``.  When *output* is specified its
+    extension takes precedence.
 
     When *textual* is installed and stdout is a TTY the full-screen TUI is used
     by default.  Pass ``no_tui=True`` (or set ``GREPXCEL_NO_TUI=1``) to fall
@@ -787,6 +837,11 @@ def run_wizard(
     ``save_state``
         Path to write the wizard session state as JSON after the pattern is saved.
         Enables replay and scripted testing.
+    ``load_pattern``
+        Path to an existing pattern file (.xlsx or .csv).  Pre-populates the
+        TUI with field classifications from that pattern so the user can review
+        and adjust rather than start from scratch.  Ignored in ``--no-tui``
+        / sequential mode.
     """
     # ── load-state mode: JSON → pattern, no interactive walk ─────────────────
     if load_state:
@@ -800,24 +855,30 @@ def run_wizard(
             stem = os.path.splitext(os.path.basename(load_state))[0]
             if data_file:
                 stem = os.path.splitext(os.path.basename(data_file))[0]
-            output = f'pattern-{stem}.csv'
+            ts     = datetime.datetime.now().strftime('%Y%m%d%H%M%S')
+            output = f'{stem}-wizard-{ts}.{fmt}'
         _write_pattern(state, output)
-        print(_c(f'\n✓  Pattern written to: {output}', _C.BOLD, _C.GREEN))
+        print(_c(f'\n🟢  Pattern written to: {output}', _C.BOLD, _C.GREEN))
         if save_state:
             _save_state_json(state, save_state)
         return 0
 
-    # Try TUI first — falls back if textual not installed or not a TTY
-    _force_seq = no_tui or os.environ.get('GREPXCEL_NO_TUI', '') not in ('', '0')
-    if not _force_seq and sys.stdout.isatty():
-        try:
-            from .wizard_tui import run_wizard_tui
-            rc = run_wizard_tui(data_file, sheet=sheet, output=output,
-                                save_state=save_state)
-            if rc != 2:          # 2 = textual not installed → fall through
-                return rc
-        except Exception:
-            pass                 # unexpected TUI error → fall through to sequential
+    # TUI wizard is deprecated in favour of the browser-based web-wizard.
+    # It is disabled here; the sequential terminal wizard below is the fallback.
+    # NOTE: wizard_tui.py is NOT removed — wizard_api.py imports pure-Python
+    #       utilities from it (_infer_cell_type, _preload_from_pattern, etc.).
+    _c_dim = '\033[2m'
+    _c_rst = '\033[0m'
+    if sys.stdout.isatty():
+        print(
+            f'{_c_dim}ℹ  The TUI wizard is deprecated.  '
+            f'For the best experience use:\n'
+            f'   grepxcel web-wizard {data_file}\n'
+            f'Continuing with the sequential terminal wizard…{_c_rst}',
+            file=sys.stderr,
+        )
+    # _force_seq kept for the env-var / --no-tui path; TUI branch is intentionally skipped
+    _force_seq = True  # noqa: F841 (kept for readability / future re-enable)
     try:
         import openpyxl
         wb = openpyxl.load_workbook(data_file, data_only=True)
@@ -845,9 +906,10 @@ def run_wizard(
     state = WizardState(sheet_name=ws.title)
 
     if not output:
-        stem = os.path.splitext(os.path.basename(data_file))[0]
+        stem   = os.path.splitext(os.path.basename(data_file))[0]
+        ts     = datetime.datetime.now().strftime('%Y%m%d%H%M%S')
         output = os.path.join(os.path.dirname(os.path.abspath(data_file)),
-                              f'pattern-{stem}.csv')
+                              f'{stem}-wizard-{ts}.{fmt}')
 
     print(_c('\ngrepxcel wizard', _C.BOLD, _C.CYAN)
           + f' — {_c(os.path.basename(data_file), _C.WHITE)}'
@@ -891,7 +953,7 @@ def run_wizard(
     print(_c('─' * 49, _C.DIM))
 
     # B4: warn on duplicate field names (lbl: and var: names share the same namespace)
-    all_names = [n for n, _, _ in state.lbl_defs] + [n for n, _, _ in state.var_defs]
+    all_names = [t[0] for t in state.lbl_defs] + [t[0] for t in state.var_defs]
     seen: set[str] = set()
     dups: list[str] = []
     for n in all_names:
@@ -900,7 +962,7 @@ def run_wizard(
         seen.add(n)
     if dups:
         dup_list = ', '.join(sorted(set(dups)))
-        print(_c(f'\n⚠  Duplicate field name(s): {dup_list}', _C.YELLOW))
+        print(_c(f'\n🟡  Duplicate field name(s): {dup_list}', _C.YELLOW))
         print(_c('   Fields with the same name will overwrite each other in the pattern.',
                  _C.DIM))
         answer = _ask(_c('   Save anyway?', _C.CYAN), 'no')

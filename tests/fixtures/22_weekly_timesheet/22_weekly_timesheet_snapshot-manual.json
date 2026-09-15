@@ -9,21 +9,163 @@
   "employee": {
     "name": "Shir Rosenstein",
     "manager": "Naoki Kaneko",
-    "week_starting": "2026-06-18 00:00:00"
+    "rate": {
+      "regular": 15,
+      "overtime": 22.5,
+      "sick": 15,
+      "holiday": 15,
+      "vacation": 15
+    },
+    "pay": {
+      "regular": 675,
+      "overtime": 52.5,
+      "sick": 247.5,
+      "holiday": 120,
+      "vacation": 120,
+      "grand_total": 1215
+    }
   },
-  "rate": {
-    "regular": 15,
-    "overtime": 22.5,
-    "sick": 15,
-    "holiday": 15,
-    "vacation": 15
+  "timesheet": {
+    "week_starting": "2026-09-12 00:00:00"
   },
-  "pay": {
-    "regular": 675,
-    "overtime": 52.5,
-    "sick": 247.5,
-    "holiday": 0,
-    "vacation": 0,
-    "grand_total": 975
-  }
+  "weekDay": [
+    {
+      "_source": {
+        "sheet": "TimeSheet",
+        "ref": "B9:L17"
+      },
+      "data": [
+        {
+          "date": "2026-09-12 00:00:00",
+          "timeIn": "09:05:00",
+          "breakMinutes": 15,
+          "timeOut": "18:00:00",
+          "dayTotalTime": "8:40:00",
+          "dayRegularTime": "8:00:00",
+          "dayOverTime": "0:40:00",
+          "daySickTime": null,
+          "dayHolidayTime": null,
+          "dayVacationTime": null
+        },
+        {
+          "date": "2026-09-13 00:00:00",
+          "timeIn": "09:05:00",
+          "breakMinutes": 30,
+          "timeOut": "17:45:00",
+          "dayTotalTime": "8:10:00",
+          "dayRegularTime": "8:00:00",
+          "dayOverTime": "0:10:00",
+          "daySickTime": null,
+          "dayHolidayTime": null,
+          "dayVacationTime": null
+        },
+        {
+          "date": "2026-09-14 00:00:00",
+          "timeIn": "09:00:00",
+          "breakMinutes": 45,
+          "timeOut": "18:30:00",
+          "dayTotalTime": "8:45:00",
+          "dayRegularTime": "8:00:00",
+          "dayOverTime": "0:45:00",
+          "daySickTime": null,
+          "dayHolidayTime": null,
+          "dayVacationTime": null
+        },
+        {
+          "date": "2026-09-15 00:00:00",
+          "timeIn": "09:00:00",
+          "breakMinutes": 45,
+          "timeOut": "18:30:00",
+          "dayTotalTime": "8:45:00",
+          "dayRegularTime": "8:00:00",
+          "dayOverTime": "0:45:00",
+          "daySickTime": null,
+          "dayHolidayTime": null,
+          "dayVacationTime": null
+        },
+        {
+          "date": "2026-09-16 00:00:00",
+          "timeIn": null,
+          "breakMinutes": null,
+          "timeOut": null,
+          "dayTotalTime": "0:00:00",
+          "dayRegularTime": null,
+          "dayOverTime": null,
+          "daySickTime": "8:00:00",
+          "dayHolidayTime": null,
+          "dayVacationTime": null
+        },
+        {
+          "date": "2026-09-17 00:00:00",
+          "timeIn": null,
+          "breakMinutes": null,
+          "timeOut": null,
+          "dayTotalTime": "0:00:00",
+          "dayRegularTime": null,
+          "dayOverTime": null,
+          "daySickTime": null,
+          "dayHolidayTime": "8:00:00",
+          "dayVacationTime": null
+        },
+        {
+          "date": "2026-09-18 00:00:00",
+          "timeIn": null,
+          "breakMinutes": null,
+          "timeOut": null,
+          "dayTotalTime": "0:00:00",
+          "dayRegularTime": null,
+          "dayOverTime": null,
+          "daySickTime": null,
+          "dayHolidayTime": null,
+          "dayVacationTime": "8:00:00"
+        }
+      ],
+      "footer": {
+        "regularTime": "1 day, 8:00:00",
+        "overTime": "2:20:00",
+        "sickTime": "8:00:00",
+        "holidayTime": "8:00:00",
+        "vacationTime": "8:00:00"
+      }
+    },
+    {
+      "_source": {
+        "sheet": "TimeSheet",
+        "ref": "B19:L27"
+      },
+      "data": [
+        {
+          "date": "2026-09-19 00:00:00",
+          "timeIn": "07:00:00",
+          "breakMinutes": 60,
+          "timeOut": "20:00:00",
+          "dayTotalTime": "12:00:00",
+          "dayRegularTime": "13:00:00",
+          "dayOverTime": null,
+          "daySickTime": null,
+          "dayHolidayTime": null,
+          "dayVacationTime": null
+        },
+        {
+          "date": "2026-09-20 00:00:00",
+          "timeIn": "08:00:00",
+          "breakMinutes": 45,
+          "timeOut": "16:30:00",
+          "dayTotalTime": "7:45:00",
+          "dayRegularTime": null,
+          "dayOverTime": null,
+          "daySickTime": "8:30:00",
+          "dayHolidayTime": null,
+          "dayVacationTime": null
+        }
+      ],
+      "footer": {
+        "regularTime": "13:00:00",
+        "overTime": "0:00:00",
+        "sickTime": "8:30:00",
+        "holidayTime": "0:00:00",
+        "vacationTime": "0:00:00"
+      }
+    }
+  ]
 }

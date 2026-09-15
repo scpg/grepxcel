@@ -65,6 +65,11 @@ mcp = [
 wizard = [
     "textual>=8.0",
 ]
+web = [
+    "fastapi>=0.141",
+    "uvicorn>=0.52",
+    "jinja2>=3.1",
+]
 dev = [
     "pytest>=8.0",
     "jsonschema>=4.20",
@@ -88,4 +93,5 @@ where = ["."]
 include = ["grepxcel*"]
 
 [tool.setuptools.package-data]
-"grepxcel.examples" = ["*/*.xlsx"]
+"grepxcel.examples"   = ["*/*.xlsx"]
+"grepxcel.templates"  = ["*.html"]

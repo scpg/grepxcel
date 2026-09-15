@@ -29,6 +29,29 @@ def test_empty_alias():
 def test_empty_alias_not_match():
     assert not is_empty('N/A', empty_aliases=['n/a'])
 
+# ── is_empty: ignore_case alias matching ─────────────────────────────────────
+
+def test_empty_alias_ignore_case_lower():
+    assert is_empty('n/a', empty_aliases=['N/A'], ignore_case=True)
+
+def test_empty_alias_ignore_case_mixed():
+    assert is_empty('N/a', empty_aliases=['N/A'], ignore_case=True)
+
+def test_empty_alias_ignore_case_still_requires_content():
+    """ignore_case only affects comparison; a non-alias value is still not empty."""
+    assert not is_empty('hello', empty_aliases=['N/A'], ignore_case=True)
+
+def test_empty_alias_case_sensitive_no_match():
+    """Without ignore_case, 'n/a' does NOT match alias 'N/A'."""
+    assert not is_empty('n/a', empty_aliases=['N/A'], ignore_case=False)
+
+def test_empty_alias_ignore_case_multiple_aliases():
+    assert is_empty('tbd', empty_aliases=['N/A', 'TBD', '-'], ignore_case=True)
+
+def test_empty_alias_with_surrounding_spaces():
+    """Stripping happens before alias comparison, so '  N/A  ' matches alias 'N/A'."""
+    assert is_empty('  N/A  ', empty_aliases=['N/A'])
+
 def test_not_empty_regular_string():
     assert not is_empty('hello')
 

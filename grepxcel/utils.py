@@ -87,8 +87,13 @@ def sanitize_for_prompt(value, max_len: int = 200) -> str:
     return s
 
 
-def is_empty(value, empty_aliases=None) -> bool:
-    """Return True if a cell value should be treated as empty."""
+def is_empty(value, empty_aliases=None, ignore_case: bool = False) -> bool:
+    """Return True if a cell value should be treated as empty.
+
+    ``ignore_case`` makes alias matching case-insensitive, consistent with
+    the ``config: | ignore.case | yes`` setting.  When True, a cell value
+    ``'n/a'`` will match an alias declared as ``'N/A'``.
+    """
     if value is None:
         return True
     if isinstance(value, str):
@@ -98,8 +103,13 @@ def is_empty(value, empty_aliases=None) -> bool:
         ).strip()
         if not stripped:
             return True
-        if empty_aliases and stripped in empty_aliases:
-            return True
+        if empty_aliases:
+            if ignore_case:
+                stripped_lower = stripped.lower()
+                if any(stripped_lower == a.lower() for a in empty_aliases):
+                    return True
+            elif stripped in empty_aliases:
+                return True
     return False
 
 
