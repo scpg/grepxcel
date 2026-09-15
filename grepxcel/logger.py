@@ -783,6 +783,22 @@ class Logger:
         )
         self._write(VerbosityLevel.NORMAL, f'\n  {MARK_WARN}  {msg}')
 
+    def warn_assert(self, message: str, hint: str = '') -> LogRecord:
+        """Record a failed assert: cross-field rule as a WARNING."""
+        rec = LogRecord(
+            severity=Severity.WARNING,
+            category=Category.VALIDATION,
+            message=message,
+            hint=hint,
+        )
+        self._store(rec)
+        lines = [f'\n  {MARK_WARN}  [assert] {message}']
+        if hint:
+            lines.append(f'     → {hint}')
+        rec._formatted = '\n'.join(lines)
+        self._write(VerbosityLevel.NORMAL, rec._formatted)
+        return rec
+
     def fatal(self, message: str, location: str = '',
               expected: str = '', found: str = '') -> NoReturn:
         """Log a fatal error and raise EngineError to stop processing."""

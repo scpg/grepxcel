@@ -6,7 +6,9 @@ import openpyxl
 from openpyxl.utils import get_column_letter
 from openpyxl.utils.cell import coordinate_to_tuple
 
-from .models import Config, FieldDef, TemplateColumn, TemplateRow, CellInstruction, TableInstruction, SeekInstruction, DirectionInstruction, LBL_MATCH_MODES, VAR_MATCH_MODES
+from .models import (AssertRule, Config, FieldDef, TemplateColumn, TemplateRow,
+                      CellInstruction, TableInstruction, SeekInstruction,
+                      DirectionInstruction, LBL_MATCH_MODES, VAR_MATCH_MODES)
 from .security import check_regex_safety, SecurityError
 
 _MAX_PATTERN_CELL_LEN = 1_000  # max characters in any pattern file cell value
@@ -185,12 +187,16 @@ class PatternParser:
         Both formats are read into a common 2D-grid IR (list[list[str|None]]);
         all semantics below operate on that grid, so the two source formats share
         one parser. See _read_grid for the format dispatch.
+
+        After parse() returns, ``self.assert_rules`` holds any ``assert:`` rules
+        found in the pattern (list[AssertRule], empty if none were defined).
         """
         rows = self._read_grid(filepath)
 
         global_config = Config()
         defs = {}
         start_sequence = []
+        self.assert_rules = []   # list[AssertRule]; populated below
 
         i = 0
         in_start = False
@@ -244,11 +250,34 @@ class PatternParser:
                     self._check_comment_zone(row, 4, i + 1, col_a_l)
                 elif col_a_l in ('doc:', 'info:'):
                     pass  # inline documentation — ignored by engine
+                elif col_a_l == 'assert:':
+                    expr = row[1] if len(row) > 1 else None
+                    if not expr or not str(expr).strip():
+                        raise PatternError(
+                            f"assert: at pattern row {i + 1} has no expression in column B."
+                        )
+                    # Validate the expression at parse time so invalid syntax is
+                    # caught by validate-pattern before any extraction attempt.
+                    expr_str = str(expr).strip()
+                    from .assert_eval import parse_assert, AssertParseError
+                    try:
+                        parse_assert(expr_str)
+                    except AssertParseError as exc:
+                        raise PatternError(
+                            f"assert: at pattern row {i + 1}: {exc}"
+                        ) from exc
+                    msg_val = row[2] if len(row) > 2 else None
+                    msg = str(msg_val).strip() if msg_val and str(msg_val).strip() else ''
+                    self.assert_rules.append(AssertRule(
+                        expression=expr_str,
+                        message=msg,
+                        row_num=i + 1,
+                    ))
                 elif col_a is not None and str(col_a).strip() != '':
                     raise PatternError(
                         f"Unrecognised row {col_a!r} at pattern row {i + 1} "
                         f"(before START:). Expected config:, var:, lbl:, def:, "
-                        f"doc:, info:, or START:."
+                        f"doc:, info:, assert:, or START:."
                     )
                 elif row[1] is not None and str(row[1]).strip():
                     # Column A is empty but column B has content — likely a
@@ -272,7 +301,7 @@ class PatternParser:
                         f"Pattern row {i + 1}: column A is empty but column B "
                         f"contains {row[1]!r}. Each row before START: must begin "
                         f"with a recognised marker in column A "
-                        f"(config:, var:, lbl:, def:, doc:, info:, or START:)."
+                        f"(config:, var:, lbl:, def:, doc:, info:, assert:, or START:)."
                     )
                 i += 1
                 continue
