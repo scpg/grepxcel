@@ -84,6 +84,10 @@ dev = [
     "pytest>=8.0",
     "jsonschema>=4.20",
 ]
+build = [
+    # CVE-2025-59042 fixed in 6.10 (reworked bootstrap, eliminates sys.path injection)
+    "pyinstaller>=6.10",
+]
 
 [project.urls]
 Homepage = "https://github.com/scpg/grepxcel"

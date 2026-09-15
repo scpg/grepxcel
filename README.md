@@ -79,6 +79,23 @@ You don't need to be a programmer to use grepxcel. You do need to be comfortable
 
 ## Install
 
+### Pre-built binaries (no Python required)
+
+Download the latest binary for your platform from the [Releases page](https://github.com/scpg/grepxcel/releases):
+
+| Platform | File |
+|---|---|
+| Linux x64 | `grepxcel-linux-x64` |
+| macOS (Apple Silicon) | `grepxcel-macos-arm64` |
+| Windows x64 | `grepxcel-windows-x64.exe` |
+
+**First run on macOS:** right-click → Open (bypasses Gatekeeper for unsigned binaries).  
+**First run on Windows:** click "More info" → "Run anyway" (SmartScreen warning for unsigned binaries).
+
+> Binaries are currently unsigned. Code signing — which eliminates these warnings — is on the roadmap once the project reaches sustainable community support. If grepxcel saves you time, [consider supporting it](https://buymeacoffee.com/scpg.dev).
+
+### via pip (recommended for Python users)
+
 ```bash
 pip install grepxcel
 ```
