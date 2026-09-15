@@ -119,18 +119,10 @@ The CLI is subcommand-based: `extract`, `validate-pattern`, `draft`, `docs`, `li
 > The pattern file may be `.xlsx` **or** `.csv`. `suggest` is a hidden
 > backward-compatible alias for `draft`.
 
-> **Note on venv activation — for Claude (AI):** `source .venv/bin/activate` must
-> never be used by Claude. Each `Bash` tool call runs in a new shell process, so any
-> activation would evaporate immediately and have no effect. More importantly, granting
-> an AI unrestricted access to `bash` or `source` is a real security risk — Claude Code
-> deliberately allowlists only specific, narrow commands (`Bash(.venv/bin/pytest *)`,
-> `Bash(.venv/bin/grepxcel *)`) in `.claude/settings.local.json`. Claude must always
-> call tools by their full path (`.venv/bin/pytest`, `.venv/bin/grepxcel`, etc.) and
-> never attempt to activate the venv or run shell builtins.
->
-> **Note on venv activation — for humans:** `source .venv/bin/activate` works normally
-> from the project root. Activate whenever you need an interactive Python session, `pip`,
-> or any other venv tool beyond `pytest` and `grepxcel`.
+> **Note on venv activation:** `source .venv/bin/activate` works normally from the
+> project root. Activate whenever you need an interactive Python session, `pip`, or any
+> other venv tool beyond `pytest` and `grepxcel`. Always use full paths in scripts
+> (`.venv/bin/pytest`, `.venv/bin/grepxcel`, etc.) so they work without activation.
 
 ### CLI parameters (`grepxcel extract`)
 
@@ -182,5 +174,3 @@ gh pr merge <PR-number> --squash
 # 5. Sync local main (optional)
 git fetch origin main
 ```
-
-`gh pr *` and `gh run *` are allowlisted in `.claude/settings.local.json`.
