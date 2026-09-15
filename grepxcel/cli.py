@@ -829,7 +829,7 @@ def _process_file(pattern: str, data_file: str, args,
         from .xlsx_writer import nested_to_xlsx
         os.makedirs(args.output, exist_ok=True)
         out_path = os.path.join(args.output, f'{stem}.xlsx')
-        nested_to_xlsx(result, out_path)
+        nested_to_xlsx(result, out_path, logger=logger)
         print(f'\n  Excel report written to: {out_path}', file=sys.stderr)
     elif is_csv:
         from .csv_writer import nested_to_csv
