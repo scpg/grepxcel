@@ -101,10 +101,10 @@ jobs:
         with:
           python-version: "3.12"
 
-      # TestPyPI propagates new releases within ~30 s; give it a moment before
+      # TestPyPI propagates new releases within ~60 s; give it a moment before
       # the first install attempt to avoid a confusing "version not found" error.
-      - name: Wait for TestPyPI index propagation (~30 s)
-        run: sleep 30
+      - name: Wait for TestPyPI index propagation (~60 s)
+        run: sleep 60
 
       # Install the exact pre-release version we just published.
       #
