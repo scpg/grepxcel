@@ -75,7 +75,9 @@ That's it. Same pattern works on next month's invoice, and the one after that.
 - **ETL pipelines** — replace brittle `openpyxl` scripts that break when a column shifts
 - **Research and clinical data** — reject files that deviate from the expected structure before they corrupt your dataset
 
-You don't need to be a programmer to use grepxcel. You do need to be comfortable editing a simple spreadsheet to create your first pattern.
+You don't need to be a programmer to use grepxcel.
+
+**Non-developers:** use the browser-based web wizard (`pip install "grepxcel[web]"` then `grepxcel web-wizard data.xlsx`) — click cells in the browser to classify them, download the pattern, and run the extraction. No coding required after install. See [docs/web-wizard-guide.md](https://github.com/scpg/grepxcel/blob/main/docs/web-wizard-guide.md) for a walkthrough.
 
 ## Install
 
@@ -212,6 +214,11 @@ import grepxcel
 result = grepxcel.extract("pattern.xlsx", "data.xlsx")
 print(result["po"]["number"])        # "PO-2026"
 
+# Flat tables — skip the {"_source": ..., "data": [...]} envelope
+result = grepxcel.extract("pattern.xlsx", "data.xlsx", flat_tables=True)
+for row in result["line"]:          # each row dict directly, no unwrapping
+    print(row["item"])
+
 # Get DataFrames (pip install 'grepxcel[pandas]' or 'grepxcel[polars]')
 frames = grepxcel.extract_df("pattern.xlsx", "data.xlsx")
 frames["line"]                       # pandas or polars DataFrame of all table rows
@@ -238,6 +245,11 @@ Fields with dot notation are grouped into nested objects. Tables produce arrays.
 }
 ```
 
+Each table instance is wrapped with `{"data": [...], "footer": {...}}` so per-instance
+metadata (source location, header/footer subtotals) survives. If you just want the rows,
+use `--no-source` on the CLI or `flat_tables=True` in the Python API — the wrapper is
+removed and each table key maps directly to a list of row dicts.
+
 ## What's new in v0.3.0
 
 - **Browser-based wizard** — `grepxcel web-wizard file.xlsx` opens a point-and-click UI to classify cells visually
@@ -250,7 +262,10 @@ Full history: [CHANGELOG.md](https://github.com/scpg/grepxcel/blob/main/CHANGELO
 
 | Topic | Where to look |
 |---|---|
+| **Web wizard guide** (mouse-driven UI, non-developers) | [docs/web-wizard-guide.md](https://github.com/scpg/grepxcel/blob/main/docs/web-wizard-guide.md) |
 | Pattern file reference (all instructions, types, config) | [docs/pattern-file.md](https://github.com/scpg/grepxcel/blob/main/docs/pattern-file.md) |
+| Advanced patterns: bounded rows `DATA:{n,m}`, `SKIP_IF` | [docs/pattern-file.md#bounded-and-sparse-rows](https://github.com/scpg/grepxcel/blob/main/docs/pattern-file.md) |
+| Merged cells — how grepxcel handles them | [docs/pattern-file.md#merged-cells](https://github.com/scpg/grepxcel/blob/main/docs/pattern-file.md#merged-cells) |
 | Engineering philosophy and design principles | [docs/MINDSET.md](https://github.com/scpg/grepxcel/blob/main/docs/MINDSET.md) |
 | Draft command evaluation (model quality, benchmarks) | [docs/EVALUATION.md](https://github.com/scpg/grepxcel/blob/main/docs/EVALUATION.md) |
 | CLI flags and options (full reference) | [docs/cli-reference.md](https://github.com/scpg/grepxcel/blob/main/docs/cli-reference.md) |

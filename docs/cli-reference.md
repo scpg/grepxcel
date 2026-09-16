@@ -39,6 +39,7 @@ grepxcel extract -p pattern.xlsx data.xlsx --log run.log --log-format json
 | `-l, --log FILE` | — | Append structured log to file |
 | `--log-format` | `text` | Log format: `text` (human-readable) or `json` (NDJSON for SIEM/cloud — never contains cell values) |
 | `--format {nested,legacy,csv,xlsx}` | nested | Output shape — see [Output formats](#output-formats) |
+| `--no-source` | off | Flatten table instance wrappers in JSON: each table key maps directly to a list of row dicts instead of `[{"_source": ..., "data": [...]}]`. Only applies to `--format nested`. |
 | `--meta` | off | Add `_meta` block (run_id, stats, issues) for pipeline auto-verification |
 | `--sheet NAME_OR_INDEX` | active | Sheet name or 0-based index to process |
 | `--all-sheets` | off | Process every sheet; output keyed by sheet name |
@@ -64,7 +65,7 @@ grepxcel extract -p pattern.xlsx data.xlsx --log run.log --log-format json
 | Value | Output | Notes |
 |---|---|---|
 | `nested` (default) | JSON, dot-notation grouped into nested objects; tables as arrays | stdout or `-o` directory |
-| `legacy` | JSON `{"cells": {}, "tables": []}` (flat internal shape) | stdout or `-o` directory |
+| `legacy` | JSON `{"cells": {}, "tables": []}` (flat internal shape) | ⚠️ **Deprecated** — will be removed in a future version. Leaks `lbl:` internals and `_source`/`_anchor` metadata. Migrate to `nested`. |
 | `csv` | Flat CSV: one row per table data row; scalars denormalized as repeated columns | **single-table patterns only** |
 | `xlsx` | Colored Excel report for human review (scalars, then each table top-down) | **requires `-o`** |
 
@@ -203,7 +204,7 @@ grepxcel draft data.xlsx --dry-run
 | Backend | Install | Key needed | Notes |
 |---|---|---|---|
 | `local` | `pip install 'grepxcel[suggest]'` | — | Runs offline. ~5 GB model download on first use. No data leaves your machine. |
-| `github` | `pip install 'grepxcel[draft-cloud]'` | `GITHUB_TOKEN` | Free with GitHub. Highest quality in our eval. |
+| `github` | — | — | ⚠️ **Retired** — GitHub retired the free-tier Models endpoint (HTTP 410). Not available; implementation preserved for future re-enable. |
 | `claude` | `pip install 'grepxcel[draft-cloud]'` | `ANTHROPIC_API_KEY` | ~$0.003–0.04 per draft. |
 | `server` | `pip install openai` | — | Any OpenAI-compatible server (LM Studio, Ollama, vLLM). |
 | `gemini` | — | — | Planned, not yet available. |

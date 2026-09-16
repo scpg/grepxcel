@@ -1,12 +1,13 @@
 from .engine import Engine
 from .logger import Logger, VerbosityLevel
 from .utils import flatten_nested as _flatten_pairs
+from .utils import flatten_table_instances as _flatten_table_instances
 
 __version__ = '0.3.1'
 
 
 def extract(pattern, data, *, sheet=None, all_sheets=False,
-            output_format='nested', logger=None):
+            output_format='nested', flat_tables=False, logger=None):
     """Extract data from an Excel file using a pattern — the one-call API.
 
     This is the recommended entry point for programmatic use; it wraps
@@ -22,6 +23,11 @@ def extract(pattern, data, *, sheet=None, all_sheets=False,
                  Mutually exclusive with ``all_sheets``.
         all_sheets: if True, process every sheet and return ``{sheet_name: result}``.
         output_format: ``'nested'`` (default) or ``'legacy'``.
+        flat_tables: if True, collapse table instance wrappers so each table key
+                 maps directly to a list of row dicts instead of a list of
+                 ``{"_source": ..., "data": [...]}`` envelopes.  Makes it easier
+                 to feed table data into a database or pandas without unwrapping.
+                 Ignored when ``output_format='legacy'``.
         logger:  a :class:`Logger` for progress/warnings. By default extraction is
                  silent (``VerbosityLevel.QUIET``) — pass your own logger to see output.
 
@@ -39,10 +45,18 @@ def extract(pattern, data, *, sheet=None, all_sheets=False,
 
     engine = Engine()
     if all_sheets:
-        return engine.process_all(str(pattern), str(data),
-                                  logger=logger, output_format=output_format)
-    return engine.process(str(pattern), str(data),
-                          logger=logger, sheet=sheet, output_format=output_format)
+        raw = engine.process_all(str(pattern), str(data),
+                                 logger=logger, output_format=output_format)
+        if flat_tables and output_format != 'legacy':
+            return {name: _flatten_table_instances(sheet_data)
+                    for name, sheet_data in raw.items()}
+        return raw
+
+    raw = engine.process(str(pattern), str(data),
+                         logger=logger, sheet=sheet, output_format=output_format)
+    if flat_tables and output_format != 'legacy':
+        return _flatten_table_instances(raw)
+    return raw
 
 
 def extract_df(pattern, data, *, backend=None, sheet=None, all_sheets=False,
