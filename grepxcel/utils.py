@@ -69,6 +69,36 @@ def flatten_nested(obj: dict, prefix: str = '') -> list:
     return items
 
 
+def flatten_table_instances(result: dict) -> dict:
+    """Collapse table instance wrappers produced by the ``nested`` output format.
+
+    Transforms each table key from a list of instance envelopes::
+
+        {"items": [{"_source": {...}, "data": [row, ...]}, ...]}
+
+    into a flat list of data rows::
+
+        {"items": [row, row, ...]}
+
+    Scalar values and the ``_meta`` key are passed through unchanged.
+    """
+    out: dict = {}
+    for key, value in result.items():
+        if key == '_meta':
+            out[key] = value
+        elif isinstance(value, list):
+            flat: list = []
+            for inst in value:
+                if isinstance(inst, dict) and 'data' in inst:
+                    flat.extend(inst['data'])
+                else:
+                    flat.append(inst)
+            out[key] = flat
+        else:
+            out[key] = value
+    return out
+
+
 def sanitize_for_prompt(value, max_len: int = 200) -> str:
     """Make an untrusted cell value safe to embed in an LLM prompt.
 

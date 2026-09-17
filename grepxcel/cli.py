@@ -19,6 +19,7 @@ import sys
 from .color import MARK_FAIL, MARK_OK, MARK_WARN, colorize_marks, should_color
 from .engine import Engine
 from .logger import Logger, VerbosityLevel
+from .utils import flatten_table_instances as _flatten_table_instances
 
 
 # ── JSON serialisation ────────────────────────────────────────────────────────
@@ -551,6 +552,14 @@ examples:
              'or xlsx (colored Excel report, requires -o)',
     )
     p.add_argument(
+        '--no-source',
+        action='store_true',
+        dest='no_source',
+        help='Flatten table instance wrappers in JSON output: each table key maps '
+             'directly to a list of row dicts instead of [{"_source": ..., "data": [...]}]. '
+             'Only applies to --format nested.',
+    )
+    p.add_argument(
         '--meta',
         action='store_true',
         help='Add a _meta block to the JSON output (run_id, stats, issues) '
@@ -787,6 +796,12 @@ def _process_file(pattern: str, data_file: str, args,
     output_format = getattr(args, 'format', 'nested')
     is_csv = output_format == 'csv'
     is_xlsx = output_format == 'xlsx'
+    if output_format == 'legacy':
+        print(colorize_marks(
+            f'  {MARK_WARN}  --format legacy is deprecated and will be removed in a future '
+            'version. Switch to --format nested (the default). The legacy format exposes '
+            'internal lbl: keys and _source/_anchor metadata.',
+            should_color(sys.stderr)), file=sys.stderr)
     all_sheets = getattr(args, 'all_sheets', False)
 
     engine_format = 'nested' if (is_csv or is_xlsx) else output_format
@@ -825,11 +840,17 @@ def _process_file(pattern: str, data_file: str, args,
     if getattr(args, 'meta', False):
         result['_meta'] = logger.build_meta()
 
+    if getattr(args, 'no_source', False) and engine_format == 'nested':
+        if all_sheets:
+            result = {k: _flatten_table_instances(v) for k, v in result.items()}
+        else:
+            result = _flatten_table_instances(result)
+
     if is_xlsx:
         from .xlsx_writer import nested_to_xlsx
         os.makedirs(args.output, exist_ok=True)
         out_path = os.path.join(args.output, f'{stem}.xlsx')
-        nested_to_xlsx(result, out_path)
+        nested_to_xlsx(result, out_path, logger=logger)
         print(f'\n  Excel report written to: {out_path}', file=sys.stderr)
     elif is_csv:
         from .csv_writer import nested_to_csv

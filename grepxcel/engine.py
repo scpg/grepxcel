@@ -1,5 +1,6 @@
 import fnmatch
 import re
+import warnings
 
 import regex as _re
 import openpyxl
@@ -543,6 +544,12 @@ class Engine:
         logger.summary(_raw)
 
         if output_format == 'legacy':
+            warnings.warn(
+                "--format legacy is deprecated and will be removed in a future version. "
+                "Use --format nested (the default). The legacy format leaks internal "
+                "lbl: keys and _source/_anchor metadata.",
+                DeprecationWarning, stacklevel=3,
+            )
             return _raw
         return _build_nested_output(_raw, defs)
 

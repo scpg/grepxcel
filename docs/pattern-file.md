@@ -530,3 +530,40 @@ In this example:
 | Data cell empty where a value was expected | Warning logged, `null` stored  |
 
 Fatal errors stop processing immediately and return a partial (possibly empty) result. Warnings are collected and reported in the summary.
+
+---
+
+## Merged cells
+
+Excel cells can span multiple columns or rows (merged ranges). grepxcel reads merged
+cells from the **top-left cell** of the merge range only. The remaining cells in the
+range appear empty to the engine.
+
+### Labels on merged cells
+
+If an anchor label sits on a merged cell, place the `lbl:` definition for that cell's
+top-left address in your pattern. The engine will find it normally.
+
+### Values spanning merged cells
+
+If a data value occupies a merged range, the value is read from the top-left cell.
+The other cells of the range are invisible — do not define `var:` entries for them.
+
+### Tables with merged header rows
+
+When a table has a header row where some column headers span multiple cells, the
+header labels for the merged cells will appear in the leftmost column of the merge.
+Subsequent columns of the merge will look empty. Use `IGNORE` or omit them from
+the `HEADER:1` row in your pattern.
+
+### Pattern file itself
+
+The pattern file should not use merged cells. The parser reads each cell by its
+exact address; merged ranges in a pattern file may lead to blank cells where the
+parser expects instructions.
+
+### `grepxcel lint` merged-cell report
+
+Running `grepxcel lint data.xlsx` reports all merged ranges in the file. This is
+useful to identify which cells in a complex sheet are top-left anchors before
+building a pattern.
