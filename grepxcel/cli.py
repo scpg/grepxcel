@@ -90,26 +90,7 @@ def _build_parser() -> argparse.ArgumentParser:
         prog='grepxcel',
         description='Extract structured data from Excel files using a pattern.',
         formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-commands:
-  extract            Extract data from Excel files using a pattern file
-  validate-pattern   Check a pattern file is valid to use (no extraction)
-  watch              Monitor a directory and extract new files automatically
-  draft              Use a local LLM to draft a starter pattern file
-  wizard             Interactively build a pattern file cell by cell
-  docs               Write a pattern-format reference xlsx (pattern-reference.xlsx)
-  lint               Inspect an Excel file for potential extraction issues
-  schema             Generate a JSON Schema from a pattern file
-  generate-skill     Write an AI-agent skill doc (Claude / AGENTS.md)
-  generate-examples  Create ready-to-run example files in a local directory
-  mcp                Start the MCP server (stdio transport)
-  mcp-config         Print the MCP server config for your AI agent
-  doctor             Check the environment is ready (deps, keys, model, proxy/TLS)
-  quickstart         Guided tutorial — learn grepxcel in your terminal
-  test               Run a pattern against a directory of .xlsx files and report reliability
-
-Run 'grepxcel <command> --help' for per-command options.
-        """,
+        epilog="Run 'grepxcel <command> --help' for per-command options.",
     )
     from . import __version__
     p.add_argument(
@@ -117,7 +98,7 @@ Run 'grepxcel <command> --help' for per-command options.
         action='version',
         version=f'%(prog)s {__version__}',
     )
-    sub = p.add_subparsers(dest='command', metavar='COMMAND')
+    sub = p.add_subparsers(dest='command', metavar='COMMAND', title='commands')
     sub.required = True
 
     _add_extract_subparser(sub)
