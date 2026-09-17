@@ -1,0 +1,136 @@
+name: Binary release
+
+# Builds native single-file executables for Linux, macOS, and Windows using
+# PyInstaller and attaches them to the GitHub Release created by release.yml.
+#
+# Trigger: same v* tag push that fires release.yml.  The two workflows run in
+# parallel; this one waits for the GitHub Release to exist (created by
+# release.yml) before attaching assets, so ordering does not matter.
+#
+# Binaries bundle only the base grepxcel CLI — no optional extras (web, wizard,
+# draft).  They are currently unsigned; code signing is planned once the project
+# reaches sustainable community support.
+#
+# CVE note: PyInstaller >=6.10 is required (CVE-2025-59042 local-privilege-
+# escalation fixed in 6.10 via bootstrap rework).
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions: {}   # default nothing; jobs opt in below
+
+jobs:
+  # ── Per-platform build ────────────────────────────────────────────────────
+  build:
+    name: Build (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact_name: grepxcel-linux-x64
+            binary_path: dist/grepxcel
+          - os: macos-latest
+            artifact_name: grepxcel-macos-arm64
+            binary_path: dist/grepxcel
+          - os: windows-latest
+            artifact_name: grepxcel-windows-x64.exe
+            binary_path: dist/grepxcel.exe
+
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v6
+        with:
+          python-version: "3.12"
+
+      # Install UPX for binary compression (Linux/macOS only; Windows handled below).
+      - name: Install UPX (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y upx-ucl
+
+      - name: Install UPX (macOS)
+        if: runner.os == 'macOS'
+        run: brew install upx
+
+      # UPX on Windows via Chocolatey (pre-installed on windows-latest runners).
+      - name: Install UPX (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: choco install upx --no-progress -y
+
+      - name: Install grepxcel and PyInstaller
+        run: |
+          python -m pip install --upgrade pip
+          pip install ".[build]"
+          pip install "pyinstaller>=6.10"
+
+      - name: Build binary
+        run: pyinstaller grepxcel.spec
+
+      - name: Rename binary to platform name (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: mv dist/grepxcel dist/${{ matrix.artifact_name }}
+
+      - name: Rename binary to platform name (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Move-Item dist\grepxcel.exe dist\${{ matrix.artifact_name }}
+
+      # Quick smoke-test: binary must start and print a version line.
+      - name: Smoke-test binary (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: dist/${{ matrix.artifact_name }} --version
+
+      - name: Smoke-test binary (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: dist\${{ matrix.artifact_name }} --version
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: dist/${{ matrix.artifact_name }}
+          retention-days: 1
+
+  # ── Attach all binaries to the GitHub Release ────────────────────────────
+  attach:
+    name: Attach binaries to release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write   # required to upload release assets
+
+    steps:
+      # Download all three platform artifacts into a staging directory.
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: dist/
+          merge-multiple: true
+
+      - name: Compute SHA-256 checksums
+        run: |
+          cd dist
+          sha256sum grepxcel-linux-x64 grepxcel-macos-arm64 grepxcel-windows-x64.exe \
+            > checksums.sha256
+          cat checksums.sha256
+
+      - name: Attach to GitHub Release
+        uses: softprops/action-gh-release@c95fe1489396fe8a9eb87c3a9f2a2e92ca401b93 # v2.2.1
+        with:
+          # The release was already created by release.yml; just append files.
+          tag_name: ${{ github.ref_name }}
+          fail_on_unmatched_files: true
+          files: |
+            dist/grepxcel-linux-x64
+            dist/grepxcel-macos-arm64
+            dist/grepxcel-windows-x64.exe
+            dist/checksums.sha256
