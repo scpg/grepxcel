@@ -75,6 +75,11 @@ mcp = [
 wizard = [
     "textual>=8.0",
 ]
+watch = [
+    # watchdog>=4.0 for inotify/FSEvents/ReadDirectoryChangesW support.
+    # No known CVEs as of 2026-09.
+    "watchdog>=4.0",
+]
 web = [
     "fastapi>=0.141",
     "uvicorn>=0.52",

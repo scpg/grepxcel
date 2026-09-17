@@ -94,6 +94,7 @@ def _build_parser() -> argparse.ArgumentParser:
 commands:
   extract            Extract data from Excel files using a pattern file
   validate-pattern   Check a pattern file is valid to use (no extraction)
+  watch              Monitor a directory and extract new files automatically
   draft              Use a local LLM to draft a starter pattern file
   wizard             Interactively build a pattern file cell by cell
   docs               Write a pattern-format reference xlsx (pattern-reference.xlsx)
@@ -121,6 +122,7 @@ Run 'grepxcel <command> --help' for per-command options.
 
     _add_extract_subparser(sub)
     _add_validate_subparser(sub)
+    _add_watch_subparser(sub)
     _add_draft_subparser(sub)
     _add_wizard_subparser(sub)
     _add_web_wizard_subparser(sub)
@@ -639,6 +641,63 @@ examples:
         help='Sheet to use: name (e.g. Sheet2) or 0-based index (default: active sheet)',
     )
     _add_strict_arg(p)
+    _add_security_args(p)
+
+
+def _add_watch_subparser(sub) -> None:
+    p = sub.add_parser(
+        'watch',
+        help='Monitor a directory and extract new .xlsx files automatically',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Watch *directory* for new or moved-in .xlsx files and extract each one with the
+given pattern as soon as it appears.  Results go to stdout (newline-delimited JSON)
+or, with -o, to individual .json files in the output directory.
+
+Requires:  pip install 'grepxcel[watch]'
+
+examples:
+  grepxcel watch -p pattern.xlsx inbox/
+  grepxcel watch -p pattern.xlsx inbox/ -o output/
+  grepxcel watch -p pattern.xlsx inbox/ --recursive -o output/
+  grepxcel watch -p pattern.xlsx inbox/ --on-error stop
+        """,
+    )
+    p.add_argument(
+        '-p', '--pattern',
+        required=True,
+        metavar='FILE',
+        help='Pattern file (.xlsx or .csv)',
+    )
+    p.add_argument(
+        'directory',
+        metavar='DIRECTORY',
+        help='Directory to watch for new .xlsx files',
+    )
+    p.add_argument(
+        '-o', '--output',
+        metavar='DIR',
+        help='Write extracted JSON files here instead of stdout',
+    )
+    p.add_argument(
+        '-r', '--recursive',
+        action='store_true',
+        help='Also watch subdirectories',
+    )
+    p.add_argument(
+        '--on-error',
+        choices=['continue', 'stop'],
+        default='continue',
+        dest='on_error',
+        help='What to do when a file fails to extract: '
+             'continue (default) or stop the watcher',
+    )
+    p.add_argument(
+        '-q', '--quiet',
+        action='store_true',
+        help='Suppress progress messages; only print extracted JSON to stdout',
+    )
+    _add_sheet_arg(p)
     _add_security_args(p)
 
 
@@ -1319,6 +1378,28 @@ def main(argv=None):
             save_state=getattr(args, 'save_state', None),
             load_pattern=getattr(args, 'load_pattern', None),
         ))
+
+    if args.command == 'watch':
+        from .watcher import watch
+        try:
+            watch(
+                pattern_path=args.pattern,
+                directory=args.directory,
+                output_dir=getattr(args, 'output', None),
+                recursive=getattr(args, 'recursive', False),
+                sheet=getattr(args, 'sheet', None),
+                on_error=getattr(args, 'on_error', 'continue'),
+                quiet=getattr(args, 'quiet', False),
+                max_size_mb=getattr(args, 'max_size', 5.0),
+                max_uncompressed_mb=getattr(args, 'max_uncompressed', 50.0),
+            )
+        except (FileNotFoundError, ValueError) as exc:
+            print(f'grepxcel watch: error: {exc}', file=sys.stderr)
+            sys.exit(1)
+        except ImportError as exc:
+            print(f'grepxcel watch: {exc}', file=sys.stderr)
+            sys.exit(1)
+        sys.exit(0)
 
     if args.command == 'web-wizard':
         from .wizard_api import run as run_web
