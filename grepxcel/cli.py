@@ -94,7 +94,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     from . import __version__
     p.add_argument(
-        '--version',
+        '-v', '--version',
         action='version',
         version=f'%(prog)s {__version__}',
     )
