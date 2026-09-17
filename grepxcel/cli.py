@@ -105,6 +105,7 @@ commands:
   mcp-config         Print the MCP server config for your AI agent
   doctor             Check the environment is ready (deps, keys, model, proxy/TLS)
   quickstart         Guided tutorial — learn grepxcel in your terminal
+  test               Run a pattern against a directory of .xlsx files and report reliability
 
 Run 'grepxcel <command> --help' for per-command options.
         """,
@@ -133,6 +134,7 @@ Run 'grepxcel <command> --help' for per-command options.
     _add_mcp_config_subparser(sub)
     _add_doctor_subparser(sub)
     _add_quickstart_subparser(sub)
+    _add_test_subparser(sub)
     return p
 
 
@@ -448,6 +450,66 @@ examples:
   grepxcel quickstart
         """,
     )
+
+
+def _add_test_subparser(sub) -> None:
+    p = sub.add_parser(
+        'test',
+        help='Run a pattern against a directory of .xlsx files and report reliability',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Run the pattern against every .xlsx in DIRECTORY and report how many files
+each field was extracted from. Useful for CI and pattern development.
+
+exit codes:
+  0  — all files passed (every field extracted cleanly)
+  1  — some files had warnings or partial extraction
+  2  — one or more files failed completely (extraction error)
+
+examples:
+  grepxcel test -p pattern.xlsx samples/
+  grepxcel test -p pattern.xlsx samples/ --recursive
+  grepxcel test -p pattern.xlsx samples/ --format json
+  grepxcel test -p pattern.xlsx samples/ --strict
+        """,
+    )
+    p.add_argument(
+        '-p', '--pattern',
+        metavar='PATTERN',
+        required=True,
+        help='Pattern file (.xlsx or .csv)',
+    )
+    p.add_argument(
+        'directory',
+        metavar='DIRECTORY',
+        help='Directory containing .xlsx test files',
+    )
+    p.add_argument(
+        '-r', '--recursive',
+        action='store_true',
+        default=False,
+        help='Recurse into subdirectories',
+    )
+    p.add_argument(
+        '--format',
+        choices=['human', 'json'],
+        default='human',
+        help='Output format: human (default) or json',
+    )
+    p.add_argument(
+        '--strict',
+        action='store_true',
+        default=False,
+        help='Treat any missing field as a failure (exit 2)',
+    )
+    p.add_argument(
+        '--no-color',
+        action='store_true',
+        default=False,
+        help='Disable emoji/color in human output',
+    )
+    _add_sheet_arg(p)
+    _add_security_args(p)
 
 
 def _add_extract_subparser(sub) -> None:
@@ -1302,6 +1364,36 @@ def main(argv=None):
 
     if args.command == 'sbom':
         sys.exit(_run_sbom(args))
+
+    if args.command == 'test':
+        from .pattern_tester import run_tests, format_human, format_json
+        try:
+            report = run_tests(
+                pattern_path=args.pattern,
+                directory=args.directory,
+                recursive=getattr(args, 'recursive', False),
+                sheet=getattr(args, 'sheet', None),
+                strict=getattr(args, 'strict', False),
+                max_size_mb=getattr(args, 'max_size', 5.0),
+                max_uncompressed_mb=getattr(args, 'max_uncompressed', 50.0),
+            )
+        except (FileNotFoundError, ValueError) as exc:
+            print(f'grepxcel test: error: {exc}', file=sys.stderr)
+            sys.exit(2)
+
+        fmt = getattr(args, 'format', 'human')
+        if fmt == 'json':
+            print(format_json(report))
+        else:
+            no_color = getattr(args, 'no_color', False)
+            print(format_human(report, color=not no_color))
+
+        if report.failed > 0:
+            sys.exit(2)
+        elif report.warned > 0:
+            sys.exit(1)
+        else:
+            sys.exit(0)
 
     # ── Security parameter validation ────────────────────────────────────────
     parser = _build_parser()
