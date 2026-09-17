@@ -7,6 +7,71 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-09-17
+
+### Features
+
+- **`assert:` rules** — declare cross-field validation expressions directly in the pattern
+  file. Evaluated after each extraction; a failed assertion logs a `WARNING` alongside the
+  field-level issues. Syntax: column A = `assert:`, column B = expression, column C =
+  optional message. Expressions support arithmetic, comparisons, boolean operators, and
+  numeric coercion from Excel string values. Uses a safe AST evaluator — no `eval`/`exec`.
+  Example: `assert:  | total == net + vat | totals must balance`.
+- **`grepxcel watch`** (`pip install 'grepxcel[watch]'`) — persistent directory monitor that
+  runs extraction automatically as new `.xlsx` files arrive. Uses platform-native file-system
+  events (inotify / FSEvents / ReadDirectoryChangesW). Supports `--recursive`, `-o output/`,
+  and `--on-error stop`. Results are newline-delimited JSON to stdout or written to the output
+  directory. Skips Excel temp files (`~$*.xlsx`). Ctrl+C to stop.
+- **`grepxcel test`** — pattern reliability test suite. Run `grepxcel test -p pattern.xlsx
+  samples/` against a directory of representative files to get a pass/warn/fail breakdown per
+  field. Field reliability scores (`47/47 ████`) help identify brittle anchors before
+  going to production.
+- **`flat_tables` / `--no-source`** — `extract(…, flat_tables=True)` and
+  `grepxcel extract --no-source` collapse the `[{"_source": …, "data": […]}]` per-instance
+  wrappers from nested output into flat `[row, …]` lists, making the result easier to pass
+  directly to pandas or similar pipelines.
+- **Visual audit sheet** — `--format xlsx` output now includes a `_Audit` sheet that
+  colour-codes every extracted cell in the source data: green for matched fields, amber for
+  warnings, red for errors. Makes QA of large reports practical without scripting.
+- **Web wizard: range selection & mini-table editor** — Shift+Click and Shift+Arrow now
+  batch-classify a rectangular range in one operation. The mini-table editor lets you assign
+  column roles (Label / Variable / Ignore), types, and match expressions for an entire table
+  in a single modal, with preloaded footer row detection.
+- **Web wizard: in-grid badge system** — every cell now shows a compact two-strip badge
+  indicating its classification (L/V/I/C) and, for table cells, its positional role
+  (T-HEAD header / footer, T-DATA row) and anchor marker (▶/◀). Badges reserve fixed
+  width so the cell values stay aligned across rows.
+
+### Changed
+
+- **`--format legacy` deprecated** — using `--format legacy` now emits a `DeprecationWarning`
+  (Python API) and a visible `⚠ DEPRECATED` message on stderr (CLI). The legacy format leaks
+  internal `lbl:` keys and `_source`/`_anchor` metadata; migrate to `--format nested`
+  (the default).
+- **TUI wizard deprecated** — the Textual-based TUI (`grepxcel wizard`) is superseded by the
+  web wizard (`grepxcel web-wizard`). The command still works but prints a deprecation notice
+  pointing to the web wizard.
+
+### Documentation
+
+- **Merged cells guide** — new `## Merged cells` section in `docs/pattern-file.md` covers
+  top-left cell reading, labels and values spanning merged ranges, tables with merged headers,
+  and `grepxcel lint` merged-cell reporting.
+- **Web wizard guide** — new `docs/web-wizard-guide.md` with install, interface overview,
+  cell classification keys, keyboard shortcuts, saving, regex presets, merged cells, and
+  troubleshooting.
+- **CLI reference** — `--no-source` flag added to extract flags table; `legacy` output format
+  marked ⚠️ Deprecated.
+- **README** — pre-built binaries section (download table, macOS/Windows first-run notes);
+  `flat_tables=True` Python API example; `--no-source` in Output formats; merged cells link.
+
+### CI / Infrastructure
+
+- **Pre-built binaries** — PyInstaller-based release pipeline builds single-file executables
+  for Linux, macOS, and Windows on every version tag push and attaches them (with SHA-256
+  checksums) to the GitHub Release. Requires `pip install 'grepxcel[build]'`. Uses
+  PyInstaller ≥ 6.10 (fixes CVE-2025-59042).
+
 ## [0.3.1] — 2026-09-15
 
 ### Changed

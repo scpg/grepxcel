@@ -3,7 +3,7 @@ from .logger import Logger, VerbosityLevel
 from .utils import flatten_nested as _flatten_pairs
 from .utils import flatten_table_instances as _flatten_table_instances
 
-__version__ = '0.3.1'
+__version__ = '0.4.0'
 
 
 def extract(pattern, data, *, sheet=None, all_sheets=False,
