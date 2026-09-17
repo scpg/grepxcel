@@ -76,3 +76,10 @@ class SeekInstruction:
 @dataclass
 class DirectionInstruction:
     direction: str  # 'LR' or 'TD' — switches the scalar scan direction from this point on
+
+
+@dataclass
+class AssertRule:
+    expression: str    # the raw expression text, e.g. 'total == net + vat'
+    message: str       # optional human-readable failure message from column C
+    row_num: int       # pattern row number for error reporting

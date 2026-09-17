@@ -13,6 +13,45 @@ from .logger import Logger, LogRecord, EngineError, cell_ref
 from .security import validate_file, validate_pattern_file, SecurityError, DEFAULT_MAX_UNCOMPRESSED_MB
 
 
+# ── assert: rule evaluation ───────────────────────────────────────────────────
+
+def _run_assert_rules(rules, cells: dict, logger: Logger) -> None:
+    """Evaluate all assert: rules against the extracted cells dict.
+
+    A failing assertion logs a WARNING.  A rule referencing unknown or None
+    fields is silently skipped (the engine cannot assert about fields that
+    weren't extracted).
+
+    Args:
+        rules:  list[AssertRule] from the pattern parser.
+        cells:  flat {field_name: value} dict from _raw['cells'].
+        logger: Logger instance for recording warnings.
+    """
+    from .assert_eval import evaluate_assert, parse_assert, AssertParseError
+
+    for rule in rules:
+        try:
+            tree = parse_assert(rule.expression)
+            result = evaluate_assert(tree, cells)
+        except AssertParseError as exc:
+            # Should not happen — parse-time validation already caught this.
+            logger.warn_assert(
+                f'assert: rule could not be evaluated: {exc}',
+                hint=f'Expression: {rule.expression}',
+            )
+            continue
+
+        if result is None:
+            # A field was missing/None — skip silently.
+            continue
+        if not result:
+            msg = rule.message or rule.expression
+            logger.warn_assert(
+                f'Assertion failed: {msg}',
+                hint=f'Expression: {rule.expression!r} evaluated to False',
+            )
+
+
 # ── lbl: matching ─────────────────────────────────────────────────────────────
 
 def _match_lbl(cell_value, pattern: str, mode: str, ignore_case: bool) -> bool:
@@ -478,10 +517,12 @@ class Engine:
             except SecurityError as exc:
                 logger.fatal(str(exc), found=data_file)
 
+            _pp = PatternParser()
             try:
-                global_config, defs, start_sequence = PatternParser().parse(pattern_file)
+                global_config, defs, start_sequence = _pp.parse(pattern_file)
             except (SecurityError, PatternError) as exc:
                 logger.fatal(str(exc), found=pattern_file)
+            assert_rules = getattr(_pp, 'assert_rules', [])
 
             if not start_sequence:
                 logger.fatal(
@@ -537,6 +578,10 @@ class Engine:
 
             logger.engine_start(pattern_file, data_file)
             _raw = self._process_sheet(ws, global_config, defs, start_sequence, logger)
+
+            # Run cross-field assert: rules against the extracted result.
+            if assert_rules:
+                _run_assert_rules(assert_rules, _raw['cells'], logger)
 
         except EngineError:
             pass  # setup-phase fatal; already logged, return partial result
