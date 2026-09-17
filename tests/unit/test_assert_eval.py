@@ -37,9 +37,15 @@ class TestParseAssert:
         with pytest.raises(AssertParseError, match='Unsupported operation'):
             parse_assert('len(name) > 0')
 
-    def test_attribute_access_rejected(self):
-        with pytest.raises(AssertParseError, match='Unsupported operation'):
-            parse_assert('obj.attr == 1')
+    def test_dotted_field_name_accepted(self):
+        # Dot-notation is allowed: loan.term_months resolves to fields['loan.term_months']
+        tree = parse_assert('loan.term_months > 0')
+        assert tree is not None
+
+    def test_method_call_on_attribute_rejected(self):
+        # Function calls remain prohibited even on dotted names
+        with pytest.raises(AssertParseError):
+            parse_assert('obj.method() == 1')
 
     def test_subscript_rejected(self):
         with pytest.raises(AssertParseError, match='Unsupported operation'):
@@ -211,6 +217,21 @@ class TestRunAssert:
     def test_bad_expr_raises(self):
         with pytest.raises(AssertParseError):
             run_assert('len(x) > 0', {'x': 'hello'})
+
+    def test_dotted_field_pass(self):
+        assert run_assert('loan.term_months > 0', {'loan.term_months': 12}) is True
+
+    def test_dotted_field_fail(self):
+        assert run_assert('loan.term_months > 0', {'loan.term_months': -1}) is False
+
+    def test_dotted_field_missing(self):
+        assert run_assert('loan.term_months > 0', {}) is None
+
+    def test_dotted_field_in_expression(self):
+        assert run_assert(
+            'loan.total == loan.net + loan.vat',
+            {'loan.total': 110, 'loan.net': 100, 'loan.vat': 10}
+        ) is True
 
 
 # ── Integration: pattern_parser parses assert: rows ──────────────────────────

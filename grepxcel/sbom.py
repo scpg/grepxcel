@@ -145,11 +145,11 @@ def generate_sbom(*, output_format: str = 'json') -> dict:
     """
     timestamp = datetime.now(timezone.utc).isoformat()
 
+    root_version = grepxcel.__version__   # ground truth; dist metadata can be stale
     try:
-        root_dist = metadata.distribution(PKG_NAME)
-        root_version = root_dist.metadata['Version']
+        metadata.distribution(PKG_NAME)
     except metadata.PackageNotFoundError:
-        root_version = grepxcel.__version__
+        pass
 
     dep_names = _collect_deps(PKG_NAME)
     dep_names.discard(PKG_NAME.lower().replace('-', '_'))

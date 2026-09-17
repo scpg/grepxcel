@@ -226,7 +226,7 @@ class TestRunTestsValidation:
         pattern.write_bytes(b'')
         data_dir = tmp_path / 'data'
         data_dir.mkdir()
-        with pytest.raises(ValueError, match='No .xlsx files found'):
+        with pytest.raises(ValueError, match='No .xlsx'):
             run_tests(str(pattern), str(data_dir))
 
     def test_successful_run_against_fixtures(self):

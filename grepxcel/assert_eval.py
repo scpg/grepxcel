@@ -76,6 +76,7 @@ _ALLOWED_NODE_TYPES = frozenset({
     ast.Eq, ast.NotEq, ast.Lt, ast.LtE, ast.Gt, ast.GtE,
     ast.Constant,
     ast.Name, ast.Load,
+    ast.Attribute,   # dot-notation: loan.term_months → fields['loan.term_months']
 })
 
 
@@ -181,6 +182,28 @@ def _eval(node: ast.AST, fields: dict[str, Any]) -> Any:
         if name not in fields:
             return _MISSING
         val = _coerce(fields[name])
+        if val is None:
+            return _MISSING
+        return val
+
+    if isinstance(node, ast.Attribute):
+        # Reconstruct dotted path: loan.term_months → fields['loan.term_months']
+        parts = []
+        n = node
+        while isinstance(n, ast.Attribute):
+            parts.append(n.attr)
+            n = n.value
+        if not isinstance(n, ast.Name):
+            raise AssertParseError(
+                "Unsupported attribute chain in assert expression — "
+                "only simple dotted names (e.g. loan.term_months) are supported."
+            )
+        parts.append(n.id)
+        parts.reverse()
+        dotted = '.'.join(parts)
+        if dotted not in fields:
+            return _MISSING
+        val = _coerce(fields[dotted])
         if val is None:
             return _MISSING
         return val

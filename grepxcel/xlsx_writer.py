@@ -10,7 +10,9 @@ Layout:
 
 from __future__ import annotations
 
+import datetime as _dt
 import os
+import re
 from typing import Any
 
 import openpyxl
@@ -175,10 +177,35 @@ def nested_to_xlsx(result: dict, output_path: str, logger=None) -> None:
     wb.save(output_path)
 
 
+_DT_REPR_RE = re.compile(
+    r'datetime\.datetime\((\d+),\s*(\d+),\s*(\d+)'
+    r'(?:,\s*(\d+),\s*(\d+)(?:,\s*(\d+))?)?\)'
+)
+
+
+def _format_dt_repr(raw: str) -> str:
+    """Convert a datetime repr string to a human-readable ISO format."""
+    m = _DT_REPR_RE.match(raw)
+    if not m:
+        return raw
+    y, mo, d = int(m.group(1)), int(m.group(2)), int(m.group(3))
+    h, mi, s = int(m.group(4) or 0), int(m.group(5) or 0), int(m.group(6) or 0)
+    if h == 0 and mi == 0 and s == 0:
+        return f'{y:04d}-{mo:02d}-{d:02d}'
+    return f'{y:04d}-{mo:02d}-{d:02d}T{h:02d}:{mi:02d}:{s:02d}'
+
+
 def _safe_value(v):
     """Convert a value for Excel output; neutralize formula injection (CWE-1236)."""
     if v is None:
         return None
+    if isinstance(v, _dt.datetime):
+        # date-only (time is midnight) → compact YYYY-MM-DD
+        if v.hour == 0 and v.minute == 0 and v.second == 0:
+            return v.date().isoformat()
+        return v.isoformat()
+    if isinstance(v, _dt.date):
+        return v.isoformat()
     if isinstance(v, (dict, list)):
         v = str(v)
     if isinstance(v, str):
@@ -280,18 +307,15 @@ def _add_audit_sheet(wb: openpyxl.Workbook, logger) -> None:
             if (raw_val.startswith("'") and raw_val.endswith("'")) or \
                (raw_val.startswith('"') and raw_val.endswith('"')):
                 raw_val = raw_val[1:-1]
+            raw_val = _format_dt_repr(raw_val)
             value_display = neutralize_formula(raw_val)[:200]
         else:
             value_display = None
 
-        # Status and fill
+        # Status and fill: Missing = field never found (no extraction record);
+        # Warning = field was extracted but has a validation issue.
         if warnings:
-            # Check if it's a "missing/empty" warning
-            is_missing = any(
-                'missing' in r.message.lower() or 'empty' in r.message.lower()
-                for r in warnings
-            )
-            if is_missing or not extractions:
+            if not extractions:
                 status = 'Missing'
                 fill = _FILL_AUDIT_MISSING
             else:

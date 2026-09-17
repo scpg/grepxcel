@@ -60,7 +60,7 @@ def extract(pattern, data, *, sheet=None, all_sheets=False,
 
 
 def extract_df(pattern, data, *, backend=None, sheet=None, all_sheets=False,
-               output_format='nested', logger=None):
+               output_format='nested', flat_tables=False, logger=None):
     """Extract data from an Excel file and return DataFrames.
 
     Wraps :func:`extract` and converts the result into a ``dict`` of
@@ -78,6 +78,9 @@ def extract_df(pattern, data, *, backend=None, sheet=None, all_sheets=False,
         all_sheets: if True, process every sheet; returns
                     ``{sheet_name: {key: DataFrame}}``.
         output_format: passed through to :func:`extract`.
+        flat_tables: if True, collapse table instance wrappers (see :func:`extract`).
+                 When True, ``{key}__header`` / ``{key}__footer`` frames are not
+                 returned (the wrappers that carry them are collapsed away).
         logger:  a :class:`Logger` instance; silent by default.
 
     Returns:
@@ -113,19 +116,20 @@ def extract_df(pattern, data, *, backend=None, sheet=None, all_sheets=False,
         )
 
     raw = extract(pattern, data, sheet=sheet, all_sheets=all_sheets,
-                  output_format=output_format, logger=logger)
+                  output_format=output_format, flat_tables=flat_tables,
+                  logger=logger)
 
     if all_sheets:
-        return {name: _to_frames(sheet_data, pd, pl)
+        return {name: _to_frames(sheet_data, pd, pl, flat_tables=flat_tables)
                 for name, sheet_data in raw.items()}
-    return _to_frames(raw, pd, pl)
+    return _to_frames(raw, pd, pl, flat_tables=flat_tables)
 
 
 def _make_df(rows, pd, pl):
     return pd.DataFrame(rows) if pd is not None else pl.DataFrame(rows)
 
 
-def _to_frames(result, pd, pl):
+def _to_frames(result, pd, pl, flat_tables=False):
     """Convert an extract() result dict into ``{key: DataFrame}``.
 
     Per-table ``data`` rows form the main frame for each table key. When a table
@@ -144,13 +148,17 @@ def _to_frames(result, pd, pl):
             rows = []
             headers = []
             footers = []
-            for instance in value:
-                for data_row in instance.get('data', []):
-                    rows.append(data_row)
-                if instance.get('header'):
-                    headers.append(dict(_flatten_pairs(instance['header'])))
-                if instance.get('footer'):
-                    footers.append(dict(_flatten_pairs(instance['footer'])))
+            if flat_tables:
+                # flat_tables=True: list already contains plain row dicts
+                rows = list(value)
+            else:
+                for instance in value:
+                    for data_row in instance.get('data', []):
+                        rows.append(data_row)
+                    if instance.get('header'):
+                        headers.append(dict(_flatten_pairs(instance['header'])))
+                    if instance.get('footer'):
+                        footers.append(dict(_flatten_pairs(instance['footer'])))
             if rows:
                 frames[key] = _make_df(rows, pd, pl)
             if headers:

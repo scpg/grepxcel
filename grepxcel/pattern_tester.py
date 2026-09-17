@@ -158,8 +158,10 @@ def run_tests(
         raise FileNotFoundError(f'Test directory not found: {directory}')
 
     files = _collect_xlsx_files(directory, recursive)
+    # Exclude the pattern file itself — it is not a data file
+    files = [f for f in files if os.path.abspath(f) != pattern_path]
     if not files:
-        raise ValueError(f'No .xlsx files found in {directory}')
+        raise ValueError(f'No .xlsx data files found in {directory} (excluding the pattern file)')
 
     # Track all field names seen across all results
     all_fields: set[str] = set()
