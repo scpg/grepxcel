@@ -36,14 +36,43 @@ python -m venv .venv
 # python3 scripts/install_llm_deps.py
 ```
 
-### 4. Create a feature branch from `dev`
+### 4. Create a branch from `dev`
 
-Always branch off `dev`, never off `main`:
+Always branch off `dev`, never off `main`.
+Use the naming convention `<type>/<description>/<github-user>`:
+
+| Type | When to use |
+|---|---|
+| `feature/` | New user-visible functionality |
+| `fix/` | Bug fix (non-urgent) |
+| `hotfix/` | Urgent production patch — **branches off `main`**, not `dev` |
+| `chore/` | Dependency bumps, config, tooling, cleanup |
+| `refactor/` | Code restructure with no behaviour change |
+| `docs/` | Documentation only |
+| `test/` | Tests only |
+| `ci/` | CI/CD pipeline changes |
+
+`<description>` should be a short kebab-case phrase (2–4 words).
+`<github-user>` is your GitHub username.
 
 ```bash
 git checkout dev
-git pull origin dev          # make sure you're up to date
-git checkout -b my-feature
+git pull origin dev
+
+# examples
+git checkout -b feature/flat-tables-option/octocat
+git checkout -b fix/audit-sheet-misclassification/octocat
+git checkout -b chore/bump-openpyxl/octocat
+git checkout -b docs/mcp-setup-guide/octocat
+```
+
+**Exception — hotfix:** branch off `main` and PR directly back to `main`
+(the maintainer will then merge `main` → `dev` to keep them in sync):
+
+```bash
+git checkout main
+git pull origin main
+git checkout -b hotfix/sbom-crash-on-missing-dist/octocat
 ```
 
 ### 5. Make your changes
@@ -64,13 +93,13 @@ A few rules:
 ### 7. Push and open a Pull Request
 
 ```bash
-git push origin my-feature
+git push origin feature/your-feature-name/your-username
 ```
 
 Then open a PR on GitHub. **Set the base branch to `dev`**, not `main`:
 
 ```
-your-fork:my-feature  →  scpg/grepxcel:dev
+your-fork:feature/your-feature-name/your-username  →  scpg/grepxcel:dev
 ```
 
 In the PR description include:
