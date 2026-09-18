@@ -2,12 +2,18 @@
 Direct tests for the security module's load-bearing guarantees:
   - XXE protection (defusedxml) is live and fail-closed
   - the ReDoS detector is wired to the single re._parser import path
+  - ZIP-bomb guards catch both absolute-size and expansion-ratio attacks
+  - blocked extensions (.xlsm / .xlsb / .xls) are rejected before any file I/O
+  - the engine never evaluates formulas (data_only=True)
 """
 
 import zipfile
 
+import openpyxl
 import pytest
 
+from grepxcel.engine import Engine
+from grepxcel.logger import Logger, VerbosityLevel
 from grepxcel.security import (
     SecurityError,
     assert_xxe_protection,
@@ -110,3 +116,82 @@ def test_falsified_metadata_cannot_bypass_guard(tmp_path, monkeypatch):
     monkeypatch.setattr(zipfile.ZipFile, 'infolist', lying_infolist)
     with pytest.raises(SecurityError, match='ZIP|uncompressed|bomb'):
         _check_zip_safety(str(path), max_uncompressed_mb=1)
+
+
+# ─── ZIP-bomb: expansion-ratio ceiling ───────────────────────────────────────
+
+def test_expansion_ratio_ceiling_rejected(tmp_path):
+    """A ZIP that passes the absolute-size cap but has an abnormally high
+    expansion ratio (>50×) must still be caught as a likely ZIP bomb.
+
+    200 KB of identical bytes compresses to ~250 bytes on disk (DEFLATE achieves
+    ~800× on a run of the same byte), which is well under the 50 MB absolute cap
+    but far over the 50× ratio ceiling.
+    """
+    path = tmp_path / 'ratio_bomb.xlsx'
+    _make_zip(path, payload=b'A', repeat=200 * 1024)
+    with pytest.raises(SecurityError, match='ratio|bomb'):
+        _check_zip_safety(str(path), max_uncompressed_mb=50)
+
+
+# ─── Blocked extensions ───────────────────────────────────────────────────────
+
+@pytest.mark.parametrize('ext', ['.xlsm', '.xlsb', '.xls'])
+def test_blocked_extension_rejected_by_validate_file(tmp_path, ext):
+    """Macro-enabled and legacy Excel extensions (.xlsm, .xlsb, .xls) must be
+    rejected by validate_file() before any attempt to open or decompress the
+    file — matching SECURITY.md claim 5."""
+    path = tmp_path / f'file{ext}'
+    path.write_bytes(b'')
+    with pytest.raises(SecurityError, match='not accepted|blocked'):
+        validate_file(str(path))
+
+
+# ─── Engine: data_only=True ───────────────────────────────────────────────────
+
+def _make_xlsx(rows_or_cells, path, is_data=False):
+    """Write a minimal .xlsx for testing.  Pass a list of rows for a pattern
+    file or a dict of {coord: value} for a data file."""
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    if is_data:
+        for coord, val in rows_or_cells.items():
+            ws[coord] = val
+    else:
+        for row in rows_or_cells:
+            ws.append(row)
+    wb.save(str(path))
+    return str(path)
+
+
+def test_engine_passes_data_only_true_to_openpyxl(tmp_path, monkeypatch):
+    """Engine.process() must pass data_only=True when loading the data file so
+    that formulas are never evaluated — matching SECURITY.md claim 'formulas in
+    data sheets are not executed'.  Pattern files are loaded separately and are
+    not subject to this requirement."""
+    import grepxcel.engine as _engine
+
+    calls = []
+    real_load = _engine.openpyxl.load_workbook
+
+    def recording_load(filename, **kwargs):
+        calls.append({'filename': str(filename), 'data_only': kwargs.get('data_only')})
+        return real_load(filename, **kwargs)
+
+    monkeypatch.setattr(_engine.openpyxl, 'load_workbook', recording_load)
+
+    pat = _make_xlsx(
+        [['lbl:', 'inv', 'string', 'INV-001'],
+         ['START:'], ['cell:next', 'num'], ['END:']],
+        tmp_path / 'pattern.xlsx',
+    )
+    dat = _make_xlsx({'A1': 'INV-001', 'B1': '42'}, tmp_path / 'data.xlsx', is_data=True)
+    dat_str = str(tmp_path / 'data.xlsx')
+
+    Engine().process(pat, dat, logger=Logger(level=VerbosityLevel.QUIET))
+
+    data_calls = [c for c in calls if c['filename'] == dat_str]
+    assert data_calls, 'load_workbook was never called for the data file'
+    assert all(c['data_only'] is True for c in data_calls), (
+        f'Expected data_only=True for every data-file load; got {data_calls}'
+    )
