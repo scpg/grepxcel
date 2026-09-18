@@ -101,10 +101,26 @@ jobs:
         with:
           python-version: "3.12"
 
-      # TestPyPI propagates new releases within ~60 s; give it a moment before
-      # the first install attempt to avoid a confusing "version not found" error.
-      - name: Wait for TestPyPI index propagation (~60 s)
-        run: sleep 60
+      # Poll the TestPyPI JSON API until the exact version appears (or timeout).
+      # Typically propagates in 15–30 s; this avoids a fixed sleep while still
+      # giving TestPyPI up to 5 minutes on slow days.
+      - name: Wait for TestPyPI propagation (dynamic poll)
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          MAX_WAIT=300
+          INTERVAL=15
+          ELAPSED=0
+          until curl -sf "https://test.pypi.org/pypi/grepxcel/${VERSION}/json" > /dev/null; do
+            if [ "$ELAPSED" -ge "$MAX_WAIT" ]; then
+              echo "Timed out after ${MAX_WAIT}s — grepxcel ${VERSION} not yet on TestPyPI." >&2
+              exit 1
+            fi
+            echo "Not yet available (${ELAPSED}s elapsed). Retrying in ${INTERVAL}s…"
+            sleep "$INTERVAL"
+            ELAPSED=$((ELAPSED + INTERVAL))
+          done
+          echo "grepxcel ${VERSION} available on TestPyPI after ${ELAPSED}s."
 
       # Install the exact pre-release version we just published.
       #

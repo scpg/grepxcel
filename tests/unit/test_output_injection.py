@@ -69,13 +69,13 @@ class TestFlattenNested:
 class TestCsvInjection:
     def test_formula_value_neutralized(self):
         data = {'risk': {'payload': '=1+2'}}
-        out = nested_to_csv(data)
+        out, _ = nested_to_csv(data)
         rows = list(csv.DictReader(io.StringIO(out)))
         assert rows[0]['risk.payload'] == "'=1+2"
 
     def test_table_cell_neutralized(self):
         data = {'items': [{'data': [{'name': '=cmd|calc'}]}]}
-        out = nested_to_csv(data)
+        out, _ = nested_to_csv(data)
         rows = list(csv.DictReader(io.StringIO(out)))
         assert rows[0]['items.name'].startswith("'=")
 

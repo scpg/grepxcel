@@ -19,7 +19,7 @@ from grepxcel.xlsx_writer import nested_to_xlsx
 class TestUnicode:
     def test_csv_roundtrips_unicode(self):
         data = {'c': {'name': 'Müller 日本語 😀'}}
-        out = nested_to_csv(data)
+        out, _ = nested_to_csv(data)
         rows = list(csv.DictReader(io.StringIO(out)))
         assert rows[0]['c.name'] == 'Müller 日本語 😀'
 
@@ -37,7 +37,7 @@ class TestUnicode:
 class TestNoneValues:
     def test_csv_none_becomes_empty(self):
         data = {'items': [{'data': [{'a': 1, 'b': None}]}]}
-        out = nested_to_csv(data)
+        out, _ = nested_to_csv(data)
         rows = list(csv.DictReader(io.StringIO(out)))
         assert rows[0]['items.b'] == ''
 
@@ -56,19 +56,19 @@ class TestNoneValues:
 class TestCsvEscaping:
     def test_comma_in_value_quoted(self):
         data = {'c': {'addr': 'Main St, 12'}}
-        out = nested_to_csv(data)
+        out, _ = nested_to_csv(data)
         rows = list(csv.DictReader(io.StringIO(out)))
         assert rows[0]['c.addr'] == 'Main St, 12'
 
     def test_quote_in_value_escaped(self):
         data = {'c': {'q': 'say "hi"'}}
-        out = nested_to_csv(data)
+        out, _ = nested_to_csv(data)
         rows = list(csv.DictReader(io.StringIO(out)))
         assert rows[0]['c.q'] == 'say "hi"'
 
     def test_newline_in_value_preserved(self):
         data = {'c': {'note': 'line1\nline2'}}
-        out = nested_to_csv(data)
+        out, _ = nested_to_csv(data)
         rows = list(csv.DictReader(io.StringIO(out)))
         assert rows[0]['c.note'] == 'line1\nline2'
 
@@ -78,7 +78,7 @@ class TestCsvEscaping:
 class TestEmptyTable:
     def test_csv_table_with_no_data_rows(self):
         data = {'items': [{'data': []}], 'scalar': {'x': 1}}
-        out = nested_to_csv(data)
+        out, _ = nested_to_csv(data)
         rows = list(csv.DictReader(io.StringIO(out)))
         # only the scalar row survives
         assert len(rows) == 1

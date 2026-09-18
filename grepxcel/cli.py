@@ -953,7 +953,13 @@ def _process_file(pattern: str, data_file: str, args,
         print(f'\n  Excel report written to: {out_path}', file=sys.stderr)
     elif is_csv:
         from .csv_writer import nested_to_csv
-        csv_text = nested_to_csv(result)
+        csv_text, csv_dropped = nested_to_csv(result)
+        if csv_dropped:
+            dropped_list = ', '.join(csv_dropped)
+            print(colorize_marks(
+                f'  {MARK_WARN}  --format csv dropped header/footer rows: {dropped_list}. '
+                'Use --format nested (JSON) to keep them.',
+                should_color(sys.stderr)), file=sys.stderr)
         if args.output:
             os.makedirs(args.output, exist_ok=True)
             out_path = os.path.join(args.output, f'{stem}.csv')

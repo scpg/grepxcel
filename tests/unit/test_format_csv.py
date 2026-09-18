@@ -46,7 +46,7 @@ def _run_cli(*args):
 class TestNestedToCsv:
     def test_scalar_only(self):
         data = {'inv': {'number': 'AB123', 'date': '2026-01-01'}}
-        out = nested_to_csv(data)
+        out, _ = nested_to_csv(data)
         reader = csv.DictReader(io.StringIO(out))
         rows = list(reader)
         assert len(rows) == 1
@@ -62,7 +62,7 @@ class TestNestedToCsv:
                 ]},
             ],
         }
-        out = nested_to_csv(data)
+        out, _ = nested_to_csv(data)
         reader = csv.DictReader(io.StringIO(out))
         rows = list(reader)
         assert len(rows) == 2
@@ -79,7 +79,7 @@ class TestNestedToCsv:
                 ]},
             ],
         }
-        out = nested_to_csv(data)
+        out, _ = nested_to_csv(data)
         reader = csv.DictReader(io.StringIO(out))
         rows = list(reader)
         assert len(rows) == 2
@@ -96,7 +96,7 @@ class TestNestedToCsv:
                 },
             ],
         }
-        out = nested_to_csv(data)
+        out, _ = nested_to_csv(data)
         assert '_source' not in out
 
     def test_multi_instance_concatenated(self):
@@ -106,13 +106,42 @@ class TestNestedToCsv:
                 {'data': [{'x': 2}, {'x': 3}]},
             ],
         }
-        out = nested_to_csv(data)
+        out, _ = nested_to_csv(data)
         rows = list(csv.DictReader(io.StringIO(out)))
         assert len(rows) == 3
 
     def test_empty_result(self):
-        out = nested_to_csv({})
+        out, dropped = nested_to_csv({})
         assert out.strip() == ''
+        assert dropped == []
+
+    def test_no_drop_when_no_header_or_footer(self):
+        data = {'items': [{'data': [{'x': 1}]}]}
+        _, dropped = nested_to_csv(data)
+        assert dropped == []
+
+    def test_footer_reported_in_dropped(self):
+        data = {'items': [{'data': [{'x': 1}], 'footer': {'total': 99}}]}
+        out, dropped = nested_to_csv(data)
+        assert 'items.footer' in dropped
+        rows = list(csv.DictReader(io.StringIO(out)))
+        assert len(rows) == 1              # data row still present
+        assert rows[0]['items.x'] == '1'  # data content unaffected
+
+    def test_header_reported_in_dropped(self):
+        data = {'items': [{'data': [{'x': 1}], 'header': {'label': 'H'}}]}
+        _, dropped = nested_to_csv(data)
+        assert 'items.header' in dropped
+
+    def test_multi_instance_footer_indexed(self):
+        """With multiple instances both footers appear, labelled by index."""
+        data = {'items': [
+            {'data': [{'x': 1}], 'footer': {'t': 1}},
+            {'data': [{'x': 2}], 'footer': {'t': 2}},
+        ]}
+        _, dropped = nested_to_csv(data)
+        assert 'items[0].footer' in dropped
+        assert 'items[1].footer' in dropped
 
 
 # ── count_table_instructions ─────────────────────────────────────────────────
@@ -260,7 +289,7 @@ class TestMetaExclusion:
             'inv': {'number': 'X1'},
             '_meta': {'run_id': 'abc', 'stats': {'errors': 0}},
         }
-        out = nested_to_csv(data)
+        out, _ = nested_to_csv(data)
         assert '_meta' not in out
         assert 'run_id' not in out
         assert 'X1' in out

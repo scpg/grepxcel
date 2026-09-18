@@ -29,8 +29,13 @@ def count_table_instructions(pattern_file: str) -> int:
     return sum(1 for i in seq if isinstance(i, TableInstruction))
 
 
-def nested_to_csv(result: dict) -> str:
+def nested_to_csv(result: dict) -> tuple[str, list[str]]:
     """Convert a nested extraction result to a CSV string.
+
+    Returns ``(csv_text, dropped)`` where ``dropped`` is a list of
+    human-readable strings describing table fields that were omitted because
+    they cannot be represented in flat CSV (header/footer rows).  The caller
+    is responsible for surfacing these as warnings.
 
     - Scalar fields are flattened with dot-notation columns.
     - Table data rows become one CSV row each.
@@ -39,24 +44,30 @@ def nested_to_csv(result: dict) -> str:
     """
     scalars: dict[str, Any] = {}
     table_rows: list[dict[str, Any]] = []
+    dropped: list[str] = []
 
     for key, value in result.items():
         if key == '_meta':
             continue
         if isinstance(value, list):
-            for instance in value:
+            for idx, instance in enumerate(value):
                 if not isinstance(instance, dict):
                     continue
                 for data_row in instance.get('data', []):
                     # Qualify field names with the table key (e.g. txn.date)
                     table_rows.append({f'{key}.{k}': v for k, v in data_row.items()})
+                suffix = f'[{idx}]' if len(value) > 1 else ''
+                if instance.get('header'):
+                    dropped.append(f'{key}{suffix}.header')
+                if instance.get('footer'):
+                    dropped.append(f'{key}{suffix}.footer')
         elif isinstance(value, dict):
             scalars.update(dict(flatten_nested(value, key)))
         else:
             scalars[key] = value
 
     if not table_rows and not scalars:
-        return ''
+        return '', dropped
 
     if table_rows:
         rows = [{**scalars, **row} for row in table_rows]
@@ -76,4 +87,4 @@ def nested_to_csv(result: dict) -> str:
     writer.writeheader()
     for row in rows:
         writer.writerow({k: neutralize_formula(v) for k, v in row.items()})
-    return buf.getvalue()
+    return buf.getvalue(), dropped
