@@ -85,12 +85,52 @@ def _resolve_sheet(args) -> str | None:
 
 # ── Argument parser ───────────────────────────────────────────────────────────
 
+class _GroupedHelpFormatter(argparse.RawDescriptionHelpFormatter):
+    """Like RawDescriptionHelpFormatter but hides the bare subparsers metavar entry."""
+
+    def _format_action(self, action):
+        if isinstance(action, argparse._SubParsersAction):
+            return ''
+        return super()._format_action(action)
+
+_COMMANDS_HELP = """\
+extract & validate:
+  extract            Extract data from Excel files using a pattern file
+  validate-pattern   Validate a pattern file before running extraction
+
+onboarding:
+  quickstart         Guided tutorial — learn grepxcel in your terminal
+  web-wizard         Build a pattern file visually in your browser
+  generate-examples  Create ready-to-run example files in a local directory
+  docs               Write a pattern-format reference xlsx
+
+automation:
+  watch              Monitor a directory and extract new .xlsx files automatically
+  test               Test a pattern's reliability against a sample directory
+
+AI & MCP:
+  draft              Draft a starter pattern file using a local LLM
+  generate-skill     Write an AI-agent skill doc (Claude / AGENTS.md)
+  mcp                Start the grepxcel MCP server (stdio transport)
+  mcp-config         Print the MCP server config for your AI agent
+
+inspection:
+  lint               Inspect an Excel file for potential extraction issues
+  schema             Generate a JSON Schema from a pattern file
+
+compliance & ops:
+  sbom               Generate a CycloneDX 1.6 SBOM for this installation
+  doctor             Check the environment is ready (deps, API keys, model)
+
+Run 'grepxcel <command> --help' for per-command options.
+Run 'grepxcel -h -h' for a synopsis of every command's options."""
+
+
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog='grepxcel',
         description='Extract structured data from Excel files using a pattern.',
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="Run 'grepxcel <command> --help' for per-command options.",
+        formatter_class=_GroupedHelpFormatter,
     )
     from . import __version__
     p.add_argument(
@@ -98,14 +138,18 @@ def _build_parser() -> argparse.ArgumentParser:
         action='version',
         version=f'%(prog)s {__version__}',
     )
-    sub = p.add_subparsers(dest='command', metavar='COMMAND', title='commands')
+    sub = p.add_subparsers(
+        dest='command',
+        metavar='COMMAND',
+        title='commands',
+        description=_COMMANDS_HELP,
+    )
     sub.required = True
 
     _add_extract_subparser(sub)
     _add_validate_subparser(sub)
     _add_watch_subparser(sub)
     _add_draft_subparser(sub)
-    _add_wizard_subparser(sub)
     _add_web_wizard_subparser(sub)
     _add_docs_subparser(sub)
     _add_lint_subparser(sub)
@@ -337,53 +381,6 @@ Exits non-zero if the selected area has a blocking (✗) problem.
         help='Refuse a .env from outside the current project (also '
              'GREPXCEL_STRICT_ENV); the per-user config-dir .env stays allowed',
     )
-
-
-def _add_wizard_subparser(sub) -> None:
-    p = sub.add_parser(
-        'wizard',
-        help='Interactively build a pattern file cell by cell',
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Walks you through your Excel file cell by cell and writes a grepxcel pattern.
-No LLM required. Ideal when you want full manual control or have no internet
-access.
-
-The default output file is named  <stem>-wizard-YYYYmmddHHMMSS.xlsx
-next to the data file (use -o to override).  Each run produces a unique
-timestamped file so repeated sessions never overwrite each other.
-
-examples:
-  grepxcel wizard data.xlsx
-  grepxcel wizard data.xlsx --sheet Sheet2
-  grepxcel wizard data.xlsx -o my-pattern.xlsx
-  grepxcel wizard data.xlsx --format csv -o my-pattern.csv
-  grepxcel wizard data.xlsx --save-state session.json
-  grepxcel wizard --load-state session.json -o my-pattern.xlsx
-  grepxcel wizard data.xlsx --load-pattern existing-pattern.xlsx
-        """,
-    )
-    p.add_argument('file', metavar='FILE', nargs='?',
-                   help='Excel data file to inspect '
-                        '(required unless --load-state is given)')
-    p.add_argument('--sheet', metavar='NAME_OR_INDEX',
-                   help='Sheet to use (default: active sheet)')
-    p.add_argument('-o', '--output', metavar='FILE',
-                   help='Write the pattern to FILE '
-                        '(default: <stem>-wizard-YYYYmmddHHMMSS.xlsx next to the data file)')
-    p.add_argument('--format', metavar='FORMAT', choices=['xlsx', 'csv'],
-                   default='xlsx',
-                   help='Output format when -o is not given (default: xlsx)')
-    p.add_argument('--load-state', metavar='FILE',
-                   help='Load a saved wizard state (JSON) and write the pattern '
-                        'directly without any interactive session')
-    p.add_argument('--save-state', metavar='FILE',
-                   help='After saving the pattern, also write the wizard session '
-                        'state to FILE as JSON (enables replay and scripted testing)')
-    p.add_argument('--load-pattern', metavar='FILE',
-                   help='Pre-populate the TUI from an existing pattern file '
-                        '(.xlsx or .csv) — opens the wizard with field classifications '
-                        'already filled in so you can review and adjust')
 
 
 def _add_web_wizard_subparser(sub) -> None:
@@ -1327,6 +1324,36 @@ def _run_draft(args) -> int:
     return drafter.run()
 
 
+# ── Multi-level help ──────────────────────────────────────────────────────────
+
+def _print_synopsis(parser: argparse.ArgumentParser) -> None:
+    """Print one usage line per subcommand (-h -h)."""
+    sub_action = next(
+        (a for a in parser._actions if isinstance(a, argparse._SubParsersAction)),
+        None,
+    )
+    if sub_action is None:
+        return
+    print("Per-command synopsis  (grepxcel -h -h -h for full help of each):\n")
+    for name, sp in sub_action.choices.items():
+        usage = sp.format_usage().strip()
+        print(f"  {usage}")
+
+
+def _print_full_help(parser: argparse.ArgumentParser) -> None:
+    """Print full --help for every subcommand (-h -h -h)."""
+    sub_action = next(
+        (a for a in parser._actions if isinstance(a, argparse._SubParsersAction)),
+        None,
+    )
+    if sub_action is None:
+        return
+    sep = "─" * 60
+    for name, sp in sub_action.choices.items():
+        print(sp.format_help())
+        print(sep)
+
+
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 def main(argv=None):
@@ -1336,29 +1363,20 @@ def main(argv=None):
     if argv and argv[0] == 'suggest':
         argv = ['draft'] + argv[1:]
 
+    help_count = sum(1 for a in argv if a in ('-h', '--help'))
+    if help_count >= 2:
+        p = _build_parser()
+        if help_count >= 3:
+            _print_full_help(p)
+        else:
+            _print_synopsis(p)
+        sys.exit(0)
+
     args = _build_parser().parse_args(argv)
 
     if args.command == 'quickstart':
         from .quickstart import run_quickstart
         sys.exit(run_quickstart())
-
-    if args.command == 'wizard':
-        load_state = getattr(args, 'load_state', None)
-        if not args.file and not load_state:
-            # argparse won't catch this since FILE is nargs='?'
-            print('grepxcel wizard: error: FILE is required unless --load-state is given',
-                  file=sys.stderr)
-            sys.exit(2)
-        from .wizard import run_wizard
-        sys.exit(run_wizard(
-            data_file=args.file,
-            sheet=getattr(args, 'sheet', None),
-            output=getattr(args, 'output', None),
-            fmt=getattr(args, 'format', 'xlsx'),
-            load_state=load_state,
-            save_state=getattr(args, 'save_state', None),
-            load_pattern=getattr(args, 'load_pattern', None),
-        ))
 
     if args.command == 'watch':
         from .watcher import watch
