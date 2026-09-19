@@ -477,6 +477,7 @@ td.gx-T-bottom { border-bottom: 2px solid rgba(124,58,237,0.5) !important; }
 .form-group .mod-item:hover,
 .mod-item:hover { background: var(--border); }
 .mod-item input[type=checkbox] { margin: 0; cursor: pointer; accent-color: var(--accent); flex-shrink: 0; }
+.mod-item span { white-space: nowrap; }
 .info-icon {
   cursor: help; font-size: 11px; color: var(--text-muted);
   margin-left: 4px; opacity: 0.7; transition: opacity 0.15s;
@@ -787,19 +788,19 @@ td.gx-T-bottom { border-bottom: 2px solid rgba(124,58,237,0.5) !important; }
                 <div class="mod-menu" id="mod-menu">
                   <label class="mod-item">
                     <input type="checkbox" id="mod-none" checked onchange="onModChange('none')">
-                    none
+                    <span>none</span>
                   </label>
                   <label class="mod-item">
                     <input type="checkbox" id="mod-nullable" onchange="onModChange('nullable')">
-                    nullable
+                    <span>nullable</span>
                   </label>
                   <label class="mod-item">
                     <input type="checkbox" id="mod-not-null" onchange="onModChange('not-null')">
-                    not-null
+                    <span>not-null</span>
                   </label>
                   <label class="mod-item">
                     <input type="checkbox" id="mod-trim" onchange="onModChange('trim-whitespace')">
-                    trim-whitespace
+                    <span>trim-whitespace</span>
                   </label>
                 </div>
               </div></div>
@@ -2408,29 +2409,41 @@ function toggleModDropdown(e) {
   const trigger = document.getElementById('mod-trigger');
   const menu    = document.getElementById('mod-menu');
   if (!trigger || !menu) return;
+
+  // Move to body so it escapes #panel's overflow:hidden (Chrome clips
+  // position:fixed inside overflow:hidden flex containers).
+  if (menu.parentElement !== document.body) {
+    document.body.appendChild(menu);
+  }
+
   const isOpen = menu.classList.contains('open');
   if (isOpen) {
     menu.classList.remove('open');
   } else {
-    // Position the fixed menu aligned to the trigger's viewport rect
     const rect = trigger.getBoundingClientRect();
-    const menuMinW = 170;  // wide enough for "trim-whitespace"
+    const menuMinW = 190;  // wide enough for "trim-whitespace"
     menu.style.top      = (rect.bottom + 2) + 'px';
     menu.style.minWidth = Math.max(menuMinW, rect.width) + 'px';
-    menu.style.width    = '';  // clear any previously forced width
-    // Prevent overflow on the right edge of the viewport
+    menu.style.width    = '';
     const leftPos = Math.min(rect.left, window.innerWidth - menuMinW - 8);
     menu.style.left = Math.max(0, leftPos) + 'px';
     menu.classList.add('open');
   }
 }
 document.addEventListener('click', function(e) {
-  const dd = document.getElementById('mod-dropdown');
-  if (dd && !dd.contains(e.target)) {
-    const menu = document.getElementById('mod-menu');
-    if (menu) menu.classList.remove('open');
+  const trigger = document.getElementById('mod-trigger');
+  const menu    = document.getElementById('mod-menu');
+  if (menu && menu.classList.contains('open')) {
+    if ((!trigger || !trigger.contains(e.target)) && !menu.contains(e.target)) {
+      menu.classList.remove('open');
+    }
   }
 });
+// Close the menu if the sidebar scrolls (trigger moves, menu stays fixed otherwise)
+document.getElementById('panel-body') && document.getElementById('panel-body').addEventListener('scroll', function() {
+  const menu = document.getElementById('mod-menu');
+  if (menu) menu.classList.remove('open');
+}, { passive: true });
 
 function onModChange(which) {
   const noneEl  = document.getElementById('mod-none');
