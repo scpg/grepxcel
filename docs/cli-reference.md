@@ -5,6 +5,23 @@ see the [README](../README.md).
 
 ---
 
+## Shell TAB completion
+
+grepxcel ships with TAB completion for all subcommands and flags (bash, zsh, fish).
+It is included in the standard install — no extra packages needed. Activate it once
+by adding this line to your shell config file:
+
+```bash
+# ~/.bashrc  or  ~/.zshrc
+eval "$(register-python-argcomplete grepxcel)"
+```
+
+After sourcing your config (or opening a new terminal), pressing TAB after
+`grepxcel` completes subcommands, and pressing TAB after a flag completes its
+options.
+
+---
+
 ## `grepxcel extract`
 
 Extract data from Excel files using a pattern file.

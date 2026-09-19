@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Features
+
+- **Shell TAB completion** — `grepxcel` now completes subcommands and flags in
+  bash, zsh, and fish. Included in the standard install (`argcomplete>=3.3`).
+  Activate once with `eval "$(register-python-argcomplete grepxcel)"` in your
+  shell config.
+- **`grepxcel docs` generates a Word guide** — running `grepxcel docs` now writes
+  both `pattern-reference.xlsx` and `grepxcel-guide.docx` to the output directory.
+  The docx is a complete quick-start guide for users who prefer Word over Excel.
+  `-o` now accepts a directory (default: `.`).
+- **`pattern-reference.xlsx` redesign** — two sheets: `guide` (active, first) with
+  quick-start steps, wizard instructions, and commands reference; `pattern-reference`
+  with the full syntax reference. Fixed a layout bug where CONFIG rows overlapped the
+  colour key. Colour key moved to a proper coloured section on both sheets.
+
+### Improvements
+
+- **`grepxcel -h` footer** — help output now shows the shell completion activation
+  command.
+- **Quickstart** — TAB completion activation added to the quickstart output.
+- **`docs/MINDSET.md`** — ethos rewritten to first-person; audience section updated
+  to acknowledge the accessibility investment (wizards, AI drafting, examples) while
+  keeping the engineering-first identity.
+
+### CLI help improvements
+
+- Category headers (`extract & validate:`, `onboarding:`, etc.) now render in colour
+  when the terminal supports it.
+- `-h -h` shows a compact per-command synopsis instead of duplicating the full help.
+- `-h -h -h` shows the full help for each command with labeled banners.
+
 ## [0.4.0] — 2026-09-17
 
 ### Features

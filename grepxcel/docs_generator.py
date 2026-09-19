@@ -220,6 +220,13 @@ class DocsGenerator:
         row(['cell: / table:', 'lavender',  'Instructions — cursor movement and table scanning'],   'cell')
         blank()
 
+        # TAB completion
+        section('SHELL TAB COMPLETION')
+        row(['', 'Add once to ~/.bashrc or ~/.zshrc to enable TAB completion for all commands and flags:'])
+        row(['', 'eval "$(register-python-argcomplete grepxcel)"'])
+        ws.cell(r - 1, 2).font = _CODE
+        blank()
+
         # Regenerate
         section('REGENERATING THIS GUIDE')
         row(['', 'grepxcel docs'])
@@ -614,6 +621,14 @@ class DocsGenerator:
             code('grepxcel lint data.xlsx'),
             pbold('schema',            'Generate JSON Schema from a pattern file.'),
             code('grepxcel schema pattern.xlsx'),
+            blank(),
+
+            h2('Shell TAB Completion'),
+            p('grepxcel includes TAB completion for all subcommands and flags (bash, zsh, fish). '
+              'Add this once to your shell config file to activate it:'),
+            code('eval "$(register-python-argcomplete grepxcel)"'),
+            p('Add the line above to ~/.bashrc or ~/.zshrc, then open a new terminal. '
+              'After that, pressing TAB after grepxcel completes subcommands and flags automatically.'),
             blank(),
 
             h2('Pattern File Format'),

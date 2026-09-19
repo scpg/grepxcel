@@ -140,6 +140,7 @@ def _build_parser() -> argparse.ArgumentParser:
         prog='grepxcel',
         description='Extract structured data from Excel files using a pattern.',
         formatter_class=_GroupedHelpFormatter,
+        epilog='Shell TAB completion: eval "$(register-python-argcomplete grepxcel)"',
     )
     from . import __version__
     p.add_argument(
