@@ -1,7 +1,9 @@
 """Tests for grepxcel lint — Excel file inspection before extraction."""
 
+import io
 import os
 import zipfile
+import zlib
 import openpyxl
 from openpyxl.styles import Font, PatternFill
 import pytest
@@ -87,6 +89,48 @@ class TestEncryption:
             f.write(b'PK\x03\x04' + b'\xff' * 100)
         results = lint_file(path)
         assert any(r[0] == FAIL for r in results)
+
+
+# ── ZIP bomb detection ────────────────────────────────────────────────────────
+
+def _make_zip_bomb_ratio(path: str, uncompressed_mb: float = 3.0) -> None:
+    """Write a ZIP file whose single member expands to uncompressed_mb of zeros.
+
+    Zeros compress at ~1000:1 with DEFLATE, so a ~3 KB file expands to ~3 MB —
+    enough to exceed the 50× ratio guard without allocating significant RAM.
+    """
+    payload = b'\x00' * int(uncompressed_mb * 1024 * 1024)
+    compressed = zlib.compress(payload, level=9)[2:-4]  # strip zlib header/trailer
+    crc = zlib.crc32(payload) & 0xFFFFFFFF
+    usize = len(payload)
+    csize = len(compressed)
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, 'w') as zf:
+        info = zipfile.ZipInfo('bomb.xml')
+        info.compress_type = zipfile.ZIP_DEFLATED
+        zf.writestr(info, payload)
+
+    with open(path, 'wb') as f:
+        f.write(buf.getvalue())
+
+
+class TestZipBomb:
+    def test_high_ratio_zip_fails(self, tmp_path):
+        """A ZIP whose content expands >50× is rejected as a likely ZIP bomb."""
+        path = str(tmp_path / 'bomb.xlsx')
+        _make_zip_bomb_ratio(path, uncompressed_mb=3.0)
+        results = lint_file(path)
+        assert any(r[0] == FAIL and 'integrity' in r[1].lower() for r in results)
+        assert any('ratio' in r[2].lower() or 'bomb' in r[2].lower()
+                   or 'zip' in r[2].lower()
+                   for r in results if r[0] == FAIL)
+
+    def test_normal_xlsx_passes_zip_guard(self, tmp_path):
+        """A legitimate xlsx has a low expansion ratio and must not be flagged."""
+        path = _make_xlsx(tmp_path)
+        results = lint_file(path)
+        assert not any(r[0] == FAIL and 'bomb' in r[2].lower() for r in results)
 
 
 # ── sheet dimensions / extent ─────────────────────────────────────────────────

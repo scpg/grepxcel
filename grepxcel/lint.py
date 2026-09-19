@@ -20,6 +20,7 @@ import sys
 import zipfile
 
 from .color import MARK_FAIL, MARK_INFO, MARK_OK, MARK_WARN, colorize_marks, should_color
+from .security import SecurityError, _check_zip_safety
 
 OK, WARN, FAIL, INFO = 'ok', 'warn', 'fail', 'info'
 _MARK = {OK: MARK_OK, WARN: MARK_WARN, FAIL: MARK_FAIL, INFO: MARK_INFO}
@@ -90,10 +91,16 @@ def lint_file(path: str) -> list[Result]:
         _add_advisory(results)
         return results
 
-    # ── 3. ZIP integrity ──────────────────────────────────────────────────
+    # ── 3. ZIP integrity + ZIP bomb guard ────────────────────────────────
+    try:
+        _check_zip_safety(path, max_uncompressed_mb=50.0)
+    except SecurityError as exc:
+        results.append((FAIL, 'file integrity', str(exc)))
+        _add_advisory(results)
+        return results
+
     try:
         with zipfile.ZipFile(path) as zf:
-            total_uncompressed = sum(e.file_size for e in zf.infolist())
             names = zf.namelist()
     except zipfile.BadZipFile:
         results.append((FAIL, 'file integrity',
