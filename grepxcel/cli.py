@@ -16,7 +16,7 @@ import json
 import os
 import sys
 
-from .color import MARK_FAIL, MARK_OK, MARK_WARN, colorize_marks, should_color
+from .color import MARK_FAIL, MARK_OK, MARK_WARN, colorize_marks, paint, should_color
 from .engine import Engine
 from .logger import Logger, VerbosityLevel
 from .utils import flatten_table_instances as _flatten_table_instances
@@ -93,37 +93,45 @@ class _GroupedHelpFormatter(argparse.RawDescriptionHelpFormatter):
             return ''
         return super()._format_action(action)
 
-_COMMANDS_HELP = """\
-extract & validate:
-  extract            Extract data from Excel files using a pattern file
-  validate-pattern   Validate a pattern file before running extraction
+def _commands_help() -> str:
+    """Grouped command listing with color when stdout is a TTY."""
+    c = should_color(sys.stdout)
 
-onboarding:
-  quickstart         Guided tutorial — learn grepxcel in your terminal
-  web-wizard         Build a pattern file visually in your browser
-  generate-examples  Create ready-to-run example files in a local directory
-  docs               Write a pattern-format reference xlsx
+    def _sec(s):
+        return paint(s, 'cyan', c)
 
-automation:
-  watch              Monitor a directory and extract new .xlsx files automatically
-  test               Test a pattern's reliability against a sample directory
-
-AI & MCP:
-  draft              Draft a starter pattern file using a local LLM
-  generate-skill     Write an AI-agent skill doc (Claude / AGENTS.md)
-  mcp                Start the grepxcel MCP server (stdio transport)
-  mcp-config         Print the MCP server config for your AI agent
-
-inspection:
-  lint               Inspect an Excel file for potential extraction issues
-  schema             Generate a JSON Schema from a pattern file
-
-compliance & ops:
-  sbom               Generate a CycloneDX 1.6 SBOM for this installation
-  doctor             Check the environment is ready (deps, API keys, model)
-
-Run 'grepxcel <command> --help' for per-command options.
-Run 'grepxcel -h -h' for a synopsis of every command's options."""
+    return (
+        f"{_sec('extract & validate:')}\n"
+        "  extract            Extract data from Excel files using a pattern file\n"
+        "  validate-pattern   Validate a pattern file before running extraction\n"
+        "\n"
+        f"{_sec('onboarding:')}\n"
+        "  quickstart         Guided tutorial — learn grepxcel in your terminal\n"
+        "  web-wizard         Build a pattern file visually in your browser\n"
+        "  generate-examples  Create ready-to-run example files in a local directory\n"
+        "  docs               Write a pattern-format reference xlsx\n"
+        "\n"
+        f"{_sec('automation:')}\n"
+        "  watch              Monitor a directory and extract new .xlsx files automatically\n"
+        "  test               Test a pattern's reliability against a sample directory\n"
+        "\n"
+        f"{_sec('AI & MCP:')}\n"
+        "  draft              Draft a starter pattern file using a local LLM\n"
+        "  generate-skill     Write an AI-agent skill doc (Claude / AGENTS.md)\n"
+        "  mcp                Start the grepxcel MCP server (stdio transport)\n"
+        "  mcp-config         Print the MCP server config for your AI agent\n"
+        "\n"
+        f"{_sec('inspection:')}\n"
+        "  lint               Inspect an Excel file for potential extraction issues\n"
+        "  schema             Generate a JSON Schema from a pattern file\n"
+        "\n"
+        f"{_sec('compliance & ops:')}\n"
+        "  sbom               Generate a CycloneDX 1.6 SBOM for this installation\n"
+        "  doctor             Check the environment is ready (deps, API keys, model)\n"
+        "\n"
+        "Run 'grepxcel <command> --help' for per-command options.\n"
+        "Run 'grepxcel -h -h' for a synopsis of every command's options."
+    )
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -142,7 +150,7 @@ def _build_parser() -> argparse.ArgumentParser:
         dest='command',
         metavar='COMMAND',
         title='commands',
-        description=_COMMANDS_HELP,
+        description=_commands_help(),
     )
     sub.required = True
 
@@ -1332,18 +1340,57 @@ def _run_draft(args) -> int:
 
 # ── Multi-level help ──────────────────────────────────────────────────────────
 
+def _synopsis_args(sp: argparse.ArgumentParser) -> str:
+    """Compact args string: required flags, positionals, then [options]."""
+    required_parts: list[str] = []
+    positional_parts: list[str] = []
+    has_optional = False
+    for action in sp._actions:
+        if isinstance(action, (argparse._HelpAction, argparse._SubParsersAction)):
+            continue
+        if not action.option_strings:
+            meta = action.metavar or action.dest.upper()
+            if isinstance(meta, tuple):
+                meta = meta[0]
+            if action.nargs == '+':
+                positional_parts.append(f'{meta} [...]')
+            elif action.nargs == '*':
+                positional_parts.append(f'[{meta} ...]')
+            elif action.nargs == '?':
+                if action.choices:
+                    positional_parts.append(f'[{{{",".join(str(c) for c in action.choices)}}}]')
+                else:
+                    positional_parts.append(f'[{meta}]')
+            else:
+                positional_parts.append(str(meta))
+        elif getattr(action, 'required', False):
+            flag = min(action.option_strings, key=len)
+            meta = action.metavar or ''
+            required_parts.append(f'{flag} {meta}'.strip())
+        else:
+            has_optional = True
+    parts = required_parts + positional_parts
+    if has_optional:
+        parts.append('[options]')
+    return '  '.join(parts)
+
+
 def _print_synopsis(parser: argparse.ArgumentParser) -> None:
-    """Print one usage line per subcommand (-h -h)."""
+    """Print compact one-line synopsis per subcommand (-h -h)."""
     sub_action = next(
         (a for a in parser._actions if isinstance(a, argparse._SubParsersAction)),
         None,
     )
     if sub_action is None:
         return
-    print("Per-command synopsis  (grepxcel -h -h -h for full help of each):\n")
+    color = should_color(sys.stdout)
+    heading = paint('Per-command synopsis', 'bold', color) + '  (-h -h -h for full help of each):'
+    print(f'\n{heading}\n')
+    name_w = max(len(n) for n in sub_action.choices) + 2
     for name, sp in sub_action.choices.items():
-        usage = sp.format_usage().strip()
-        print(f"  {usage}")
+        args_str = _synopsis_args(sp)
+        padding = ' ' * (name_w - len(name))
+        print(f"  {paint(name, 'cyan', color)}{padding}  {args_str}")
 
 
 def _print_full_help(parser: argparse.ArgumentParser) -> None:
@@ -1354,10 +1401,17 @@ def _print_full_help(parser: argparse.ArgumentParser) -> None:
     )
     if sub_action is None:
         return
-    sep = "─" * 60
+    color = should_color(sys.stdout)
+    first = True
     for name, sp in sub_action.choices.items():
+        if not first:
+            print()
+        first = False
+        label = paint(name, 'bold', color)
+        fill = '─' * max(0, 58 - len(name))
+        print(f'{'─' * 4} {label} {fill}')
+        print()
         print(sp.format_help())
-        print(sep)
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────
