@@ -267,23 +267,36 @@ def run_doctor(area: str = 'all', probe: bool = True, out=None,
     # Activate any configured corporate trust so the probe reflects reality.
     proxy_support.enable_corporate_tls(announce=False)
 
-    sections: list[tuple[str, list[Result]]] = []
+    sections: list[tuple[str, str, list[Result]]] = []
     if area in ('extract', 'all'):
-        sections.append(('extract — core', check_extract()))
+        sections.append(('extract — core',
+                         'verify that extraction from Excel files works end-to-end',
+                         check_extract()))
     if area in ('draft', 'all'):
-        sections.append(('draft — credentials (.env)', check_env(strict_env)))
-        sections.append(('draft — local model', check_draft_local()))
-        sections.append(('draft — cloud backends', check_draft_cloud()))
+        sections.append(('draft — credentials (.env)',
+                         'API keys and .env config used by cloud pattern drafters',
+                         check_env(strict_env)))
+        sections.append(('draft — local model',
+                         'local AI model to generate a starter pattern from your data file',
+                         check_draft_local()))
+        sections.append(('draft — cloud backends',
+                         'cloud AI services for pattern drafting (Anthropic, Gemini, NVIDIA)',
+                         check_draft_cloud()))
         srv_url = os.environ.get('GREPXCEL_SERVER_URL', 'http://localhost:1234/v1')
-        sections.append(('draft — server backend', check_server(url=srv_url)))
-        sections.append(('network — proxy / TLS', check_proxy_tls(probe=probe)))
+        sections.append(('draft — server backend',
+                         'local OpenAI-compatible API server (LM Studio, Ollama, vLLM, …)',
+                         check_server(url=srv_url)))
+        sections.append(('network — proxy / TLS',
+                         'corporate proxy, TLS certificates, and outbound connectivity',
+                         check_proxy_tls(probe=probe)))
 
     color = should_color(out)
     print(f'grepxcel doctor — checking: {area}\n' + '─' * 62, file=out)
     any_fail = False
     proxy_fail = False
-    for title, checks in sections:
-        print(f'\n  {title}', file=out)
+    for title, desc, checks in sections:
+        subtitle = paint(f'  # {desc}', 'dim', color)
+        print(f'\n  {title}{subtitle}', file=out)
         for status, name, detail in checks:
             if status == FAIL:
                 any_fail = True
