@@ -407,10 +407,33 @@ td.gx-cell[data-field]:not([data-field=""]):hover::before {
 .sb-pct { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
 
 /* ── Config Panel ───────────────────────────────────────────────── */
-.cfg-section-title {
-  font-size: 11px; font-weight: 700; color: var(--text-muted);
-  text-transform: uppercase; letter-spacing: 0.5px; margin: 12px 0 6px;
+/* ── Config tab — section bands + inline rows ── */
+.cfg-band {
+  display: flex; align-items: center; gap: 5px;
+  margin: 0 -12px; padding: 5px 12px;
+  background: var(--bg);
+  font-size: 10px; font-weight: 700; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 0.6px;
 }
+.cfg-band:first-child { margin-top: -12px; }
+.cfg-row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; padding: 7px 0;
+  border-bottom: 1px solid rgba(128,128,128,0.08);
+}
+.cfg-row:last-of-type { border-bottom: none; }
+.cfg-row-label {
+  font-size: 12px; color: var(--text);
+  display: flex; align-items: center; gap: 4px;
+  flex: 1; min-width: 0;
+}
+.cfg-sub { font-size: 10px; opacity: 0.55; font-weight: 400; }
+.cfg-ctrl { flex-shrink: 0; width: 52%; }
+.cfg-ctrl input, .cfg-ctrl select { width: 100%; box-sizing: border-box; }
+.cfg-ctrl-sm { width: 72px; }
+.cfg-ctrl-sm input { width: 100%; box-sizing: border-box; }
+/* Accent colour + italic when a select is showing its default value */
+select.cfg-sel-default { color: var(--accent); font-style: italic; font-weight: 600; }
 .switch-row {
   display: flex; align-items: center; justify-content: space-between;
   padding: 4px 0;
@@ -884,90 +907,116 @@ td.gx-T-bottom { border-bottom: 2px solid rgba(124,58,237,0.5) !important; }
 
       <!-- ── Config Tab ── -->
       <div id="tab-config" style="display:none">
-        <div class="cfg-section-title">Scan direction
-          <span class="info-icon" title="Controls the order cells are visited when building the pattern.&#10;LR (left-to-right): scan row by row — label is expected to the LEFT of its value.&#10;TD (top-down): scan column by column — label is expected ABOVE its value.">🛈</span>
-        </div>
-        <div class="form-group">
-          <select id="cfg-direction">
-            <option value="LR">LR — left-to-right, top-to-bottom</option>
-            <option value="TD">TD — top-down, left-to-right</option>
-          </select>
+
+        <!-- ── GLOBAL ───────────────────────────────────── -->
+        <div class="cfg-band">Global
+          <span class="info-icon" title="Settings that apply to the whole pattern file.">🛈</span>
         </div>
 
-        <!-- Labels section -->
-        <div class="cfg-section-title" style="margin-top:10px">Labels
-          <span class="info-icon" title="Settings that control how label anchor cells are read and matched.&#10;Labels are the cells you classify as L — they anchor value cells nearby.">🛈</span>
+        <div class="cfg-row">
+          <span class="cfg-row-label">Scan direction
+            <span class="info-icon" title="Controls the order cells are visited when building the pattern.&#10;LR (left-to-right): scan row by row — label is expected to the LEFT of its value.&#10;TD (top-down): scan column by column — label is expected ABOVE its value.">🛈</span>
+          </span>
+          <div class="cfg-ctrl">
+            <select id="cfg-direction" onchange="_cfgSelMark(this,'LR')">
+              <option value="LR">LR — left-to-right</option>
+              <option value="TD">TD — top-down</option>
+            </select>
+          </div>
         </div>
-        <div class="form-group">
-          <label style="font-size:11px;color:var(--text-muted);margin-bottom:2px">Match mode (lbl.match)
-            <span class="info-icon" title="How label anchor text is matched against spreadsheet cells.&#10;literal: exact text match (default, safe for most cases).&#10;glob: wildcard patterns (* matches anything, ? matches one char).&#10;regexp: full Python regular expressions.">🛈</span>
-          </label>
-          <select id="cfg-lbl_match">
-            <option value="">literal (default)</option>
-            <option value="glob">glob</option>
-            <option value="regexp">regexp</option>
-          </select>
+
+        <div class="cfg-row">
+          <span class="cfg-row-label">Currency sign
+            <span class="info-icon" title="A character stripped from cell values before number parsing.&#10;e.g. with €: the cell '€1,200.00' is extracted as the number 1200.&#10;Leave blank to disable.">🛈</span>
+          </span>
+          <div class="cfg-ctrl-sm">
+            <input id="cfg-currency" type="text" maxlength="5" placeholder="€">
+          </div>
         </div>
-        <div class="switch-row">
-          <label>Ignore case
+
+        <div class="cfg-row">
+          <span class="cfg-row-label">Empty aliases
+            <span class="info-icon" title="Comma-separated values treated as empty/null during extraction.&#10;Any cell whose content matches one of these strings is returned as null instead of the raw text.&#10;e.g. '#N/A, N/A, —' treats those placeholders as missing values.">🛈</span>
+          </span>
+          <div class="cfg-ctrl">
+            <input id="cfg-aliases" type="text" placeholder="#N/A, N/A, —">
+          </div>
+        </div>
+
+        <!-- ── LABELS ────────────────────────────────────── -->
+        <div class="cfg-band" style="margin-top:10px">Labels
+          <span class="info-icon" title="Settings that control how label anchor cells (L) are read and matched against spreadsheet cells.">🛈</span>
+        </div>
+
+        <div class="cfg-row">
+          <span class="cfg-row-label">Ignore case
             <span class="info-icon" title="When ON, label anchors are matched case-insensitively.&#10;e.g. 'Invoice No:' matches 'INVOICE NO:' or 'invoice no:'.">🛈</span>
-          </label>
+          </span>
           <label class="toggle"><input type="checkbox" id="cfg-ignore_case_labels"><span class="slider"></span></label>
         </div>
-        <div class="switch-row">
-          <label>Trim whitespace
+
+        <div class="cfg-row">
+          <span class="cfg-row-label">Trim whitespace
             <span class="info-icon" title="When ON, leading and trailing spaces are stripped from label cell text before matching.&#10;Helps when spreadsheets have accidentally padded label cells.">🛈</span>
-          </label>
+          </span>
           <label class="toggle"><input type="checkbox" id="cfg-trim_ws_labels"><span class="slider"></span></label>
         </div>
 
-        <!-- Values section -->
-        <div class="cfg-section-title" style="margin-top:10px">Values
-          <span class="info-icon" title="Settings that control how value cells are read and extracted.&#10;Values are the cells you classify as V — the data the engine extracts.">🛈</span>
-        </div>
-        <div class="switch-row">
-          <label>Allow empty cells
-            <span class="info-icon" title="Enable for blank-form spreadsheets where value cells are empty.&#10;In template mode the engine accepts empty cells as valid extraction targets.">🛈</span>
-          </label>
-          <label class="toggle"><input type="checkbox" id="cfg-template"><span class="slider"></span></label>
-        </div>
-        <div class="switch-row">
-          <label>Ignore case
-            <span class="info-icon" title="When ON, value pattern matching and empty-alias lookup are case-insensitive.&#10;e.g. match pattern 'active' also matches 'ACTIVE' or 'Active'.">🛈</span>
-          </label>
-          <label class="toggle"><input type="checkbox" id="cfg-ignore_case_values"><span class="slider"></span></label>
-        </div>
-        <div class="switch-row">
-          <label>Trim whitespace
-            <span class="info-icon" title="When ON, leading and trailing spaces are stripped from extracted values before returning them.&#10;Useful for poorly formatted spreadsheets.">🛈</span>
-          </label>
-          <label class="toggle"><input type="checkbox" id="cfg-trim_ws_values"><span class="slider"></span></label>
-        </div>
-        <div class="form-group" style="margin-top:6px">
-          <label style="font-size:11px;color:var(--text-muted);margin-bottom:2px">Match mode (var.match)
-            <span class="info-icon" title="How value field match patterns are interpreted.&#10;regexp: patterns are regular expressions (default).&#10;literal: patterns are plain text.&#10;glob: patterns use * and ? wildcards.">🛈</span>
-          </label>
-          <select id="cfg-var_match">
-            <option value="">regexp (default)</option>
-            <option value="literal">literal</option>
-            <option value="glob">glob</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label style="font-size:11px;color:var(--text-muted);margin-bottom:2px">Currency sign
-            <span class="info-icon" title="A character stripped from cell values before number parsing.&#10;e.g. with €: the cell '€1,200.00' is extracted as the number 1200.">🛈</span>
-          </label>
-          <input id="cfg-currency" type="text" maxlength="5" style="width:80px" placeholder="€">
-        </div>
-        <div class="form-group">
-          <label style="font-size:11px;color:var(--text-muted);margin-bottom:2px">Empty aliases
-            <span class="info-icon" title="Values treated as empty/null during extraction.&#10;Comma-separated list. Any cell whose content matches one of these strings is returned as null instead of the raw text.&#10;Useful for placeholder text like '#N/A' or '—'.">🛈</span>
-          </label>
-          <input id="cfg-aliases" type="text" placeholder="#N/A, N/A, —">
-          <div class="aliases-help">Comma-separated values treated as empty/null</div>
+        <div class="cfg-row">
+          <span class="cfg-row-label">Match mode
+            <span class="cfg-sub">(lbl.match)</span>
+            <span class="info-icon" title="How label anchor text is matched against spreadsheet cells.&#10;literal (default): exact text match — safe for most cases.&#10;glob: wildcard patterns (* matches anything, ? matches one char).&#10;regexp: full Python regular expressions.">🛈</span>
+          </span>
+          <div class="cfg-ctrl">
+            <select id="cfg-lbl_match" onchange="_cfgSelMark(this,'')">
+              <option value="">literal</option>
+              <option value="glob">glob</option>
+              <option value="regexp">regexp</option>
+            </select>
+          </div>
         </div>
 
-        <button class="btn btn-primary" style="width:100%;margin-top:8px" onclick="saveConfig()">
+        <!-- ── VALUES ────────────────────────────────────── -->
+        <div class="cfg-band" style="margin-top:10px">Values
+          <span class="info-icon" title="Settings that control how value cells (V) are read and extracted.">🛈</span>
+        </div>
+
+        <div class="cfg-row">
+          <span class="cfg-row-label">Ignore case
+            <span class="info-icon" title="When ON, value pattern matching and empty-alias lookup are case-insensitive.&#10;e.g. match pattern 'active' also matches 'ACTIVE' or 'Active'.">🛈</span>
+          </span>
+          <label class="toggle"><input type="checkbox" id="cfg-ignore_case_values"><span class="slider"></span></label>
+        </div>
+
+        <div class="cfg-row">
+          <span class="cfg-row-label">Trim whitespace
+            <span class="info-icon" title="When ON, leading and trailing spaces are stripped from extracted values before returning them.&#10;Useful for poorly formatted spreadsheets.">🛈</span>
+          </span>
+          <label class="toggle"><input type="checkbox" id="cfg-trim_ws_values"><span class="slider"></span></label>
+        </div>
+
+        <div class="cfg-row">
+          <span class="cfg-row-label">Allow empty cells
+            <span class="info-icon" title="Enable for blank-form spreadsheets where value cells are empty.&#10;In template mode the engine accepts empty cells as valid extraction targets.">🛈</span>
+          </span>
+          <label class="toggle"><input type="checkbox" id="cfg-template"><span class="slider"></span></label>
+        </div>
+
+        <div class="cfg-row">
+          <span class="cfg-row-label">Match mode
+            <span class="cfg-sub">(var.match)</span>
+            <span class="info-icon" title="How value field match patterns are interpreted.&#10;regexp (default): patterns are regular expressions.&#10;literal: patterns are plain text.&#10;glob: patterns use * and ? wildcards.">🛈</span>
+          </span>
+          <div class="cfg-ctrl">
+            <select id="cfg-var_match" onchange="_cfgSelMark(this,'')">
+              <option value="">regexp</option>
+              <option value="literal">literal</option>
+              <option value="glob">glob</option>
+            </select>
+          </div>
+        </div>
+
+        <button class="btn btn-primary" style="width:100%;margin-top:14px" onclick="saveConfig()">
           ✓ Save Config
         </button>
       </div>
@@ -1665,6 +1714,10 @@ function renderStats(stats) {
 }
 
 // ── Config ────────────────────────────────────────────────────────────────
+function _cfgSelMark(sel, defaultVal) {
+  sel.classList.toggle('cfg-sel-default', sel.value === defaultVal);
+}
+
 function populateConfigPanel(cfg) {
   setVal('cfg-direction',         cfg.direction  || 'LR');
   setChk('cfg-template',          cfg.template   || false);
@@ -1680,6 +1733,9 @@ function populateConfigPanel(cfg) {
   setVal('cfg-lbl_match',         cfg.lbl_match  || '');
   setVal('cfg-var_match',         cfg.var_match  || '');
   setVal('cfg-aliases',           (cfg.empty_aliases || []).join(', '));
+  _cfgSelMark(document.getElementById('cfg-direction'), 'LR');
+  _cfgSelMark(document.getElementById('cfg-lbl_match'), '');
+  _cfgSelMark(document.getElementById('cfg-var_match'), '');
 }
 
 async function saveConfig() {
