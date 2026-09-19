@@ -111,6 +111,11 @@ def run_quickstart() -> int:
         '  Design philosophy:   https://github.com/scpg/grepxcel/blob/main/docs/MINDSET.md',
         '  Local guide:         grepxcel docs  (writes pattern-reference.xlsx + grepxcel-guide.docx)',
         '',
+        _bold('  TAB completion'),
+        '',
+        '  Add to ~/.bashrc or ~/.zshrc to enable:',
+        '    eval "$(register-python-argcomplete grepxcel)"',
+        '',
     ]
     print('\n'.join(lines), file=sys.stderr)
     return 0

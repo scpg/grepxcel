@@ -115,6 +115,13 @@ That's all you need to extract data. Optional extras add more capabilities:
 
 Requires Python **3.11+**. Works on Linux, macOS, and Windows.
 
+**Shell TAB completion** (bash/zsh/fish) is included. Add this once to your shell config to activate it:
+
+```bash
+# bash (~/.bashrc) or zsh (~/.zshrc)
+eval "$(register-python-argcomplete grepxcel)"
+```
+
 <details>
 <summary>Installing from source (for contributors)</summary>
 

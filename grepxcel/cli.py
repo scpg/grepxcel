@@ -1,3 +1,4 @@
+# PYTHON_ARGCOMPLETE_OK
 """
 Command-line interface for grepxcel.
 
@@ -1433,7 +1434,13 @@ def main(argv=None):
             _print_synopsis(p)
         sys.exit(0)
 
-    args = _build_parser().parse_args(argv)
+    parser = _build_parser()
+    try:
+        import argcomplete
+        argcomplete.autocomplete(parser)
+    except ImportError:
+        pass
+    args = parser.parse_args(argv)
 
     if args.command == 'quickstart':
         from .quickstart import run_quickstart
