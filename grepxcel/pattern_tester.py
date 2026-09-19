@@ -60,6 +60,7 @@ class PatternTestReport:
     file_results: list[FileResult]
     # field_name → (count_present, count_total)
     field_counts: dict[str, tuple[int, int]] = field(default_factory=dict)
+    base_dir: str = ''
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -185,6 +186,7 @@ def run_tests(
                 max_uncompressed_mb=max_uncompressed_mb,
             )
             # Collect WARNING/ERROR records from the logger
+            has_fatal = logger.has_errors()
             for rec in logger._records:
                 if rec.severity in ('WARNING', 'ERROR'):
                     issues.append(rec.message)
@@ -199,12 +201,13 @@ def run_tests(
                     field_present[f] = field_present.get(f, 0) + 1
 
             missing = fields - present
-            if missing or issues:
-                if strict or missing:
-                    status = 'fail' if (strict and missing) else 'warn'
-                else:
-                    status = 'warn'
-                issues.extend(f'missing: {m}' for m in sorted(missing))
+            issues.extend(f'missing: {m}' for m in sorted(missing))
+            # FATAL ERROR records (severity=ERROR) always produce 'fail',
+            # regardless of strict mode — the engine hit a structural problem.
+            if has_fatal or (strict and missing):
+                status = 'fail'
+            elif missing or issues:
+                status = 'warn'
             else:
                 status = 'pass'
 
@@ -251,6 +254,7 @@ def run_tests(
         failed=failed,
         file_results=file_results,
         field_counts=field_counts,
+        base_dir=directory,
     )
 
 
@@ -264,55 +268,107 @@ def _bar(count: int, total: int, width: int = _BAR_WIDTH) -> str:
     return '█' * filled + '░' * (width - filled)
 
 
-def format_human(report: PatternTestReport, color: bool = True) -> str:
-    """Return a human-readable multi-line string summarising the test run."""
-    lines = []
+def _rel_path(path: str, base_dir: str) -> str:
+    """Return path relative to base_dir, or the original path if that fails."""
+    if base_dir:
+        try:
+            return os.path.relpath(path, base_dir)
+        except ValueError:
+            pass
+    return path
 
-    ok = '✅' if color else 'OK'
+
+def _compact_file_line(r: FileResult, base_dir: str, ok: str, warn: str, fail: str) -> str:
+    """One-line summary for a single FileResult: mark + relative path [+ first issue]."""
+    display = _rel_path(r.path, base_dir)
+    if r.status == 'fail':
+        msg = r.error or (r.issues[0] if r.issues else '')
+        return f'  {fail}  {display}' + (f'   {msg[:80]}' if msg else '')
+    if r.status == 'warn':
+        msg = r.issues[0] if r.issues else ''
+        return f'  {warn}  {display}' + (f'   {msg[:80]}' if msg else '')
+    return f'  {ok}  {display}'
+
+
+def _field_reliability_block(report: PatternTestReport) -> list[str]:
+    """Return lines for the field reliability table."""
+    if not report.field_counts:
+        return []
+    lines = ['\nField reliability:']
+    max_name = max(len(k) for k in report.field_counts)
+    for fname, (present, total) in sorted(report.field_counts.items()):
+        pct = present / total * 100 if total else 0
+        bar = _bar(present, total)
+        lines.append(
+            f'  {fname:<{max_name}}  {present:>{len(str(total))}}/{total}  '
+            f'{bar}  {pct:5.1f}%'
+        )
+    return lines
+
+
+def _summary_line(report: PatternTestReport, ok: str, warn: str, fail: str) -> str:
+    n = report.total
+    noun = 'file' if n == 1 else 'files'
+    if report.passed == n:
+        return f'Tested {n} {noun} — {ok} all {n} passed'
+    parts = []
+    if report.passed:
+        parts.append(f'{ok} {report.passed} passed')
+    if report.warned:
+        parts.append(f'{warn} {report.warned} warned')
+    if report.failed:
+        parts.append(f'{fail} {report.failed} failed')
+    return f'Tested {n} {noun} — ' + '   '.join(parts)
+
+
+def format_human(report: PatternTestReport, color: bool = True,
+                 verbose: int = 0) -> str:
+    """Return a human-readable summary of the test run.
+
+    verbose=0 (default): one compact line per file + summary.
+    verbose=1  (-v):     compact lines + field reliability table + summary.
+    verbose=2  (-vv):    full per-file detail blocks + reliability table + summary.
+    """
+    lines = []
+    base_dir = report.base_dir
+
+    ok   = '✅' if color else 'OK'
     warn = '⚠️ ' if color else 'WARN'
     fail = '❌' if color else 'FAIL'
 
-    lines.append(f'\nTested {report.total} file{"s" if report.total != 1 else ""}  '
-                 f'— pattern: {os.path.basename(report.pattern_path)}\n')
+    # Header
+    lines.append(
+        f'\npattern: {os.path.basename(report.pattern_path)}'
+        f'  [{report.total} file{"s" if report.total != 1 else ""}]\n'
+    )
 
-    if report.passed == report.total:
-        lines.append(f'{ok} All {report.total} passed — every field extracted cleanly')
+    if verbose >= 2:
+        # Detailed per-file blocks
+        sep = '─' * 56
+        for r in report.file_results:
+            display = _rel_path(r.path, base_dir)
+            lines.append(f'── {display} ' + '─' * max(0, 54 - len(display)))
+            if r.status == 'pass':
+                lines.append(f'  {ok}  all fields extracted cleanly')
+            else:
+                mark = fail if r.status == 'fail' else warn
+                if r.error:
+                    lines.append(f'  {mark}  {r.error}')
+                for issue in r.issues:
+                    lines.append(f'  {mark}  {issue}')
+            lines.append('')
     else:
-        if report.passed:
-            lines.append(f'{ok} {report.passed} passed')
-        if report.warned:
-            lines.append(f'{warn} {report.warned} {"warning" if report.warned == 1 else "warnings"} '
-                         f'— partial extraction (some fields missing or null)')
-        if report.failed:
-            lines.append(f'{fail} {report.failed} failed '
-                         f'— extraction error or required field missing')
+        # Compact: one line per file
+        for r in report.file_results:
+            lines.append(_compact_file_line(r, base_dir, ok, warn, fail))
+        lines.append('')
 
-    if report.field_counts:
-        lines.append('\nField reliability:')
-        max_name = max(len(k) for k in report.field_counts)
-        for fname, (present, total) in sorted(report.field_counts.items()):
-            pct = present / total * 100 if total else 0
-            bar = _bar(present, total)
-            lines.append(
-                f'  {fname:<{max_name}}  {present:>{len(str(total))}}/{total}  '
-                f'{bar}  {pct:5.1f}%'
-            )
+    # Field reliability table (verbose >= 1)
+    if verbose >= 1:
+        lines.extend(_field_reliability_block(report))
+        lines.append('')
 
-    failures = [r for r in report.file_results if r.status == 'fail']
-    warnings = [r for r in report.file_results if r.status == 'warn']
-
-    if failures:
-        lines.append('\nFailures:')
-        for r in failures:
-            msg = r.error or ', '.join(r.issues[:3])
-            lines.append(f'  {fail} {os.path.basename(r.path)} — {msg}')
-
-    if warnings:
-        lines.append('\nWarnings:')
-        for r in warnings:
-            msg = ', '.join(r.issues[:3])
-            lines.append(f'  {warn} {os.path.basename(r.path)} — {msg}')
-
+    lines.append(_summary_line(report, ok, warn, fail))
     lines.append('')
     return '\n'.join(lines)
 

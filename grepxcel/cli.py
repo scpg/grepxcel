@@ -509,6 +509,12 @@ examples:
         help='Treat any missing field as a failure (exit 2)',
     )
     p.add_argument(
+        '-v', '--verbose',
+        action='count',
+        default=0,
+        help='-v: add field reliability table  -vv: full per-file detail',
+    )
+    p.add_argument(
         '--no-color',
         action='store_true',
         default=False,
@@ -1556,8 +1562,11 @@ def main(argv=None):
         if fmt == 'json':
             print(format_json(report))
         else:
+            from .color import should_color
             no_color = getattr(args, 'no_color', False)
-            print(format_human(report, color=not no_color))
+            use_color = (not no_color) and should_color(sys.stdout)
+            verbose = getattr(args, 'verbose', 0)
+            print(format_human(report, color=use_color, verbose=verbose))
 
         if report.failed > 0:
             sys.exit(2)
