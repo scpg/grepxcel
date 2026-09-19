@@ -109,7 +109,7 @@ def _commands_help() -> str:
         "  quickstart         Guided tutorial — learn grepxcel in your terminal\n"
         "  web-wizard         Build a pattern file visually in your browser\n"
         "  generate-examples  Create ready-to-run example files in a local directory\n"
-        "  docs               Write a pattern-format reference xlsx\n"
+        "  docs               Write pattern-reference.xlsx + grepxcel-guide.docx\n"
         "\n"
         f"{_sec('automation:')}\n"
         "  watch              Monitor a directory and extract new .xlsx files automatically\n"
@@ -690,19 +690,19 @@ examples:
 def _add_docs_subparser(sub) -> None:
     p = sub.add_parser(
         'docs',
-        help='Write a self-documenting pattern-format reference xlsx',
+        help='Write a pattern-format guide (pattern-reference.xlsx + grepxcel-guide.docx)',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 examples:
   grepxcel docs
-  grepxcel docs -o reference/pattern-reference.xlsx
+  grepxcel docs -o reference/
         """,
     )
     p.add_argument(
         '-o', '--output',
-        metavar='FILE',
-        default='pattern-reference.xlsx',
-        help='Output path for the reference file (default: pattern-reference.xlsx)',
+        metavar='DIR',
+        default='.',
+        help='Output directory (default: current directory)',
     )
 
 
@@ -1092,8 +1092,9 @@ def _output_stem(data_file: str, all_files: list[str]) -> str:
 
 def _run_docs(args) -> int:
     from .docs_generator import DocsGenerator
-    DocsGenerator().write(args.output)
-    print(f'Pattern reference written to: {args.output}', file=sys.stderr)
+    paths = DocsGenerator().write(args.output)
+    for path in paths:
+        print(f'Written: {path}', file=sys.stderr)
     return 0
 
 

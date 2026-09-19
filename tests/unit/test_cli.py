@@ -228,18 +228,21 @@ def test_run_docs_imports_generator_and_writes(monkeypatch, capsys):
     called = {}
 
     class FakeDocsGenerator:
-        def write(self, path):
-            called['path'] = path
+        def write(self, output_dir):
+            called['output_dir'] = output_dir
+            return [output_dir + '/pattern-reference.xlsx', output_dir + '/grepxcel-guide.docx']
 
     fake_mod = types.ModuleType('grepxcel.docs_generator')
     fake_mod.DocsGenerator = FakeDocsGenerator
     monkeypatch.setitem(__import__('sys').modules, 'grepxcel.docs_generator', fake_mod)
 
-    code = cli._run_docs(SimpleNamespace(output='ref.xlsx'))
+    code = cli._run_docs(SimpleNamespace(output='out/'))
 
     assert code == 0
-    assert called['path'] == 'ref.xlsx'
-    assert 'Pattern reference written to: ref.xlsx' in capsys.readouterr().err
+    assert called['output_dir'] == 'out/'
+    err = capsys.readouterr().err
+    assert 'pattern-reference.xlsx' in err
+    assert 'grepxcel-guide.docx' in err
 
 
 def _make_fake_drafter_mod(extra=None):

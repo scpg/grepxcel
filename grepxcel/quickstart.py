@@ -99,6 +99,7 @@ def run_quickstart() -> int:
         f'    {_cyan("grepxcel extract ... --strict")}              Fail on any issue',
         f'    {_cyan("grepxcel extract ... -v")}                    See step-by-step log',
         f'    {_cyan("grepxcel lint data.xlsx")}                    Check a file first',
+        f'    {_cyan("grepxcel docs")}                              Write local guide (.xlsx + .docx)',
         f'    {_cyan("grepxcel doctor")}                            Verify your setup',
         '',
         '─' * 64,
@@ -108,6 +109,7 @@ def run_quickstart() -> int:
         '  Pattern reference:   https://github.com/scpg/grepxcel/blob/main/docs/pattern-file.md',
         '  CLI reference:       https://github.com/scpg/grepxcel/blob/main/docs/cli-reference.md',
         '  Design philosophy:   https://github.com/scpg/grepxcel/blob/main/docs/MINDSET.md',
+        '  Local guide:         grepxcel docs  (writes pattern-reference.xlsx + grepxcel-guide.docx)',
         '',
     ]
     print('\n'.join(lines), file=sys.stderr)

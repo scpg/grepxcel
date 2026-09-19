@@ -175,9 +175,8 @@ def create_server(*, sandbox_root: str | None = None) -> "FastMCP":
             output_dir = tempfile.mkdtemp(prefix='grepxcel-docs-', dir=root)
         else:
             output_dir = _safe_path(output_dir, root)
-        path = os.path.join(output_dir, 'pattern-reference.xlsx')
-        DocsGenerator().write(path)
-        return f"Pattern reference written to: {path}"
+        paths = DocsGenerator().write(output_dir)
+        return "Written: " + ", ".join(paths)
 
     @mcp.tool()
     def doctor(area: str = "all") -> str:

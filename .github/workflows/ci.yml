@@ -60,8 +60,9 @@ jobs:
         run: |
           grepxcel --help
           grepxcel extract --help
-          grepxcel docs -o /tmp/pattern-reference.xlsx
-          test -f /tmp/pattern-reference.xlsx
+          grepxcel docs -o /tmp/gx-docs/
+          test -f /tmp/gx-docs/pattern-reference.xlsx
+          test -f /tmp/gx-docs/grepxcel-guide.docx
 
   package-extras:
     # Verify optional extras install cleanly and their entry points load.
@@ -157,20 +158,23 @@ jobs:
       - name: Install package
         run: pip install .
 
-      - name: Regenerate pattern-reference.xlsx
-        run: grepxcel docs -o /tmp/pattern-reference.xlsx
+      - name: Regenerate docs
+        run: grepxcel docs -o /tmp/gx-docs/
 
-      - name: Check if committed file is current
+      - name: Check if committed files are current
         run: |
-          if ! diff -q docs/pattern-reference.xlsx /tmp/pattern-reference.xlsx > /dev/null 2>&1; then
-            echo "::warning::docs/pattern-reference.xlsx is out of date."
-            echo "Run 'grepxcel docs -o docs/pattern-reference.xlsx' locally and include the updated file in your PR."
-          else
-            echo "docs/pattern-reference.xlsx is current."
-          fi
+          outdated=0
+          for f in pattern-reference.xlsx grepxcel-guide.docx; do
+            if ! diff -q "docs/$f" "/tmp/gx-docs/$f" > /dev/null 2>&1; then
+              echo "::warning::docs/$f is out of date. Run 'grepxcel docs -o docs/' locally and include the updated file in your PR."
+              outdated=1
+            else
+              echo "docs/$f is current."
+            fi
+          done
 
-      - name: Upload regenerated reference as artifact
+      - name: Upload regenerated docs as artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: pattern-reference
-          path: /tmp/pattern-reference.xlsx
+          name: grepxcel-docs
+          path: /tmp/gx-docs/

@@ -10,8 +10,7 @@
 - [ ] Added/updated tests for the change
 - [ ] Updated docs (README / `docs/` / `--help`) if behaviour changed
 - [ ] Updated `CHANGELOG.md` under **[Unreleased]**
-- [ ] If the pattern format changed, regenerated `docs/pattern-reference.xlsx`
-      (`grepxcel docs -o docs/pattern-reference.xlsx`)
+- [ ] If the pattern format changed, regenerated `docs/` (`grepxcel docs -o docs/`)
 
 ## Notes for reviewers
 
