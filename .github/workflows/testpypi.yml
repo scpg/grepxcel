@@ -101,43 +101,35 @@ jobs:
         with:
           python-version: "3.12"
 
-      # Poll the TestPyPI JSON API until the exact version appears (or timeout).
-      # Typically propagates in 15–30 s; this avoids a fixed sleep while still
-      # giving TestPyPI up to 5 minutes on slow days.
-      - name: Wait for TestPyPI propagation (dynamic poll)
+      # Retry pip install until TestPyPI CDN propagation reaches this runner.
+      # Using pip itself as the retry loop is more reliable than a separate curl
+      # poll: TestPyPI uses a multi-node CDN and a curl hit on one node does not
+      # guarantee the pip node is updated.  --no-cache-dir prevents pip from
+      # reusing a cached "version not found" response across retries.
+      #
+      # Why --extra-index-url?  test.pypi.org contains name-squatted or broken
+      # stubs for popular names; grepxcel itself comes from TestPyPI and its
+      # dependencies fall back to the real PyPI.
+      - name: Wait for TestPyPI propagation and install grepxcel (base)
         env:
           VERSION: ${{ needs.build.outputs.version }}
         run: |
           MAX_WAIT=300
-          INTERVAL=15
+          INTERVAL=20
           ELAPSED=0
-          # Poll the simple index — this is the same endpoint pip uses, so when
-          # it passes the subsequent pip install is guaranteed to find the version.
-          until curl -sf "https://test.pypi.org/simple/grepxcel/" | grep -q "${VERSION}"; do
+          until pip install --pre --no-cache-dir \
+              --index-url https://test.pypi.org/simple/ \
+              --extra-index-url https://pypi.org/simple/ \
+              "grepxcel==${VERSION}"; do
             if [ "$ELAPSED" -ge "$MAX_WAIT" ]; then
-              echo "Timed out after ${MAX_WAIT}s — grepxcel ${VERSION} not yet on TestPyPI." >&2
+              echo "Timed out after ${MAX_WAIT}s — grepxcel ${VERSION} not available via pip." >&2
               exit 1
             fi
             echo "Not yet available (${ELAPSED}s elapsed). Retrying in ${INTERVAL}s…"
             sleep "$INTERVAL"
             ELAPSED=$((ELAPSED + INTERVAL))
           done
-          echo "grepxcel ${VERSION} available on TestPyPI after ${ELAPSED}s."
-
-      # Install the exact pre-release version we just published.
-      #
-      # Why two steps?  test.pypi.org is a sandbox and contains name-squatted
-      # or broken stub packages for popular names (e.g. FASTAPI-1.0.tar.gz).
-      # If we ask pip to satisfy the [web] extras from --index-url=test.pypi.org
-      # it will find those stubs first and fail.  Solution: install the base
-      # grepxcel package from test.pypi.org (proving the upload is correct), then
-      # install the [web] extra dependencies separately from the real PyPI.
-      - name: Install grepxcel (base) from TestPyPI
-        run: |
-          pip install --pre \
-            --index-url https://test.pypi.org/simple/ \
-            --extra-index-url https://pypi.org/simple/ \
-            "grepxcel==${{ needs.build.outputs.version }}"
+          echo "Installed grepxcel ${VERSION} from TestPyPI after ${ELAPSED}s."
 
       - name: Install web-extra dependencies from real PyPI
         run: pip install "fastapi>=0.141" "uvicorn>=0.52" "jinja2>=3.1"
