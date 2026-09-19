@@ -250,15 +250,59 @@ def _add_advisory(results: list[Result]) -> None:
                      'flat data sheet.'))
 
 
+# ── directory expansion ───────────────────────────────────────────────────────
+
+_EXCEL_EXTENSIONS = {'.xlsx', '.xlsm', '.xlsb', '.xls'}
+
+
+def _expand_paths(paths: list[str], recursive: bool) -> list[str]:
+    """Expand any directory entries in *paths* to the Excel files they contain.
+
+    Non-directory entries are kept as-is (even if they don't exist — lint_file
+    will report the missing-file error).  Directories are scanned for files
+    with Excel extensions; with recursive=True, subdirectories are included.
+    Files within each directory are returned in sorted order.
+    """
+    expanded: list[str] = []
+    for p in paths:
+        if not os.path.isdir(p):
+            expanded.append(p)
+            continue
+        if recursive:
+            for root, _dirs, files in os.walk(p):
+                _dirs.sort()
+                for f in sorted(files):
+                    if os.path.splitext(f)[1].lower() in _EXCEL_EXTENSIONS:
+                        expanded.append(os.path.join(root, f))
+        else:
+            for f in sorted(os.listdir(p)):
+                if os.path.splitext(f)[1].lower() in _EXCEL_EXTENSIONS:
+                    expanded.append(os.path.join(p, f))
+    return expanded
+
+
 # ── runner (CLI entry point) ──────────────────────────────────────────────────
 
-def run_lint(files: list[str], out=None) -> int:
-    """Lint one or more files, print results, return exit code (0 or 1)."""
+def run_lint(files: list[str], out=None, recursive: bool = False) -> int:
+    """Lint one or more files or directories, print results, return exit code."""
     out = out or sys.stderr
     color = should_color(out)
     any_fail = False
 
-    for path in files:
+    expanded = _expand_paths(files, recursive)
+
+    if not expanded:
+        dirs = [p for p in files if os.path.isdir(p)]
+        if dirs:
+            for d in dirs:
+                flag = ' (recursive)' if recursive else ' (pass -r to recurse)'
+                print(colorize_marks(
+                    f'\ngrepxcel lint — {d}\n' + '─' * 62 + f'\n'
+                    f'  {_MARK[INFO]}  no Excel files found{flag}\n' + '─' * 62,
+                    color), file=out)
+        return 0
+
+    for path in expanded:
         print(f'\ngrepxcel lint — {path}\n' + '─' * 62, file=out)
         results = lint_file(path)
 

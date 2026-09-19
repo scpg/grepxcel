@@ -220,10 +220,14 @@ and known corporate-environment issues. Reports ✓/⚠/✗/ℹ.
 examples:
   grepxcel lint data.xlsx
   grepxcel lint jan.xlsx feb.xlsx        # lint several files
+  grepxcel lint data/                    # lint all Excel files in a directory
+  grepxcel lint data/ -r                 # recurse into subdirectories
         """,
     )
-    p.add_argument('files', nargs='+', metavar='FILE',
-                   help='Excel file(s) to inspect (.xlsx)')
+    p.add_argument('files', nargs='+', metavar='FILE_OR_DIR',
+                   help='Excel file(s) or director(ies) to inspect')
+    p.add_argument('-r', '--recursive', action='store_true',
+                   help='Recurse into subdirectories when a directory is given')
 
 
 def _add_schema_subparser(sub) -> None:
@@ -1104,7 +1108,7 @@ def _run_docs(args) -> int:
 
 def _run_lint(args) -> int:
     from .lint import run_lint
-    return run_lint(args.files)
+    return run_lint(args.files, recursive=getattr(args, 'recursive', False))
 
 
 # ── validate-pattern handler ─────────────────────────────────────────────────

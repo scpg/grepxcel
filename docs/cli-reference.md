@@ -169,16 +169,24 @@ grepxcel docs -o reference/pattern-reference.xlsx
 
 ## `grepxcel lint`
 
-Inspect an Excel data file before extraction.
+Inspect Excel files before extraction.
 
 ```bash
 grepxcel lint data.xlsx
 grepxcel lint jan.xlsx feb.xlsx
+grepxcel lint data/
+grepxcel lint data/ -r
 ```
 
-Checks: file format, ZIP integrity, encryption/IRM, Microsoft Information
-Protection labels, sheet dimensions (declared vs real), merged cells, formula
-cells, empty sheets.
+| Flag | Default | Purpose |
+|---|---|---|
+| `FILE_OR_DIR...` (positional) | required | Excel file(s) or director(ies) to inspect |
+| `-r, --recursive` | off | Recurse into subdirectories when a directory is given |
+
+Checks: file format, ZIP integrity, ZIP bomb (expansion ratio), encryption/IRM,
+Microsoft Information Protection labels, sheet dimensions (declared vs real),
+merged cells, formula cells, empty sheets. Directory mode surfaces `.xlsx`,
+`.xlsm`, `.xlsb`, and `.xls` files — rejected formats are reported as failures.
 
 ---
 

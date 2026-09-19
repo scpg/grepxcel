@@ -243,3 +243,74 @@ class TestRunLint:
         p2 = _make_xlsx(tmp_path, name='b.xlsx')
         code = run_lint([p1, p2], out=io.StringIO())
         assert code == 0
+
+
+# ── directory expansion ───────────────────────────────────────────────────────
+
+class TestDirectoryExpansion:
+    def test_directory_lints_xlsx_files(self, tmp_path):
+        """Passing a directory lints all .xlsx files inside it."""
+        from grepxcel.lint import run_lint
+        _make_xlsx(tmp_path, name='a.xlsx', cells={'A1': 'ok'})
+        _make_xlsx(tmp_path, name='b.xlsx', cells={'A1': 'ok'})
+        out = io.StringIO()
+        code = run_lint([str(tmp_path)], out=out)
+        assert code == 0
+        text = out.getvalue()
+        assert 'a.xlsx' in text
+        assert 'b.xlsx' in text
+
+    def test_directory_non_recursive_ignores_subdir(self, tmp_path):
+        """Without -r, files in subdirectories are not linted."""
+        from grepxcel.lint import run_lint
+        sub = tmp_path / 'sub'
+        sub.mkdir()
+        _make_xlsx(tmp_path, name='top.xlsx')
+        _make_xlsx(sub, name='nested.xlsx')
+        out = io.StringIO()
+        run_lint([str(tmp_path)], out=out)
+        text = out.getvalue()
+        assert 'top.xlsx' in text
+        assert 'nested.xlsx' not in text
+
+    def test_directory_recursive_finds_nested(self, tmp_path):
+        """With recursive=True, files in subdirectories are included."""
+        from grepxcel.lint import run_lint
+        sub = tmp_path / 'sub'
+        sub.mkdir()
+        _make_xlsx(sub, name='nested.xlsx')
+        out = io.StringIO()
+        run_lint([str(tmp_path)], out=out, recursive=True)
+        assert 'nested.xlsx' in out.getvalue()
+
+    def test_directory_includes_macro_extensions(self, tmp_path):
+        """Directory scan surfaces .xlsm files (reported as FAIL — wrong format)."""
+        from grepxcel.lint import run_lint
+        xlsm = str(tmp_path / 'macro.xlsm')
+        with open(xlsm, 'w') as f:
+            f.write('fake')
+        out = io.StringIO()
+        code = run_lint([str(tmp_path)], out=out)
+        assert 'macro.xlsm' in out.getvalue()
+        assert code == 1  # FAIL because macro format is rejected
+
+    def test_empty_directory_returns_zero(self, tmp_path):
+        """An empty directory (no Excel files) reports a notice and returns 0."""
+        from grepxcel.lint import run_lint
+        out = io.StringIO()
+        code = run_lint([str(tmp_path)], out=out)
+        assert code == 0
+        assert 'no Excel files found' in out.getvalue()
+
+    def test_mixed_files_and_dirs(self, tmp_path):
+        """Files and directories can be mixed in the same invocation."""
+        from grepxcel.lint import run_lint
+        sub = tmp_path / 'sub'
+        sub.mkdir()
+        explicit = _make_xlsx(tmp_path, name='explicit.xlsx')
+        _make_xlsx(sub, name='in_sub.xlsx')
+        out = io.StringIO()
+        run_lint([explicit, str(sub)], out=out)
+        text = out.getvalue()
+        assert 'explicit.xlsx' in text
+        assert 'in_sub.xlsx' in text
