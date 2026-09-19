@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from .color import MARK_FAIL, MARK_OK, MARK_WARN, colorize_marks, paint, should_color
 from .models import CellInstruction, TableInstruction, SeekInstruction, DirectionInstruction
 from .pattern_parser import PatternError, PatternParser
-from .security import SecurityError
+from .security import SecurityError, validate_pattern_file
 
 # Patterns that strongly suggest regex intent (backslash-escapes, lookahead)
 _REGEX_TELL = re.compile(r'\\[()[\]{}|+*.?^$]|[(][?]')
@@ -69,6 +69,7 @@ def check_pattern(path: str) -> CheckResult:
     is captured in result.errors (fatal) or result.warnings (non-fatal)."""
     result = CheckResult(path=path)
     try:
+        validate_pattern_file(path)
         config, defs, sequence = PatternParser().parse(path)
     except (PatternError, SecurityError) as exc:
         result.errors.append(str(exc))

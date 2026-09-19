@@ -4260,6 +4260,8 @@ def run_wizard_tui(
         return 2
 
     try:
+        from .security import validate_file
+        validate_file(data_file)
         import openpyxl
         wb = openpyxl.load_workbook(data_file, data_only=True)
     except Exception as exc:

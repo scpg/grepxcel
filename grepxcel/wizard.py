@@ -880,6 +880,8 @@ def run_wizard(
     # _force_seq kept for the env-var / --no-tui path; TUI branch is intentionally skipped
     _force_seq = True  # noqa: F841 (kept for readability / future re-enable)
     try:
+        from .security import validate_file
+        validate_file(data_file)
         import openpyxl
         wb = openpyxl.load_workbook(data_file, data_only=True)
     except Exception as exc:

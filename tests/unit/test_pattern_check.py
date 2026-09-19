@@ -590,3 +590,36 @@ def test_alias_no_warnings_when_no_aliases(tmp_path):
     r = check_pattern(_write(list(_VALID), tmp_path))
     assert r.valid
     assert not any('alias' in w.lower() for w in r.warnings)
+
+
+# ── ZIP bomb guard (CVE-2026-32630 pattern) ───────────────────────────────────
+
+def _make_zip_bomb(path: str) -> None:
+    """Create a ZIP whose single member expands >50× — triggers the ratio guard."""
+    import io, zipfile, zlib
+    payload = b'\x00' * (3 * 1024 * 1024)
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, 'w') as zf:
+        info = zipfile.ZipInfo('[Content_Types].xml')
+        info.compress_type = zipfile.ZIP_DEFLATED
+        zf.writestr(info, payload)
+    with open(path, 'wb') as f:
+        f.write(buf.getvalue())
+
+
+def test_zip_bomb_pattern_file_is_rejected(tmp_path):
+    """validate-pattern must reject a ZIP bomb before openpyxl opens it."""
+    path = str(tmp_path / 'bomb.xlsx')
+    _make_zip_bomb(path)
+    result = check_pattern(path)
+    assert not result.valid
+    assert any('zip' in e.lower() or 'ratio' in e.lower() or 'bomb' in e.lower()
+               or 'security' in e.lower()
+               for e in result.errors)
+
+
+def test_zip_bomb_run_validate_exits_one(tmp_path):
+    """run_validate returns 1 when the pattern file is a ZIP bomb."""
+    path = str(tmp_path / 'bomb.xlsx')
+    _make_zip_bomb(path)
+    assert run_validate([path], out=io.StringIO()) == 1
