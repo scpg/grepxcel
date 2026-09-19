@@ -141,6 +141,31 @@ jobs:
       - name: Run tests
         run: pytest tests/ -q
 
+  lint-security:
+    # Generates problematic Excel fixtures (ZIP bomb, XXE injection, OLE-encrypted,
+    # corrupt ZIP, macro extensions) and runs the lint security integration tests.
+    # Only runs on pull_request — heavier than unit tests and needs network access
+    # to download the real OLE-encrypted file from oletools test data.
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v6
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Generate lint security fixtures
+        run: python scripts/generate_lint_fixtures.py
+
+      - name: Run lint security integration tests
+        run: pytest tests/integration/test_lint_security.py -v
+
   docs-reference:
     # Verifies that docs/pattern-reference.xlsx can be regenerated and is current.
     # The file must be updated locally and included in the PR diff — branch
