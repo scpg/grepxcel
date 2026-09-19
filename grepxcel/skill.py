@@ -42,15 +42,33 @@ _WORKFLOW = """\
 2. `grepxcel validate-pattern pattern.xlsx -v` — check it parses and see the
    fields/steps before extracting.
 3. `grepxcel extract -p pattern.xlsx data.xlsx` — extract → JSON on stdout.
+   For many files: `grepxcel extract -p pattern.xlsx data/ -r` (recurse a directory).
 4. `grepxcel schema pattern.xlsx -o schema.json` — (optional) a JSON Schema to
    validate the extracted JSON across many files.
-5. `grepxcel lint data.xlsx` — inspect a file first if extraction misbehaves."""
+5. `grepxcel lint data.xlsx` — inspect a file for issues before extraction.
+   Default: compact one-line summary per file. Add `-v` for the full checklist.
+   `grepxcel lint data/ -r` scans a whole directory.
+6. `grepxcel test -p pattern.xlsx samples/` — run a pattern against many files and
+   report which pass/fail. Useful for validating a pattern across a corpus before
+   deploying it to a pipeline."""
+
+_MCP_INTEGRATION = """\
+## MCP integration (preferred for AI agents)
+
+If grepxcel is configured as an MCP server in your agent, you can call its tools
+directly — no shell commands needed. Run `grepxcel mcp-config` to print the config
+block to add to your agent. Available MCP tools mirror the CLI:
+`extract`, `validate_pattern`, `lint`, `schema`, `doctor`, `generate_examples`.
+
+When MCP is available, prefer it over CLI calls: the agent receives structured
+return values rather than parsing terminal output."""
 
 _GOTCHAS = """\
 ## Gotchas worth knowing
 
-- **Output convention:** extracted JSON goes to **stdout**; warnings, the summary,
-  and verbose traces go to **stderr**. Pipe stdout to `jq` / a file.
+- **Output convention:** `extract` JSON → **stdout** (pipe to `jq` / a file);
+  warnings, summary, verbose traces → **stderr**. `lint` output → **stdout**
+  (so `grepxcel lint data/ -r | wc -l` counts files correctly).
 - A pattern file is `.xlsx` **or** `.csv`. Keywords (`cell:`, `table:`, `var:`…)
   are case-insensitive; an unknown instruction is a hard error (not ignored).
 - Empty regex cell ⇒ accept any value of the declared type.
@@ -84,6 +102,7 @@ def _body(parser: argparse.ArgumentParser | None = None) -> str:
         _DESCRIPTION,
         _WHEN_TO_USE,
         _WORKFLOW,
+        _MCP_INTEGRATION,
         _command_reference(parser),
         _GOTCHAS,
     ])
