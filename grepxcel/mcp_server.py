@@ -135,7 +135,7 @@ def create_server(*, sandbox_root: str | None = None) -> "FastMCP":
         safe_file = _safe_path(file, root)
         from .lint import run_lint
         buf = io.StringIO()
-        run_lint([safe_file], out=buf)
+        run_lint([safe_file], out=buf, verbose=True)
         return buf.getvalue()
 
     @mcp.tool()

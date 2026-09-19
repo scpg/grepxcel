@@ -283,9 +283,28 @@ def _expand_paths(paths: list[str], recursive: bool) -> list[str]:
 
 # ── runner (CLI entry point) ──────────────────────────────────────────────────
 
-def run_lint(files: list[str], out=None, recursive: bool = False) -> int:
-    """Lint one or more files or directories, print results, return exit code."""
-    out = out or sys.stderr
+def _compact_line(path: str, results: list[Result]) -> str:
+    """One-line summary for a single file: mark + path [+ issue categories]."""
+    fails = [r for r in results if r[0] == FAIL]
+    warns = [r for r in results if r[0] == WARN]
+    if fails:
+        issues = ' · '.join(dict.fromkeys(r[1] for r in fails))
+        return f'  {_MARK[FAIL]}  {path}   {issues}'
+    if warns:
+        issues = ' · '.join(dict.fromkeys(r[1] for r in warns))
+        return f'  {_MARK[WARN]}  {path}   {issues}'
+    return f'  {_MARK[OK]}  {path}'
+
+
+def run_lint(files: list[str], out=None, recursive: bool = False,
+             verbose: bool = False) -> int:
+    """Lint one or more files or directories, print results, return exit code.
+
+    Default (verbose=False): one summary line per file.
+    With verbose=True: full checklist detail (all checks printed).
+    Output goes to stdout so piping works correctly with |less, |wc, etc.
+    """
+    out = out or sys.stdout
     color = should_color(out)
     any_fail = False
 
@@ -297,22 +316,23 @@ def run_lint(files: list[str], out=None, recursive: bool = False) -> int:
             for d in dirs:
                 flag = ' (recursive)' if recursive else ' (pass -r to recurse)'
                 print(colorize_marks(
-                    f'\ngrepxcel lint — {d}\n' + '─' * 62 + f'\n'
-                    f'  {_MARK[INFO]}  no Excel files found{flag}\n' + '─' * 62,
+                    f'  {_MARK[INFO]}  {d} — no Excel files found{flag}',
                     color), file=out)
         return 0
 
     for path in expanded:
-        print(f'\ngrepxcel lint — {path}\n' + '─' * 62, file=out)
         results = lint_file(path)
+        if any(r[0] == FAIL for r in results):
+            any_fail = True
 
-        for status, name, detail in results:
-            if status == FAIL:
-                any_fail = True
-            mark = _MARK[status]
-            print(colorize_marks(
-                f'  {mark}  {name:<32} {detail}', color), file=out)
-
-        print('─' * 62, file=out)
+        if verbose:
+            print(f'\ngrepxcel lint — {path}\n' + '─' * 62, file=out)
+            for status, name, detail in results:
+                mark = _MARK[status]
+                print(colorize_marks(
+                    f'  {mark}  {name:<32} {detail}', color), file=out)
+            print('─' * 62, file=out)
+        else:
+            print(colorize_marks(_compact_line(path, results), color), file=out)
 
     return 1 if any_fail else 0

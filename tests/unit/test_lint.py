@@ -244,6 +244,39 @@ class TestRunLint:
         code = run_lint([p1, p2], out=io.StringIO())
         assert code == 0
 
+    def test_compact_default_one_line_per_file(self, tmp_path):
+        """Default (no -v): one non-empty line per file, no separator bars."""
+        from grepxcel.lint import run_lint
+        p1 = _make_xlsx(tmp_path, name='a.xlsx')
+        p2 = _make_xlsx(tmp_path, name='b.xlsx')
+        out = io.StringIO()
+        run_lint([p1, p2], out=out)
+        lines = [l for l in out.getvalue().splitlines() if l.strip()]
+        assert len(lines) == 2
+        assert 'a.xlsx' in lines[0]
+        assert 'b.xlsx' in lines[1]
+        assert '─' * 10 not in out.getvalue()
+
+    def test_verbose_shows_full_detail(self, tmp_path):
+        """With verbose=True: separator bars and full checklist lines appear."""
+        from grepxcel.lint import run_lint
+        path = _make_xlsx(tmp_path)
+        out = io.StringIO()
+        run_lint([path], out=out, verbose=True)
+        text = out.getvalue()
+        assert '─' * 10 in text
+        # verbose output has many more lines than one
+        assert len([l for l in text.splitlines() if l.strip()]) > 3
+
+    def test_compact_fail_includes_category(self, tmp_path):
+        """Compact failure line includes the failing check category."""
+        from grepxcel.lint import run_lint
+        out = io.StringIO()
+        run_lint([str(tmp_path / 'missing.xlsx')], out=out)
+        line = out.getvalue().strip()
+        assert 'missing.xlsx' in line
+        assert 'file access' in line
+
 
 # ── directory expansion ───────────────────────────────────────────────────────
 

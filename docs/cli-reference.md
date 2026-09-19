@@ -176,12 +176,14 @@ grepxcel lint data.xlsx
 grepxcel lint jan.xlsx feb.xlsx
 grepxcel lint data/
 grepxcel lint data/ -r
+grepxcel lint data/ -r -v
 ```
 
 | Flag | Default | Purpose |
 |---|---|---|
 | `FILE_OR_DIR...` (positional) | required | Excel file(s) or director(ies) to inspect |
 | `-r, --recursive` | off | Recurse into subdirectories when a directory is given |
+| `-v, --verbose` | off | Show full checklist detail (default: one summary line per file) |
 
 Checks: file format, ZIP integrity, ZIP bomb (expansion ratio), encryption/IRM,
 Microsoft Information Protection labels, sheet dimensions (declared vs real),

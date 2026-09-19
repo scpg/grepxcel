@@ -222,12 +222,15 @@ examples:
   grepxcel lint jan.xlsx feb.xlsx        # lint several files
   grepxcel lint data/                    # lint all Excel files in a directory
   grepxcel lint data/ -r                 # recurse into subdirectories
+  grepxcel lint data/ -r -v              # full checklist detail per file
         """,
     )
     p.add_argument('files', nargs='+', metavar='FILE_OR_DIR',
                    help='Excel file(s) or director(ies) to inspect')
     p.add_argument('-r', '--recursive', action='store_true',
                    help='Recurse into subdirectories when a directory is given')
+    p.add_argument('-v', '--verbose', action='store_true',
+                   help='Show full checklist detail (default: one summary line per file)')
 
 
 def _add_schema_subparser(sub) -> None:
@@ -1108,7 +1111,9 @@ def _run_docs(args) -> int:
 
 def _run_lint(args) -> int:
     from .lint import run_lint
-    return run_lint(args.files, recursive=getattr(args, 'recursive', False))
+    return run_lint(args.files,
+                    recursive=getattr(args, 'recursive', False),
+                    verbose=getattr(args, 'verbose', False))
 
 
 # ── validate-pattern handler ─────────────────────────────────────────────────
