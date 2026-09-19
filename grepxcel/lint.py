@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import os
 import sys
+import warnings
 import zipfile
 
 from .color import MARK_FAIL, MARK_INFO, MARK_OK, MARK_WARN, colorize_marks, should_color
@@ -115,8 +116,10 @@ def lint_file(path: str) -> list[Result]:
     # ── 4. Open with openpyxl ─────────────────────────────────────────────
     try:
         import openpyxl
-        wb = openpyxl.load_workbook(path, data_only=True)
-        wb_raw = openpyxl.load_workbook(path, data_only=False)
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', UserWarning)
+            wb = openpyxl.load_workbook(path, data_only=True)
+            wb_raw = openpyxl.load_workbook(path, data_only=False)
     except Exception as exc:
         results.append((FAIL, 'workbook load',
                          f'openpyxl cannot open this file: {exc}. '
@@ -160,7 +163,7 @@ def _check_sheet(ws, ws_raw, results: list[Result]) -> None:
 
     # Empty sheet
     if declared_rows == 0 or declared_cols == 0:
-        results.append((WARN, f'sheet {title!r}',
+        results.append((WARN, f'sheet {title!r} data',
                          'Sheet is empty — nothing to extract.'))
         return
 
@@ -187,7 +190,7 @@ def _check_sheet(ws, ws_raw, results: list[Result]) -> None:
                 formula_cells.append(cell.coordinate)
 
     if used_rows == 0:
-        results.append((WARN, f'sheet {title!r}',
+        results.append((WARN, f'sheet {title!r} data',
                          'Sheet has formatting but no data — empty for extraction.'))
         return
 
