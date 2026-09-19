@@ -325,7 +325,7 @@ examples:
 
 
 def _add_mcp_subparser(sub) -> None:
-    sub.add_parser(
+    p = sub.add_parser(
         'mcp',
         help='Start the MCP server (stdio transport)',
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -341,6 +341,8 @@ To see the config to add to your AI agent, run:
   grepxcel mcp-config
         """,
     )
+    p.add_argument('-v', '--verbose', action='count', default=0,
+                   help='-v: log each tool call to stderr; -vv: also log return values')
 
 
 def _add_mcp_config_subparser(sub) -> None:
@@ -1143,7 +1145,11 @@ def _run_examples(args) -> int:
 
 def _run_mcp(args) -> int:
     from .mcp_server import run_server
-    run_server()
+    verbose = getattr(args, 'verbose', 0)
+    try:
+        run_server(verbose=verbose)
+    except KeyboardInterrupt:
+        print('\nshutting down MCP server\ndone', file=sys.stderr)
     return 0
 
 
