@@ -108,24 +108,53 @@ def _body(parser: argparse.ArgumentParser | None = None) -> str:
     ])
 
 
+_XLSX_GLOBS = ['**/*.xlsx', '**/*.csv', '**/*.xlsm', '**/*.xls']
+
+_TARGETS = {
+    'claude':    'SKILL.md',       # Claude Code / Claude Desktop
+    'cursor':    'grepxcel.mdc',   # .cursor/rules/
+    'agents-md': 'AGENTS.md',      # OpenAI Codex + any tool that reads AGENTS.md
+}
+
+
 def generate_skill(target: str = 'claude',
                    parser: argparse.ArgumentParser | None = None) -> str:
-    """Render the skill doc for *target* ('claude' or 'agents-md')."""
+    """Render the skill doc for *target*."""
     body = _body(parser)
+    globs_block = ''.join(f'  - "{g}"\n' for g in _XLSX_GLOBS)
+
     if target == 'claude':
-        frontmatter = (
+        return (
             '---\n'
             f'name: {_NAME}\n'
             f'description: {_DESCRIPTION}\n'
             '---\n\n'
-        )
-        return frontmatter + body + '\n'
+        ) + body + '\n'
+
     if target == 'agents-md':
+        # Plain markdown — OpenAI Codex, GitHub Copilot Coding Agent, and any
+        # other tool that reads AGENTS.md use unadorned markdown.
         return body + '\n'
-    raise ValueError(f"unknown skill target {target!r} (use 'claude' or 'agents-md')")
+
+    if target == 'cursor':
+        # .cursor/rules/grepxcel.mdc — activates automatically when an xlsx/csv
+        # file is in the Cursor chat context; alwaysApply: false keeps it optional.
+        return (
+            '---\n'
+            f'description: {_DESCRIPTION}\n'
+            'globs:\n'
+            + globs_block +
+            'alwaysApply: false\n'
+            '---\n\n'
+        ) + body + '\n'
+
+    raise ValueError(
+        f"unknown skill target {target!r} "
+        f"(choose: {', '.join(_TARGETS)})"
+    )
 
 
-_DEFAULT_FILENAME = {'claude': 'SKILL.md', 'agents-md': 'AGENTS.md'}
+_DEFAULT_FILENAME = _TARGETS
 
 
 def run_skill(target: str, out_path: str | None = None, out=None) -> int:

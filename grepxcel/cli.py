@@ -118,7 +118,7 @@ def _commands_help() -> str:
         "\n"
         f"{_sec('AI & MCP:')}\n"
         "  draft              Draft a starter pattern file using a local LLM\n"
-        "  generate-skill     Write an AI-agent skill doc (Claude / AGENTS.md)\n"
+        "  generate-skill     Write an AI-agent skill doc (Claude, Cursor, Copilot, Windsurf…)\n"
         "  mcp                Start the grepxcel MCP server (stdio transport)\n"
         "  mcp-config         Print the MCP server config for your AI agent\n"
         "\n"
@@ -258,21 +258,28 @@ examples:
 def _add_skill_subparser(sub) -> None:
     p = sub.add_parser(
         'generate-skill',
-        help='Write an AI-agent skill doc (Claude / AGENTS.md)',
+        help='Write an AI-agent skill doc for Claude, Cursor, Copilot, Windsurf…',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Writes a markdown 'skill' doc that teaches an AI agent how and when to use
-grepxcel. The command reference is introspected from the live CLI; the prose is
-curated. v1 targets: claude (SKILL.md) and agents-md (AGENTS.md).
+Writes a skill/rules doc that teaches an AI agent how and when to use grepxcel.
+The command list is introspected from the live CLI; the prose is curated.
+
+targets:
+  claude     SKILL.md                      — Claude Code / Claude Desktop
+  cursor     .cursor/rules/grepxcel.mdc   — Cursor IDE (glob-triggered MDC rule)
+  agents-md  AGENTS.md                    — OpenAI Codex + any tool that reads AGENTS.md
 
 examples:
-  grepxcel generate-skill                       # Claude SKILL.md to stdout
+  grepxcel generate-skill                              # Claude SKILL.md to stdout
   grepxcel generate-skill -o SKILL.md
+  grepxcel generate-skill --target cursor -o .cursor/rules/grepxcel.mdc
   grepxcel generate-skill --target agents-md -o AGENTS.md
         """,
     )
-    p.add_argument('--target', choices=['claude', 'agents-md'], default='claude',
-                   help='Skill format to emit (default: claude)')
+    p.add_argument('--target',
+                   choices=['claude', 'cursor', 'agents-md'],
+                   default='claude',
+                   help='AI engine to target (default: claude)')
     p.add_argument('-o', '--output', metavar='FILE',
                    help='Write the skill doc to FILE (default: stdout)')
 
