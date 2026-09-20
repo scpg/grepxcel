@@ -129,6 +129,7 @@ def _commands_help() -> str:
         f"{_sec('compliance & ops:')}\n"
         "  sbom               Generate a CycloneDX 1.6 SBOM for this installation\n"
         "  doctor             Check the environment is ready (deps, API keys, model)\n"
+        "  self-test          Verify the installation with built-in examples\n"
         "\n"
         "Run 'grepxcel <command> --help' for per-command options.\n"
         "Run 'grepxcel -h -h' for a synopsis of every command's options."
@@ -169,6 +170,7 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_sbom_subparser(sub)
     _add_mcp_subparser(sub)
     _add_mcp_config_subparser(sub)
+    _add_self_test_subparser(sub)
     _add_doctor_subparser(sub)
     _add_quickstart_subparser(sub)
     _add_test_subparser(sub)
@@ -392,6 +394,26 @@ examples:
         choices=['claude-code', 'claude-desktop', 'cursor'],
         default='claude-code',
         help='Config format for your AI agent (default: claude-code)',
+    )
+
+
+def _add_self_test_subparser(sub) -> None:
+    p = sub.add_parser(
+        'self-test',
+        help='Verify the installation with built-in examples (no external files needed)',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+examples:
+  grepxcel self-test        # run all checks, exit 0 on pass
+  grepxcel self-test -v     # show full traceback on failure
+
+Exits 0 when every check passes; exits 1 on any failure.
+        """,
+    )
+    p.add_argument(
+        '-v', '--verbose',
+        action='store_true',
+        help='Show full tracebacks on failure',
     )
 
 
@@ -1255,6 +1277,13 @@ def _run_schema(args) -> int:
     return rc
 
 
+# ── self-test handler ────────────────────────────────────────────────────────
+
+def _run_self_test(args) -> int:
+    from .self_test import run_self_test
+    return run_self_test(verbose=getattr(args, 'verbose', False))
+
+
 # ── doctor handler ───────────────────────────────────────────────────────────
 
 def _run_doctor(args) -> int:
@@ -1582,6 +1611,9 @@ def main(argv=None):
 
     if args.command == 'docs':
         sys.exit(_run_docs(args))
+
+    if args.command == 'self-test':
+        sys.exit(_run_self_test(args))
 
     if args.command == 'doctor':
         sys.exit(_run_doctor(args))

@@ -97,6 +97,8 @@ jobs:
     permissions:
       contents: read
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v6
         with:
           python-version: "3.12"
@@ -110,7 +112,7 @@ jobs:
       # Why --extra-index-url?  test.pypi.org contains name-squatted or broken
       # stubs for popular names; grepxcel itself comes from TestPyPI and its
       # dependencies fall back to the real PyPI.
-      - name: Wait for TestPyPI propagation and install grepxcel (base)
+      - name: Wait for TestPyPI propagation and install grepxcel
         env:
           VERSION: ${{ needs.build.outputs.version }}
         run: |
@@ -131,11 +133,7 @@ jobs:
           done
           echo "Installed grepxcel ${VERSION} from TestPyPI after ${ELAPSED}s."
 
-      - name: Install web-extra dependencies from real PyPI
-        run: pip install "fastapi>=0.141" "uvicorn>=0.52" "jinja2>=3.1"
-
-      # Verify the installed __version__ matches what was published.
-      - name: Verify installed version
+      - name: Verify installed version matches published tag
         run: |
           installed=$(python -c "import grepxcel; print(grepxcel.__version__)")
           expected="${{ needs.build.outputs.version }}"
@@ -145,39 +143,19 @@ jobs:
             exit 1
           fi
 
-      # Basic CLI checks: version flag + top-level help + web-wizard sub-help.
-      - name: CLI help and version flag
-        run: |
-          grepxcel --version
-          grepxcel --help
-          grepxcel web-wizard --help
+      # Install pytest (the only test dep; no source deps, no grepxcel dev extras).
+      - name: Install pytest
+        run: pip install pytest
 
-      # End-to-end extract: generate the built-in examples then run the engine on
-      # one of them.  This exercises openpyxl, the pattern parser, and the engine
-      # with zero external data files needed.
-      - name: End-to-end extract (built-in example)
-        run: |
-          grepxcel generate-examples -o /tmp/gx-smoke
-          grepxcel extract \
-            -p /tmp/gx-smoke/01_simple_invoice/pattern.xlsx \
-               /tmp/gx-smoke/01_simple_invoice/data.xlsx \
-            -q
-
-      # Validate-pattern on the same example just to exercise that code path too.
-      - name: Validate pattern (no engine needed)
-        run: grepxcel validate-pattern /tmp/gx-smoke/01_simple_invoice/pattern.xlsx -q
+      # Run the smoke suite against the INSTALLED package.
+      # --import-mode=importlib prevents pytest from prepending the project root
+      # to sys.path, so 'import grepxcel' picks up site-packages, not the source.
+      - name: Run smoke tests
+        run: pytest tests/smoke/ --import-mode=importlib -v
 
       - name: Write step summary
         if: always()
         run: |
-          echo "### Smoke-test result: grepxcel \`${{ needs.build.outputs.version }}\` from TestPyPI" >> "$GITHUB_STEP_SUMMARY"
-          echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Check | Status |" >> "$GITHUB_STEP_SUMMARY"
-          echo "|---|---|" >> "$GITHUB_STEP_SUMMARY"
-          echo "| pip install (TestPyPI) | see job steps |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| version pin match | see job steps |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| CLI help / version flag | see job steps |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| end-to-end extract | see job steps |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| validate-pattern | see job steps |" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Smoke-test: grepxcel \`${{ needs.build.outputs.version }}\` from TestPyPI" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "Install command: \`pip install --pre --index-url https://test.pypi.org/simple/ grepxcel==${{ needs.build.outputs.version }}\`" >> "$GITHUB_STEP_SUMMARY"
