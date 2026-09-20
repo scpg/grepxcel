@@ -740,7 +740,7 @@ def _preload_table(
         if has_data:
             d_rows_sheet.append(r)
         else:
-            break  # Stop at first completely empty table row
+            break  # Empty row signals end of table data
 
     # ── Build data_vars from the DATA template row ────────────────────────────
     data_vars: list[dict] = []
@@ -885,8 +885,39 @@ def _preload_table(
     # Remove detected footer rows from d_rows_sheet
     d_rows_sheet = [r for r in d_rows_sheet if r not in f_row_nums]
 
-    # ── Skip_if rows (Phase 2: detect S rows in the row_types scan) ──────────
-    skip_rows: list[int] = []   # Phase 2: detect SKIP_IF rows from template
+    # ── Detect SKIP_MARKER rows (named-field SKIP_IF conditions) ─────────────
+    # Build a list of (col_offset, fd) pairs for non-EMPTY SKIP_IF fields.
+    # Footer rows are already removed, so GRAND TOTAL won't be mis-classified.
+    _skip_marker_checks: list[tuple[int, object]] = []
+    for trow in instr.rows:
+        if trow.row_type != 'SKIP_IF':
+            continue
+        for ci, tcol in enumerate(trow.columns):
+            fld = tcol.field if hasattr(tcol, 'field') else str(tcol)
+            if fld in ('EMPTY', 'IGNORE', ''):
+                continue
+            fd = defs.get(fld)
+            if fd and fd.role == 'lbl' and fd.regex:
+                _skip_marker_checks.append((ci, fd))
+
+    skip_rows: list[int] = []
+    if _skip_marker_checks:
+        real_data: list[int] = []
+        for r in d_rows_sheet:
+            _is_skip = False
+            for col_off, fd in _skip_marker_checks:
+                sheet_c = start_col + col_off
+                if sheet_c <= max_col:
+                    v      = ws.cell(row=r, column=sheet_c).value
+                    f_mode = fd.lbl_match or global_config.lbl_match
+                    if _lbl_cell_matches(v, fd.regex, f_mode, ic):
+                        _is_skip = True
+                        break
+            if _is_skip:
+                skip_rows.append(r)
+            else:
+                real_data.append(r)
+        d_rows_sheet = real_data
 
     # ── Build row_types dict ──────────────────────────────────────────────────
     row_types: dict[int, str] = {}
@@ -896,6 +927,8 @@ def _preload_table(
         row_types[r] = 'D'
     for fr in f_rows_sheet:
         row_types[fr['row']] = 'F'
+    for r in skip_rows:
+        row_types[r] = 'S'
 
     # ── Anchor / range ────────────────────────────────────────────────────────
     last_f_row = f_rows_sheet[-1]['row'] if f_rows_sheet else None
