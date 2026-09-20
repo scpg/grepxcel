@@ -237,7 +237,7 @@ def _render_table_grid(rows, out, color: bool = False) -> None:
 
 def render_result(result: CheckResult, verbose: bool = False, out=None) -> None:
     """Print a human-readable report for one CheckResult."""
-    out = out or sys.stderr
+    out = out or sys.stdout
     color = should_color(out)
     fpath = paint(result.path, 'bold', color)
     if result.valid:
@@ -357,7 +357,7 @@ def run_validate(paths: list[str], verbose: bool = False, quiet: bool = False,
     quiet=True suppresses the '✓ VALID' confirmation line; warnings and errors
     are still printed so the caller knows what failed.  Exit code is unchanged.
     """
-    out = out or sys.stderr
+    out = out or sys.stdout
     all_valid = True
     for idx, path in enumerate(paths):
         if idx:

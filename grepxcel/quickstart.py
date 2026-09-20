@@ -117,5 +117,5 @@ def run_quickstart() -> int:
         '    eval "$(register-python-argcomplete grepxcel)"',
         '',
     ]
-    print('\n'.join(lines), file=sys.stderr)
+    print('\n'.join(lines), file=sys.stdout)
     return 0
