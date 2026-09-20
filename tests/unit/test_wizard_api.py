@@ -1759,6 +1759,68 @@ class TestPreloadFromPattern:
             Path(csv_path).unlink(missing_ok=True)
 
 
+FIXTURE_17 = Path(__file__).parent.parent / 'fixtures/17_excel_template_invoice/17_excel_template_invoice_data.xlsx'
+PATTERN_17 = Path(__file__).parent.parent / 'fixtures/17_excel_template_invoice/17_excel_template_invoice_pattern-from-draft.csv'
+FIXTURE_23 = Path(__file__).parent.parent / 'fixtures/23_ap_aging/23_ap_aging_data.xlsx'
+PATTERN_23 = Path(__file__).parent.parent / 'fixtures/23_ap_aging/23_ap_aging_data_pattern-from-web.xlsx'
+
+
+@_skip_no_api
+class TestPreloadFooterRows:
+    """Preload correctly identifies FOOTER rows from a pattern."""
+
+    def test_footer_rows_found_fixture_17(self):
+        """Fixture 17 invoice template: pattern has 4 FOOTER rows; preload must find them all."""
+        if not FIXTURE_17.exists() or not PATTERN_17.exists():
+            pytest.skip('fixture 17 not found')
+        import openpyxl
+        from grepxcel.wizard_core import _preload_from_pattern
+        wb = openpyxl.load_workbook(str(FIXTURE_17))
+        choices, _, warnings = _preload_from_pattern(wb.active, str(PATTERN_17))
+        t_anchor = next((m for m in choices.values() if m.get('choice') == 'T'), None)
+        assert t_anchor is not None, 'Expected a TABLE anchor in fixture 17'
+        footer_rows = t_anchor.get('footer_rows', [])
+        assert len(footer_rows) == 4, (
+            f'Expected 4 footer rows in fixture 17, got {len(footer_rows)}. '
+            f'Warnings: {warnings}'
+        )
+
+
+@_skip_no_api
+class TestPreloadSkipEmptyRow:
+    """Preload honours SKIP_EMPTY_ROW — empty separator rows don't stop the scan."""
+
+    def test_skip_empty_row_preload_finds_all_data_rows(self):
+        """Fixture 23 AP Aging: row 13 is empty; preload must still reach row 14 (GRAND TOTAL footer)."""
+        if not FIXTURE_23.exists() or not PATTERN_23.exists():
+            pytest.skip('fixture 23 not found')
+        import openpyxl
+        from grepxcel.wizard_core import _preload_from_pattern
+        wb = openpyxl.load_workbook(str(FIXTURE_23))
+        choices, _, warnings = _preload_from_pattern(wb.active, str(PATTERN_23))
+        assert not warnings, f'Unexpected preload warnings: {warnings}'
+        t_anchor = next((m for m in choices.values() if m.get('choice') == 'T'), None)
+        assert t_anchor is not None, 'Expected a TABLE anchor'
+        row_types = t_anchor.get('row_types', {})
+        data_rows = sorted(r for r, t in row_types.items() if t == 'D')
+        assert data_rows == [5, 6, 8, 9, 10, 11], (
+            f'Expected data rows [5,6,8,9,10,11], got {data_rows}. '
+            f'Row 13 is empty (SKIP_EMPTY_ROW:1); rows 7/12 are subtotals (SKIP_IF).'
+        )
+        footer_rows = sorted(r for r, t in row_types.items() if t == 'F')
+        assert footer_rows == [14], f'Expected footer at row 14 (GRAND TOTAL), got {footer_rows}'
+
+    def test_skip_empty_row_pattern_is_valid(self):
+        """Fixture 23 pattern-from-web must pass validate-pattern cleanly."""
+        if not PATTERN_23.exists():
+            pytest.skip('fixture 23 pattern not found')
+        from grepxcel.pattern_parser import PatternParser
+        cfg, defs, seq = PatternParser().parse(str(PATTERN_23))
+        assert cfg is not None
+        assert any(d for d in defs.values() if d.name == 'SKIP_MARKER'), \
+            'SKIP_MARKER label must be defined in the pattern'
+
+
 @_skip_no_api
 class TestClassifyBatch:
     """POST /api/classify-batch applies a role to a rectangular range of cells."""
