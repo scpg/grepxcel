@@ -1180,10 +1180,30 @@ async function _checkPreloadWarnings() {
     const data = await r.json();
     const warns = data.preload_warnings || [];
     if (warns.length) {
+      const hasErrors = warns.some(w => w.startsWith('[ERROR]'));
       const btn = document.getElementById('tab-logs-btn');
-      if (btn) { btn.textContent = '⚠️ Logs'; btn.dataset.warned = '1'; }
+      if (btn) { btn.textContent = hasErrors ? '🔴 Logs' : '⚠️ Logs'; btn.dataset.warned = '1'; }
+      _updatePatternErrorBanner(warns);
     }
   } catch (_) { /* ignore */ }
+}
+
+function _updatePatternErrorBanner(warns) {
+  const errors = warns.filter(w => w.startsWith('[ERROR]'));
+  let banner = document.getElementById('pattern-error-banner');
+  if (!errors.length) {
+    if (banner) banner.remove();
+    return;
+  }
+  if (!banner) {
+    banner = document.createElement('div');
+    banner.id = 'pattern-error-banner';
+    banner.style.cssText = 'background:#5c1a1a;color:#ffcccc;font-size:12px;padding:6px 12px;border-bottom:1px solid #a33;display:flex;gap:8px;align-items:flex-start;';
+    const toolbar = document.querySelector('.toolbar');
+    if (toolbar) toolbar.after(banner);
+  }
+  banner.innerHTML = '🔴 <b>Pattern errors</b> — cannot extract until fixed: ' +
+    errors.map(e => `<span style="opacity:.85">${_esc(e.replace('[ERROR] ',''))}</span>`).join(' · ');
 }
 
 // ── Data fetching ─────────────────────────────────────────────────────────
@@ -1865,22 +1885,28 @@ async function refreshLogs() {
     const r    = await fetch('/api/logs');
     const data = await r.json();
 
-    // ── Preload warnings ──────────────────────────────────────────────────
+    // ── Preload warnings / errors ─────────────────────────────────────────
     const warns = data.preload_warnings || [];
+    const hasErrors = warns.some(w => w.startsWith('[ERROR]'));
     if (warns.length) {
-      warnBox.innerHTML = warns.map(w =>
-        `<div style="background:var(--warn,#7c4a00);color:#ffe;border-radius:4px;padding:5px 8px;margin:0 8px 4px;font-size:11px;">⚠️ ${_esc(w)}</div>`
-      ).join('');
+      warnBox.innerHTML = warns.map(w => {
+        const isErr = w.startsWith('[ERROR]');
+        const label = isErr ? '🔴' : '⚠️';
+        const bg    = isErr ? 'var(--err-bg,#5c1a1a)' : 'var(--warn,#7c4a00)';
+        return `<div style="background:${bg};color:#ffe;border-radius:4px;padding:5px 8px;margin:0 8px 4px;font-size:11px;">${label} ${_esc(w)}</div>`;
+      }).join('');
       warnBox.style.display = 'block';
-      // Badge the tab if there are warnings
+      // Badge the tab — red for errors, amber for warnings only
       const btn = document.getElementById('tab-logs-btn');
       if (btn && !btn.dataset.warned) {
         btn.dataset.warned = '1';
-        btn.textContent = '⚠️ Logs';
+        btn.textContent = hasErrors ? '🔴 Logs' : '⚠️ Logs';
       }
     } else {
       warnBox.style.display = 'none';
     }
+    // Show/update the persistent error banner on the main grid view
+    _updatePatternErrorBanner(warns);
 
     // ── Log lines ─────────────────────────────────────────────────────────
     const lines = data.log_lines || [];

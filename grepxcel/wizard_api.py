@@ -504,18 +504,27 @@ def create_app(
     # ── Security checks (same guards as the extract command) ─────────────────
     from .security import validate_file, validate_pattern_file
     from .pattern_check import check_pattern
+    from .color import MARK_FAIL, MARK_WARN, colorize_marks, paint, should_color
     validate_file(xlsx_path)
+    _pv_errors: list[str] = []
+    _pv_warnings: list[str] = []
     if pattern_path and Path(pattern_path).exists():
         validate_pattern_file(pattern_path)
         _pv = check_pattern(pattern_path)
+        _color = should_color(sys.stderr)
         if _pv.errors:
-            print(f'Warning: pattern file has errors — it will load for editing but cannot extract:', file=sys.stderr)
+            print(colorize_marks(
+                f'{MARK_FAIL}  Pattern has errors — loaded for editing but cannot extract:',
+                _color), file=sys.stderr)
             for e in _pv.errors:
-                print(f'  ✖  {e}', file=sys.stderr)
-        elif _pv.warnings:
-            print(f'Warning: pattern file has warnings:', file=sys.stderr)
+                print(colorize_marks(f'   {MARK_FAIL}  {e}', _color), file=sys.stderr)
+            _pv_errors = _pv.errors
+        if _pv.warnings:
+            if not _pv.errors:
+                print(colorize_marks(f'{MARK_WARN}  Pattern warnings:', _color), file=sys.stderr)
             for w in _pv.warnings:
-                print(f'  ⚠  {w}', file=sys.stderr)
+                print(colorize_marks(f'   {MARK_WARN}  {w}', _color), file=sys.stderr)
+            _pv_warnings = _pv.warnings
 
     # ── Load workbook ─────────────────────────────────────────────────────────
     wb = openpyxl.load_workbook(xlsx_path, data_only=True)
@@ -527,7 +536,11 @@ def create_app(
     notes: dict[str, str] = {}
 
     # Warnings from preload surfaced to the UI log panel.
-    preload_warnings: list[str] = []
+    preload_warnings: list[str] = [
+        f'[ERROR] {e}' for e in _pv_errors
+    ] + [
+        f'[WARN] {w}' for w in _pv_warnings
+    ]
 
     if pattern_path and Path(pattern_path).exists():
         try:
