@@ -32,6 +32,19 @@ EXAMPLES = [
         'name': '01_simple_invoice',
         'source_fixture': '01_simple_invoice',  # → tests/fixtures/01_simple_invoice/
         'description': 'Key-value extraction (cell:next) — 8 scalar fields',
+        'title': 'Simple Invoice',
+        'what_it_shows': (
+            'A pattern that extracts scalar header fields from a typical invoice:\n'
+            'invoice number, date, vendor name, client details, and amount subtotals.\n'
+            'All fields are scalars — single-cell values, no repeating table rows.\n'
+            'Start here if you are new to grepxcel.'
+        ),
+        'extra_commands': [
+            ('Save output to a file',
+             'grepxcel extract -p pattern.xlsx data.xlsx -o output.json'),
+            ('Fail if any field is missing (CI mode)',
+             'grepxcel extract -p pattern.xlsx data.xlsx --strict'),
+        ],
         'pattern': '',
         'data': '',
     },
@@ -39,6 +52,19 @@ EXAMPLES = [
         'name': '02_product_catalog',
         'source_fixture': '02_product_catalog',  # → tests/fixtures/02_product_catalog/
         'description': 'Table extraction (HEADER/DATA) — 4-column repeating table',
+        'title': 'Product Catalog',
+        'what_it_shows': (
+            'A pattern that extracts a repeating table of products:\n'
+            'SKU, product name, unit price, and stock level.\n'
+            'Table patterns use HEADER/DATA rows to describe column structure.\n'
+            'This is the right starting point for any sheet with repeating rows.'
+        ),
+        'extra_commands': [
+            ('Export directly to CSV (single-table patterns)',
+             'grepxcel extract -p pattern.xlsx data.xlsx --format csv'),
+            ('Save JSON to a file',
+             'grepxcel extract -p pattern.xlsx data.xlsx -o output.json'),
+        ],
         'pattern': '',
         'data': '',
     },
@@ -46,6 +72,20 @@ EXAMPLES = [
         'name': '03_expense_report',
         'source_fixture': '05_expense_report',  # → tests/fixtures/05_expense_report/ (renumbered)
         'description': 'Key-value + table + footer — 18 fields with Subtotal',
+        'title': 'Expense Report',
+        'what_it_shows': (
+            'A mixed pattern combining three common shapes:\n'
+            '  - Header scalars (employee name, date, department)\n'
+            '  - A repeating table of expense line items\n'
+            '  - A footer row with the reimbursable subtotal\n'
+            'This is the most common real-world pattern shape.'
+        ),
+        'extra_commands': [
+            ('See the full extraction trace',
+             'grepxcel extract -p pattern.xlsx data.xlsx -v'),
+            ('Export as colored Excel report',
+             'grepxcel extract -p pattern.xlsx data.xlsx --format xlsx -o .'),
+        ],
         'pattern': '',
         'data': '',
     },
@@ -53,6 +93,19 @@ EXAMPLES = [
         'name': '04_loan_schedule',
         'source_fixture': '11_loan_schedule',  # → tests/fixtures/11_loan_schedule/ (renumbered)
         'description': 'Key-value header + amortization table — 24 fields',
+        'title': 'Loan Schedule',
+        'what_it_shows': (
+            'A header block (loan amount, interest rate, term, monthly payment)\n'
+            'followed by a large amortization table (payment number, date,\n'
+            'principal, interest, and remaining balance for each period).\n'
+            'Tests pattern performance on larger tables with many rows.'
+        ),
+        'extra_commands': [
+            ('Get DataFrames in Python (requires pandas)',
+             "python3 -c \""
+             "import grepxcel; frames = grepxcel.extract_df('pattern.xlsx', 'data.xlsx'); "
+             "print(frames['schedule'])\""),
+        ],
         'pattern': '',
         'data': '',
     },
@@ -126,18 +179,62 @@ def generate_examples(output_dir: str) -> str:
 
 def _build_readme(ex: dict) -> str:
     name = ex['name']
-    desc = ex['description']
-    return (
-        f"{name}\n"
-        f"{'=' * len(name)}\n\n"
-        f"{desc}\n\n"
-        f"Quick start\n"
-        f"-----------\n"
-        f"  grepxcel extract -p pattern.xlsx data.xlsx\n\n"
-        f"Verbose (see per-field trace):\n"
-        f"  grepxcel extract -p pattern.xlsx data.xlsx -v\n\n"
-        f"Validate the pattern (no extraction):\n"
-        f"  grepxcel validate-pattern pattern.xlsx -v\n\n"
-        f"Save output to JSON:\n"
-        f"  grepxcel extract -p pattern.xlsx data.xlsx -o .\n"
-    )
+    title = ex.get('title', name)
+    heading = f"{name} — {title}"
+    what = ex.get('what_it_shows', ex['description'])
+    extra = ex.get('extra_commands', [])
+
+    lines = [
+        heading,
+        '=' * len(heading),
+        '',
+        'What this example shows',
+        '-----------------------',
+        what,
+        '',
+        'Files',
+        '-----',
+        '  pattern.xlsx  — the pattern: describes what to look for',
+        '  data.xlsx     — a sample data file',
+        '',
+        'Try it',
+        '------',
+        'Extract and print JSON:',
+        '  grepxcel extract -p pattern.xlsx data.xlsx',
+        '',
+        'See the field-by-field extraction trace:',
+        '  grepxcel extract -p pattern.xlsx data.xlsx -v',
+        '',
+        'Validate the pattern without extracting:',
+        '  grepxcel validate-pattern pattern.xlsx -v',
+        '',
+    ]
+
+    if extra:
+        lines.append('More options')
+        lines.append('------------')
+        for label, cmd in extra:
+            lines.append(f'{label}:')
+            lines.append(f'  {cmd}')
+            lines.append('')
+
+    lines += [
+        'Build a pattern for your own files',
+        '-----------------------------------',
+        'Browser wizard (click cells to classify):',
+        "  grepxcel web-wizard your-file.xlsx        # requires: pip install 'grepxcel[web]'",
+        '',
+        'AI-assisted starter pattern:',
+        '  grepxcel draft your-file.xlsx -o my-pattern.xlsx',
+        '',
+        'Test a pattern against a folder of files:',
+        '  grepxcel test -p pattern.xlsx your-folder/',
+        '',
+        'Learn more',
+        '----------',
+        '  grepxcel quickstart       — guided tutorial in your terminal',
+        '  grepxcel doctor           — check your environment is ready',
+        '  grepxcel docs             — write the full pattern reference to disk',
+        '',
+    ]
+    return '\n'.join(lines)

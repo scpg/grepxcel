@@ -106,8 +106,6 @@ The CLI is subcommand-based: `extract`, `validate-pattern`, `draft`, `docs`, `li
 .venv/bin/grepxcel mcp-config --target claude-desktop              # print config for Claude Desktop
 .venv/bin/grepxcel doctor [extract|draft|all]                      # preflight: deps, keys, model, proxy/TLS
 .venv/bin/grepxcel quickstart                                      # guided tutorial in the terminal
-.venv/bin/grepxcel wizard data.xlsx                                # TUI (terminal) pattern wizard
-.venv/bin/grepxcel wizard data.xlsx --load-pattern pattern.xlsx   # TUI with pre-populated cells
 .venv/bin/grepxcel web-wizard data.xlsx                            # browser-based pattern wizard (mouse-friendly)
 .venv/bin/grepxcel web-wizard data.xlsx -p pattern.xlsx            # web wizard with pre-populated cells
 .venv/bin/grepxcel web-wizard data.xlsx --port 9000 --no-browser  # custom port, no auto-open

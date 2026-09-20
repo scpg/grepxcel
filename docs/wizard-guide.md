@@ -1,8 +1,8 @@
 # The grepxcel Wizard — User Guide
 
-> **Note:** The interactive TUI wizard (`grepxcel wizard`) is **deprecated** as of v0.3.0.
-> The recommended path is the browser-based web wizard — see [web-wizard-guide.md](web-wizard-guide.md).
-> This document covers the sequential terminal wizard as a fallback reference.
+> **Note:** The interactive TUI wizard (`grepxcel wizard`) was **removed** as of v0.4.0.
+> Use the browser-based web wizard instead — see [web-wizard-guide.md](web-wizard-guide.md).
+> This document is kept as a historical reference only.
 
 ---
 

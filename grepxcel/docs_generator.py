@@ -156,8 +156,9 @@ class DocsGenerator:
         section('WHAT IS GREPXCEL?')
         row(['', 'grepxcel reads structured data from Excel files using a pattern file.'])
         row(['', 'You describe what to look for — cell values, table rows, field names —'])
-        row(['', 'and grepxcel finds them reliably across any number of files.'])
+        row(['', 'and grepxcel attempts to extract them across any number of files.'])
         row(['', 'Output is JSON: ready for databases, APIs, or data pipelines.'])
+        row(['', 'When data does not match the pattern, grepxcel reports it and stops — no silent errors.'])
         blank()
 
         # Quick start
@@ -177,18 +178,18 @@ class DocsGenerator:
              'grepxcel extract -p pattern.xlsx data.xlsx -o output/'])
         ws.cell(r - 1, 2).font = _CODE
         row(['5  Build your own pattern',
-             'Use the wizard (see below) or open the pattern-reference sheet in this file'])
+             'Use the web wizard (see below) or open the pattern-reference sheet in this file'])
         blank()
 
         # Wizard
         section('WIZARD — VISUAL PATTERN BUILDER')
-        row(['Terminal wizard (keyboard)', 'grepxcel wizard data.xlsx'])
-        ws.cell(r - 1, 2).font = _CODE
         row(['Browser wizard (mouse)',
              "grepxcel web-wizard data.xlsx",
              "requires: pip install 'grepxcel[web]'"])
         ws.cell(r - 1, 2).font = _CODE
-        row(['Pre-load an existing pattern', 'grepxcel wizard data.xlsx --load-pattern pattern.xlsx'])
+        row(['Pre-load an existing pattern', 'grepxcel web-wizard data.xlsx -p pattern.xlsx'])
+        ws.cell(r - 1, 2).font = _CODE
+        row(['Custom port / no auto-open', 'grepxcel web-wizard data.xlsx --port 9000 --no-browser'])
         ws.cell(r - 1, 2).font = _CODE
         blank()
 
@@ -198,12 +199,14 @@ class DocsGenerator:
             ('extract',           'Extract data from Excel files using a pattern',       'grepxcel extract -p pattern.xlsx data.xlsx'),
             ('validate-pattern',  'Check a pattern file without running extraction',     'grepxcel validate-pattern pattern.xlsx'),
             ('draft',             'AI-powered pattern drafter (optional)',               "pip install 'grepxcel[suggest]'  then  grepxcel draft data.xlsx"),
-            ('wizard',            'Terminal-based visual pattern builder',               'grepxcel wizard data.xlsx'),
             ('web-wizard',        'Browser-based visual pattern builder',               "grepxcel web-wizard data.xlsx  [pip install 'grepxcel[web]']"),
-            ('docs',              'Regenerate this guide + grepxcel-guide.docx',         'grepxcel docs -o /output/directory/'),
-            ('generate-examples', 'Write 4 ready-to-run example files to a directory',  'grepxcel generate-examples -o examples/'),
+            ('test',              'Run pattern against a folder — pass/warn/fail report','grepxcel test -p pattern.xlsx samples/'),
             ('lint',              'Inspect an Excel file before writing a pattern',      'grepxcel lint data.xlsx'),
             ('schema',            'Generate JSON Schema from a pattern file',            'grepxcel schema pattern.xlsx'),
+            ('docs',              'Regenerate this guide + grepxcel-guide.docx',         'grepxcel docs -o /output/directory/'),
+            ('generate-examples', 'Write 4 ready-to-run example files to a directory',  'grepxcel generate-examples -o examples/'),
+            ('doctor',            'Check your environment is ready',                    'grepxcel doctor'),
+            ('quickstart',        'Guided tutorial in your terminal',                    'grepxcel quickstart'),
         ]
         for cmd, desc, example in cmds:
             row([cmd, desc, example])
@@ -574,8 +577,10 @@ class DocsGenerator:
             h2('What Is grepxcel?'),
             p('grepxcel reads structured data from Excel files using a pattern file.'),
             p('You describe what to look for — cell values, table rows, field names — '
-              'and grepxcel finds them reliably across any number of files.'),
+              'and grepxcel attempts to extract them across any number of files.'),
             p('Output is JSON, ready for databases, APIs, or data pipelines.'),
+            p('When data does not match the pattern, grepxcel reports it and stops — '
+              'it does not silently return partial results.'),
             blank(),
 
             h2('Quick Start'),
@@ -589,17 +594,17 @@ class DocsGenerator:
             pbold('4  Write output to files', ''),
             code('grepxcel extract -p pattern.xlsx data.xlsx -o output/'),
             pbold('5  Build your own pattern', ''),
-            p('    Use the wizard (below) or open the pattern-reference sheet in pattern-reference.xlsx.'),
+            p('    Use the web wizard (below) or open the pattern-reference sheet in pattern-reference.xlsx.'),
             blank(),
 
-            h2('Wizard — Visual Pattern Builder'),
-            p('The wizard helps you build a pattern by clicking directly on your Excel file.'),
-            pbold('Terminal wizard (keyboard):', ''),
-            code('grepxcel wizard data.xlsx'),
-            pbold('Browser wizard (mouse):', "requires: pip install 'grepxcel[web]'"),
+            h2('Web Wizard — Visual Pattern Builder'),
+            p('The web wizard helps you build a pattern by clicking directly on your Excel file in a browser.'),
+            pbold('Start the wizard:', "requires: pip install 'grepxcel[web]'"),
             code('grepxcel web-wizard data.xlsx'),
             pbold('Pre-load an existing pattern:', ''),
-            code('grepxcel wizard data.xlsx --load-pattern pattern.xlsx'),
+            code('grepxcel web-wizard data.xlsx -p pattern.xlsx'),
+            pbold('Custom port / no auto-open:', ''),
+            code('grepxcel web-wizard data.xlsx --port 9000 --no-browser'),
             blank(),
 
             h2('Available Commands'),
@@ -609,18 +614,22 @@ class DocsGenerator:
             code('grepxcel validate-pattern pattern.xlsx'),
             pbold('draft',             "AI-powered pattern drafter (pip install 'grepxcel[suggest]')."),
             code('grepxcel draft data.xlsx'),
-            pbold('wizard',            'Terminal-based visual pattern builder.'),
-            code('grepxcel wizard data.xlsx'),
             pbold('web-wizard',        "Browser-based visual pattern builder (pip install 'grepxcel[web]')."),
             code('grepxcel web-wizard data.xlsx'),
-            pbold('docs',              'Regenerate this guide and pattern-reference.xlsx.'),
-            code('grepxcel docs -o /output/directory/'),
-            pbold('generate-examples', 'Write 4 ready-to-run example files to a directory.'),
-            code('grepxcel generate-examples -o examples/'),
+            pbold('test',              'Run pattern against a folder — pass/warn/fail report per file.'),
+            code('grepxcel test -p pattern.xlsx samples/'),
             pbold('lint',              'Inspect an Excel file before writing a pattern.'),
             code('grepxcel lint data.xlsx'),
             pbold('schema',            'Generate JSON Schema from a pattern file.'),
             code('grepxcel schema pattern.xlsx'),
+            pbold('docs',              'Regenerate this guide and pattern-reference.xlsx.'),
+            code('grepxcel docs -o /output/directory/'),
+            pbold('generate-examples', 'Write 4 ready-to-run example files to a directory.'),
+            code('grepxcel generate-examples -o examples/'),
+            pbold('doctor',            'Check your environment is ready.'),
+            code('grepxcel doctor'),
+            pbold('quickstart',        'Guided tutorial in your terminal.'),
+            code('grepxcel quickstart'),
             blank(),
 
             h2('Shell TAB Completion'),

@@ -13,7 +13,7 @@ pip install grepxcel
 
 **Capabilities at a glance:**
 - **Pattern file** — describe any spreadsheet's layout once; reuse it across all matching files with no code changes
-- **Anchor-based** — finds data even when row or column positions shift between files
+- **Anchor-based** — locates data by content, not position, so it keeps working when rows or columns shift between files
 - **LLM drafter** — auto-generate a starter pattern from any file in ~30 seconds (`grepxcel draft file.xlsx`)
 - **Visual wizard** — browser UI: click cells to classify, download the pattern (`grepxcel web-wizard file.xlsx`)
 - **CI-ready** — deterministic, `--strict` exit-2 mode, JSON / CSV / colored-Excel output, Python 3.11–3.15
@@ -66,7 +66,7 @@ grepxcel extract -p pattern.xlsx data.xlsx
 }
 ```
 
-That's it. Same pattern works on next month's invoice, and the one after that.
+That's it. The same pattern works on next month's invoice — as long as the layout stays consistent.
 
 ## Who is this for?
 
