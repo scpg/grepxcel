@@ -503,9 +503,19 @@ def create_app(
 
     # ── Security checks (same guards as the extract command) ─────────────────
     from .security import validate_file, validate_pattern_file
+    from .pattern_check import check_pattern
     validate_file(xlsx_path)
     if pattern_path and Path(pattern_path).exists():
         validate_pattern_file(pattern_path)
+        _pv = check_pattern(pattern_path)
+        if _pv.errors:
+            print(f'Warning: pattern file has errors — it will load for editing but cannot extract:', file=sys.stderr)
+            for e in _pv.errors:
+                print(f'  ✖  {e}', file=sys.stderr)
+        elif _pv.warnings:
+            print(f'Warning: pattern file has warnings:', file=sys.stderr)
+            for w in _pv.warnings:
+                print(f'  ⚠  {w}', file=sys.stderr)
 
     # ── Load workbook ─────────────────────────────────────────────────────────
     wb = openpyxl.load_workbook(xlsx_path, data_only=True)
