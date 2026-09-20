@@ -71,7 +71,11 @@ def nested_to_csv(
     if table_keys:
         idx = 0 if table_idx is None else table_idx
         if idx < 0 or idx >= len(table_keys):
-            return '', dropped
+            n = len(table_keys)
+            raise ValueError(
+                f'--csv-table {idx + 1} is out of range: result has {n} '
+                f'table(s) (valid: 1–{n})'
+            )
         selected_key = table_keys[idx]
         instances = result[selected_key]
         for inst_idx, instance in enumerate(instances):
