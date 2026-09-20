@@ -7,55 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.3.1] — 2026-09-15
-
-### Changed
-
-- **PyPI listing overhaul** — improved short description, added PyPI/Python/license/downloads
-  badges, added "Capabilities at a glance" feature bullet list for faster scanning by humans
-  and AI agents, added "What's new in v0.3.0" section with CHANGELOG link
-- **Reduced dead whitespace** — removed 10 of 11 `---` horizontal-rule dividers from
-  README (each rendered as ~70 px of blank space on PyPI)
-- **Metadata** — upgraded `Development Status` classifier from `4 - Beta` to
-  `5 - Production/Stable`; added Python 3.15 classifier; added `Environment :: Console`,
-  `Intended Audience :: Science/Research`, `Topic :: Scientific/Engineering :: Information
-  Analysis`, `Topic :: Utilities`, `Typing :: Typed` classifiers; expanded keywords with
-  `automation`, `invoice`, `structured-data`, `data-pipeline`, `mcp`, `ai-agent`, and others
-
-## [0.3.0] — 2026-09-15
-
-### Features
-
-- **Shell TAB completion** — `grepxcel` now completes subcommands and flags in
-  bash, zsh, and fish. Included in the standard install (`argcomplete>=3.3`).
-  Activate once with `eval "$(register-python-argcomplete grepxcel)"` in your
-  shell config.
-- **`grepxcel docs` generates a Word guide** — running `grepxcel docs` now writes
-  both `pattern-reference.xlsx` and `grepxcel-guide.docx` to the output directory.
-  The docx is a complete quick-start guide for users who prefer Word over Excel.
-  `-o` now accepts a directory (default: `.`).
-- **`pattern-reference.xlsx` redesign** — two sheets: `guide` (active, first) with
-  quick-start steps, wizard instructions, and commands reference; `pattern-reference`
-  with the full syntax reference. Fixed a layout bug where CONFIG rows overlapped the
-  colour key. Colour key moved to a proper coloured section on both sheets.
-
-### Improvements
-
-- **`grepxcel -h` footer** — help output now shows the shell completion activation
-  command.
-- **Quickstart** — TAB completion activation added to the quickstart output.
-- **`docs/MINDSET.md`** — ethos rewritten to first-person; audience section updated
-  to acknowledge the accessibility investment (wizards, AI drafting, examples) while
-  keeping the engineering-first identity.
-
-### CLI help improvements
-
-- Category headers (`extract & validate:`, `onboarding:`, etc.) now render in colour
-  when the terminal supports it.
-- `-h -h` shows a compact per-command synopsis instead of duplicating the full help.
-- `-h -h -h` shows the full help for each command with labeled banners.
-
-## [0.4.0] — 2026-09-17
+## [0.4.0] — 2026-09-20
 
 ### Features
 
@@ -89,6 +41,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   indicating its classification (L/V/I/C) and, for table cells, its positional role
   (T-HEAD header / footer, T-DATA row) and anchor marker (▶/◀). Badges reserve fixed
   width so the cell values stay aligned across rows.
+- **Web wizard: cascade CLEAR** — clearing a cell that anchors a mini-table propagates
+  the clear to all dependent column-role cells automatically, preventing orphaned state.
+- **Web wizard: SKIP_EMPTY_ROW preload** — `SKIP_EMPTY_ROW:N` rows in an existing
+  pattern are now correctly restored when the wizard preloads a pattern file.
+- **Web wizard: Header(C) removed** — the combined `Header(C)` classification (header +
+  CONFIG) has been removed; classify headers and CONFIG rows separately.
 
 ### Changed
 
@@ -96,9 +54,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (Python API) and a visible `⚠ DEPRECATED` message on stderr (CLI). The legacy format leaks
   internal `lbl:` keys and `_source`/`_anchor` metadata; migrate to `--format nested`
   (the default).
-- **TUI wizard deprecated** — the Textual-based TUI (`grepxcel wizard`) is superseded by the
-  web wizard (`grepxcel web-wizard`). The command still works but prints a deprecation notice
-  pointing to the web wizard.
+- **TUI wizard removed** — the Textual-based TUI (`grepxcel wizard`) has been removed; use
+  `grepxcel web-wizard` instead.
 
 ### Documentation
 
@@ -336,7 +293,10 @@ Initial public release.
 - Structured JSON logs never contain extracted cell values (allow-list
   construction, not redaction).
 
-[Unreleased]: https://github.com/scpg/grepxcel/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/scpg/grepxcel/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/scpg/grepxcel/compare/v0.3.1...v0.4.0
+[0.3.1]: https://github.com/scpg/grepxcel/compare/v0.3.0...v0.3.1
+[0.3.0]: https://github.com/scpg/grepxcel/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/scpg/grepxcel/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/scpg/grepxcel/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/scpg/grepxcel/releases/tag/v0.1.0
