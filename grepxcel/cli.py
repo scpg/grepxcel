@@ -669,9 +669,31 @@ examples:
     )
     p.add_argument(
         '--format',
-        choices=['nested', 'legacy', 'csv', 'xlsx'], default='nested',
-        help='Output format: nested (default), legacy, csv (single-table only), '
-             'or xlsx (colored Excel report, requires -o)',
+        choices=['nested', 'json', 'legacy', 'csv', 'xlsx'], default='nested',
+        help='Output format: nested / json (default, same format; json is the canonical name), '
+             'legacy (deprecated), csv, or xlsx (colored Excel report, requires -o)',
+    )
+    p.add_argument(
+        '--csv-delimiter',
+        default=',',
+        metavar='CHAR',
+        help='Field delimiter for --format csv (default: comma)',
+    )
+    p.add_argument(
+        '--csv-mode',
+        choices=['extended', 'table'],
+        default='extended',
+        help='--format csv output mode: extended (default, scalars repeated per row) '
+             'or table (table columns only, scalars omitted)',
+    )
+    p.add_argument(
+        '--csv-table',
+        type=int,
+        metavar='N',
+        default=None,
+        help='--format csv: export table number N (1-based) when the pattern has '
+             'multiple tables. Without this flag, the first table is exported and '
+             'extra tables produce a warning.',
     )
     p.add_argument(
         '--no-source',
@@ -1006,6 +1028,8 @@ def _process_file(pattern: str, data_file: str, args,
         source=data_file,
     )
     output_format = getattr(args, 'format', 'nested')
+    if output_format == 'json':
+        output_format = 'nested'
     is_csv = output_format == 'csv'
     is_xlsx = output_format == 'xlsx'
     if output_format == 'legacy':
@@ -1066,7 +1090,14 @@ def _process_file(pattern: str, data_file: str, args,
         print(f'\n  Excel report written to: {out_path}', file=sys.stderr)
     elif is_csv:
         from .csv_writer import nested_to_csv
-        csv_text, csv_dropped = nested_to_csv(result)
+        _csv_table_arg = getattr(args, 'csv_table', None)
+        _table_idx = (_csv_table_arg - 1) if _csv_table_arg is not None else None
+        csv_text, csv_dropped = nested_to_csv(
+            result,
+            delimiter=getattr(args, 'csv_delimiter', ','),
+            mode=getattr(args, 'csv_mode', 'extended'),
+            table_idx=_table_idx,
+        )
         if csv_dropped:
             dropped_list = ', '.join(csv_dropped)
             print(colorize_marks(
@@ -1713,6 +1744,8 @@ def main(argv=None):
         sys.exit(1)
 
     fmt = getattr(args, 'format', 'nested')
+    if fmt == 'json':
+        fmt = 'nested'
 
     if fmt in ('csv', 'xlsx') and getattr(args, 'all_sheets', False):
         print(colorize_marks(
@@ -1725,13 +1758,25 @@ def main(argv=None):
     if fmt == 'csv':
         from .csv_writer import count_table_instructions
         n_tables = count_table_instructions(args.pattern)
-        if n_tables > 1:
+        csv_table = getattr(args, 'csv_table', None)
+        if csv_table is not None and csv_table < 1:
             print(colorize_marks(
-                f'\n  {MARK_FAIL}  --format csv requires at most one table: block, '
-                f'but this pattern has {n_tables}. '
-                f'Use --format nested (JSON) for multi-table patterns.',
+                f'\n  {MARK_FAIL}  --csv-table must be >= 1 (got {csv_table}).',
                 should_color(sys.stderr)), file=sys.stderr)
             sys.exit(2)
+        if n_tables > 1:
+            if csv_table is not None and csv_table > n_tables:
+                print(colorize_marks(
+                    f'\n  {MARK_FAIL}  --csv-table {csv_table} is out of range: '
+                    f'this pattern has {n_tables} tables.',
+                    should_color(sys.stderr)), file=sys.stderr)
+                sys.exit(2)
+            if csv_table is None:
+                print(colorize_marks(
+                    f'  {MARK_WARN}  Pattern has {n_tables} tables; --format csv exports '
+                    f'only the first. Use --csv-table N (1-{n_tables}) to choose a specific '
+                    'table, or --format nested for all tables.',
+                    should_color(sys.stderr)), file=sys.stderr)
 
     if fmt == 'xlsx':
         if not args.output:
