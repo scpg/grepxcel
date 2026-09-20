@@ -129,6 +129,9 @@ td.gx-cell {
 }
 td.gx-cell:hover:not(.selected) { background: var(--accent-dim) !important; }
 td.gx-cell.empty { color: var(--text-muted); }
+tr.gx-row-empty { height: 10px; }
+tr.gx-row-empty td { border-top: 1px dashed var(--border); padding: 0 !important; background: var(--surface) !important; }
+tr.gx-row-empty .row-header { font-size: 9px; color: var(--border); }
 td.gx-cell.gx-merged {
   /* Subtle diagonal stripe to signal a merged region */
   background-image: repeating-linear-gradient(
@@ -1347,7 +1350,8 @@ function renderGrid(data) {
   const tbody = document.getElementById('grid-body');
   let html = '';
   for (const row of data.rows) {
-    html += `<tr><td class="row-header">${row[0].row}</td>`;
+    const isEmptyRow = row.every(c => c.skip || c.empty);
+    html += `<tr${isEmptyRow ? ' class="gx-row-empty"' : ''}><td class="row-header">${row[0].row}</td>`;
     for (const cell of row) {
       // Non-anchor merged cells are ghost cells — skip them entirely.
       if (cell.skip) continue;
