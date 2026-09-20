@@ -1133,9 +1133,10 @@ def _expand_files(paths: list[str], recursive: bool = False,
             result.append(p)
 
     if symlinks_found:
-        print(f'  {MARK_WARN}  Skipped {len(symlinks_found)} symlink(s) '
-              f'(not followed for safety):',
-              file=sys.stderr)
+        print(colorize_marks(
+            f'  {MARK_WARN}  Skipped {len(symlinks_found)} symlink(s) '
+            f'(not followed for safety):',
+            should_color(sys.stderr)), file=sys.stderr)
         for s in symlinks_found[:5]:
             print(f'       {s} → {os.readlink(s)}', file=sys.stderr)
         if len(symlinks_found) > 5:

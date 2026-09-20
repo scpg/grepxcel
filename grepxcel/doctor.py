@@ -454,8 +454,8 @@ def run_doctor(area: str = 'all', probe: bool = True, out=None,
     print('\n' + '─' * 62, file=out)
     if any_fail:
         msg = paint('Not ready', 'red', color) + f' — resolve the {MARK_FAIL} items above.'
-        print(f'  {MARK_FAIL} {msg}', file=out)
+        print(colorize_marks(f'  {MARK_FAIL} {msg}', color), file=out)
     else:
         msg = paint('Ready.', 'green', color) + f' ({MARK_WARN} items are optional / situational.)'
-        print(f'  {MARK_OK} {msg}', file=out)
+        print(colorize_marks(f'  {MARK_OK} {msg}', color), file=out)
     return 1 if any_fail else 0

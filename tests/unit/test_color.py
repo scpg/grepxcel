@@ -40,10 +40,11 @@ class TestShouldColor:
 
 
 class TestColorizeMarks:
-    def test_disabled_is_identity(self):
-        # colorize_marks is now a pass-through (emoji are self-coloured)
-        line = '  🟢  ready'
-        assert colorize_marks(line, enabled=False) == line
+    def test_disabled_substitutes_emoji(self):
+        assert colorize_marks('  🟢  ready', enabled=False) == '  +  ready'
+        assert colorize_marks('  🔴  fail', enabled=False) == '  x  fail'
+        assert colorize_marks('  🟡  warn', enabled=False) == '  !  warn'
+        assert colorize_marks('  🔵  info', enabled=False) == '  i  info'
 
     def test_pass_through_when_enabled(self):
         # colorize_marks no longer injects ANSI — emoji need no wrapping
