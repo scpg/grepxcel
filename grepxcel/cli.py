@@ -1562,7 +1562,6 @@ def main(argv=None):
         if fmt == 'json':
             print(format_json(report))
         else:
-            from .color import should_color
             no_color = getattr(args, 'no_color', False)
             use_color = (not no_color) and should_color(sys.stdout)
             verbose = getattr(args, 'verbose', 0)
