@@ -104,7 +104,7 @@ jobs:
 
       - name: Verify installed version matches tag
         run: |
-          installed=$(python -c "import grepxcel; print(grepxcel.__version__)")
+          installed=$(cd /tmp && python -c "import grepxcel; print(grepxcel.__version__)")
           expected="${{ steps.version.outputs.version }}"
           if [ "$installed" != "$expected" ]; then
             echo "VERSION MISMATCH: installed=${installed} expected=${expected}" >&2
@@ -114,10 +114,10 @@ jobs:
       - name: Install pytest
         run: pip install pytest
 
-      # --import-mode=importlib: resolves 'import grepxcel' to site-packages,
-      # not the checked-out source tree.
+      # Run from /tmp so 'import grepxcel' resolves to site-packages, not the
+      # checked-out source tree.
       - name: Run smoke tests against installed package
-        run: pytest tests/smoke/ --import-mode=importlib -v
+        run: cd /tmp && pytest "$GITHUB_WORKSPACE/tests/smoke/" --import-mode=importlib -v
 
   github-release:
     name: Create GitHub Release

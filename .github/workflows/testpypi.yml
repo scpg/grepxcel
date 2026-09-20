@@ -134,8 +134,10 @@ jobs:
           echo "Installed grepxcel ${VERSION} from TestPyPI after ${ELAPSED}s."
 
       - name: Verify installed version matches published tag
+        # Run from /tmp so Python resolves 'import grepxcel' to site-packages,
+        # not the checked-out source tree (whose __version__ is the pre-sed value).
         run: |
-          installed=$(python -c "import grepxcel; print(grepxcel.__version__)")
+          installed=$(cd /tmp && python -c "import grepxcel; print(grepxcel.__version__)")
           expected="${{ needs.build.outputs.version }}"
           echo "Installed: ${installed}   Expected: ${expected}"
           if [ "$installed" != "$expected" ]; then
@@ -147,11 +149,11 @@ jobs:
       - name: Install pytest
         run: pip install pytest
 
-      # Run the smoke suite against the INSTALLED package.
-      # --import-mode=importlib prevents pytest from prepending the project root
-      # to sys.path, so 'import grepxcel' picks up site-packages, not the source.
+      # Run from /tmp so 'import grepxcel' resolves to site-packages and not the
+      # source tree that was checked out.  Pass the test directory as an absolute
+      # path; --import-mode=importlib keeps pytest from adding extra sys.path entries.
       - name: Run smoke tests
-        run: pytest tests/smoke/ --import-mode=importlib -v
+        run: cd /tmp && pytest "$GITHUB_WORKSPACE/tests/smoke/" --import-mode=importlib -v
 
       - name: Write step summary
         if: always()
