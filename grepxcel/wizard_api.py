@@ -1367,7 +1367,6 @@ def create_app(
         """
         import tempfile
         import os as _os
-        from grepxcel.wizard_tui import _preload_from_pattern
         from starlette.datastructures import UploadFile as _UploadFile
 
         form = await request.form()

@@ -14,6 +14,15 @@ import re
 from dataclasses import dataclass, field
 from typing import Any
 
+try:
+    import regex as _regex_mod
+    from .utils import _regex_timeout, _MAX_REGEX_INPUT_LEN as _MAX_LBL_LEN
+    _HAS_REGEX = True
+except Exception:
+    _regex_mod = None  # type: ignore[assignment]
+    _HAS_REGEX = False
+    _MAX_LBL_LEN = 2000
+
 
 # ── State ─────────────────────────────────────────────────────────────────────
 
@@ -558,18 +567,29 @@ def _choices_to_csv(ws, choices, cells, direction, sheet_name,
 # ── Label-matching helper (mirrors engine._match_lbl, no circular import) ─────
 
 def _lbl_cell_matches(cell_value, pattern: str, mode: str, ignore_case: bool) -> bool:
-    import fnmatch as _fnmatch, re as _re2
+    import fnmatch as _fnmatch
     if not pattern:
         return True
     text = str(cell_value) if cell_value is not None else ''
     if mode == 'literal':
         return (text.lower() == pattern.lower()) if ignore_case else (text == pattern)
     if mode == 'glob':
-        flags = _re2.DOTALL | (_re2.IGNORECASE if ignore_case else 0)
-        return bool(_re2.match(_fnmatch.translate(pattern), text, flags))
-    flags = _re2.IGNORECASE if ignore_case else 0
+        flags = re.DOTALL | (re.IGNORECASE if ignore_case else 0)
+        return bool(re.match(_fnmatch.translate(pattern), text, flags))
+    # regexp — mirror engine._match_lbl: use regex module with per-match timeout
+    # to prevent a crafted cell from stalling the uvicorn server.
+    flags = re.IGNORECASE if ignore_case else 0
+    text_capped = text[:_MAX_LBL_LEN]
+    if _HAS_REGEX:
+        try:
+            return bool(_regex_mod.search(pattern, text_capped, flags,
+                                          timeout=_regex_timeout()))
+        except TimeoutError:
+            return False
+        except Exception:
+            return False
     try:
-        return bool(_re2.search(pattern, text[:2000], flags))
+        return bool(re.search(pattern, text_capped, flags))
     except Exception:
         return False
 
