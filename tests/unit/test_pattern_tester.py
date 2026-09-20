@@ -39,7 +39,7 @@ class TestRelPath:
     def test_returns_relative(self, tmp_path):
         base = str(tmp_path)
         path = str(tmp_path / 'sub' / 'file.xlsx')
-        assert _rel_path(path, base) == os.path.join('sub', 'file.xlsx')
+        assert _rel_path(path, base) == 'sub/file.xlsx'
 
     def test_no_base_returns_original(self):
         assert _rel_path('/abs/path/file.xlsx', '') == '/abs/path/file.xlsx'
