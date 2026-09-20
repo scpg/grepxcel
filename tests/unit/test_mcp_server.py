@@ -295,7 +295,7 @@ class TestGenerateExamplesTool:
         result = fn(output_dir=out)
         assert 'examples' in result.lower()
         subdirs = [d for d in (tmp_path / 'examples').iterdir() if d.is_dir()]
-        assert len(subdirs) == 4
+        assert len(subdirs) == 5
 
     def test_generate_examples_path_traversal_rejected(self, tmp_path):
         server = create_server(sandbox_root=str(tmp_path))

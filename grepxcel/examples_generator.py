@@ -109,6 +109,31 @@ EXAMPLES = [
         'pattern': '',
         'data': '',
     },
+    {
+        'name': '05_ap_aging',
+        'source_fixture': '23_ap_aging',  # → tests/fixtures/23_ap_aging/
+        'description': 'Enterprise AP Aging — merged header, metadata scalars, SKIP_IF subtotals',
+        'title': 'AP Aging Report',
+        'what_it_shows': (
+            'A realistic ERP-export accounts-payable aging report:\n'
+            'a merged company-name header, metadata rows (report date, period),\n'
+            'a transaction table with interleaved vendor subtotal rows and\n'
+            'a grand total row that are filtered out with SKIP_IF.\n'
+            'Demonstrates seek:, absolute cell references for scalars,\n'
+            'and SKIP_IF with a regexp label to clean up ERP noise.'
+        ),
+        'extra_commands': [
+            ('Extract only pending invoices (filter in Python)',
+             "python3 -c \""
+             "import grepxcel; r = grepxcel.extract('pattern.xlsx', 'data.xlsx'); "
+             "pending = [t for t in r['txn'][0]['data'] if t['payment_status']=='Pending']; "
+             "print(f'{len(pending)} pending invoices')\""),
+            ('Export to CSV for downstream ingestion',
+             'grepxcel extract -p pattern.xlsx data.xlsx --format csv'),
+        ],
+        'pattern': '',
+        'data': '',
+    },
 ]
 
 

@@ -20,6 +20,7 @@ Each fixture is a pair:
   12_multi_sheet         — data.xlsx has 3 sheets; pattern extracts from 'Details' sheet
   13_hr_attendance       — employee header + quarterly attendance table with totals
   14_named_tables        — var: field in HEADER row captures the mini-table category name
+  23_ap_aging            — ERP-export AP aging: merged header, metadata scalars, SKIP_IF subtotals
 """
 
 import os
@@ -947,6 +948,129 @@ def fixture_14():
     return p, d
 
 
+def fixture_23():
+    """23: AP Aging Report — enterprise ERP-export with merged title header,
+    report metadata scalars, and a transaction table that has interleaved
+    vendor subtotal rows and a grand total filtered by SKIP_IF."""
+    import datetime
+    from openpyxl.styles import Font, Alignment
+
+    p = Workbook(); ps = p.active; ps.title = 'Pattern'
+    for row in [
+        ['config:', 'read.direction', 'LR'],
+        [],
+        ['lbl:',   'VENDOR_ID_HDR',   'string', 'Vendor ID'],
+        ['lbl:',   'VENDOR_NAME_HDR', 'string', 'Vendor Name'],
+        ['lbl:',   'INVOICE_NO_HDR',  'string', 'Invoice No'],
+        ['lbl:',   'PO_NO_HDR',       'string', 'PO Number'],
+        ['lbl:',   'INV_DATE_HDR',    'string', 'Invoice Date'],
+        ['lbl:',   'DUE_DATE_HDR',    'string', 'Due Date'],
+        ['lbl:',   'CURRENCY_HDR',    'string', 'Currency'],
+        ['lbl:',   'GROSS_HDR',       'string', 'Gross Amount'],
+        ['lbl:',   'TAX_HDR',         'string', 'Tax Amount'],
+        ['lbl:',   'NET_HDR',         'string', 'Net Amount'],
+        ['lbl:',   'GL_HDR',          'string', 'GL Account'],
+        ['lbl:',   'STATUS_HDR',      'string', 'Status'],
+        ['lbl:re', 'SKIP_MARKER',     'string', r'Subtotal.*|GRAND TOTAL'],
+        [],
+        ['var:', 'report.date',         'date',     r'.*'],
+        ['var:', 'report.period',       'string',   r'.+'],
+        ['var:', 'txn.vendor_id',       'string',   r'.+'],
+        ['var:', 'txn.vendor_name',     'string',   r'.+'],
+        ['var:', 'txn.invoice_no',      'string',   r'.+'],
+        ['var:', 'txn.po_number',       'string',   r'.+'],
+        ['var:', 'txn.invoice_date',    'date',     r'.*'],
+        ['var:', 'txn.due_date',        'date',     r'.*'],
+        ['var:', 'txn.currency',        'string',   r'[A-Z]{3}'],
+        ['var:', 'txn.gross_amount',    'currency', r'.*'],
+        ['var:', 'txn.tax_amount',      'currency', r'.*'],
+        ['var:', 'txn.net_amount',      'currency', r'.*'],
+        ['var:', 'txn.gl_account',      'string',   r'.+'],
+        ['var:', 'txn.payment_status',  'string',   r'Pending|Approved|Paid'],
+        [],
+        ['START:'],
+        ['cell:B2', 'report.date'],
+        ['cell:E2', 'report.period'],
+        ['seek:A4'],
+        ['table:*'],
+        ['', 'HEADER:1',
+         'VENDOR_ID_HDR', 'VENDOR_NAME_HDR', 'INVOICE_NO_HDR', 'PO_NO_HDR',
+         'INV_DATE_HDR', 'DUE_DATE_HDR', 'CURRENCY_HDR',
+         'GROSS_HDR', 'TAX_HDR', 'NET_HDR', 'GL_HDR', 'STATUS_HDR'],
+        ['', 'SKIP_IF',
+         'SKIP_MARKER', 'IGNORE', 'IGNORE', 'IGNORE',
+         'IGNORE', 'IGNORE', 'IGNORE', 'IGNORE', 'IGNORE', 'IGNORE', 'IGNORE', 'IGNORE'],
+        ['', 'SKIP_IF',
+         'EMPTY', 'IGNORE', 'IGNORE', 'IGNORE',
+         'IGNORE', 'IGNORE', 'IGNORE', 'IGNORE', 'IGNORE', 'IGNORE', 'IGNORE', 'IGNORE'],
+        ['', 'DATA:*',
+         'txn.vendor_id', 'txn.vendor_name', 'txn.invoice_no', 'txn.po_number',
+         'txn.invoice_date', 'txn.due_date', 'txn.currency',
+         'txn.gross_amount', 'txn.tax_amount', 'txn.net_amount',
+         'txn.gl_account', 'txn.payment_status'],
+        ['END:'],
+    ]:
+        ps.append(row)
+
+    d = Workbook(); ds = d.active; ds.title = 'Sheet1'
+    rows = [
+        ['ACME CORP — ACCOUNTS PAYABLE AGING REPORT',
+         None, None, None, None, None, None, None, None, None, None, None],
+        ['Report Date:', datetime.date(2026, 9, 20), None,
+         'Period:', 'Q3 2026', None, None, None, None, None, None, None],
+        [None] * 12,
+        ['Vendor ID', 'Vendor Name', 'Invoice No', 'PO Number',
+         'Invoice Date', 'Due Date', 'Currency',
+         'Gross Amount', 'Tax Amount', 'Net Amount', 'GL Account', 'Status'],
+        ['V-10021', 'TechLogistics GmbH', 'INV-88321', 'PO-9021',
+         datetime.date(2026, 8, 1), datetime.date(2026, 8, 31),
+         'EUR', 14689.00, 2350.24, 12338.76, '6110-PROC', 'Pending'],
+        ['V-10021', 'TechLogistics GmbH', 'INV-88402', 'PO-9055',
+         datetime.date(2026, 8, 15), datetime.date(2026, 9, 14),
+         'EUR', 3776.59, 604.26, 3172.33, '6110-PROC', 'Approved'],
+        ['Subtotal: TechLogistics GmbH',
+         None, None, None, None, None, None,
+         18465.59, 2954.50, 15511.09, None, None],
+        ['V-20419', 'CloudNet Services', 'INV-2026-11', 'PO-8812',
+         datetime.date(2026, 7, 10), datetime.date(2026, 8, 10),
+         'EUR', 1027.80, 164.45, 863.35, '6200-IT', 'Paid'],
+        ['V-20419', 'CloudNet Services', 'INV-2026-19', 'PO-9001',
+         datetime.date(2026, 8, 22), datetime.date(2026, 9, 22),
+         'EUR', 2450.00, 392.00, 2058.00, '6200-IT', 'Pending'],
+        ['V-31042', 'Meridian Freight', 'INV-F-5519', 'PO-8901',
+         datetime.date(2026, 9, 1), datetime.date(2026, 9, 30),
+         'EUR', 8900.00, 1424.00, 7476.00, '7001-LOG', 'Approved'],
+        ['V-31042', 'Meridian Freight', 'INV-F-5610', 'PO-9102',
+         datetime.date(2026, 9, 10), datetime.date(2026, 10, 10),
+         'EUR', 4250.00, 680.00, 3570.00, '7001-LOG', 'Pending'],
+        ['Subtotal: CloudNet + Meridian Freight',
+         None, None, None, None, None, None,
+         16627.80, 2660.45, 13967.35, None, None],
+        [None] * 12,
+        ['GRAND TOTAL',
+         None, None, None, None, None, None,
+         35093.39, 5614.95, 29478.44, None, None],
+    ]
+    for row in rows:
+        ds.append(row)
+
+    ds.merge_cells('A1:L1')
+    ds['A1'].font = Font(size=14, bold=True)
+    ds['A1'].alignment = Alignment(horizontal='center')
+    ds['A2'].font = Font(bold=True)
+    ds['D2'].font = Font(bold=True)
+    for cell in ds[4]:
+        cell.font = Font(bold=True)
+    for cell in ds[7]:
+        cell.font = Font(italic=True)
+    for cell in ds[12]:
+        cell.font = Font(italic=True)
+    for cell in ds[14]:
+        cell.font = Font(bold=True)
+
+    return p, d
+
+
 def main():
     print('Generating test fixtures...')
     save('01_simple_invoice',  *fixture_01())
@@ -963,6 +1087,7 @@ def main():
     save('12_multi_sheet',     *fixture_12())
     save('13_hr_attendance',   *fixture_13())
     save('14_named_tables',    *fixture_14())
+    save('23_ap_aging',        *fixture_23())
     print('Done.')
 
 

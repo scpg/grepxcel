@@ -403,7 +403,7 @@ def _add_self_test_subparser(sub) -> None:
         help='Post-install check: parse and extract the 4 bundled examples via the Python API',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Runs 8 checks (validate + extract for each bundled example) using only
+Runs 10 checks (validate + extract for each bundled example) using only
 the installed package — no external files, no network, no pytest needed.
 
 For a full CLI and integration check, see the CI smoke test suite

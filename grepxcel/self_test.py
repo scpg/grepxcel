@@ -32,6 +32,10 @@ _EXPECTED: dict[str, dict] = {
         'scalars': {'loan': ['amount']},
         'tables': ['schedule'],
     },
+    '05_ap_aging': {
+        'scalars': {'report': ['date', 'period']},
+        'tables': ['txn'],
+    },
 }
 
 
