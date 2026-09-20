@@ -269,10 +269,10 @@ def _bar(count: int, total: int, width: int = _BAR_WIDTH) -> str:
 
 
 def _rel_path(path: str, base_dir: str) -> str:
-    """Return path relative to base_dir, or the original path if that fails."""
+    """Return path relative to base_dir with forward slashes, or the original path."""
     if base_dir:
         try:
-            return os.path.relpath(path, base_dir)
+            return os.path.relpath(path, base_dir).replace(os.sep, '/')
         except ValueError:
             pass
     return path
