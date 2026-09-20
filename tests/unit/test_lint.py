@@ -1,7 +1,9 @@
 """Tests for grepxcel lint — Excel file inspection before extraction."""
 
+import io
 import os
 import zipfile
+import zlib
 import openpyxl
 from openpyxl.styles import Font, PatternFill
 import pytest
@@ -87,6 +89,48 @@ class TestEncryption:
             f.write(b'PK\x03\x04' + b'\xff' * 100)
         results = lint_file(path)
         assert any(r[0] == FAIL for r in results)
+
+
+# ── ZIP bomb detection ────────────────────────────────────────────────────────
+
+def _make_zip_bomb_ratio(path: str, uncompressed_mb: float = 3.0) -> None:
+    """Write a ZIP file whose single member expands to uncompressed_mb of zeros.
+
+    Zeros compress at ~1000:1 with DEFLATE, so a ~3 KB file expands to ~3 MB —
+    enough to exceed the 50× ratio guard without allocating significant RAM.
+    """
+    payload = b'\x00' * int(uncompressed_mb * 1024 * 1024)
+    compressed = zlib.compress(payload, level=9)[2:-4]  # strip zlib header/trailer
+    crc = zlib.crc32(payload) & 0xFFFFFFFF
+    usize = len(payload)
+    csize = len(compressed)
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, 'w') as zf:
+        info = zipfile.ZipInfo('bomb.xml')
+        info.compress_type = zipfile.ZIP_DEFLATED
+        zf.writestr(info, payload)
+
+    with open(path, 'wb') as f:
+        f.write(buf.getvalue())
+
+
+class TestZipBomb:
+    def test_high_ratio_zip_fails(self, tmp_path):
+        """A ZIP whose content expands >50× is rejected as a likely ZIP bomb."""
+        path = str(tmp_path / 'bomb.xlsx')
+        _make_zip_bomb_ratio(path, uncompressed_mb=3.0)
+        results = lint_file(path)
+        assert any(r[0] == FAIL and 'integrity' in r[1].lower() for r in results)
+        assert any('ratio' in r[2].lower() or 'bomb' in r[2].lower()
+                   or 'zip' in r[2].lower()
+                   for r in results if r[0] == FAIL)
+
+    def test_normal_xlsx_passes_zip_guard(self, tmp_path):
+        """A legitimate xlsx has a low expansion ratio and must not be flagged."""
+        path = _make_xlsx(tmp_path)
+        results = lint_file(path)
+        assert not any(r[0] == FAIL and 'bomb' in r[2].lower() for r in results)
 
 
 # ── sheet dimensions / extent ─────────────────────────────────────────────────
@@ -199,3 +243,107 @@ class TestRunLint:
         p2 = _make_xlsx(tmp_path, name='b.xlsx')
         code = run_lint([p1, p2], out=io.StringIO())
         assert code == 0
+
+    def test_compact_default_one_line_per_file(self, tmp_path):
+        """Default (no -v): one non-empty line per file, no separator bars."""
+        from grepxcel.lint import run_lint
+        p1 = _make_xlsx(tmp_path, name='a.xlsx')
+        p2 = _make_xlsx(tmp_path, name='b.xlsx')
+        out = io.StringIO()
+        run_lint([p1, p2], out=out)
+        lines = [l for l in out.getvalue().splitlines() if l.strip()]
+        assert len(lines) == 2
+        assert 'a.xlsx' in lines[0]
+        assert 'b.xlsx' in lines[1]
+        assert '─' * 10 not in out.getvalue()
+
+    def test_verbose_shows_full_detail(self, tmp_path):
+        """With verbose=True: separator bars and full checklist lines appear."""
+        from grepxcel.lint import run_lint
+        path = _make_xlsx(tmp_path)
+        out = io.StringIO()
+        run_lint([path], out=out, verbose=True)
+        text = out.getvalue()
+        assert '─' * 10 in text
+        # verbose output has many more lines than one
+        assert len([l for l in text.splitlines() if l.strip()]) > 3
+
+    def test_compact_fail_includes_category(self, tmp_path):
+        """Compact failure line includes the failing check category."""
+        from grepxcel.lint import run_lint
+        out = io.StringIO()
+        run_lint([str(tmp_path / 'missing.xlsx')], out=out)
+        line = out.getvalue().strip()
+        assert 'missing.xlsx' in line
+        assert 'file access' in line
+
+
+# ── directory expansion ───────────────────────────────────────────────────────
+
+class TestDirectoryExpansion:
+    def test_directory_lints_xlsx_files(self, tmp_path):
+        """Passing a directory lints all .xlsx files inside it."""
+        from grepxcel.lint import run_lint
+        _make_xlsx(tmp_path, name='a.xlsx', cells={'A1': 'ok'})
+        _make_xlsx(tmp_path, name='b.xlsx', cells={'A1': 'ok'})
+        out = io.StringIO()
+        code = run_lint([str(tmp_path)], out=out)
+        assert code == 0
+        text = out.getvalue()
+        assert 'a.xlsx' in text
+        assert 'b.xlsx' in text
+
+    def test_directory_non_recursive_ignores_subdir(self, tmp_path):
+        """Without -r, files in subdirectories are not linted."""
+        from grepxcel.lint import run_lint
+        sub = tmp_path / 'sub'
+        sub.mkdir()
+        _make_xlsx(tmp_path, name='top.xlsx')
+        _make_xlsx(sub, name='nested.xlsx')
+        out = io.StringIO()
+        run_lint([str(tmp_path)], out=out)
+        text = out.getvalue()
+        assert 'top.xlsx' in text
+        assert 'nested.xlsx' not in text
+
+    def test_directory_recursive_finds_nested(self, tmp_path):
+        """With recursive=True, files in subdirectories are included."""
+        from grepxcel.lint import run_lint
+        sub = tmp_path / 'sub'
+        sub.mkdir()
+        _make_xlsx(sub, name='nested.xlsx')
+        out = io.StringIO()
+        run_lint([str(tmp_path)], out=out, recursive=True)
+        assert 'nested.xlsx' in out.getvalue()
+
+    def test_directory_includes_macro_extensions(self, tmp_path):
+        """Directory scan surfaces .xlsm files (reported as FAIL — wrong format)."""
+        from grepxcel.lint import run_lint
+        xlsm = str(tmp_path / 'macro.xlsm')
+        with open(xlsm, 'w') as f:
+            f.write('fake')
+        out = io.StringIO()
+        code = run_lint([str(tmp_path)], out=out)
+        assert 'macro.xlsm' in out.getvalue()
+        assert code == 1  # FAIL because macro format is rejected
+
+    def test_empty_directory_returns_zero(self, tmp_path):
+        """An empty directory (no Excel files) reports a notice and returns 0."""
+        from grepxcel.lint import run_lint
+        out = io.StringIO()
+        code = run_lint([str(tmp_path)], out=out)
+        assert code == 0
+        assert 'no Excel files found' in out.getvalue()
+
+    def test_mixed_files_and_dirs(self, tmp_path):
+        """Files and directories can be mixed in the same invocation."""
+        from grepxcel.lint import run_lint
+        sub = tmp_path / 'sub'
+        sub.mkdir()
+        explicit = _make_xlsx(tmp_path, name='explicit.xlsx')
+        _make_xlsx(sub, name='in_sub.xlsx')
+        out = io.StringIO()
+        run_lint([explicit, str(sub)], out=out)
+        text = out.getvalue()
+        assert 'explicit.xlsx' in text
+        assert 'in_sub.xlsx' in text

@@ -46,7 +46,7 @@ def _run_cli(*args):
 class TestNestedToCsv:
     def test_scalar_only(self):
         data = {'inv': {'number': 'AB123', 'date': '2026-01-01'}}
-        out = nested_to_csv(data)
+        out, _ = nested_to_csv(data)
         reader = csv.DictReader(io.StringIO(out))
         rows = list(reader)
         assert len(rows) == 1
@@ -62,7 +62,7 @@ class TestNestedToCsv:
                 ]},
             ],
         }
-        out = nested_to_csv(data)
+        out, _ = nested_to_csv(data)
         reader = csv.DictReader(io.StringIO(out))
         rows = list(reader)
         assert len(rows) == 2
@@ -79,7 +79,7 @@ class TestNestedToCsv:
                 ]},
             ],
         }
-        out = nested_to_csv(data)
+        out, _ = nested_to_csv(data)
         reader = csv.DictReader(io.StringIO(out))
         rows = list(reader)
         assert len(rows) == 2
@@ -96,7 +96,7 @@ class TestNestedToCsv:
                 },
             ],
         }
-        out = nested_to_csv(data)
+        out, _ = nested_to_csv(data)
         assert '_source' not in out
 
     def test_multi_instance_concatenated(self):
@@ -106,13 +106,42 @@ class TestNestedToCsv:
                 {'data': [{'x': 2}, {'x': 3}]},
             ],
         }
-        out = nested_to_csv(data)
+        out, _ = nested_to_csv(data)
         rows = list(csv.DictReader(io.StringIO(out)))
         assert len(rows) == 3
 
     def test_empty_result(self):
-        out = nested_to_csv({})
+        out, dropped = nested_to_csv({})
         assert out.strip() == ''
+        assert dropped == []
+
+    def test_no_drop_when_no_header_or_footer(self):
+        data = {'items': [{'data': [{'x': 1}]}]}
+        _, dropped = nested_to_csv(data)
+        assert dropped == []
+
+    def test_footer_reported_in_dropped(self):
+        data = {'items': [{'data': [{'x': 1}], 'footer': {'total': 99}}]}
+        out, dropped = nested_to_csv(data)
+        assert 'items.footer' in dropped
+        rows = list(csv.DictReader(io.StringIO(out)))
+        assert len(rows) == 1              # data row still present
+        assert rows[0]['items.x'] == '1'  # data content unaffected
+
+    def test_header_reported_in_dropped(self):
+        data = {'items': [{'data': [{'x': 1}], 'header': {'label': 'H'}}]}
+        _, dropped = nested_to_csv(data)
+        assert 'items.header' in dropped
+
+    def test_multi_instance_footer_indexed(self):
+        """With multiple instances both footers appear, labelled by index."""
+        data = {'items': [
+            {'data': [{'x': 1}], 'footer': {'t': 1}},
+            {'data': [{'x': 2}], 'footer': {'t': 2}},
+        ]}
+        _, dropped = nested_to_csv(data)
+        assert 'items[0].footer' in dropped
+        assert 'items[1].footer' in dropped
 
 
 # ── count_table_instructions ─────────────────────────────────────────────────
@@ -216,16 +245,26 @@ class TestMultiTableGuard:
         )
         return str(pat)
 
-    def test_multi_table_refused(self, tmp_path):
+    def test_multi_table_warns_not_errors(self, tmp_path, capsys):
+        """Multi-table pattern emits a warning but does not hard-fail."""
         pat = self._make_multi_table_pattern(tmp_path)
         rc, _ = _run_cli('extract', '-p', pat, _CATALOG_DATA, '--format', 'csv')
-        assert rc == 2
+        captured = capsys.readouterr()
+        assert rc != 2
+        assert 'csv-table' in captured.err or 'table' in captured.err.lower()
 
-    def test_error_message_mentions_json(self, tmp_path, capsys):
+    def test_warning_mentions_json_or_nested(self, tmp_path, capsys):
         pat = self._make_multi_table_pattern(tmp_path)
         _run_cli('extract', '-p', pat, _CATALOG_DATA, '--format', 'csv')
         captured = capsys.readouterr()
         assert 'json' in captured.err.lower() or 'nested' in captured.err.lower()
+
+    def test_csv_table_out_of_range_errors(self, tmp_path, capsys):
+        """--csv-table N where N > number of tables exits 2."""
+        pat = self._make_multi_table_pattern(tmp_path)
+        rc, _ = _run_cli('extract', '-p', pat, _CATALOG_DATA,
+                         '--format', 'csv', '--csv-table', '99')
+        assert rc == 2
 
 
 # ── --all-sheets guard ───────────────────────────────────────────────────────
@@ -260,7 +299,7 @@ class TestMetaExclusion:
             'inv': {'number': 'X1'},
             '_meta': {'run_id': 'abc', 'stats': {'errors': 0}},
         }
-        out = nested_to_csv(data)
+        out, _ = nested_to_csv(data)
         assert '_meta' not in out
         assert 'run_id' not in out
         assert 'X1' in out
@@ -314,3 +353,91 @@ class TestOutputFile:
         assert len(csv_files) == 2
         names = {f.name for f in csv_files}
         assert names == {'jan.csv', 'feb.csv'}
+
+
+# ── RFC 4180 line endings ────────────────────────────────────────────────────
+
+class TestLineTerminator:
+    def test_crlf_line_endings(self):
+        """CSV output uses \\r\\n per RFC 4180 (Windows Excel compatible)."""
+        data = {'items': [{'data': [{'x': 1}, {'x': 2}]}]}
+        out, _ = nested_to_csv(data)
+        assert '\r\n' in out
+
+    def test_crlf_in_file_output(self, tmp_path):
+        rc, _ = _run_cli('extract', '-p', _CATALOG_PAT, _CATALOG_DATA,
+                         '--format', 'csv', '-o', str(tmp_path))
+        assert rc == 0
+        csv_file = next(tmp_path.glob('*.csv'))
+        raw = csv_file.read_bytes()
+        assert b'\r\n' in raw
+
+
+# ── --csv-delimiter ──────────────────────────────────────────────────────────
+
+class TestCsvDelimiter:
+    def test_tab_delimiter(self):
+        data = {'items': [{'data': [{'a': 1, 'b': 2}]}]}
+        out, _ = nested_to_csv(data, delimiter='\t')
+        assert '\t' in out
+        assert ',' not in out.split('\n')[0]
+
+    def test_semicolon_delimiter_cli(self):
+        rc, out = _run_cli('extract', '-p', _CATALOG_PAT, _CATALOG_DATA,
+                           '--format', 'csv', '--csv-delimiter', ';')
+        assert rc == 0
+        header_line = out.split('\n')[0]
+        assert ';' in header_line
+
+
+# ── --csv-mode ───────────────────────────────────────────────────────────────
+
+class TestCsvMode:
+    def test_table_mode_excludes_scalars(self):
+        data = {
+            'vendor': {'name': 'Acme'},
+            'items': [{'data': [{'item': 'Pen', 'price': 2}]}],
+        }
+        out, _ = nested_to_csv(data, mode='table')
+        reader = csv.DictReader(io.StringIO(out))
+        rows = list(reader)
+        assert len(rows) == 1
+        assert 'vendor.name' not in rows[0]
+        assert 'items.item' in rows[0]
+
+    def test_extended_mode_includes_scalars(self):
+        data = {
+            'vendor': {'name': 'Acme'},
+            'items': [{'data': [{'item': 'Pen'}]}],
+        }
+        out, _ = nested_to_csv(data, mode='extended')
+        reader = csv.DictReader(io.StringIO(out))
+        rows = list(reader)
+        assert rows[0]['vendor.name'] == 'Acme'
+
+    def test_table_mode_cli(self):
+        rc, out = _run_cli('extract', '-p', _EXPENSE_PAT, _EXPENSE_DATA,
+                           '--format', 'csv', '--csv-mode', 'table')
+        assert rc == 0
+        reader = csv.DictReader(io.StringIO(out))
+        rows = list(reader)
+        cols = set(rows[0].keys())
+        assert not any('emp.' in c for c in cols)
+
+
+# ── --format json alias ───────────────────────────────────────────────────────
+
+class TestFormatJsonAlias:
+    def test_json_alias_produces_nested_output(self):
+        rc, out = _run_cli('extract', '-p', _INVOICE_PAT, _INVOICE_DATA,
+                           '--format', 'json')
+        assert rc == 0
+        data = json.loads(out)
+        assert isinstance(data, dict)
+
+    def test_json_and_nested_produce_identical_output(self):
+        _, out_nested = _run_cli('extract', '-p', _CATALOG_PAT, _CATALOG_DATA,
+                                 '--format', 'nested')
+        _, out_json = _run_cli('extract', '-p', _CATALOG_PAT, _CATALOG_DATA,
+                               '--format', 'json')
+        assert json.loads(out_nested) == json.loads(out_json)

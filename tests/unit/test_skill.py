@@ -31,9 +31,16 @@ class TestGenerateSkill:
         assert 'When to use' in text
         assert 'stdout' in text          # output convention gotcha
 
+    def test_cursor_has_frontmatter(self):
+        text = generate_skill('cursor')
+        assert text.startswith('---\n')
+        assert 'globs:' in text
+        assert 'alwaysApply: false' in text
+        assert '**/*.xlsx' in text
+
     def test_unknown_target_raises(self):
         with pytest.raises(ValueError, match='target'):
-            generate_skill('cursor')
+            generate_skill('unknown_engine_xyz')
 
 
 class TestRunSkill:

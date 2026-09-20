@@ -119,7 +119,7 @@ def create_server(*, sandbox_root: str | None = None) -> "FastMCP":
         return output
 
     @mcp.tool()
-    def lint(file: str) -> str:
+    def lint(file: str, verbose: bool = True) -> str:
         """Inspect an Excel file for potential extraction issues.
 
         Checks format, encryption, sheet dimensions, merged cells,
@@ -128,6 +128,8 @@ def create_server(*, sandbox_root: str | None = None) -> "FastMCP":
         Args:
             file: Path to the Excel file (.xlsx), relative to the
                   server's working directory.
+            verbose: True (default) for the full checklist with all
+                  check details; False for a compact one-line summary.
 
         Returns:
             Lint report text.
@@ -135,7 +137,7 @@ def create_server(*, sandbox_root: str | None = None) -> "FastMCP":
         safe_file = _safe_path(file, root)
         from .lint import run_lint
         buf = io.StringIO()
-        run_lint([safe_file], out=buf)
+        run_lint([safe_file], out=buf, verbose=verbose)
         return buf.getvalue()
 
     @mcp.tool()
@@ -175,9 +177,8 @@ def create_server(*, sandbox_root: str | None = None) -> "FastMCP":
             output_dir = tempfile.mkdtemp(prefix='grepxcel-docs-', dir=root)
         else:
             output_dir = _safe_path(output_dir, root)
-        path = os.path.join(output_dir, 'pattern-reference.xlsx')
-        DocsGenerator().write(path)
-        return f"Pattern reference written to: {path}"
+        paths = DocsGenerator().write(output_dir)
+        return "Written: " + ", ".join(paths)
 
     @mcp.tool()
     def doctor(area: str = "all") -> str:
@@ -220,7 +221,18 @@ def create_server(*, sandbox_root: str | None = None) -> "FastMCP":
     return mcp
 
 
-def run_server():
-    """Start the MCP server on stdio transport."""
+def run_server(verbose: int = 0):
+    """Start the MCP server on stdio transport.
+
+    verbose=0: silent; verbose=1: startup banner on stderr;
+    verbose=2: also enable DEBUG logging for the mcp library.
+    """
+    _require_mcp()
+    if verbose >= 2:
+        import logging
+        logging.basicConfig(level=logging.DEBUG, stream=sys.stderr,
+                            format='%(levelname)s %(name)s %(message)s')
+    if verbose >= 1:
+        print('grepxcel MCP server starting (stdio)', file=sys.stderr, flush=True)
     server = create_server()
     server.run(transport="stdio")

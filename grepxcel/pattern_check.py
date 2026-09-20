@@ -16,7 +16,7 @@ from dataclasses import dataclass, field
 from .color import MARK_FAIL, MARK_OK, MARK_WARN, colorize_marks, paint, should_color
 from .models import CellInstruction, TableInstruction, SeekInstruction, DirectionInstruction
 from .pattern_parser import PatternError, PatternParser
-from .security import SecurityError
+from .security import SecurityError, validate_pattern_file
 
 # Patterns that strongly suggest regex intent (backslash-escapes, lookahead)
 _REGEX_TELL = re.compile(r'\\[()[\]{}|+*.?^$]|[(][?]')
@@ -69,6 +69,7 @@ def check_pattern(path: str) -> CheckResult:
     is captured in result.errors (fatal) or result.warnings (non-fatal)."""
     result = CheckResult(path=path)
     try:
+        validate_pattern_file(path)
         config, defs, sequence = PatternParser().parse(path)
     except (PatternError, SecurityError) as exc:
         result.errors.append(str(exc))
@@ -168,6 +169,22 @@ def check_pattern(path: str) -> CheckResult:
                         f"match case-insensitively."
                     )
 
+    # ── SKIP_IF with all-EMPTY/IGNORE columns ────────────────────────────────
+    for instr in sequence:
+        if not isinstance(instr, TableInstruction):
+            continue
+        for trow in instr.rows:
+            if trow.row_type != 'SKIP_IF':
+                continue
+            non_anchor = [c.field for c in trow.columns
+                          if c.field not in ('EMPTY', 'IGNORE', '')]
+            if not non_anchor:
+                result.warnings.append(
+                    "A SKIP_IF row has no anchor fields (all columns are EMPTY or IGNORE). "
+                    "This condition matches every row, including empty separator rows. "
+                    "To allow empty rows within table data use SKIP_EMPTY_ROW:N instead."
+                )
+
     result.valid = not result.errors
     return result
 
@@ -236,7 +253,7 @@ def _render_table_grid(rows, out, color: bool = False) -> None:
 
 def render_result(result: CheckResult, verbose: bool = False, out=None) -> None:
     """Print a human-readable report for one CheckResult."""
-    out = out or sys.stderr
+    out = out or sys.stdout
     color = should_color(out)
     fpath = paint(result.path, 'bold', color)
     if result.valid:
@@ -356,7 +373,7 @@ def run_validate(paths: list[str], verbose: bool = False, quiet: bool = False,
     quiet=True suppresses the '✓ VALID' confirmation line; warnings and errors
     are still printed so the caller knows what failed.  Exit code is unchanged.
     """
-    out = out or sys.stderr
+    out = out or sys.stdout
     all_valid = True
     for idx, path in enumerate(paths):
         if idx:

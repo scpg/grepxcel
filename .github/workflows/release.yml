@@ -66,9 +66,62 @@ jobs:
         uses: pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33 # release/v1
         # No 'password:' — authentication is the OIDC handshake configured on PyPI.
 
+  smoke-test:
+    name: Smoke-test install from PyPI
+    needs: publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v6
+        with:
+          python-version: "3.12"
+
+      - name: Extract version from tag
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      # Wait for PyPI CDN propagation then install the just-published version.
+      - name: Install grepxcel from PyPI
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          MAX_WAIT=300
+          INTERVAL=20
+          ELAPSED=0
+          until pip install --no-cache-dir "grepxcel==${VERSION}"; do
+            if [ "$ELAPSED" -ge "$MAX_WAIT" ]; then
+              echo "Timed out after ${MAX_WAIT}s — grepxcel ${VERSION} not available." >&2
+              exit 1
+            fi
+            echo "Not yet available (${ELAPSED}s elapsed). Retrying in ${INTERVAL}s…"
+            sleep "$INTERVAL"
+            ELAPSED=$((ELAPSED + INTERVAL))
+          done
+          echo "Installed grepxcel ${VERSION} from PyPI after ${ELAPSED}s."
+
+      - name: Verify installed version matches tag
+        run: |
+          installed=$(cd /tmp && python -c "import grepxcel; print(grepxcel.__version__)")
+          expected="${{ steps.version.outputs.version }}"
+          if [ "$installed" != "$expected" ]; then
+            echo "VERSION MISMATCH: installed=${installed} expected=${expected}" >&2
+            exit 1
+          fi
+
+      - name: Install pytest
+        run: pip install pytest
+
+      # Run from /tmp so 'import grepxcel' resolves to site-packages, not the
+      # checked-out source tree.
+      - name: Run smoke tests against installed package
+        run: cd /tmp && pytest "$GITHUB_WORKSPACE/tests/smoke/" --import-mode=importlib -v
+
   github-release:
     name: Create GitHub Release
-    needs: publish
+    needs: [publish, smoke-test]
     runs-on: ubuntu-latest
     permissions:
       contents: write        # required to create a GitHub Release

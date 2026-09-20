@@ -328,14 +328,14 @@ def test_cell_trace_shows_pass_mark(capsys):
     assert 'po.number' in out
     assert 'Sheet1!B1' in out
     assert '←' in out
-    assert '🟢' in out
+    assert '+' in out
 
 
 def test_cell_trace_shows_fail_mark_and_regex(capsys):
     lg = Logger(level=VerbosityLevel.VERBOSE, sheet_name='Sheet1')
     lg.cell_processed(1, 1, 'code', 'bad', ok=False, regex=r'[A-Z]{3}')
     out = capsys.readouterr().err
-    assert '🔴' in out
+    assert 'x' in out
     assert 'does not match /[A-Z]{3}/' in out
 
 

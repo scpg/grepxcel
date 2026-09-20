@@ -1,9 +1,8 @@
 # The grepxcel Wizard — User Guide
 
-> **STATUS: DRAFT FOR REVIEW**
-> This document describes the current behaviour of `grepxcel wizard`.
-> Items marked ⚠️ are known gaps or bugs that need fixing.
-> Please correct the text and add notes — the code will be updated to match.
+> **Note:** The interactive TUI wizard (`grepxcel wizard`) was **removed** as of v0.4.0.
+> Use the browser-based web wizard instead — see [web-wizard-guide.md](web-wizard-guide.md).
+> This document is kept as a historical reference only.
 
 ---
 
@@ -57,11 +56,6 @@ The first screen asks three questions:
 | **Template mode** | `yes` | If the Excel file is a *template* (contains headers and structure but no real data), the wizard uses the structure to suggest names. Say `yes` for blank or partially-filled forms. |
 | **Sheet** | first sheet | Which sheet to classify. |
 
-> ⚠️ **To confirm and verify - for CLAUDE** 
-> In template mode, the next field to jump to it is not the next non ampty field if the user just defined a cell as a label
-> In template mode once a cell has been defined as a label, then the next cell should be the adjacent cell (in the direction defined for the sheet processing (next cell to the right or next cell down) depending on the directions)
-> in the case of templates, this is the cell that is most probably going to contain the data
-
 Press ENTER on each field, then ENTER on the last to proceed.
 
 ---
@@ -85,8 +79,8 @@ single-key commands.
 | `F11` | Copy the session log to the clipboard |
 | `F2` | Add a free-text note to the current cell (saved to the log) |
 
-> ⚠️ **To confirm and verify - for CLAUDE** 
-> the above help should be easily seen by the user of the awizzard
+> ⚠️ **Known gap (F6):** The key bindings are not prominently displayed while classifying cells.
+> A persistent reference panel is planned for a future release.
 
 ### Classification keys
 
@@ -117,8 +111,6 @@ ROW 4: CONTACT PHONE:  +1-555-0100       ← B4 = label, C4 = value
 **Label (L)** — Press `L` on the cell that says `DEPARTMENT:`. A modal asks for:
 - **Name** — a short identifier, e.g. `department_label`
 - **Type** — almost always `string`
-  > ⚠️ **To confirm and verify - for CLAUDE** 
-  > The cell type sugestion should be based on the celly type / format in the *.xlsx being read
 - **Match** — what text the label cell should contain. Defaults to the cell's current text. This is how the engine anchors the pattern to the right location on the sheet.
 - **Notes** — optional free-text note saved to the session log
 
@@ -126,13 +118,8 @@ ROW 4: CONTACT PHONE:  +1-555-0100       ← B4 = label, C4 = value
 - **Name** — the variable name in the output JSON, e.g. `inventory.department`
   Use dot notation to create nested JSON: `inventory.department` → `{"inventory": {"department": ...}}`
 - **Type** — `string`, `number`, `date`, `boolean`, etc. The wizard auto-suggests based on the Excel cell format.
-  > ⚠️ **To confirm and verify - for CLAUDE** 
-  > The cell type sugestion should be based on the celly type / format in the *.xlsx being read
 - **Match pattern** — a regex the extracted value must satisfy. `.*` accepts anything.
-  > ⚠️ **To confirm and verify - for CLAUDE** 
-  > AS this tools is going to be used by many normal users it would be greate to provide here some presets
-  > I have been thinking her eon URL, eMail by now, maybe the wizzard can already help the user on complex regexp 
-
+  Common presets: `.*` (any), `\d+` (integer), `[\d.]+` (decimal), `\S+@\S+` (email).
 - **Notes** — optional
 
 > **Tip:** Name related variables with a common prefix to group them in the output JSON:
@@ -172,7 +159,7 @@ opens.
 
 | Field | Example | Meaning |
 |---|---|---|
-| **Table name** | `items` | A short label used in the session log. ⚠️ See note below about JSON output. **Important to AI-CLAUDE this name will define the name of the "variable/structure" that will be used for generating the json structures of the mini tables recognized **|
+| **Table name** | `items` | Used to auto-prefix DATA variable names (e.g. name `items` → variables become `items.item_no`, `items.qty`). See note below. |
 | **Full table range** | `B11:F29` | The bounding box of the *entire* block, including header and footer rows. The main role for this is toassist  the user in the creation of the pattern |
 | **Multiplicity** | `*` | How many instances of this table the engine should look for. `*` = any number; `1` = exactly one; `{n,m}` = between n and m. |
 
@@ -192,10 +179,6 @@ opens.
 
 The wizard shows a mini-table with all rows in the range. For each row, press one key:
 
-> ⚠️ **ADDITIONAL IDEA FOR CLAUDE:** I believe once a mini table is defined the first thing to ask the user is to define us a label for ecah column (the main purpose of the column) a and a descrition for it
-> based on this the iterations below will always suggest something based on this definition and then the user doe snot need to remember if column N is meaning what, the user can follow the naming of the column
-> it should be clear that in the wizard each possible mini-table is an object in itself, and needs to be ttreated as such
-
 | Key | Role | Meaning |
 |---|---|---|
 | `H` | **Header** | A row of column titles (e.g. "ITEM NO.", "DESCRIPTION", "QTY"). The engine uses this to locate and verify the table. |
@@ -204,11 +187,9 @@ The wizard shows a mini-table with all rows in the range. For each row, press on
 | `S` | **Skip** | A structural row to consume but ignore (blank separator, etc.). |
 
 Classify every row in the range, then press ENTER or the confirm key to proceed.
-> ⚠️ **Rows clasification and JSON output:** The user needs to clasify all row types (H D F S) if they exist
-> each mini table is a small matrix , and in general headers cells defines in a certain way the type of content that data cell will have
-> footers do not follow  this pattern (headers do not follow it either, but the probablility of this happening is lower)
-> all in all headers will in general be labels (if only one headr appears , or if more thatn one header is defined then for the latest header), if more than one header apperas it might happen that some of the header data is related to vvariables, and not labels, or then some of the header rows needs to be empty or ignored
-> similar applies to footers
+
+> **Tip:** Header rows typically contain column titles (labels). Footer rows typically contain
+> totals or summaries. Data rows are the repeating records you want to extract.
 
 ### Step T-3: Column definition
 
@@ -379,16 +360,16 @@ Dot notation in variable names:
 
 ---
 
-## Known bugs and gaps (to fix after document review)
+## Known bugs and gaps
 
-### Confirmed bugs (wrong behaviour, must fix)
+### Status of previously reported bugs
 
-| # | Where | Issue | Impact |
+| # | Where | Issue | Status |
 |---|---|---|---|
-| B1 | Save | `-o pattern.xlsx` writes CSV text, not a real xlsx workbook | File opens with a warning in Excel; contents look like CSV |
-| B2 | Pattern output | Footer rows are emitted as `HEADER:1` in the pattern instead of `FOOTER:1` | Engine treats footer as a second header; table matching may fail |
-| B3 | L modal | Type field for Labels defaults to `string` — not inferred from Excel cell format | User must manually change type even when Excel clearly shows a date or number |
-| B4 | Pattern output | Duplicate `lbl:` names (e.g. three columns all named `empty`) cause silent wrong matches | Engine resolves by name; only the first definition is used for all three columns |
+| B1 | Save | `-o pattern.xlsx` writes CSV text, not a real xlsx workbook | ✅ **Fixed in v0.3.0** — the sequential wizard and web wizard both write real xlsx via openpyxl |
+| B2 | Pattern output | Footer rows emitted as `HEADER:1` instead of `FOOTER:1` | ✅ **Fixed in v0.3.0** — `FOOTER:1` is now emitted correctly |
+| B3 | L modal | Type field for Labels defaults to `string` — not inferred from Excel cell format | ⚠️ **Open** — type inference from Excel format is not yet implemented; change the type manually when needed |
+| B4 | Pattern output | Duplicate `lbl:` names cause silent wrong matches | ✅ **Fixed in v0.3.1** — the wizard warns before saving if duplicate label names are detected |
 
 ### Missing features (behaviour that should exist but doesn't)
 

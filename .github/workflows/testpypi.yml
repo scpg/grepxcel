@@ -97,37 +97,47 @@ jobs:
     permissions:
       contents: read
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v6
         with:
           python-version: "3.12"
 
-      # TestPyPI propagates new releases within ~60 s; give it a moment before
-      # the first install attempt to avoid a confusing "version not found" error.
-      - name: Wait for TestPyPI index propagation (~60 s)
-        run: sleep 60
-
-      # Install the exact pre-release version we just published.
+      # Retry pip install until TestPyPI CDN propagation reaches this runner.
+      # Using pip itself as the retry loop is more reliable than a separate curl
+      # poll: TestPyPI uses a multi-node CDN and a curl hit on one node does not
+      # guarantee the pip node is updated.  --no-cache-dir prevents pip from
+      # reusing a cached "version not found" response across retries.
       #
-      # Why two steps?  test.pypi.org is a sandbox and contains name-squatted
-      # or broken stub packages for popular names (e.g. FASTAPI-1.0.tar.gz).
-      # If we ask pip to satisfy the [web] extras from --index-url=test.pypi.org
-      # it will find those stubs first and fail.  Solution: install the base
-      # grepxcel package from test.pypi.org (proving the upload is correct), then
-      # install the [web] extra dependencies separately from the real PyPI.
-      - name: Install grepxcel (base) from TestPyPI
+      # Why --extra-index-url?  test.pypi.org contains name-squatted or broken
+      # stubs for popular names; grepxcel itself comes from TestPyPI and its
+      # dependencies fall back to the real PyPI.
+      - name: Wait for TestPyPI propagation and install grepxcel
+        env:
+          VERSION: ${{ needs.build.outputs.version }}
         run: |
-          pip install --pre \
-            --index-url https://test.pypi.org/simple/ \
-            --extra-index-url https://pypi.org/simple/ \
-            "grepxcel==${{ needs.build.outputs.version }}"
+          MAX_WAIT=300
+          INTERVAL=20
+          ELAPSED=0
+          until pip install --pre --no-cache-dir \
+              --index-url https://test.pypi.org/simple/ \
+              --extra-index-url https://pypi.org/simple/ \
+              "grepxcel==${VERSION}"; do
+            if [ "$ELAPSED" -ge "$MAX_WAIT" ]; then
+              echo "Timed out after ${MAX_WAIT}s — grepxcel ${VERSION} not available via pip." >&2
+              exit 1
+            fi
+            echo "Not yet available (${ELAPSED}s elapsed). Retrying in ${INTERVAL}s…"
+            sleep "$INTERVAL"
+            ELAPSED=$((ELAPSED + INTERVAL))
+          done
+          echo "Installed grepxcel ${VERSION} from TestPyPI after ${ELAPSED}s."
 
-      - name: Install web-extra dependencies from real PyPI
-        run: pip install "fastapi>=0.141" "uvicorn>=0.52" "jinja2>=3.1"
-
-      # Verify the installed __version__ matches what was published.
-      - name: Verify installed version
+      - name: Verify installed version matches published tag
+        # Run from /tmp so Python resolves 'import grepxcel' to site-packages,
+        # not the checked-out source tree (whose __version__ is the pre-sed value).
         run: |
-          installed=$(python -c "import grepxcel; print(grepxcel.__version__)")
+          installed=$(cd /tmp && python -c "import grepxcel; print(grepxcel.__version__)")
           expected="${{ needs.build.outputs.version }}"
           echo "Installed: ${installed}   Expected: ${expected}"
           if [ "$installed" != "$expected" ]; then
@@ -135,39 +145,25 @@ jobs:
             exit 1
           fi
 
-      # Basic CLI checks: version flag + top-level help + web-wizard sub-help.
-      - name: CLI help and version flag
-        run: |
-          grepxcel --version
-          grepxcel --help
-          grepxcel web-wizard --help
+      # Install pytest (the only test dep; no source deps, no grepxcel dev extras).
+      - name: Install pytest
+        run: pip install pytest
 
-      # End-to-end extract: generate the built-in examples then run the engine on
-      # one of them.  This exercises openpyxl, the pattern parser, and the engine
-      # with zero external data files needed.
-      - name: End-to-end extract (built-in example)
-        run: |
-          grepxcel generate-examples -o /tmp/gx-smoke
-          grepxcel extract \
-            -p /tmp/gx-smoke/01_simple_invoice/pattern.xlsx \
-               /tmp/gx-smoke/01_simple_invoice/data.xlsx \
-            -q
-
-      # Validate-pattern on the same example just to exercise that code path too.
-      - name: Validate pattern (no engine needed)
-        run: grepxcel validate-pattern /tmp/gx-smoke/01_simple_invoice/pattern.xlsx -q
+      # Run from /tmp so 'import grepxcel' resolves to site-packages and not the
+      # source tree that was checked out.  Pass the test directory as an absolute
+      # path; --import-mode=importlib keeps pytest from adding extra sys.path entries.
+      - name: Run smoke tests
+        run: cd /tmp && pytest "$GITHUB_WORKSPACE/tests/smoke/" --import-mode=importlib -v
 
       - name: Write step summary
         if: always()
         run: |
-          echo "### Smoke-test result: grepxcel \`${{ needs.build.outputs.version }}\` from TestPyPI" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Smoke-test: grepxcel \`${{ needs.build.outputs.version }}\` from TestPyPI" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "| Check | Status |" >> "$GITHUB_STEP_SUMMARY"
           echo "|---|---|" >> "$GITHUB_STEP_SUMMARY"
           echo "| pip install (TestPyPI) | see job steps |" >> "$GITHUB_STEP_SUMMARY"
           echo "| version pin match | see job steps |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| CLI help / version flag | see job steps |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| end-to-end extract | see job steps |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| validate-pattern | see job steps |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| pytest smoke tests | see job steps |" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "Install command: \`pip install --pre --index-url https://test.pypi.org/simple/ grepxcel==${{ needs.build.outputs.version }}\`" >> "$GITHUB_STEP_SUMMARY"

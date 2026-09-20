@@ -50,9 +50,16 @@ _CODES = {
     'bold_red':   '\033[1;38;5;196m', # bold vivid red    — INVALID
 }
 
-# Emoji marks are self-coloured; _GLYPH_COLOR is kept empty so colorize_marks()
-# is a harmless pass-through after the switch to emoji.
+# Emoji marks are self-coloured (no ANSI needed), but must be replaced with
+# plain ASCII when the output stream is not a TTY.
 _GLYPH_COLOR: dict = {}
+
+_MARK_PLAIN: dict[str, str] = {
+    MARK_OK:   '+',
+    MARK_WARN: '!',
+    MARK_FAIL: 'x',
+    MARK_INFO: 'i',
+}
 
 
 def should_color(stream) -> bool:
@@ -73,10 +80,14 @@ def paint(text: str, color: str, enabled: bool = True) -> str:
 
 
 def colorize_marks(text: str, enabled: bool = True) -> str:
-    """Pass-through kept for call-site compatibility.
+    """Replace emoji status marks with ASCII equivalents when colour is disabled.
 
-    Previously coloured ``✓ ✗ ⚠`` glyphs with ANSI codes; those glyphs have
-    been replaced with self-coloured emoji (🟢 🔴 🟡 🔵) that need no ANSI
-    wrapping.  Call sites that still pass the ``enabled`` flag are unaffected.
+    When *enabled* is False (non-TTY / piped output) each emoji mark is
+    substituted with its plain ASCII counterpart (🟢→+ 🔴→x 🟡→! 🔵→i)
+    so pipelines and log files stay clean.  When *enabled* is True the emoji
+    are left as-is (they are self-coloured and need no ANSI wrapping).
     """
+    if not enabled:
+        for emoji, plain in _MARK_PLAIN.items():
+            text = text.replace(emoji, plain)
     return text

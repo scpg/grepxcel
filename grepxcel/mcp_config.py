@@ -39,8 +39,11 @@ def generate_config(target: str = 'claude-code') -> str:
             }
         }
         header = (
-            "# Add to .claude/settings.json (project) or\n"
-            "# ~/.claude/settings.json (global):\n"
+            "# Preferred: run once in your terminal —\n"
+            "#   claude mcp add grepxcel -- grepxcel mcp\n"
+            "#\n"
+            "# Or add manually to ~/.claude.json (global) or\n"
+            "# .claude/settings.json (project-scoped):\n"
         )
     elif target == 'claude-desktop':
         config = {

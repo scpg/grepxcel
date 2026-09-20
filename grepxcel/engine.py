@@ -1,5 +1,6 @@
 import fnmatch
 import re
+import warnings
 
 import regex as _re
 import openpyxl
@@ -10,6 +11,45 @@ from .utils import is_empty, validate_type, _MAX_REGEX_INPUT_LEN, _regex_timeout
 from .pattern_parser import PatternParser, PatternError
 from .logger import Logger, LogRecord, EngineError, cell_ref
 from .security import validate_file, validate_pattern_file, SecurityError, DEFAULT_MAX_UNCOMPRESSED_MB
+
+
+# ── assert: rule evaluation ───────────────────────────────────────────────────
+
+def _run_assert_rules(rules, cells: dict, logger: Logger) -> None:
+    """Evaluate all assert: rules against the extracted cells dict.
+
+    A failing assertion logs a WARNING.  A rule referencing unknown or None
+    fields is silently skipped (the engine cannot assert about fields that
+    weren't extracted).
+
+    Args:
+        rules:  list[AssertRule] from the pattern parser.
+        cells:  flat {field_name: value} dict from _raw['cells'].
+        logger: Logger instance for recording warnings.
+    """
+    from .assert_eval import evaluate_assert, parse_assert, AssertParseError
+
+    for rule in rules:
+        try:
+            tree = parse_assert(rule.expression)
+            result = evaluate_assert(tree, cells)
+        except AssertParseError as exc:
+            # Should not happen — parse-time validation already caught this.
+            logger.warn_assert(
+                f'assert: rule could not be evaluated: {exc}',
+                hint=f'Expression: {rule.expression}',
+            )
+            continue
+
+        if result is None:
+            # A field was missing/None — skip silently.
+            continue
+        if not result:
+            msg = rule.message or rule.expression
+            logger.warn_assert(
+                f'Assertion failed: {msg}',
+                hint=f'Expression: {rule.expression!r} evaluated to False',
+            )
 
 
 # ── lbl: matching ─────────────────────────────────────────────────────────────
@@ -477,10 +517,12 @@ class Engine:
             except SecurityError as exc:
                 logger.fatal(str(exc), found=data_file)
 
+            _pp = PatternParser()
             try:
-                global_config, defs, start_sequence = PatternParser().parse(pattern_file)
+                global_config, defs, start_sequence = _pp.parse(pattern_file)
             except (SecurityError, PatternError) as exc:
                 logger.fatal(str(exc), found=pattern_file)
+            assert_rules = getattr(_pp, 'assert_rules', [])
 
             if not start_sequence:
                 logger.fatal(
@@ -537,12 +579,22 @@ class Engine:
             logger.engine_start(pattern_file, data_file)
             _raw = self._process_sheet(ws, global_config, defs, start_sequence, logger)
 
+            # Run cross-field assert: rules against the extracted result.
+            if assert_rules:
+                _run_assert_rules(assert_rules, _raw['cells'], logger)
+
         except EngineError:
             pass  # setup-phase fatal; already logged, return partial result
 
         logger.summary(_raw)
 
         if output_format == 'legacy':
+            warnings.warn(
+                "--format legacy is deprecated and will be removed in a future version. "
+                "Use --format nested (the default). The legacy format leaks internal "
+                "lbl: keys and _source/_anchor metadata.",
+                DeprecationWarning, stacklevel=3,
+            )
             return _raw
         return _build_nested_output(_raw, defs)
 
@@ -902,10 +954,13 @@ class Engine:
         data_tmpl = data_rows[0] if data_rows else None
         footer_tmpl_first = footer_rows[0] if footer_rows else None
         skip_if_rows = [r for r in instr.rows if r.row_type == 'SKIP_IF']
+        _ser = [r for r in instr.rows if r.row_type == 'SKIP_EMPTY_ROW']
+        max_skip_empty = sum(int(r.multiplicity) for r in _ser)
 
         if data_tmpl:
             is_bounded    = data_tmpl.max_rows is not None
             total_scanned = 0  # physical rows seen (skipped + real), for {n,m} bounds
+            consecutive_empty = 0
 
             while True:
                 # Hard ceiling for bounded DATA
@@ -913,10 +968,17 @@ class Engine:
                     break
 
                 if self._row_is_end_of_data(current_row, anchor_col, data_tmpl, config, scanner):
+                    if consecutive_empty < max_skip_empty:
+                        # SKIP_EMPTY_ROW budget — cross this empty separator row
+                        consecutive_empty += 1
+                        current_row += 1
+                        continue
                     logger.footer_detected(current_row, anchor_col,
                                            scanner.cell_value(current_row, anchor_col))
                     current_row += 1
                     break
+
+                consecutive_empty = 0
 
                 if footer_tmpl_first and self._row_matches_footer(
                     current_row, anchor_col, footer_tmpl_first, defs, config, scanner

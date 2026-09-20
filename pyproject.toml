@@ -42,6 +42,11 @@ dependencies = [
     # ReDoS guarantee. Floor is well past the old OSS-Fuzz memory-safety fixes.
     "regex>=2024.11.6",
     "structlog>=24.1",
+    # Shell TAB completion for all subcommands and flags. No CVEs as of 2026-09.
+    # Zero runtime cost when completion is not active (exits immediately if
+    # _ARGCOMPLETE env vars are absent). Activate with:
+    #   eval "$(register-python-argcomplete grepxcel)"
+    "argcomplete>=3.3",
 ]
 
 [project.optional-dependencies]
@@ -70,10 +75,15 @@ polars = [
     "polars>=1.0",
 ]
 mcp = [
-    "mcp>=1.23,<3",
+    "mcp>=1.23,<2",
 ]
 wizard = [
     "textual>=8.0",
+]
+watch = [
+    # watchdog>=4.0 for inotify/FSEvents/ReadDirectoryChangesW support.
+    # No known CVEs as of 2026-09.
+    "watchdog>=4.0",
 ]
 web = [
     "fastapi>=0.141",
@@ -83,6 +93,10 @@ web = [
 dev = [
     "pytest>=8.0",
     "jsonschema>=4.20",
+]
+build = [
+    # CVE-2025-59042 fixed in 6.10 (reworked bootstrap, eliminates sys.path injection)
+    "pyinstaller>=6.10",
 ]
 
 [project.urls]

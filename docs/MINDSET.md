@@ -22,13 +22,19 @@ and a deliberate, auditable gate in between. The honest promise is not "replace 
 
 ## Who this is for (and who it isn't)
 
-grepxcel is for **developers and IT-savvy people** who are willing to invest some
+The core audience is **developers and IT-savvy people** who are willing to invest some
 effort up front in a pattern, in exchange for processing **hundreds or thousands of
 files** reliably and feeding the result into a system that can actually use the data.
 
-It is deliberately **not** aimed at non-technical end users. Authoring a good pattern
-is an engineering task — regex, structure, types — and we would rather be excellent
-for the people who can do that than mediocre for everyone. That focus is a feature.
+Authoring a good pattern is an engineering task — regex, structure, types — and we
+would rather be excellent for the people who can do that than mediocre for everyone.
+That focus is a feature, not an apology.
+
+That said, **the person who authors the pattern and the person who uses it daily don't
+have to be the same person.** We are building accessibility layers — visual wizards,
+AI-assisted drafting, worked examples — specifically so that a developer can build and
+own the pattern while the people who run it every day don't need to touch the internals.
+The engineering rigour stays; the barrier to *using* it comes down.
 
 ---
 
@@ -115,8 +121,9 @@ audience this tool is for will smell the difference immediately.
 
 Code can be generated now. **Judgment and direction can't.** Knowing where the tool
 should go, what "done right" means, and insisting on the discipline to get there — that
-is the rarer and more valuable half of building something. grepxcel is what happens when
-a systems-engineering mindset ("I know the direction, and I know quality when I see it")
-is paired with AI assistance to put that direction into production.
+is the rarer and more valuable half of building something.
 
-*Built by someone who knows the direction, with an assistant who handles the typing.*
+I know the direction. I know quality when I see it. The AI handles the volume — the
+typing, the boilerplate, the first draft. What it doesn't replace is the decision of
+*what to build*, the refusal to ship something half-right, and the willingness to go
+back and fix it properly when it isn't. That stays mine.

@@ -4,7 +4,7 @@ import sys
 
 
 def _color(text: str, code: str) -> str:
-    if not sys.stderr.isatty():
+    if not sys.stdout.isatty():
         return text
     return f'\033[{code}m{text}\033[0m'
 
@@ -81,14 +81,17 @@ def run_quickstart() -> int:
         '',
         _bold('  Step 4: Create your own pattern'),
         '',
-        '  Option A — let AI draft one for you:',
+        '  Option A — browser wizard (click cells to classify):',
+        _cyan("    $ grepxcel web-wizard your-file.xlsx       # requires: pip install 'grepxcel[web]'"),
+        '',
+        '  Option B — let AI draft one for you:',
         _cyan('    $ grepxcel draft your-file.xlsx -o my-pattern.xlsx'),
         '',
-        '  Option B — start from the reference:',
+        '  Option C — start from the reference:',
         _cyan('    $ grepxcel docs -o pattern-reference.xlsx'),
         '  Open it — every instruction is explained with examples.',
         '',
-        '  Option C — validate as you go:',
+        '  Option D — validate as you go:',
         _cyan('    $ grepxcel validate-pattern my-pattern.xlsx -v'),
         '',
         '─' * 64,
@@ -98,7 +101,9 @@ def run_quickstart() -> int:
         f'    {_cyan("grepxcel extract -p pat.xlsx data.xlsx")}    Extract data',
         f'    {_cyan("grepxcel extract ... --strict")}              Fail on any issue',
         f'    {_cyan("grepxcel extract ... -v")}                    See step-by-step log',
+        f'    {_cyan("grepxcel test -p pat.xlsx samples/")}         Test against multiple files',
         f'    {_cyan("grepxcel lint data.xlsx")}                    Check a file first',
+        f'    {_cyan("grepxcel docs")}                              Write local guide (.xlsx + .docx)',
         f'    {_cyan("grepxcel doctor")}                            Verify your setup',
         '',
         '─' * 64,
@@ -108,7 +113,13 @@ def run_quickstart() -> int:
         '  Pattern reference:   https://github.com/scpg/grepxcel/blob/main/docs/pattern-file.md',
         '  CLI reference:       https://github.com/scpg/grepxcel/blob/main/docs/cli-reference.md',
         '  Design philosophy:   https://github.com/scpg/grepxcel/blob/main/docs/MINDSET.md',
+        '  Local guide:         grepxcel docs  (writes pattern-reference.xlsx + grepxcel-guide.docx)',
+        '',
+        _bold('  TAB completion'),
+        '',
+        '  Add to ~/.bashrc or ~/.zshrc to enable:',
+        '    eval "$(register-python-argcomplete grepxcel)"',
         '',
     ]
-    print('\n'.join(lines), file=sys.stderr)
+    print('\n'.join(lines), file=sys.stdout)
     return 0

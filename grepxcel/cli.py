@@ -1,3 +1,4 @@
+# PYTHON_ARGCOMPLETE_OK
 """
 Command-line interface for grepxcel.
 
@@ -16,9 +17,10 @@ import json
 import os
 import sys
 
-from .color import MARK_FAIL, MARK_OK, MARK_WARN, colorize_marks, should_color
+from .color import MARK_FAIL, MARK_OK, MARK_WARN, colorize_marks, paint, should_color
 from .engine import Engine
 from .logger import Logger, VerbosityLevel
+from .utils import flatten_table_instances as _flatten_table_instances
 
 
 # ── JSON serialisation ────────────────────────────────────────────────────────
@@ -84,43 +86,81 @@ def _resolve_sheet(args) -> str | None:
 
 # ── Argument parser ───────────────────────────────────────────────────────────
 
+class _GroupedHelpFormatter(argparse.RawDescriptionHelpFormatter):
+    """Like RawDescriptionHelpFormatter but hides the bare subparsers metavar entry."""
+
+    def _format_action(self, action):
+        if isinstance(action, argparse._SubParsersAction):
+            return ''
+        return super()._format_action(action)
+
+def _commands_help() -> str:
+    """Grouped command listing with color when stdout is a TTY."""
+    c = should_color(sys.stdout)
+
+    def _sec(s):
+        return paint(s, 'cyan', c)
+
+    return (
+        f"{_sec('extract & validate:')}\n"
+        "  extract            Extract data from Excel files using a pattern file\n"
+        "  validate-pattern   Validate a pattern file before running extraction\n"
+        "\n"
+        f"{_sec('onboarding:')}\n"
+        "  quickstart         Guided tutorial — learn grepxcel in your terminal\n"
+        "  web-wizard         Build a pattern file visually in your browser\n"
+        "  generate-examples  Create ready-to-run example files in a local directory\n"
+        "  docs               Write pattern-reference.xlsx + grepxcel-guide.docx\n"
+        "\n"
+        f"{_sec('automation:')}\n"
+        "  watch              Monitor a directory and extract new .xlsx files automatically\n"
+        "  test               Test a pattern's reliability against a sample directory\n"
+        "\n"
+        f"{_sec('AI & MCP:')}\n"
+        "  draft              Draft a starter pattern file using a local LLM\n"
+        "  generate-skill     Write an AI-agent skill doc (Claude, Cursor, Copilot, Windsurf…)\n"
+        "  mcp                Start the grepxcel MCP server (stdio transport)\n"
+        "  mcp-config         Print the MCP server config for your AI agent\n"
+        "\n"
+        f"{_sec('inspection:')}\n"
+        "  lint               Inspect an Excel file for potential extraction issues\n"
+        "  schema             Generate a JSON Schema from a pattern file\n"
+        "\n"
+        f"{_sec('compliance & ops:')}\n"
+        "  sbom               Generate a CycloneDX 1.6 SBOM for this installation\n"
+        "  doctor             Check the environment is ready (deps, API keys, model)\n"
+        "  self-test          Post-install check: parse and extract the 4 bundled examples\n"
+        "\n"
+        "Run 'grepxcel <command> --help' for per-command options.\n"
+        "Run 'grepxcel -h -h' for a synopsis of every command's options."
+    )
+
+
 def _build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog='grepxcel',
         description='Extract structured data from Excel files using a pattern.',
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-commands:
-  extract            Extract data from Excel files using a pattern file
-  validate-pattern   Check a pattern file is valid to use (no extraction)
-  draft              Use a local LLM to draft a starter pattern file
-  wizard             Interactively build a pattern file cell by cell
-  docs               Write a pattern-format reference xlsx (pattern-reference.xlsx)
-  lint               Inspect an Excel file for potential extraction issues
-  schema             Generate a JSON Schema from a pattern file
-  generate-skill     Write an AI-agent skill doc (Claude / AGENTS.md)
-  generate-examples  Create ready-to-run example files in a local directory
-  mcp                Start the MCP server (stdio transport)
-  mcp-config         Print the MCP server config for your AI agent
-  doctor             Check the environment is ready (deps, keys, model, proxy/TLS)
-  quickstart         Guided tutorial — learn grepxcel in your terminal
-
-Run 'grepxcel <command> --help' for per-command options.
-        """,
+        formatter_class=_GroupedHelpFormatter,
+        epilog='Shell TAB completion: eval "$(register-python-argcomplete grepxcel)"',
     )
     from . import __version__
     p.add_argument(
-        '--version',
+        '-v', '--version',
         action='version',
         version=f'%(prog)s {__version__}',
     )
-    sub = p.add_subparsers(dest='command', metavar='COMMAND')
+    sub = p.add_subparsers(
+        dest='command',
+        metavar='COMMAND',
+        title='commands',
+        description=_commands_help(),
+    )
     sub.required = True
 
     _add_extract_subparser(sub)
     _add_validate_subparser(sub)
+    _add_watch_subparser(sub)
     _add_draft_subparser(sub)
-    _add_wizard_subparser(sub)
     _add_web_wizard_subparser(sub)
     _add_docs_subparser(sub)
     _add_lint_subparser(sub)
@@ -130,8 +170,10 @@ Run 'grepxcel <command> --help' for per-command options.
     _add_sbom_subparser(sub)
     _add_mcp_subparser(sub)
     _add_mcp_config_subparser(sub)
+    _add_self_test_subparser(sub)
     _add_doctor_subparser(sub)
     _add_quickstart_subparser(sub)
+    _add_test_subparser(sub)
     return p
 
 
@@ -180,10 +222,17 @@ and known corporate-environment issues. Reports ✓/⚠/✗/ℹ.
 examples:
   grepxcel lint data.xlsx
   grepxcel lint jan.xlsx feb.xlsx        # lint several files
+  grepxcel lint data/                    # lint all Excel files in a directory
+  grepxcel lint data/ -r                 # recurse into subdirectories
+  grepxcel lint data/ -r -v              # full checklist detail per file
         """,
     )
-    p.add_argument('files', nargs='+', metavar='FILE',
-                   help='Excel file(s) to inspect (.xlsx)')
+    p.add_argument('files', nargs='+', metavar='FILE_OR_DIR',
+                   help='Excel file(s) or director(ies) to inspect')
+    p.add_argument('-r', '--recursive', action='store_true',
+                   help='Recurse into subdirectories when a directory is given')
+    p.add_argument('-v', '--verbose', action='store_true',
+                   help='Show full checklist detail (default: one summary line per file)')
 
 
 def _add_schema_subparser(sub) -> None:
@@ -206,28 +255,45 @@ examples:
                    help='Pattern file(s) to generate schema for (.xlsx or .csv)')
     p.add_argument('-o', '--output', metavar='FILE',
                    help='Write schema to file (default: stdout)')
+    p.add_argument(
+        '--force',
+        action='store_true',
+        help='Overwrite an existing output file without prompting',
+    )
 
 
 def _add_skill_subparser(sub) -> None:
     p = sub.add_parser(
         'generate-skill',
-        help='Write an AI-agent skill doc (Claude / AGENTS.md)',
+        help='Write an AI-agent skill doc for Claude, Cursor, Copilot, Windsurf…',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Writes a markdown 'skill' doc that teaches an AI agent how and when to use
-grepxcel. The command reference is introspected from the live CLI; the prose is
-curated. v1 targets: claude (SKILL.md) and agents-md (AGENTS.md).
+Writes a skill/rules doc that teaches an AI agent how and when to use grepxcel.
+The command list is introspected from the live CLI; the prose is curated.
+
+targets:
+  claude     SKILL.md                      — Claude Code / Claude Desktop
+  cursor     .cursor/rules/grepxcel.mdc   — Cursor IDE (glob-triggered MDC rule)
+  agents-md  AGENTS.md                    — OpenAI Codex + any tool that reads AGENTS.md
 
 examples:
-  grepxcel generate-skill                       # Claude SKILL.md to stdout
+  grepxcel generate-skill                              # Claude SKILL.md to stdout
   grepxcel generate-skill -o SKILL.md
+  grepxcel generate-skill --target cursor -o .cursor/rules/grepxcel.mdc
   grepxcel generate-skill --target agents-md -o AGENTS.md
         """,
     )
-    p.add_argument('--target', choices=['claude', 'agents-md'], default='claude',
-                   help='Skill format to emit (default: claude)')
+    p.add_argument('--target',
+                   choices=['claude', 'cursor', 'agents-md'],
+                   default='claude',
+                   help='AI engine to target (default: claude)')
     p.add_argument('-o', '--output', metavar='FILE',
                    help='Write the skill doc to FILE (default: stdout)')
+    p.add_argument(
+        '--force',
+        action='store_true',
+        help='Overwrite an existing output file without prompting',
+    )
 
 
 def _add_examples_subparser(sub) -> None:
@@ -250,6 +316,11 @@ examples:
         metavar='DIR',
         default='grepxcel-examples',
         help='Directory to create (default: ./grepxcel-examples/)',
+    )
+    p.add_argument(
+        '--force',
+        action='store_true',
+        help='Overwrite an existing non-empty directory without prompting',
     )
 
 
@@ -275,10 +346,15 @@ examples:
         metavar='FILE',
         help='Write SBOM to file (default: stdout)',
     )
+    p.add_argument(
+        '--force',
+        action='store_true',
+        help='Overwrite an existing output file without prompting',
+    )
 
 
 def _add_mcp_subparser(sub) -> None:
-    sub.add_parser(
+    p = sub.add_parser(
         'mcp',
         help='Start the MCP server (stdio transport)',
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -294,6 +370,8 @@ To see the config to add to your AI agent, run:
   grepxcel mcp-config
         """,
     )
+    p.add_argument('-v', '--verbose', action='count', default=0,
+                   help='-v: log each tool call to stderr; -vv: also log return values')
 
 
 def _add_mcp_config_subparser(sub) -> None:
@@ -316,6 +394,32 @@ examples:
         choices=['claude-code', 'claude-desktop', 'cursor'],
         default='claude-code',
         help='Config format for your AI agent (default: claude-code)',
+    )
+
+
+def _add_self_test_subparser(sub) -> None:
+    p = sub.add_parser(
+        'self-test',
+        help='Post-install check: parse and extract the 4 bundled examples via the Python API',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Runs 10 checks (validate + extract for each bundled example) using only
+the installed package — no external files, no network, no pytest needed.
+
+For a full CLI and integration check, see the CI smoke test suite
+(tests/smoke/) which runs automatically after every publish.
+
+examples:
+  grepxcel self-test        # run all checks, exit 0 on pass
+  grepxcel self-test -v     # show full traceback on failure
+
+Exits 0 when every check passes; exits 1 on any failure.
+        """,
+    )
+    p.add_argument(
+        '-v', '--verbose',
+        action='store_true',
+        help='Show full tracebacks on failure',
     )
 
 
@@ -351,53 +455,6 @@ Exits non-zero if the selected area has a blocking (✗) problem.
         help='Refuse a .env from outside the current project (also '
              'GREPXCEL_STRICT_ENV); the per-user config-dir .env stays allowed',
     )
-
-
-def _add_wizard_subparser(sub) -> None:
-    p = sub.add_parser(
-        'wizard',
-        help='Interactively build a pattern file cell by cell',
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Walks you through your Excel file cell by cell and writes a grepxcel pattern.
-No LLM required. Ideal when you want full manual control or have no internet
-access.
-
-The default output file is named  <stem>-wizard-YYYYmmddHHMMSS.xlsx
-next to the data file (use -o to override).  Each run produces a unique
-timestamped file so repeated sessions never overwrite each other.
-
-examples:
-  grepxcel wizard data.xlsx
-  grepxcel wizard data.xlsx --sheet Sheet2
-  grepxcel wizard data.xlsx -o my-pattern.xlsx
-  grepxcel wizard data.xlsx --format csv -o my-pattern.csv
-  grepxcel wizard data.xlsx --save-state session.json
-  grepxcel wizard --load-state session.json -o my-pattern.xlsx
-  grepxcel wizard data.xlsx --load-pattern existing-pattern.xlsx
-        """,
-    )
-    p.add_argument('file', metavar='FILE', nargs='?',
-                   help='Excel data file to inspect '
-                        '(required unless --load-state is given)')
-    p.add_argument('--sheet', metavar='NAME_OR_INDEX',
-                   help='Sheet to use (default: active sheet)')
-    p.add_argument('-o', '--output', metavar='FILE',
-                   help='Write the pattern to FILE '
-                        '(default: <stem>-wizard-YYYYmmddHHMMSS.xlsx next to the data file)')
-    p.add_argument('--format', metavar='FORMAT', choices=['xlsx', 'csv'],
-                   default='xlsx',
-                   help='Output format when -o is not given (default: xlsx)')
-    p.add_argument('--load-state', metavar='FILE',
-                   help='Load a saved wizard state (JSON) and write the pattern '
-                        'directly without any interactive session')
-    p.add_argument('--save-state', metavar='FILE',
-                   help='After saving the pattern, also write the wizard session '
-                        'state to FILE as JSON (enables replay and scripted testing)')
-    p.add_argument('--load-pattern', metavar='FILE',
-                   help='Pre-populate the TUI from an existing pattern file '
-                        '(.xlsx or .csv) — opens the wizard with field classifications '
-                        'already filled in so you can review and adjust')
 
 
 def _add_web_wizard_subparser(sub) -> None:
@@ -447,6 +504,72 @@ examples:
   grepxcel quickstart
         """,
     )
+
+
+def _add_test_subparser(sub) -> None:
+    p = sub.add_parser(
+        'test',
+        help='Run a pattern against a directory of .xlsx files and report reliability',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Run the pattern against every .xlsx in DIRECTORY and report how many files
+each field was extracted from. Useful for CI and pattern development.
+
+exit codes:
+  0  — all files passed (every field extracted cleanly)
+  1  — some files had warnings or partial extraction
+  2  — one or more files failed completely (extraction error)
+
+examples:
+  grepxcel test -p pattern.xlsx samples/
+  grepxcel test -p pattern.xlsx samples/ --recursive
+  grepxcel test -p pattern.xlsx samples/ --format json
+  grepxcel test -p pattern.xlsx samples/ --strict
+        """,
+    )
+    p.add_argument(
+        '-p', '--pattern',
+        metavar='PATTERN',
+        required=True,
+        help='Pattern file (.xlsx or .csv)',
+    )
+    p.add_argument(
+        'directory',
+        metavar='DIRECTORY',
+        help='Directory containing .xlsx test files',
+    )
+    p.add_argument(
+        '-r', '--recursive',
+        action='store_true',
+        default=False,
+        help='Recurse into subdirectories',
+    )
+    p.add_argument(
+        '--format',
+        choices=['human', 'json'],
+        default='human',
+        help='Output format: human (default) or json',
+    )
+    p.add_argument(
+        '--strict',
+        action='store_true',
+        default=False,
+        help='Treat any missing field as a failure (exit 2)',
+    )
+    p.add_argument(
+        '-v', '--verbose',
+        action='count',
+        default=0,
+        help='-v: add field reliability table  -vv: full per-file detail',
+    )
+    p.add_argument(
+        '--no-color',
+        action='store_true',
+        default=False,
+        help='Disable emoji/color in human output',
+    )
+    _add_sheet_arg(p)
+    _add_security_args(p)
 
 
 def _add_extract_subparser(sub) -> None:
@@ -546,9 +669,39 @@ examples:
     )
     p.add_argument(
         '--format',
-        choices=['nested', 'legacy', 'csv', 'xlsx'], default='nested',
-        help='Output format: nested (default), legacy, csv (single-table only), '
-             'or xlsx (colored Excel report, requires -o)',
+        choices=['nested', 'json', 'legacy', 'csv', 'xlsx'], default='nested',
+        help='Output format: nested / json (default, same format; json is the canonical name), '
+             'legacy (deprecated), csv, or xlsx (colored Excel report, requires -o)',
+    )
+    p.add_argument(
+        '--csv-delimiter',
+        default=',',
+        metavar='CHAR',
+        help='Field delimiter for --format csv (default: comma)',
+    )
+    p.add_argument(
+        '--csv-mode',
+        choices=['extended', 'table'],
+        default='extended',
+        help='--format csv output mode: extended (default, scalars repeated per row) '
+             'or table (table columns only, scalars omitted)',
+    )
+    p.add_argument(
+        '--csv-table',
+        type=int,
+        metavar='N',
+        default=None,
+        help='--format csv: export table number N (1-based) when the pattern has '
+             'multiple tables. Without this flag, the first table is exported and '
+             'extra tables produce a warning.',
+    )
+    p.add_argument(
+        '--no-source',
+        action='store_true',
+        dest='no_source',
+        help='Flatten table instance wrappers in JSON output: each table key maps '
+             'directly to a list of row dicts instead of [{"_source": ..., "data": [...]}]. '
+             'Only applies to --format nested.',
     )
     p.add_argument(
         '--meta',
@@ -571,22 +724,90 @@ examples:
     _add_security_args(p)
 
 
+def _add_watch_subparser(sub) -> None:
+    p = sub.add_parser(
+        'watch',
+        help='Monitor a directory and extract new .xlsx files automatically',
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Watch *directory* for new or moved-in .xlsx files and extract each one with the
+given pattern as soon as it appears.  Results go to stdout (newline-delimited JSON)
+or, with -o, to individual .json files in the output directory.
+
+Requires:  pip install 'grepxcel[watch]'
+
+examples:
+  grepxcel watch -p pattern.xlsx inbox/
+  grepxcel watch -p pattern.xlsx inbox/ -o output/
+  grepxcel watch -p pattern.xlsx inbox/ --recursive -o output/
+  grepxcel watch -p pattern.xlsx inbox/ --on-error stop
+        """,
+    )
+    p.add_argument(
+        '-p', '--pattern',
+        required=True,
+        metavar='FILE',
+        help='Pattern file (.xlsx or .csv)',
+    )
+    p.add_argument(
+        'directory',
+        metavar='DIRECTORY',
+        help='Directory to watch for new .xlsx files',
+    )
+    p.add_argument(
+        '-o', '--output',
+        metavar='DIR',
+        help='Write extracted JSON files here instead of stdout',
+    )
+    p.add_argument(
+        '-r', '--recursive',
+        action='store_true',
+        help='Also watch subdirectories',
+    )
+    p.add_argument(
+        '--on-error',
+        choices=['continue', 'stop'],
+        default='continue',
+        dest='on_error',
+        help='What to do when a file fails to extract: '
+             'continue (default) or stop the watcher',
+    )
+    p.add_argument(
+        '-q', '--quiet',
+        action='store_true',
+        help='Suppress progress messages; only print extracted JSON to stdout',
+    )
+    _add_sheet_arg(p)
+    _add_security_args(p)
+
+
 def _add_docs_subparser(sub) -> None:
     p = sub.add_parser(
         'docs',
-        help='Write a self-documenting pattern-format reference xlsx',
+        help='Write a pattern-format guide (pattern-reference.xlsx + grepxcel-guide.docx)',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 examples:
   grepxcel docs
-  grepxcel docs -o reference/pattern-reference.xlsx
+  grepxcel docs -o reference/
+  grepxcel docs -o reference/ -v   # show created directories
         """,
     )
     p.add_argument(
         '-o', '--output',
-        metavar='FILE',
-        default='pattern-reference.xlsx',
-        help='Output path for the reference file (default: pattern-reference.xlsx)',
+        metavar='DIR',
+        default='.',
+        help='Output directory (default: current directory)',
+    )
+    p.add_argument(
+        '--force',
+        action='store_true',
+        help='Overwrite existing output files without prompting',
+    )
+    p.add_argument(
+        '-v', '--verbose',
+        action='store_true',
+        help='Show created directories',
     )
 
 
@@ -682,6 +903,11 @@ def _draft_args(p: argparse.ArgumentParser) -> None:
         help='Print the Excel analysis that would be sent to the model, then exit without running inference',
     )
     p.add_argument(
+        '--force',
+        action='store_true',
+        help='Overwrite an existing output file without prompting',
+    )
+    p.add_argument(
         '--backend',
         choices=['local', 'claude', 'gemini', 'github', 'nvidia', 'server'],
         default='local',
@@ -751,6 +977,23 @@ def _draft_args(p: argparse.ArgumentParser) -> None:
     _add_sheet_arg(p)
 
 
+# ── overwrite guard ──────────────────────────────────────────────────────────
+
+def _refuse_overwrite(paths: list[str], force: bool) -> None:
+    """Fail with a clear message if any path already exists and --force is not set."""
+    if force:
+        return
+    existing = [p for p in paths if os.path.exists(p)]
+    if not existing:
+        return
+    lines = ['Error: the following output file(s) already exist:']
+    for p in existing:
+        lines.append(f'  {p}')
+    lines.append('Use --force to overwrite.')
+    print('\n'.join(lines), file=sys.stderr)
+    raise SystemExit(1)
+
+
 # ── extract helpers ───────────────────────────────────────────────────────────
 
 def _resolve_level(args) -> VerbosityLevel:
@@ -785,8 +1028,16 @@ def _process_file(pattern: str, data_file: str, args,
         source=data_file,
     )
     output_format = getattr(args, 'format', 'nested')
+    if output_format == 'json':
+        output_format = 'nested'
     is_csv = output_format == 'csv'
     is_xlsx = output_format == 'xlsx'
+    if output_format == 'legacy':
+        print(colorize_marks(
+            f'  {MARK_WARN}  --format legacy is deprecated and will be removed in a future '
+            'version. Switch to --format nested (the default). The legacy format exposes '
+            'internal lbl: keys and _source/_anchor metadata.',
+            should_color(sys.stderr)), file=sys.stderr)
     all_sheets = getattr(args, 'all_sheets', False)
 
     engine_format = 'nested' if (is_csv or is_xlsx) else output_format
@@ -825,15 +1076,34 @@ def _process_file(pattern: str, data_file: str, args,
     if getattr(args, 'meta', False):
         result['_meta'] = logger.build_meta()
 
+    if getattr(args, 'no_source', False) and engine_format == 'nested':
+        if all_sheets:
+            result = {k: _flatten_table_instances(v) for k, v in result.items()}
+        else:
+            result = _flatten_table_instances(result)
+
     if is_xlsx:
         from .xlsx_writer import nested_to_xlsx
         os.makedirs(args.output, exist_ok=True)
         out_path = os.path.join(args.output, f'{stem}.xlsx')
-        nested_to_xlsx(result, out_path)
+        nested_to_xlsx(result, out_path, logger=logger)
         print(f'\n  Excel report written to: {out_path}', file=sys.stderr)
     elif is_csv:
         from .csv_writer import nested_to_csv
-        csv_text = nested_to_csv(result)
+        _csv_table_arg = getattr(args, 'csv_table', None)
+        _table_idx = (_csv_table_arg - 1) if _csv_table_arg is not None else None
+        csv_text, csv_dropped = nested_to_csv(
+            result,
+            delimiter=getattr(args, 'csv_delimiter', ','),
+            mode=getattr(args, 'csv_mode', 'extended'),
+            table_idx=_table_idx,
+        )
+        if csv_dropped:
+            dropped_list = ', '.join(csv_dropped)
+            print(colorize_marks(
+                f'  {MARK_WARN}  --format csv dropped header/footer rows: {dropped_list}. '
+                'Use --format nested (JSON) to keep them.',
+                should_color(sys.stderr)), file=sys.stderr)
         if args.output:
             os.makedirs(args.output, exist_ok=True)
             out_path = os.path.join(args.output, f'{stem}.csv')
@@ -928,9 +1198,10 @@ def _expand_files(paths: list[str], recursive: bool = False,
             result.append(p)
 
     if symlinks_found:
-        print(f'  {MARK_WARN}  Skipped {len(symlinks_found)} symlink(s) '
-              f'(not followed for safety):',
-              file=sys.stderr)
+        print(colorize_marks(
+            f'  {MARK_WARN}  Skipped {len(symlinks_found)} symlink(s) '
+            f'(not followed for safety):',
+            should_color(sys.stderr)), file=sys.stderr)
         for s in symlinks_found[:5]:
             print(f'       {s} → {os.readlink(s)}', file=sys.stderr)
         if len(symlinks_found) > 5:
@@ -958,8 +1229,16 @@ def _output_stem(data_file: str, all_files: list[str]) -> str:
 
 def _run_docs(args) -> int:
     from .docs_generator import DocsGenerator
-    DocsGenerator().write(args.output)
-    print(f'Pattern reference written to: {args.output}', file=sys.stderr)
+    verbose = getattr(args, 'verbose', False)
+    xlsx_path = os.path.join(args.output, 'pattern-reference.xlsx')
+    docx_path = os.path.join(args.output, 'grepxcel-guide.docx')
+    _refuse_overwrite([xlsx_path, docx_path], getattr(args, 'force', False))
+    dir_existed = os.path.isdir(args.output)
+    paths = DocsGenerator().write(args.output)
+    if verbose and not dir_existed:
+        print(f'Created: {os.path.abspath(args.output)}', file=sys.stderr)
+    for path in paths:
+        print(f'Written: {path}', file=sys.stderr)
     return 0
 
 
@@ -967,7 +1246,9 @@ def _run_docs(args) -> int:
 
 def _run_lint(args) -> int:
     from .lint import run_lint
-    return run_lint(args.files)
+    return run_lint(args.files,
+                    recursive=getattr(args, 'recursive', False),
+                    verbose=getattr(args, 'verbose', False))
 
 
 # ── validate-pattern handler ─────────────────────────────────────────────────
@@ -982,22 +1263,36 @@ def _run_validate(args) -> int:
 # ── schema handler ──────────────────────────────────────────────────────────
 
 def _run_skill(args) -> int:
+    out_path = getattr(args, 'output', None)
+    if out_path:
+        _refuse_overwrite([out_path], getattr(args, 'force', False))
     from .skill import run_skill
-    return run_skill(args.target, getattr(args, 'output', None))
+    return run_skill(args.target, out_path)
 
 
 def _run_examples(args) -> int:
+    output_dir = args.output
+    if os.path.isdir(output_dir) and os.listdir(output_dir):
+        if not getattr(args, 'force', False):
+            print(
+                f'Error: the following output directory already exists and is not empty:\n'
+                f'  {output_dir}\n'
+                f'Use --force to overwrite.',
+                file=sys.stderr,
+            )
+            return 1
     from .examples_generator import generate_examples
-    try:
-        generate_examples(args.output)
-        return 0
-    except SystemExit as e:
-        return e.code if isinstance(e.code, int) else 1
+    generate_examples(output_dir)
+    return 0
 
 
 def _run_mcp(args) -> int:
     from .mcp_server import run_server
-    run_server()
+    verbose = getattr(args, 'verbose', 0)
+    try:
+        run_server(verbose=verbose)
+    except KeyboardInterrupt:
+        print('\nshutting down MCP server\ndone', file=sys.stderr)
     return 0
 
 
@@ -1007,14 +1302,18 @@ def _run_mcp_config(args) -> int:
 
 
 def _run_sbom(args) -> int:
+    out_path = getattr(args, 'output', None)
+    if out_path:
+        _refuse_overwrite([out_path], getattr(args, 'force', False))
     from .sbom import run_sbom
-    return run_sbom(output=getattr(args, 'output', None))
+    return run_sbom(output=out_path)
 
 
 def _run_schema(args) -> int:
     from .schema import run_schema
     if not args.output:
         return run_schema(args.files)
+    _refuse_overwrite([args.output], getattr(args, 'force', False))
     out = open(args.output, 'w', encoding='utf-8')
     try:
         rc = run_schema(args.files, out=out)
@@ -1023,6 +1322,13 @@ def _run_schema(args) -> int:
     if rc == 0:
         print(f'Schema written to: {args.output}', file=sys.stderr)
     return rc
+
+
+# ── self-test handler ────────────────────────────────────────────────────────
+
+def _run_self_test(args) -> int:
+    from .self_test import run_self_test
+    return run_self_test(verbose=getattr(args, 'verbose', False))
 
 
 # ── doctor handler ───────────────────────────────────────────────────────────
@@ -1140,6 +1446,8 @@ def _load_dotenv(strict: bool = False) -> None:
 
 
 def _run_draft(args) -> int:
+    if not getattr(args, 'dry_run', False):
+        _refuse_overwrite([args.output], getattr(args, 'force', False))
     _load_dotenv(strict=getattr(args, 'strict_env', False))  # find cloud keys
     # Wire corporate-proxy / custom-CA TLS trust before any network call
     # (model download or cloud backend). Verification stays on.
@@ -1204,6 +1512,83 @@ def _run_draft(args) -> int:
     return drafter.run()
 
 
+# ── Multi-level help ──────────────────────────────────────────────────────────
+
+def _synopsis_args(sp: argparse.ArgumentParser) -> str:
+    """Compact args string: required flags, positionals, then [options]."""
+    required_parts: list[str] = []
+    positional_parts: list[str] = []
+    has_optional = False
+    for action in sp._actions:
+        if isinstance(action, (argparse._HelpAction, argparse._SubParsersAction)):
+            continue
+        if not action.option_strings:
+            meta = action.metavar or action.dest.upper()
+            if isinstance(meta, tuple):
+                meta = meta[0]
+            if action.nargs == '+':
+                positional_parts.append(f'{meta} [...]')
+            elif action.nargs == '*':
+                positional_parts.append(f'[{meta} ...]')
+            elif action.nargs == '?':
+                if action.choices:
+                    positional_parts.append(f'[{{{",".join(str(c) for c in action.choices)}}}]')
+                else:
+                    positional_parts.append(f'[{meta}]')
+            else:
+                positional_parts.append(str(meta))
+        elif getattr(action, 'required', False):
+            flag = min(action.option_strings, key=len)
+            meta = action.metavar or ''
+            required_parts.append(f'{flag} {meta}'.strip())
+        else:
+            has_optional = True
+    parts = required_parts + positional_parts
+    if has_optional:
+        parts.append('[options]')
+    return '  '.join(parts)
+
+
+def _print_synopsis(parser: argparse.ArgumentParser) -> None:
+    """Print compact one-line synopsis per subcommand (-h -h)."""
+    sub_action = next(
+        (a for a in parser._actions if isinstance(a, argparse._SubParsersAction)),
+        None,
+    )
+    if sub_action is None:
+        return
+    color = should_color(sys.stdout)
+    heading = paint('Per-command synopsis', 'bold', color) + '  (-h -h -h for full help of each):'
+    print(f'\n{heading}\n')
+    name_w = max(len(n) for n in sub_action.choices) + 2
+    for name, sp in sub_action.choices.items():
+        args_str = _synopsis_args(sp)
+        padding = ' ' * (name_w - len(name))
+        print(f"  {paint(name, 'cyan', color)}{padding}  {args_str}")
+
+
+def _print_full_help(parser: argparse.ArgumentParser) -> None:
+    """Print full --help for every subcommand (-h -h -h)."""
+    sub_action = next(
+        (a for a in parser._actions if isinstance(a, argparse._SubParsersAction)),
+        None,
+    )
+    if sub_action is None:
+        return
+    color = should_color(sys.stdout)
+    first = True
+    for name, sp in sub_action.choices.items():
+        if not first:
+            print()
+        first = False
+        label = paint(name, 'bold', color)
+        fill = '─' * max(0, 58 - len(name))
+        bar = '─' * 4
+        print(f'{bar} {label} {fill}')
+        print()
+        print(sp.format_help())
+
+
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 def main(argv=None):
@@ -1213,29 +1598,48 @@ def main(argv=None):
     if argv and argv[0] == 'suggest':
         argv = ['draft'] + argv[1:]
 
-    args = _build_parser().parse_args(argv)
+    help_count = sum(1 for a in argv if a in ('-h', '--help'))
+    if help_count >= 2:
+        p = _build_parser()
+        if help_count >= 3:
+            _print_full_help(p)
+        else:
+            _print_synopsis(p)
+        sys.exit(0)
+
+    parser = _build_parser()
+    try:
+        import argcomplete
+        argcomplete.autocomplete(parser)
+    except ImportError:
+        pass
+    args = parser.parse_args(argv)
 
     if args.command == 'quickstart':
         from .quickstart import run_quickstart
         sys.exit(run_quickstart())
 
-    if args.command == 'wizard':
-        load_state = getattr(args, 'load_state', None)
-        if not args.file and not load_state:
-            # argparse won't catch this since FILE is nargs='?'
-            print('grepxcel wizard: error: FILE is required unless --load-state is given',
-                  file=sys.stderr)
-            sys.exit(2)
-        from .wizard import run_wizard
-        sys.exit(run_wizard(
-            data_file=args.file,
-            sheet=getattr(args, 'sheet', None),
-            output=getattr(args, 'output', None),
-            fmt=getattr(args, 'format', 'xlsx'),
-            load_state=load_state,
-            save_state=getattr(args, 'save_state', None),
-            load_pattern=getattr(args, 'load_pattern', None),
-        ))
+    if args.command == 'watch':
+        from .watcher import watch
+        try:
+            watch(
+                pattern_path=args.pattern,
+                directory=args.directory,
+                output_dir=getattr(args, 'output', None),
+                recursive=getattr(args, 'recursive', False),
+                sheet=getattr(args, 'sheet', None),
+                on_error=getattr(args, 'on_error', 'continue'),
+                quiet=getattr(args, 'quiet', False),
+                max_size_mb=getattr(args, 'max_size', 5.0),
+                max_uncompressed_mb=getattr(args, 'max_uncompressed', 50.0),
+            )
+        except (FileNotFoundError, ValueError) as exc:
+            print(f'grepxcel watch: error: {exc}', file=sys.stderr)
+            sys.exit(1)
+        except ImportError as exc:
+            print(f'grepxcel watch: {exc}', file=sys.stderr)
+            sys.exit(1)
+        sys.exit(0)
 
     if args.command == 'web-wizard':
         from .wizard_api import run as run_web
@@ -1254,6 +1658,9 @@ def main(argv=None):
 
     if args.command == 'docs':
         sys.exit(_run_docs(args))
+
+    if args.command == 'self-test':
+        sys.exit(_run_self_test(args))
 
     if args.command == 'doctor':
         sys.exit(_run_doctor(args))
@@ -1282,6 +1689,38 @@ def main(argv=None):
     if args.command == 'sbom':
         sys.exit(_run_sbom(args))
 
+    if args.command == 'test':
+        from .pattern_tester import run_tests, format_human, format_json
+        try:
+            report = run_tests(
+                pattern_path=args.pattern,
+                directory=args.directory,
+                recursive=getattr(args, 'recursive', False),
+                sheet=getattr(args, 'sheet', None),
+                strict=getattr(args, 'strict', False),
+                max_size_mb=getattr(args, 'max_size', 5.0),
+                max_uncompressed_mb=getattr(args, 'max_uncompressed', 50.0),
+            )
+        except (FileNotFoundError, ValueError) as exc:
+            print(f'grepxcel test: error: {exc}', file=sys.stderr)
+            sys.exit(2)
+
+        fmt = getattr(args, 'format', 'human')
+        if fmt == 'json':
+            print(format_json(report))
+        else:
+            no_color = getattr(args, 'no_color', False)
+            use_color = (not no_color) and should_color(sys.stdout)
+            verbose = getattr(args, 'verbose', 0)
+            print(format_human(report, color=use_color, verbose=verbose))
+
+        if report.failed > 0:
+            sys.exit(2)
+        elif report.warned > 0:
+            sys.exit(1)
+        else:
+            sys.exit(0)
+
     # ── Security parameter validation ────────────────────────────────────────
     parser = _build_parser()
     if hasattr(args, 'max_size') and args.max_size <= 0:
@@ -1305,6 +1744,8 @@ def main(argv=None):
         sys.exit(1)
 
     fmt = getattr(args, 'format', 'nested')
+    if fmt == 'json':
+        fmt = 'nested'
 
     if fmt in ('csv', 'xlsx') and getattr(args, 'all_sheets', False):
         print(colorize_marks(
@@ -1317,13 +1758,25 @@ def main(argv=None):
     if fmt == 'csv':
         from .csv_writer import count_table_instructions
         n_tables = count_table_instructions(args.pattern)
-        if n_tables > 1:
+        csv_table = getattr(args, 'csv_table', None)
+        if csv_table is not None and csv_table < 1:
             print(colorize_marks(
-                f'\n  {MARK_FAIL}  --format csv requires at most one table: block, '
-                f'but this pattern has {n_tables}. '
-                f'Use --format nested (JSON) for multi-table patterns.',
+                f'\n  {MARK_FAIL}  --csv-table must be >= 1 (got {csv_table}).',
                 should_color(sys.stderr)), file=sys.stderr)
             sys.exit(2)
+        if n_tables > 1:
+            if csv_table is not None and csv_table > n_tables:
+                print(colorize_marks(
+                    f'\n  {MARK_FAIL}  --csv-table {csv_table} is out of range: '
+                    f'this pattern has {n_tables} tables.',
+                    should_color(sys.stderr)), file=sys.stderr)
+                sys.exit(2)
+            if csv_table is None:
+                print(colorize_marks(
+                    f'  {MARK_WARN}  Pattern has {n_tables} tables; --format csv exports '
+                    f'only the first. Use --csv-table N (1-{n_tables}) to choose a specific '
+                    'table, or --format nested for all tables.',
+                    should_color(sys.stderr)), file=sys.stderr)
 
     if fmt == 'xlsx':
         if not args.output:

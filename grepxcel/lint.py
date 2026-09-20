@@ -17,9 +17,11 @@ from __future__ import annotations
 
 import os
 import sys
+import warnings
 import zipfile
 
 from .color import MARK_FAIL, MARK_INFO, MARK_OK, MARK_WARN, colorize_marks, should_color
+from .security import SecurityError, _check_zip_safety
 
 OK, WARN, FAIL, INFO = 'ok', 'warn', 'fail', 'info'
 _MARK = {OK: MARK_OK, WARN: MARK_WARN, FAIL: MARK_FAIL, INFO: MARK_INFO}
@@ -90,10 +92,16 @@ def lint_file(path: str) -> list[Result]:
         _add_advisory(results)
         return results
 
-    # ── 3. ZIP integrity ──────────────────────────────────────────────────
+    # ── 3. ZIP integrity + ZIP bomb guard ────────────────────────────────
+    try:
+        _check_zip_safety(path, max_uncompressed_mb=50.0)
+    except SecurityError as exc:
+        results.append((FAIL, 'file integrity', str(exc)))
+        _add_advisory(results)
+        return results
+
     try:
         with zipfile.ZipFile(path) as zf:
-            total_uncompressed = sum(e.file_size for e in zf.infolist())
             names = zf.namelist()
     except zipfile.BadZipFile:
         results.append((FAIL, 'file integrity',
@@ -108,8 +116,10 @@ def lint_file(path: str) -> list[Result]:
     # ── 4. Open with openpyxl ─────────────────────────────────────────────
     try:
         import openpyxl
-        wb = openpyxl.load_workbook(path, data_only=True)
-        wb_raw = openpyxl.load_workbook(path, data_only=False)
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', UserWarning)
+            wb = openpyxl.load_workbook(path, data_only=True)
+            wb_raw = openpyxl.load_workbook(path, data_only=False)
     except Exception as exc:
         results.append((FAIL, 'workbook load',
                          f'openpyxl cannot open this file: {exc}. '
@@ -153,7 +163,7 @@ def _check_sheet(ws, ws_raw, results: list[Result]) -> None:
 
     # Empty sheet
     if declared_rows == 0 or declared_cols == 0:
-        results.append((WARN, f'sheet {title!r}',
+        results.append((WARN, f'sheet {title!r} data',
                          'Sheet is empty — nothing to extract.'))
         return
 
@@ -180,7 +190,7 @@ def _check_sheet(ws, ws_raw, results: list[Result]) -> None:
                 formula_cells.append(cell.coordinate)
 
     if used_rows == 0:
-        results.append((WARN, f'sheet {title!r}',
+        results.append((WARN, f'sheet {title!r} data',
                          'Sheet has formatting but no data — empty for extraction.'))
         return
 
@@ -243,25 +253,89 @@ def _add_advisory(results: list[Result]) -> None:
                      'flat data sheet.'))
 
 
+# ── directory expansion ───────────────────────────────────────────────────────
+
+_EXCEL_EXTENSIONS = {'.xlsx', '.xlsm', '.xlsb', '.xls'}
+
+
+def _expand_paths(paths: list[str], recursive: bool) -> list[str]:
+    """Expand any directory entries in *paths* to the Excel files they contain.
+
+    Non-directory entries are kept as-is (even if they don't exist — lint_file
+    will report the missing-file error).  Directories are scanned for files
+    with Excel extensions; with recursive=True, subdirectories are included.
+    Files within each directory are returned in sorted order.
+    """
+    expanded: list[str] = []
+    for p in paths:
+        if not os.path.isdir(p):
+            expanded.append(p)
+            continue
+        if recursive:
+            for root, _dirs, files in os.walk(p):
+                _dirs.sort()
+                for f in sorted(files):
+                    if os.path.splitext(f)[1].lower() in _EXCEL_EXTENSIONS:
+                        expanded.append(os.path.join(root, f))
+        else:
+            for f in sorted(os.listdir(p)):
+                if os.path.splitext(f)[1].lower() in _EXCEL_EXTENSIONS:
+                    expanded.append(os.path.join(p, f))
+    return expanded
+
+
 # ── runner (CLI entry point) ──────────────────────────────────────────────────
 
-def run_lint(files: list[str], out=None) -> int:
-    """Lint one or more files, print results, return exit code (0 or 1)."""
-    out = out or sys.stderr
+def _compact_line(path: str, results: list[Result]) -> str:
+    """One-line summary for a single file: mark + path [+ issue categories]."""
+    fails = [r for r in results if r[0] == FAIL]
+    warns = [r for r in results if r[0] == WARN]
+    if fails:
+        issues = ' · '.join(dict.fromkeys(r[1] for r in fails))
+        return f'  {_MARK[FAIL]}  {path}   {issues}'
+    if warns:
+        issues = ' · '.join(dict.fromkeys(r[1] for r in warns))
+        return f'  {_MARK[WARN]}  {path}   {issues}'
+    return f'  {_MARK[OK]}  {path}'
+
+
+def run_lint(files: list[str], out=None, recursive: bool = False,
+             verbose: bool = False) -> int:
+    """Lint one or more files or directories, print results, return exit code.
+
+    Default (verbose=False): one summary line per file.
+    With verbose=True: full checklist detail (all checks printed).
+    Output goes to stdout so piping works correctly with |less, |wc, etc.
+    """
+    out = out or sys.stdout
     color = should_color(out)
     any_fail = False
 
-    for path in files:
-        print(f'\ngrepxcel lint — {path}\n' + '─' * 62, file=out)
+    expanded = _expand_paths(files, recursive)
+
+    if not expanded:
+        dirs = [p for p in files if os.path.isdir(p)]
+        if dirs:
+            for d in dirs:
+                flag = ' (recursive)' if recursive else ' (pass -r to recurse)'
+                print(colorize_marks(
+                    f'  {_MARK[INFO]}  {d} — no Excel files found{flag}',
+                    color), file=out)
+        return 0
+
+    for path in expanded:
         results = lint_file(path)
+        if any(r[0] == FAIL for r in results):
+            any_fail = True
 
-        for status, name, detail in results:
-            if status == FAIL:
-                any_fail = True
-            mark = _MARK[status]
-            print(colorize_marks(
-                f'  {mark}  {name:<32} {detail}', color), file=out)
-
-        print('─' * 62, file=out)
+        if verbose:
+            print(f'\ngrepxcel lint — {path}\n' + '─' * 62, file=out)
+            for status, name, detail in results:
+                mark = _MARK[status]
+                print(colorize_marks(
+                    f'  {mark}  {name:<32} {detail}', color), file=out)
+            print('─' * 62, file=out)
+        else:
+            print(colorize_marks(_compact_line(path, results), color), file=out)
 
     return 1 if any_fail else 0

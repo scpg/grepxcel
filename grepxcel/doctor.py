@@ -24,7 +24,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 
-from . import proxy_support
+from . import __version__, proxy_support
 from .color import MARK_FAIL, MARK_OK, MARK_WARN, colorize_marks, paint, should_color
 
 OK, WARN, FAIL = 'ok', 'warn', 'fail'
@@ -64,6 +64,134 @@ def check_extract() -> list[Result]:
             res.append((OK, mod, why))
         else:
             res.append((FAIL, mod, f'required ({why}) — reinstall grepxcel'))
+    return res
+
+
+def check_config_dir() -> list[Result]:
+    """Config directory existence and writability."""
+    from .cli import _config_dir
+    res: list[Result] = []
+    cfg = _config_dir()
+    if not os.path.exists(cfg):
+        res.append((WARN, 'config dir',
+                    f'{cfg} — does not exist yet (created on first use)'))
+    elif not os.access(cfg, os.W_OK):
+        res.append((FAIL, 'config dir',
+                    f'{cfg} — exists but is not writable (check permissions)'))
+    else:
+        res.append((OK, 'config dir', f'{cfg} (writable)'))
+    return res
+
+
+def check_autocomplete() -> list[Result]:
+    """Shell TAB completion via argcomplete."""
+    res: list[Result] = []
+
+    # argcomplete is a core dep — always installed; just confirm it
+    if _have('argcomplete'):
+        res.append((OK, 'argcomplete', 'installed'))
+    else:
+        res.append((FAIL, 'argcomplete',
+                    'missing — reinstall grepxcel (core dependency)'))
+
+    # Detect shell and find the right RC file
+    shell_bin = os.environ.get('SHELL', '')
+    shell_name = os.path.basename(shell_bin) if shell_bin else ''
+    rc_map = {
+        'bash': os.path.expanduser('~/.bashrc'),
+        'zsh':  os.path.expanduser('~/.zshrc'),
+        'fish': os.path.expanduser('~/.config/fish/config.fish'),
+    }
+    rc_file = rc_map.get(shell_name)
+
+    if shell_name in ('bash', 'zsh'):
+        register_cmd = 'eval "$(register-python-argcomplete grepxcel)"'
+    elif shell_name == 'fish':
+        register_cmd = 'register-python-argcomplete --shell fish grepxcel | source'
+    else:
+        register_cmd = 'eval "$(register-python-argcomplete grepxcel)"'
+
+    # Check if the registration is present in the RC file
+    in_rc = False
+    if rc_file and os.path.isfile(rc_file):
+        try:
+            in_rc = 'register-python-argcomplete grepxcel' in open(rc_file).read()
+        except OSError:
+            pass
+
+    rc_label = f'persistent ({shell_name})' if shell_name else 'persistent'
+    rc_path = rc_file or f'~/{shell_name}rc'
+    if in_rc:
+        res.append((OK, rc_label, f'registered in {rc_path}'))
+    else:
+        res.append((WARN, rc_label,
+                    f'not in {rc_path} — to activate permanently add:  {register_cmd}'))
+
+    return res
+
+
+def check_web_wizard(probe: bool = True) -> list[Result]:
+    """FastAPI / uvicorn / jinja2 for grepxcel web-wizard."""
+    res: list[Result] = []
+    all_present = True
+    for mod, pkg in (('fastapi', 'fastapi'), ('uvicorn', 'uvicorn'), ('jinja2', 'jinja2')):
+        if _have(mod):
+            res.append((OK, pkg, 'installed'))
+        else:
+            all_present = False
+            res.append((WARN, pkg, "not installed — pip install 'grepxcel[web]'"))
+
+    if probe and all_present:
+        import socket
+        port = int(os.environ.get('GREPXCEL_WEB_PORT', 8765))
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            s.settimeout(0.3)
+            in_use = s.connect_ex(('127.0.0.1', port)) == 0
+            s.close()
+        except OSError:
+            in_use = False
+        if in_use:
+            res.append((WARN, f'port {port}',
+                        f'already in use — pass --port to web-wizard to override'))
+        else:
+            res.append((OK, f'port {port}', 'available'))
+
+    return res
+
+
+def check_mcp() -> list[Result]:
+    """MCP server package for grepxcel mcp."""
+    res: list[Result] = []
+    if _have('mcp'):
+        res.append((OK, 'mcp', "installed — start with: grepxcel mcp"))
+    else:
+        res.append((WARN, 'mcp', "not installed — pip install 'grepxcel[mcp]'"))
+    res.append((OK, 'mcp config',
+                "get Claude Code config with: grepxcel mcp-config"))
+    return res
+
+
+def check_watcher() -> list[Result]:
+    """File-watcher for grepxcel watch."""
+    res: list[Result] = []
+    if _have('watchdog'):
+        res.append((OK, 'watchdog', 'installed'))
+    else:
+        res.append((WARN, 'watchdog',
+                    "not installed — pip install 'grepxcel[watch]'"))
+    return res
+
+
+def check_dataframe() -> list[Result]:
+    """DataFrame export via grepxcel extract_df."""
+    res: list[Result] = []
+    for mod, pkg in (('pandas', 'pandas'), ('polars', 'polars')):
+        if _have(mod):
+            res.append((OK, pkg, 'installed'))
+        else:
+            res.append((WARN, pkg,
+                        f"not installed — pip install 'grepxcel[{pkg}]'"))
     return res
 
 
@@ -150,8 +278,6 @@ def check_server(url: str = 'http://localhost:1234/v1') -> list[Result]:
     import json
     from .security import is_http_url
     res: list[Result] = []
-    # Never let urlopen handle file://, ftp://, data: etc. — a non-http(s)
-    # GREPXCEL_SERVER_URL would otherwise be a file-read / SSRF primitive.
     if not is_http_url(url):
         return [(FAIL, 'server', f'{url} — refusing to probe a non-http(s) URL')]
     models_url = url.rstrip('/') + '/models'
@@ -179,7 +305,6 @@ def tls_probe(url: str = 'https://huggingface.co', timeout: float = 6.0) -> Resu
     Returns OK if TLS verified (even on an HTTP error response — the connection
     and certificate were fine), FAIL on a certificate-trust failure (the corp
     proxy case), WARN if simply unreachable (offline / blocked)."""
-    # Only ever probe http(s) — never let urlopen handle file://, ftp://, etc.
     from .security import is_http_url
     if not is_http_url(url):
         return (FAIL, f'TLS handshake {url}', 'refusing to probe a non-http(s) URL')
@@ -233,7 +358,6 @@ def check_env(strict_env: bool = False) -> list[Result]:
     from .cli import _discover_project_env, _config_dir, _config_dir_env
     res: list[Result] = []
     cfg = _config_dir()
-    res.append((OK, 'config dir', cfg))
     cfg_env = _config_dir_env()
     if cfg_env:
         res.append((OK, 'config .env', f'{cfg_env} (loaded as fallback)'))
@@ -263,27 +387,59 @@ def run_doctor(area: str = 'all', probe: bool = True, out=None,
                strict_env: bool = False) -> int:
     """Run the selected checks, print a checklist, return an exit code
     (0 = ready, 1 = a hard failure in the selected area)."""
-    out = out or sys.stderr
+    out = out or sys.stdout
     # Activate any configured corporate trust so the probe reflects reality.
     proxy_support.enable_corporate_tls(announce=False)
 
-    sections: list[tuple[str, list[Result]]] = []
+    sections: list[tuple[str, str, list[Result]]] = []
     if area in ('extract', 'all'):
-        sections.append(('extract — core', check_extract()))
+        sections.append(('extract — core',
+                         'verify that extraction from Excel files works end-to-end',
+                         check_extract()))
+    if area == 'all':
+        sections.append(('config',
+                         'grepxcel config directory',
+                         check_config_dir()))
+        sections.append(('autocomplete',
+                         'shell TAB completion via argcomplete',
+                         check_autocomplete()))
+        sections.append(('web wizard',
+                         'browser-based pattern wizard (grepxcel web-wizard)',
+                         check_web_wizard(probe=probe)))
+        sections.append(('mcp server',
+                         'Model Context Protocol server (grepxcel mcp)',
+                         check_mcp()))
+        sections.append(('watcher',
+                         'file-change watcher (grepxcel watch)',
+                         check_watcher()))
+        sections.append(('dataframe export',
+                         'pandas / polars DataFrame output via extract_df()',
+                         check_dataframe()))
     if area in ('draft', 'all'):
-        sections.append(('draft — credentials (.env)', check_env(strict_env)))
-        sections.append(('draft — local model', check_draft_local()))
-        sections.append(('draft — cloud backends', check_draft_cloud()))
+        sections.append(('draft — credentials (.env)',
+                         'API keys and .env config used by cloud pattern drafters',
+                         check_env(strict_env)))
+        sections.append(('draft — local model',
+                         'local AI model to generate a starter pattern from your data file',
+                         check_draft_local()))
+        sections.append(('draft — cloud backends',
+                         'cloud AI services for pattern drafting (Anthropic, Gemini, NVIDIA)',
+                         check_draft_cloud()))
         srv_url = os.environ.get('GREPXCEL_SERVER_URL', 'http://localhost:1234/v1')
-        sections.append(('draft — server backend', check_server(url=srv_url)))
-        sections.append(('network — proxy / TLS', check_proxy_tls(probe=probe)))
+        sections.append(('draft — server backend',
+                         'local OpenAI-compatible API server (LM Studio, Ollama, vLLM, …)',
+                         check_server(url=srv_url)))
+        sections.append(('network — proxy / TLS',
+                         'corporate proxy, TLS certificates, and outbound connectivity',
+                         check_proxy_tls(probe=probe)))
 
     color = should_color(out)
-    print(f'grepxcel doctor — checking: {area}\n' + '─' * 62, file=out)
+    print(f'grepxcel doctor — checking: {area}   version: {__version__}\n' + '─' * 62, file=out)
     any_fail = False
     proxy_fail = False
-    for title, checks in sections:
-        print(f'\n  {title}', file=out)
+    for title, desc, checks in sections:
+        subtitle = paint(f'  # {desc}', 'dim', color)
+        print(f'\n  {title}{subtitle}', file=out)
         for status, name, detail in checks:
             if status == FAIL:
                 any_fail = True
@@ -298,8 +454,8 @@ def run_doctor(area: str = 'all', probe: bool = True, out=None,
     print('\n' + '─' * 62, file=out)
     if any_fail:
         msg = paint('Not ready', 'red', color) + f' — resolve the {MARK_FAIL} items above.'
-        print(f'  {MARK_FAIL} {msg}', file=out)
+        print(colorize_marks(f'  {MARK_FAIL} {msg}', color), file=out)
     else:
         msg = paint('Ready.', 'green', color) + f' ({MARK_WARN} items are optional / situational.)'
-        print(f'  {MARK_OK} {msg}', file=out)
+        print(colorize_marks(f'  {MARK_OK} {msg}', color), file=out)
     return 1 if any_fail else 0

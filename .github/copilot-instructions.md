@@ -78,10 +78,13 @@ PRs must target `main` from `dev` (or a feature branch that merges into `dev` fi
 
 ## Output conventions
 
-- `stdout` — extracted JSON only (pipe-friendly).
-- `stderr` — all human-readable output: warnings, errors, summary, verbose/debug.
-- `-q / --quiet` suppresses the header and summary but must never suppress warnings
-  or errors.
+Output routing depends on the command:
+
+- **`grepxcel extract`**: `stdout` — JSON only (pipe-friendly); `stderr` — warnings, errors, summary, verbose/debug output. `-q / --quiet` suppresses header and summary but must never suppress warnings or errors.
+- **`grepxcel test`, `doctor`, `validate-pattern`, `quickstart`**: primary output → `stdout`; error/usage messages → `stderr`.
+- **Side-effect confirmations** (file written, path saved) → `stderr` across all commands.
+
+A PR that sends the test report, doctor output, or validation result to stderr is a routing bug.
 
 ---
 

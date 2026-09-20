@@ -1,0 +1,100 @@
+{
+  "report": {
+    "date": "2026-09-20 00:00:00",
+    "period": "Q3 2026"
+  },
+  "txn": [
+    {
+      "_source": {
+        "sheet": "Sheet1",
+        "ref": "A4:L13"
+      },
+      "data": [
+        {
+          "vendor_id": "V-10021",
+          "vendor_name": "TechLogistics GmbH",
+          "invoice_no": "INV-88321",
+          "po_number": "PO-9021",
+          "invoice_date": "2026-08-01 00:00:00",
+          "due_date": "2026-08-31 00:00:00",
+          "currency": "EUR",
+          "gross_amount": 14689,
+          "tax_amount": 2350.24,
+          "net_amount": 12338.76,
+          "gl_account": "6110-PROC",
+          "payment_status": "Pending"
+        },
+        {
+          "vendor_id": "V-10021",
+          "vendor_name": "TechLogistics GmbH",
+          "invoice_no": "INV-88402",
+          "po_number": "PO-9055",
+          "invoice_date": "2026-08-15 00:00:00",
+          "due_date": "2026-09-14 00:00:00",
+          "currency": "EUR",
+          "gross_amount": 3776.59,
+          "tax_amount": 604.26,
+          "net_amount": 3172.33,
+          "gl_account": "6110-PROC",
+          "payment_status": "Approved"
+        },
+        {
+          "vendor_id": "V-20419",
+          "vendor_name": "CloudNet Services",
+          "invoice_no": "INV-2026-11",
+          "po_number": "PO-8812",
+          "invoice_date": "2026-07-10 00:00:00",
+          "due_date": "2026-08-10 00:00:00",
+          "currency": "EUR",
+          "gross_amount": 1027.8,
+          "tax_amount": 164.45,
+          "net_amount": 863.35,
+          "gl_account": "6200-IT",
+          "payment_status": "Paid"
+        },
+        {
+          "vendor_id": "V-20419",
+          "vendor_name": "CloudNet Services",
+          "invoice_no": "INV-2026-19",
+          "po_number": "PO-9001",
+          "invoice_date": "2026-08-22 00:00:00",
+          "due_date": "2026-09-22 00:00:00",
+          "currency": "EUR",
+          "gross_amount": 2450,
+          "tax_amount": 392,
+          "net_amount": 2058,
+          "gl_account": "6200-IT",
+          "payment_status": "Pending"
+        },
+        {
+          "vendor_id": "V-31042",
+          "vendor_name": "Meridian Freight",
+          "invoice_no": "INV-F-5519",
+          "po_number": "PO-8901",
+          "invoice_date": "2026-09-01 00:00:00",
+          "due_date": "2026-09-30 00:00:00",
+          "currency": "EUR",
+          "gross_amount": 8900,
+          "tax_amount": 1424,
+          "net_amount": 7476,
+          "gl_account": "7001-LOG",
+          "payment_status": "Approved"
+        },
+        {
+          "vendor_id": "V-31042",
+          "vendor_name": "Meridian Freight",
+          "invoice_no": "INV-F-5610",
+          "po_number": "PO-9102",
+          "invoice_date": "2026-09-10 00:00:00",
+          "due_date": "2026-10-10 00:00:00",
+          "currency": "EUR",
+          "gross_amount": 4250,
+          "tax_amount": 680,
+          "net_amount": 3570,
+          "gl_account": "7001-LOG",
+          "payment_status": "Pending"
+        }
+      ]
+    }
+  ]
+}

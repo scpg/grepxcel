@@ -228,18 +228,21 @@ def test_run_docs_imports_generator_and_writes(monkeypatch, capsys):
     called = {}
 
     class FakeDocsGenerator:
-        def write(self, path):
-            called['path'] = path
+        def write(self, output_dir):
+            called['output_dir'] = output_dir
+            return [output_dir + '/pattern-reference.xlsx', output_dir + '/grepxcel-guide.docx']
 
     fake_mod = types.ModuleType('grepxcel.docs_generator')
     fake_mod.DocsGenerator = FakeDocsGenerator
     monkeypatch.setitem(__import__('sys').modules, 'grepxcel.docs_generator', fake_mod)
 
-    code = cli._run_docs(SimpleNamespace(output='ref.xlsx'))
+    code = cli._run_docs(SimpleNamespace(output='out/'))
 
     assert code == 0
-    assert called['path'] == 'ref.xlsx'
-    assert 'Pattern reference written to: ref.xlsx' in capsys.readouterr().err
+    assert called['output_dir'] == 'out/'
+    err = capsys.readouterr().err
+    assert 'pattern-reference.xlsx' in err
+    assert 'grepxcel-guide.docx' in err
 
 
 def _make_fake_drafter_mod(extra=None):
@@ -366,3 +369,127 @@ def test_main_extract_returns_nonzero_if_any_file_fails(monkeypatch):
         cli.main(['extract', '-p', 'p.xlsx', 'a.xlsx', 'b.xlsx'])
 
     assert exc.value.code == 1
+
+
+# ── Grouped help (-h) ─────────────────────────────────────────────────────────
+
+class TestGroupedHelp:
+    def _help_text(self, capsys):
+        with pytest.raises(SystemExit) as exc:
+            cli.main(['-h'])
+        assert exc.value.code == 0
+        return capsys.readouterr().out
+
+    def test_usage_line_contains_command(self, capsys):
+        out = self._help_text(capsys)
+        assert 'COMMAND' in out
+
+    def test_all_six_sections_present(self, capsys):
+        out = self._help_text(capsys)
+        for section in ('extract & validate', 'onboarding', 'automation',
+                        'AI & MCP', 'inspection', 'compliance & ops'):
+            assert section in out, f'section missing: {section!r}'
+
+    def test_all_commands_listed(self, capsys):
+        out = self._help_text(capsys)
+        for cmd in ('extract', 'validate-pattern', 'quickstart', 'web-wizard',
+                    'generate-examples', 'docs', 'watch', 'test', 'draft',
+                    'generate-skill', 'mcp', 'mcp-config', 'lint', 'schema',
+                    'sbom', 'doctor'):
+            assert cmd in out, f'command missing from -h output: {cmd!r}'
+
+    def test_wizard_not_listed(self, capsys):
+        out = self._help_text(capsys)
+        # 'wizard' may appear inside 'web-wizard' — check no standalone entry
+        wizard_lines = [l for l in out.splitlines()
+                        if 'wizard' in l and 'web-wizard' not in l]
+        assert not wizard_lines, f'unexpected wizard line(s): {wizard_lines}'
+
+    def test_no_duplicate_command_listing(self, capsys):
+        import re
+        out = self._help_text(capsys)
+        # command entries have multi-space padding after the name; the section
+        # header 'extract & validate:' has only a single space → exclude it
+        entries = re.findall(r'^\s+extract\s{2,}', out, re.MULTILINE)
+        assert len(entries) == 1, f'expected 1 extract entry, found {len(entries)}'
+
+    def test_per_command_help_hint_present(self, capsys):
+        out = self._help_text(capsys)
+        assert "grepxcel <command> --help" in out
+
+    def test_synopsis_hint_present(self, capsys):
+        out = self._help_text(capsys)
+        assert 'grepxcel -h -h' in out
+
+
+# ── Multi-level help (-h -h and -h -h -h) ────────────────────────────────────
+
+class TestMultiLevelHelp:
+    def test_synopsis_exits_0(self, capsys):
+        with pytest.raises(SystemExit) as exc:
+            cli.main(['-h', '-h'])
+        assert exc.value.code == 0
+
+    def test_synopsis_contains_usage_for_each_command(self, capsys):
+        with pytest.raises(SystemExit):
+            cli.main(['-h', '-h'])
+        out = capsys.readouterr().out
+        for cmd in ('extract', 'validate-pattern', 'watch', 'draft',
+                    'web-wizard', 'lint', 'schema', 'sbom', 'doctor',
+                    'quickstart', 'test'):
+            assert cmd in out, f'{cmd} missing from synopsis'
+
+    def test_synopsis_shows_required_flags(self, capsys):
+        with pytest.raises(SystemExit):
+            cli.main(['-h', '-h'])
+        out = capsys.readouterr().out
+        assert '-p FILE' in out  # extract / watch / test require --pattern
+
+    def test_full_help_exits_0(self, capsys):
+        with pytest.raises(SystemExit) as exc:
+            cli.main(['-h', '-h', '-h'])
+        assert exc.value.code == 0
+
+    def test_full_help_contains_epilogs(self, capsys):
+        with pytest.raises(SystemExit):
+            cli.main(['-h', '-h', '-h'])
+        out = capsys.readouterr().out
+        assert 'examples:' in out.lower()
+
+    def test_full_help_covers_all_commands(self, capsys):
+        with pytest.raises(SystemExit):
+            cli.main(['-h', '-h', '-h'])
+        out = capsys.readouterr().out
+        for cmd in ('extract', 'validate-pattern', 'watch', 'draft',
+                    'web-wizard', 'lint', 'schema', 'sbom', 'doctor',
+                    'quickstart', 'test'):
+            assert f'grepxcel {cmd}' in out, f'{cmd} missing from full help'
+
+    def test_help_help_also_accepts_long_flags(self, capsys):
+        with pytest.raises(SystemExit) as exc:
+            cli.main(['--help', '--help'])
+        assert exc.value.code == 0
+
+    def test_three_long_flags_triggers_full_help(self, capsys):
+        with pytest.raises(SystemExit) as exc:
+            cli.main(['--help', '--help', '--help'])
+        out = capsys.readouterr().out
+        assert exc.value.code == 0
+        assert 'examples:' in out.lower()
+
+
+# ── Wizard command removed ────────────────────────────────────────────────────
+
+class TestWizardRemoved:
+    def test_wizard_command_is_not_registered(self):
+        import argparse
+        p = cli._build_parser()
+        sub_action = next(
+            a for a in p._actions if isinstance(a, argparse._SubParsersAction)
+        )
+        assert 'wizard' not in sub_action.choices
+
+    def test_wizard_argv_exits_nonzero(self, capsys):
+        with pytest.raises(SystemExit) as exc:
+            cli.main(['wizard', 'data.xlsx'])
+        assert exc.value.code != 0

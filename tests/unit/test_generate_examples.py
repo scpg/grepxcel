@@ -19,8 +19,8 @@ FIXTURES_DIR = pathlib.Path(__file__).resolve().parent.parent / 'fixtures'
 class TestExamplesMetadata:
     """EXAMPLES registry is well-formed."""
 
-    def test_examples_has_four_entries(self):
-        assert len(EXAMPLES) == 4
+    def test_examples_has_five_entries(self):
+        assert len(EXAMPLES) == 5
 
     def test_each_example_has_required_keys(self):
         for ex in EXAMPLES:
@@ -47,7 +47,7 @@ class TestGenerateExamples:
         out = tmp_path / 'examples'
         generate_examples(str(out))
         subdirs = sorted(d.name for d in out.iterdir() if d.is_dir())
-        assert len(subdirs) == 4
+        assert len(subdirs) == 5
 
     def test_each_example_has_pattern_and_data(self, tmp_path):
         out = tmp_path / 'examples'
@@ -79,12 +79,30 @@ class TestGenerateExamples:
             wb = openpyxl.load_workbook(d / 'pattern.xlsx')
             assert wb.sheetnames
 
-    def test_refuses_existing_directory(self, tmp_path):
+    def test_overwrites_existing_directory(self, tmp_path):
+        """generate_examples() no longer guards; it overwrites freely."""
         out = tmp_path / 'examples'
         out.mkdir()
         (out / 'somefile.txt').write_text('block')
-        with pytest.raises(SystemExit):
-            generate_examples(str(out))
+        generate_examples(str(out))  # must not raise
+        assert any(out.iterdir())
+
+    def test_cli_refuses_existing_directory_without_force(self, tmp_path):
+        out = tmp_path / 'examples'
+        out.mkdir()
+        (out / 'somefile.txt').write_text('block')
+        with pytest.raises(SystemExit) as exc_info:
+            cli_main(['generate-examples', '-o', str(out)])
+        assert exc_info.value.code != 0
+
+    def test_cli_force_overwrites_existing_directory(self, tmp_path):
+        out = tmp_path / 'examples'
+        out.mkdir()
+        (out / 'somefile.txt').write_text('block')
+        with pytest.raises(SystemExit) as exc_info:
+            cli_main(['generate-examples', '-o', str(out), '--force'])
+        assert exc_info.value.code == 0
+        assert (out / '01_simple_invoice').is_dir()
 
     def test_returns_output_path(self, tmp_path):
         out = tmp_path / 'examples'
@@ -118,7 +136,7 @@ class TestCLISubcommand:
         assert exc_info.value.code == 0
         assert out.is_dir()
         subdirs = [d for d in out.iterdir() if d.is_dir()]
-        assert len(subdirs) == 4
+        assert len(subdirs) == 5
 
     def test_generate_examples_default_output(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)

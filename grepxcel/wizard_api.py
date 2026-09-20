@@ -25,8 +25,8 @@ import openpyxl
 from openpyxl.utils import get_column_letter
 
 # ── Reuse existing pure functions ─────────────────────────────────────────────
-from grepxcel.wizard import WizardState
-from grepxcel.wizard_tui import (
+from grepxcel.wizard_core import (
+    WizardState,
     _build_state_from_choices,
     _build_cell_order,
     _choices_to_csv,
@@ -465,7 +465,6 @@ def _build_stats() -> dict:
     return {
         'L':      counts.get('L', 0),
         'V':      counts.get('V', 0),
-        'C':      counts.get('C', 0),
         'T':      counts.get('T', 0),
         'T_HEAD': counts.get('T-HEAD', 0),   # table column-header cells (from preload)
         'T_DATA': counts.get('T-DATA', 0),   # table data-row cells (from preload)
@@ -503,9 +502,28 @@ def create_app(
 
     # ── Security checks (same guards as the extract command) ─────────────────
     from .security import validate_file, validate_pattern_file
+    from .pattern_check import check_pattern
+    from .color import MARK_FAIL, MARK_WARN, colorize_marks, paint, should_color
     validate_file(xlsx_path)
+    _pv_errors: list[str] = []
+    _pv_warnings: list[str] = []
     if pattern_path and Path(pattern_path).exists():
         validate_pattern_file(pattern_path)
+        _pv = check_pattern(pattern_path)
+        _color = should_color(sys.stderr)
+        if _pv.errors:
+            print(colorize_marks(
+                f'{MARK_FAIL}  Pattern has errors — loaded for editing but cannot extract:',
+                _color), file=sys.stderr)
+            for e in _pv.errors:
+                print(colorize_marks(f'   {MARK_FAIL}  {e}', _color), file=sys.stderr)
+            _pv_errors = _pv.errors
+        if _pv.warnings:
+            if not _pv.errors:
+                print(colorize_marks(f'{MARK_WARN}  Pattern warnings:', _color), file=sys.stderr)
+            for w in _pv.warnings:
+                print(colorize_marks(f'   {MARK_WARN}  {w}', _color), file=sys.stderr)
+            _pv_warnings = _pv.warnings
 
     # ── Load workbook ─────────────────────────────────────────────────────────
     wb = openpyxl.load_workbook(xlsx_path, data_only=True)
@@ -517,7 +535,11 @@ def create_app(
     notes: dict[str, str] = {}
 
     # Warnings from preload surfaced to the UI log panel.
-    preload_warnings: list[str] = []
+    preload_warnings: list[str] = [
+        f'[ERROR] {e}' for e in _pv_errors
+    ] + [
+        f'[WARN] {w}' for w in _pv_warnings
+    ]
 
     if pattern_path and Path(pattern_path).exists():
         try:
@@ -703,7 +725,7 @@ def create_app(
         fields = body.get('fields', {})
         note   = fields.get('notes', '').strip()
 
-        if not ref or action not in ('L', 'V', 'C', 'I', 'T', 'CLEAR'):
+        if not ref or action not in ('L', 'V', 'I', 'T', 'CLEAR'):
             raise HTTPException(400, f'Invalid ref={ref!r} or action={action!r}')
         # Block classifying a non-anchor merged cell (ghost cell)
         _, merge_skip = _build_merge_info(_STATE['ws'])
@@ -715,10 +737,31 @@ def create_app(
         notes   = _STATE['notes']
 
         if action == 'CLEAR':
-            choices.pop(ref, None)
+            removed_meta = choices.pop(ref, {})
             notes.pop(ref, None)
-            _STATE['log'].write('CLASSIFY', f'{ref}:CLEAR')
-            return JSONResponse({'ok': True, 'ref': ref, 'action': 'CLEAR'})
+            removed_choice = removed_meta.get('choice', '')
+            # Determine cascade anchor (T anchor clears its members; member clears its anchor+siblings)
+            if removed_choice == 'T':
+                cascade_anchor = ref
+            elif removed_choice in ('T-HEAD', 'T-DATA'):
+                cascade_anchor = removed_meta.get('anchor', '')
+                if cascade_anchor:
+                    choices.pop(cascade_anchor, None)
+                    notes.pop(cascade_anchor, None)
+            else:
+                cascade_anchor = ''
+            cleared = [ref]
+            if cascade_anchor:
+                stale = [r for r, m in list(choices.items())
+                         if m.get('choice') in ('T-HEAD', 'T-DATA') and m.get('anchor') == cascade_anchor]
+                for r in stale:
+                    choices.pop(r, None)
+                    notes.pop(r, None)
+                    cleared.append(r)
+                if cascade_anchor != ref:
+                    cleared.append(cascade_anchor)
+            _STATE['log'].write('CLASSIFY', f'{ref}:CLEAR ({len(cleared)} cells)')
+            return JSONResponse({'ok': True, 'ref': ref, 'action': 'CLEAR', 'cleared': cleared})
 
         ws: openpyxl.worksheet.worksheet.Worksheet = _STATE['ws']
         try:
@@ -760,11 +803,6 @@ def create_app(
                 'ftype':       fields.get('type', _infer_cell_type(ws.cell(row=row, column=col))),
                 'match':       match_pattern,
                 'col_a_extra': col_a_extra,
-            }
-        elif action == 'C':
-            choices[ref] = {
-                'choice': 'C',
-                'name':   fields.get('name', _slugify(str(cell_value or ''))),
             }
         elif action == 'I':
             choices[ref] = {'choice': 'I'}
@@ -879,8 +917,8 @@ def create_app(
 
         if not refs:
             raise HTTPException(400, 'refs list is empty')
-        if action not in ('L', 'V', 'C', 'I', 'CLEAR'):
-            raise HTTPException(400, f'action must be L, V, C, I, or CLEAR (got {action!r}); '
+        if action not in ('L', 'V', 'I', 'CLEAR'):
+            raise HTTPException(400, f'action must be L, V, I, or CLEAR (got {action!r}); '
                                     'T is not supported for batch classification')
 
         _, merge_skip = _build_merge_info(_STATE['ws'])
@@ -927,11 +965,6 @@ def create_app(
                     'ftype':       _infer_cell_type(ws_.cell(row=row_, column=col_)) if row_ else 'string',
                     'match':       '.*',
                     'col_a_extra': '',
-                }
-            elif action == 'C':
-                choices[ref] = {
-                    'choice': 'C',
-                    'name':   _slugify(str(cell_value or '')),
                 }
             elif action == 'I':
                 choices[ref] = {'choice': 'I'}

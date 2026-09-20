@@ -17,7 +17,6 @@
   --accent-dim:  #cfe2ff;
   --L:  #d1f2eb; --L-dark: #198754; --L-sel: #a3e4d7;
   --V:  #fef9c3; --V-dark: #b45309; --V-sel: #fde68a;
-  --C:  #dbeafe; --C-dark: #1d4ed8; --C-sel: #bfdbfe;
   --T:  #ede9fe; --T-dark: #7c3aed; --T-sel: #ddd6fe;
   --I:  #f1f3f5; --I-dark: #868e96; --I-sel: #dee2e6;
   --sel: #fff3cd; --sel-border: #ffc107;
@@ -38,7 +37,6 @@
   --accent-dim: #1a3a5c;
   --L:  #0d3321; --L-dark: #40c878; --L-sel: #0a4226;
   --V:  #3d2e00; --V-dark: #fbbf24; --V-sel: #523d00;
-  --C:  #0c1e40; --C-dark: #60a5fa; --C-sel: #0f2852;
   --T:  #2a1d4a; --T-dark: #a78bfa; --T-sel: #38276a;
   --I:  #2a2b2e; --I-dark: #909296; --I-sel: #373a40;
   --sel: #4a3800; --sel-border: #ffd43b;
@@ -129,6 +127,9 @@ td.gx-cell {
 }
 td.gx-cell:hover:not(.selected) { background: var(--accent-dim) !important; }
 td.gx-cell.empty { color: var(--text-muted); }
+tr.gx-row-empty { height: 10px; }
+tr.gx-row-empty td { border-top: 1px dashed var(--border); padding: 0 !important; background: var(--surface) !important; }
+tr.gx-row-empty .row-header { font-size: 9px; color: var(--border); }
 td.gx-cell.gx-merged {
   /* Subtle diagonal stripe to signal a merged region */
   background-image: repeating-linear-gradient(
@@ -150,7 +151,6 @@ td.gx-cell.selected {
 /* Classification colours */
 td.gx-L { background: var(--L); }
 td.gx-V { background: var(--V); }
-td.gx-C { background: var(--C); }
 td.gx-T { background: var(--T); }
 td.gx-I { background: var(--I); color: var(--text-muted); }
 /* T-HEAD = table column header  |  T-DATA = table data row (both from preload) */
@@ -364,7 +364,6 @@ td.gx-cell[data-field]:not([data-field=""]):hover::before {
 .cbtn.active { border-color: var(--text); }
 .cbtn-L { background: var(--L); color: var(--L-dark); }
 .cbtn-V { background: var(--V); color: var(--V-dark); }
-.cbtn-C { background: var(--C); color: var(--C-dark); }
 .cbtn-T { background: var(--T); color: var(--T-dark); }
 .cbtn-I { background: var(--I); color: var(--I-dark); }
 .cbtn-CLR { background: var(--bg); color: var(--text-muted); border: 1px solid var(--border); }
@@ -392,7 +391,6 @@ td.gx-cell[data-field]:not([data-field=""]):hover::before {
 .sb-chip .sb-n { font-size: 14px; }
 .sb-L { background: var(--L); color: var(--L-dark); }
 .sb-V { background: var(--V); color: var(--V-dark); }
-.sb-C { background: var(--C); color: var(--C-dark); }
 .sb-T { background: var(--T); color: var(--T-dark); }
 .sb-I { background: var(--I); color: var(--I-dark); }
 .sb-U {
@@ -407,10 +405,33 @@ td.gx-cell[data-field]:not([data-field=""]):hover::before {
 .sb-pct { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
 
 /* ── Config Panel ───────────────────────────────────────────────── */
-.cfg-section-title {
-  font-size: 11px; font-weight: 700; color: var(--text-muted);
-  text-transform: uppercase; letter-spacing: 0.5px; margin: 12px 0 6px;
+/* ── Config tab — section bands + inline rows ── */
+.cfg-band {
+  display: flex; align-items: center; gap: 5px;
+  margin: 0 -12px; padding: 5px 12px;
+  background: var(--bg);
+  font-size: 10px; font-weight: 700; color: var(--text-muted);
+  text-transform: uppercase; letter-spacing: 0.6px;
 }
+.cfg-band:first-child { margin-top: -12px; }
+.cfg-row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; padding: 7px 0;
+  border-bottom: 1px solid rgba(128,128,128,0.08);
+}
+.cfg-row:last-of-type { border-bottom: none; }
+.cfg-row-label {
+  font-size: 12px; color: var(--text);
+  display: flex; align-items: center; gap: 4px;
+  flex: 1; min-width: 0;
+}
+.cfg-sub { font-size: 10px; opacity: 0.55; font-weight: 400; }
+.cfg-ctrl { flex-shrink: 0; width: 52%; }
+.cfg-ctrl input, .cfg-ctrl select { width: 100%; box-sizing: border-box; }
+.cfg-ctrl-sm { width: 72px; }
+.cfg-ctrl-sm input { width: 100%; box-sizing: border-box; }
+/* Accent colour + italic when a select is showing its default value */
+select.cfg-sel-default { color: var(--accent); font-style: italic; font-weight: 600; }
 .switch-row {
   display: flex; align-items: center; justify-content: space-between;
   padding: 4px 0;
@@ -477,6 +498,7 @@ td.gx-T-bottom { border-bottom: 2px solid rgba(124,58,237,0.5) !important; }
 .form-group .mod-item:hover,
 .mod-item:hover { background: var(--border); }
 .mod-item input[type=checkbox] { margin: 0; cursor: pointer; accent-color: var(--accent); flex-shrink: 0; }
+.mod-item span { white-space: nowrap; }
 .info-icon {
   cursor: help; font-size: 11px; color: var(--text-muted);
   margin-left: 4px; opacity: 0.7; transition: opacity 0.15s;
@@ -711,13 +733,23 @@ td.gx-T-bottom { border-bottom: 2px solid rgba(124,58,237,0.5) !important; }
           <div>Click any cell in the grid<br>to select and classify it</div>
         </div>
         <div id="classify-form" style="display:none">
-          <div class="classify-btns">
+          <div class="classify-btns" id="classify-btns">
             <button class="cbtn cbtn-L" onclick="selectAction('L')">🏷 Label (L)</button>
             <button class="cbtn cbtn-V" onclick="selectAction('V')">📦 Value (V)</button>
-            <button class="cbtn cbtn-C" onclick="selectAction('C')">📋 Header (C)</button>
             <button class="cbtn cbtn-T" onclick="selectAction('T')">📊 Table (T)</button>
             <button class="cbtn cbtn-I" onclick="selectAction('I')">🚫 Ignore (I)</button>
             <button class="cbtn cbtn-CLR" onclick="clearCell()">✕ Clear</button>
+          </div>
+
+          <!-- Table-cell operations panel (replaces classify-btns when inside a table) -->
+          <div id="table-ops" style="display:none">
+            <p style="font-size:12px;color:var(--text-muted);margin:0 0 10px">
+              This cell is part of a Mini Table. Individual cell classification is not available inside a table range.
+            </p>
+            <button type="button" class="btn btn-primary" style="width:100%;margin-bottom:8px"
+                    onclick="openTableModal()">✏️ Edit Mini-Table…</button>
+            <button type="button" class="btn" style="width:100%;color:var(--error,#c0392b)"
+                    onclick="removeTable()">🗑 Remove Mini-Table</button>
           </div>
 
           <!-- Dynamic fields depending on action -->
@@ -787,30 +819,24 @@ td.gx-T-bottom { border-bottom: 2px solid rgba(124,58,237,0.5) !important; }
                 <div class="mod-menu" id="mod-menu">
                   <label class="mod-item">
                     <input type="checkbox" id="mod-none" checked onchange="onModChange('none')">
-                    none
+                    <span>none</span>
                   </label>
                   <label class="mod-item">
                     <input type="checkbox" id="mod-nullable" onchange="onModChange('nullable')">
-                    nullable
+                    <span>nullable</span>
                   </label>
                   <label class="mod-item">
                     <input type="checkbox" id="mod-not-null" onchange="onModChange('not-null')">
-                    not-null
+                    <span>not-null</span>
                   </label>
                   <label class="mod-item">
                     <input type="checkbox" id="mod-trim" onchange="onModChange('trim-whitespace')">
-                    trim-whitespace
+                    <span>trim-whitespace</span>
                   </label>
                 </div>
               </div></div>
             <div class="form-group"><label>Note <span style="font-weight:400;text-transform:none">(optional)</span></label>
               <textarea id="f-V-notes" rows="2" placeholder="Internal note…"></textarea></div>
-          </div>
-
-          <div id="fields-C" class="action-fields" style="display:none">
-            <div class="form-section-title">Header fields</div>
-            <div class="form-group"><label>Header name</label>
-              <input id="f-C-name" type="text" placeholder="e.g. line_items"></div>
           </div>
 
           <div id="fields-T" class="action-fields" style="display:none">
@@ -883,90 +909,116 @@ td.gx-T-bottom { border-bottom: 2px solid rgba(124,58,237,0.5) !important; }
 
       <!-- ── Config Tab ── -->
       <div id="tab-config" style="display:none">
-        <div class="cfg-section-title">Scan direction
-          <span class="info-icon" title="Controls the order cells are visited when building the pattern.&#10;LR (left-to-right): scan row by row — label is expected to the LEFT of its value.&#10;TD (top-down): scan column by column — label is expected ABOVE its value.">🛈</span>
-        </div>
-        <div class="form-group">
-          <select id="cfg-direction">
-            <option value="LR">LR — left-to-right, top-to-bottom</option>
-            <option value="TD">TD — top-down, left-to-right</option>
-          </select>
+
+        <!-- ── GLOBAL ───────────────────────────────────── -->
+        <div class="cfg-band">Global
+          <span class="info-icon" title="Settings that apply to the whole pattern file.">🛈</span>
         </div>
 
-        <!-- Labels section -->
-        <div class="cfg-section-title" style="margin-top:10px">Labels
-          <span class="info-icon" title="Settings that control how label anchor cells are read and matched.&#10;Labels are the cells you classify as L — they anchor value cells nearby.">🛈</span>
+        <div class="cfg-row">
+          <span class="cfg-row-label">Scan direction
+            <span class="info-icon" title="Controls the order cells are visited when building the pattern.&#10;LR (left-to-right): scan row by row — label is expected to the LEFT of its value.&#10;TD (top-down): scan column by column — label is expected ABOVE its value.">🛈</span>
+          </span>
+          <div class="cfg-ctrl">
+            <select id="cfg-direction" onchange="_cfgSelMark(this,'LR')">
+              <option value="LR">LR — left-to-right</option>
+              <option value="TD">TD — top-down</option>
+            </select>
+          </div>
         </div>
-        <div class="form-group">
-          <label style="font-size:11px;color:var(--text-muted);margin-bottom:2px">Match mode (lbl.match)
-            <span class="info-icon" title="How label anchor text is matched against spreadsheet cells.&#10;literal: exact text match (default, safe for most cases).&#10;glob: wildcard patterns (* matches anything, ? matches one char).&#10;regexp: full Python regular expressions.">🛈</span>
-          </label>
-          <select id="cfg-lbl_match">
-            <option value="">literal (default)</option>
-            <option value="glob">glob</option>
-            <option value="regexp">regexp</option>
-          </select>
+
+        <div class="cfg-row">
+          <span class="cfg-row-label">Currency sign
+            <span class="info-icon" title="A character stripped from cell values before number parsing.&#10;e.g. with €: the cell '€1,200.00' is extracted as the number 1200.&#10;Leave blank to disable.">🛈</span>
+          </span>
+          <div class="cfg-ctrl-sm">
+            <input id="cfg-currency" type="text" maxlength="5" placeholder="€">
+          </div>
         </div>
-        <div class="switch-row">
-          <label>Ignore case
+
+        <div class="cfg-row">
+          <span class="cfg-row-label">Empty aliases
+            <span class="info-icon" title="Comma-separated values treated as empty/null during extraction.&#10;Any cell whose content matches one of these strings is returned as null instead of the raw text.&#10;e.g. '#N/A, N/A, —' treats those placeholders as missing values.">🛈</span>
+          </span>
+          <div class="cfg-ctrl">
+            <input id="cfg-aliases" type="text" placeholder="#N/A, N/A, —">
+          </div>
+        </div>
+
+        <!-- ── LABELS ────────────────────────────────────── -->
+        <div class="cfg-band" style="margin-top:10px">Labels
+          <span class="info-icon" title="Settings that control how label anchor cells (L) are read and matched against spreadsheet cells.">🛈</span>
+        </div>
+
+        <div class="cfg-row">
+          <span class="cfg-row-label">Ignore case
             <span class="info-icon" title="When ON, label anchors are matched case-insensitively.&#10;e.g. 'Invoice No:' matches 'INVOICE NO:' or 'invoice no:'.">🛈</span>
-          </label>
+          </span>
           <label class="toggle"><input type="checkbox" id="cfg-ignore_case_labels"><span class="slider"></span></label>
         </div>
-        <div class="switch-row">
-          <label>Trim whitespace
+
+        <div class="cfg-row">
+          <span class="cfg-row-label">Trim whitespace
             <span class="info-icon" title="When ON, leading and trailing spaces are stripped from label cell text before matching.&#10;Helps when spreadsheets have accidentally padded label cells.">🛈</span>
-          </label>
+          </span>
           <label class="toggle"><input type="checkbox" id="cfg-trim_ws_labels"><span class="slider"></span></label>
         </div>
 
-        <!-- Values section -->
-        <div class="cfg-section-title" style="margin-top:10px">Values
-          <span class="info-icon" title="Settings that control how value cells are read and extracted.&#10;Values are the cells you classify as V — the data the engine extracts.">🛈</span>
-        </div>
-        <div class="switch-row">
-          <label>Allow empty cells
-            <span class="info-icon" title="Enable for blank-form spreadsheets where value cells are empty.&#10;In template mode the engine accepts empty cells as valid extraction targets.">🛈</span>
-          </label>
-          <label class="toggle"><input type="checkbox" id="cfg-template"><span class="slider"></span></label>
-        </div>
-        <div class="switch-row">
-          <label>Ignore case
-            <span class="info-icon" title="When ON, value pattern matching and empty-alias lookup are case-insensitive.&#10;e.g. match pattern 'active' also matches 'ACTIVE' or 'Active'.">🛈</span>
-          </label>
-          <label class="toggle"><input type="checkbox" id="cfg-ignore_case_values"><span class="slider"></span></label>
-        </div>
-        <div class="switch-row">
-          <label>Trim whitespace
-            <span class="info-icon" title="When ON, leading and trailing spaces are stripped from extracted values before returning them.&#10;Useful for poorly formatted spreadsheets.">🛈</span>
-          </label>
-          <label class="toggle"><input type="checkbox" id="cfg-trim_ws_values"><span class="slider"></span></label>
-        </div>
-        <div class="form-group" style="margin-top:6px">
-          <label style="font-size:11px;color:var(--text-muted);margin-bottom:2px">Match mode (var.match)
-            <span class="info-icon" title="How value field match patterns are interpreted.&#10;regexp: patterns are regular expressions (default).&#10;literal: patterns are plain text.&#10;glob: patterns use * and ? wildcards.">🛈</span>
-          </label>
-          <select id="cfg-var_match">
-            <option value="">regexp (default)</option>
-            <option value="literal">literal</option>
-            <option value="glob">glob</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label style="font-size:11px;color:var(--text-muted);margin-bottom:2px">Currency sign
-            <span class="info-icon" title="A character stripped from cell values before number parsing.&#10;e.g. with €: the cell '€1,200.00' is extracted as the number 1200.">🛈</span>
-          </label>
-          <input id="cfg-currency" type="text" maxlength="5" style="width:80px" placeholder="€">
-        </div>
-        <div class="form-group">
-          <label style="font-size:11px;color:var(--text-muted);margin-bottom:2px">Empty aliases
-            <span class="info-icon" title="Values treated as empty/null during extraction.&#10;Comma-separated list. Any cell whose content matches one of these strings is returned as null instead of the raw text.&#10;Useful for placeholder text like '#N/A' or '—'.">🛈</span>
-          </label>
-          <input id="cfg-aliases" type="text" placeholder="#N/A, N/A, —">
-          <div class="aliases-help">Comma-separated values treated as empty/null</div>
+        <div class="cfg-row">
+          <span class="cfg-row-label">Match mode
+            <span class="cfg-sub">(lbl.match)</span>
+            <span class="info-icon" title="How label anchor text is matched against spreadsheet cells.&#10;literal (default): exact text match — safe for most cases.&#10;glob: wildcard patterns (* matches anything, ? matches one char).&#10;regexp: full Python regular expressions.">🛈</span>
+          </span>
+          <div class="cfg-ctrl">
+            <select id="cfg-lbl_match" onchange="_cfgSelMark(this,'')">
+              <option value="">literal</option>
+              <option value="glob">glob</option>
+              <option value="regexp">regexp</option>
+            </select>
+          </div>
         </div>
 
-        <button class="btn btn-primary" style="width:100%;margin-top:8px" onclick="saveConfig()">
+        <!-- ── VALUES ────────────────────────────────────── -->
+        <div class="cfg-band" style="margin-top:10px">Values
+          <span class="info-icon" title="Settings that control how value cells (V) are read and extracted.">🛈</span>
+        </div>
+
+        <div class="cfg-row">
+          <span class="cfg-row-label">Ignore case
+            <span class="info-icon" title="When ON, value pattern matching and empty-alias lookup are case-insensitive.&#10;e.g. match pattern 'active' also matches 'ACTIVE' or 'Active'.">🛈</span>
+          </span>
+          <label class="toggle"><input type="checkbox" id="cfg-ignore_case_values"><span class="slider"></span></label>
+        </div>
+
+        <div class="cfg-row">
+          <span class="cfg-row-label">Trim whitespace
+            <span class="info-icon" title="When ON, leading and trailing spaces are stripped from extracted values before returning them.&#10;Useful for poorly formatted spreadsheets.">🛈</span>
+          </span>
+          <label class="toggle"><input type="checkbox" id="cfg-trim_ws_values"><span class="slider"></span></label>
+        </div>
+
+        <div class="cfg-row">
+          <span class="cfg-row-label">Allow empty cells
+            <span class="info-icon" title="Enable for blank-form spreadsheets where value cells are empty.&#10;In template mode the engine accepts empty cells as valid extraction targets.">🛈</span>
+          </span>
+          <label class="toggle"><input type="checkbox" id="cfg-template"><span class="slider"></span></label>
+        </div>
+
+        <div class="cfg-row">
+          <span class="cfg-row-label">Match mode
+            <span class="cfg-sub">(var.match)</span>
+            <span class="info-icon" title="How value field match patterns are interpreted.&#10;regexp (default): patterns are regular expressions.&#10;literal: patterns are plain text.&#10;glob: patterns use * and ? wildcards.">🛈</span>
+          </span>
+          <div class="cfg-ctrl">
+            <select id="cfg-var_match" onchange="_cfgSelMark(this,'')">
+              <option value="">regexp</option>
+              <option value="literal">literal</option>
+              <option value="glob">glob</option>
+            </select>
+          </div>
+        </div>
+
+        <button class="btn btn-primary" style="width:100%;margin-top:14px" onclick="saveConfig()">
           ✓ Save Config
         </button>
       </div>
@@ -1012,7 +1064,6 @@ td.gx-T-bottom { border-bottom: 2px solid rgba(124,58,237,0.5) !important; }
 <div id="stats-bar">
   <span class="sb-chip sb-L" title="Label cells — identify a nearby value"><span class="sb-n" id="sb-L">0</span> Labels</span>
   <span class="sb-chip sb-V" title="Variable cells — fields to extract"><span class="sb-n" id="sb-V">0</span> Variables</span>
-  <span class="sb-chip sb-C" title="Header cells — section titles"><span class="sb-n" id="sb-C">0</span> Headers</span>
   <span class="sb-chip sb-T" id="sb-T-chip"
         title="Mini Table anchors · col-headers (T-HEAD) · data rows (T-DATA)">
     <span class="sb-n" id="sb-T">0</span> Mini Tables<span id="sb-T-detail" style="font-weight:400;opacity:0.75"></span>
@@ -1130,10 +1181,30 @@ async function _checkPreloadWarnings() {
     const data = await r.json();
     const warns = data.preload_warnings || [];
     if (warns.length) {
+      const hasErrors = warns.some(w => w.startsWith('[ERROR]'));
       const btn = document.getElementById('tab-logs-btn');
-      if (btn) { btn.textContent = '⚠️ Logs'; btn.dataset.warned = '1'; }
+      if (btn) { btn.textContent = hasErrors ? '🔴 Logs' : '⚠️ Logs'; btn.dataset.warned = '1'; }
+      _updatePatternErrorBanner(warns);
     }
   } catch (_) { /* ignore */ }
+}
+
+function _updatePatternErrorBanner(warns) {
+  const errors = warns.filter(w => w.startsWith('[ERROR]'));
+  let banner = document.getElementById('pattern-error-banner');
+  if (!errors.length) {
+    if (banner) banner.remove();
+    return;
+  }
+  if (!banner) {
+    banner = document.createElement('div');
+    banner.id = 'pattern-error-banner';
+    banner.style.cssText = 'background:#5c1a1a;color:#ffcccc;font-size:12px;padding:6px 12px;border-bottom:1px solid #a33;display:flex;gap:8px;align-items:flex-start;';
+    const toolbar = document.querySelector('.toolbar');
+    if (toolbar) toolbar.after(banner);
+  }
+  banner.innerHTML = '🔴 <b>Pattern errors</b> — cannot extract until fixed: ' +
+    errors.map(e => `<span style="opacity:.85">${_esc(e.replace('[ERROR] ',''))}</span>`).join(' · ');
 }
 
 // ── Data fetching ─────────────────────────────────────────────────────────
@@ -1277,7 +1348,8 @@ function renderGrid(data) {
   const tbody = document.getElementById('grid-body');
   let html = '';
   for (const row of data.rows) {
-    html += `<tr><td class="row-header">${row[0].row}</td>`;
+    const isEmptyRow = row.every(c => c.skip || c.empty);
+    html += `<tr${isEmptyRow ? ' class="gx-row-empty"' : ''}><td class="row-header">${row[0].row}</td>`;
     for (const cell of row) {
       // Non-anchor merged cells are ghost cells — skip them entirely.
       if (cell.skip) continue;
@@ -1362,8 +1434,48 @@ async function selectCell(ref) {
   setStatus(`Selected ${ref}` + (info.choice ? ` — currently ${info.choice}` : ''));
 }
 
+function _enterTableMode(anchorRef, clickedRef) {
+  // Switch panel to table-ops: hide classify buttons, show Edit/Remove
+  document.getElementById('classify-btns').style.display = 'none';
+  document.getElementById('table-ops').style.display = 'block';
+  document.querySelectorAll('.action-fields').forEach(d => d.style.display = 'none');
+  document.getElementById('apply-row').style.display = 'none';
+
+  // Move selection highlight to the anchor
+  if (clickedRef && clickedRef !== anchorRef) {
+    const clickedTd = document.querySelector(`td[data-ref="${clickedRef}"]`);
+    if (clickedTd) clickedTd.classList.remove('selected');
+    const anchorTd = document.querySelector(`td[data-ref="${anchorRef}"]`);
+    if (anchorTd) anchorTd.classList.add('selected');
+  }
+  selectedAction = 'T';
+  selectedRef    = anchorRef;
+}
+
+function _exitTableMode() {
+  document.getElementById('classify-btns').style.display = '';
+  document.getElementById('table-ops').style.display = 'none';
+}
+
 function prefillForm(info) {
   const ch = info.choice || '';
+
+  // Table cells get a restricted panel — no classify buttons
+  if (ch === 'T' || ch === 'T-HEAD' || ch === 'T-DATA') {
+    const anchorRef = (ch === 'T') ? (info.ref || selectedRef) : (info.anchor || '');
+    if (!anchorRef) { _exitTableMode(); return; }
+
+    _enterTableMode(anchorRef, info.ref || selectedRef);
+
+    document.getElementById('ph-val').textContent =
+      ch === 'T' ? `Mini Table anchor` : `[${ch}] part of table at ${anchorRef}`;
+
+    return;
+  }
+
+  // Normal (non-table) cell — restore classify buttons
+  _exitTableMode();
+
   // Reset all action buttons
   document.querySelectorAll('.cbtn').forEach(b => b.classList.remove('active'));
   if (ch && ch !== 'CLEAR') {
@@ -1394,68 +1506,30 @@ function prefillForm(info) {
     setVal('f-V-match', info.match || '.*');
     setVal('f-V-modifiers', info.modifiers || 'none');
     setVal('f-V-notes', info.note || '');
-  } else if (ch === 'C') {
-    setVal('f-C-name', info.name || '');
-  } else if (ch === 'T') {
-    setVal('f-T-name', info.name || '');
-    setVal('f-T-mult', info.mult || '*');
-    // Load end_ref and row_config status from table-context
-    fetch(`/api/table-context/${info.ref}`)
-      .then(r => r.json())
-      .then(ctx => {
-        // Prefer stored end_ref; fall back to visible T-HEAD/T-DATA scan
-        if (ctx.end_ref && ctx.end_ref !== info.ref) {
-          setVal('f-T-end_ref', ctx.end_ref);
-        } else {
-          const inferred = _inferTableEndRef(info.ref);
-          if (inferred) setVal('f-T-end_ref', inferred);
-        }
-        _tUpdateRowConfigStatus(ctx);
-        _tLoadColumnsFromContext(ctx);
-      })
-      .catch(() => _tScanColumns(info.ref, []));
-  } else if (ch === 'T-HEAD' || ch === 'T-DATA') {
-    // These are part of a table entity — open the anchor's table editor instead
-    const anchorRef = info.anchor || '';
-    if (anchorRef) {
-      // Move the .selected highlight from the clicked cell to the anchor cell.
-      // selectCell() already added .selected to `ref`; we must remove it and
-      // point it at the anchor so subsequent clicks deselect the right cell.
-      const clickedTd = document.querySelector(`td[data-ref="${ref}"]`);
-      if (clickedTd) clickedTd.classList.remove('selected');
-      const anchorTd = document.querySelector(`td[data-ref="${anchorRef}"]`);
-      if (anchorTd) anchorTd.classList.add('selected');
-
-      // Highlight that we're editing the whole table via the anchor
-      document.getElementById('ph-val').textContent =
-        `[${ch}] part of table at ${anchorRef}`;
-      selectedAction = 'T';
-      selectedRef    = anchorRef;   // switch to anchor so modal uses correct ref
-      showFields('T');
-      // Activate the T button
-      document.querySelectorAll('.cbtn').forEach(b => b.classList.remove('active'));
-      const btn = document.querySelector('.cbtn-T');
-      if (btn) btn.classList.add('active');
-      // Load anchor config and auto-infer end_ref if missing
-      fetch(`/api/table-context/${anchorRef}`)
-        .then(r => r.json())
-        .then(ctx => {
-          setVal('f-T-name', ctx.name || '');
-          setVal('f-T-mult', ctx.mult || '*');
-          // Prefer stored end_ref; fall back to scanning visible T-HEAD/T-DATA cells
-          if (ctx.end_ref && ctx.end_ref !== anchorRef) {
-            setVal('f-T-end_ref', ctx.end_ref);
-          } else {
-            const inferred = _inferTableEndRef(anchorRef);
-            if (inferred) setVal('f-T-end_ref', inferred);
-          }
-          _tUpdateRowConfigStatus(ctx);
-          _tLoadColumnsFromContext(ctx);
-        })
-        .catch(() => {});
-      return;  // skip the normal showFields call below
-    }
   }
+}
+
+async function _clearRefs(anchorRef) {
+  // Send CLEAR to the backend; response includes all cascaded refs
+  const data = await classify(anchorRef, 'CLEAR', {});
+  const cleared = (data && data.cleared) ? data.cleared : [anchorRef];
+  // Wipe cellData cache and refresh grid for every cleared cell
+  for (const r of cleared) {
+    const cached = cellData[r] || {};
+    cached.choice = ''; cached.name = ''; cached.anchor = '';
+    cellData[r] = cached;
+    refreshCell(r);
+  }
+  await loadStats();
+  return cleared;
+}
+
+async function removeTable() {
+  if (!selectedRef) return;
+  await _clearRefs(selectedRef);
+  _exitTableMode();
+  prefillForm({});
+  toast('Mini-Table removed');
 }
 
 function selectAction(action) {
@@ -1486,8 +1560,6 @@ function selectAction(action) {
     setVal('f-V-match', info.match || '.*');
     setVal('f-V-modifiers', 'none');
     setVal('f-V-notes', info.note || '');
-  } else if (action === 'C') {
-    setVal('f-C-name', info.name || slugify(info.raw || 'header'));
   } else if (action === 'T') {
     const defaultName = info.name || (slugify(info.raw || 'table') + '_table');
     setVal('f-T-name', defaultName);
@@ -1542,12 +1614,9 @@ function cancelClassification() {
 
 async function clearCell() {
   if (!selectedRef) return;
-  await classify(selectedRef, 'CLEAR', {});
-  const info = cellData[selectedRef] || {};
-  info.choice = ''; info.name = '';
-  refreshCell(selectedRef);
+  const cleared = await _clearRefs(selectedRef);
   prefillForm({});
-  toast('Cleared ' + selectedRef);
+  toast(`Cleared ${cleared.length > 1 ? cleared.length + ' cells' : selectedRef}`);
 }
 
 async function applyClassification() {
@@ -1576,7 +1645,6 @@ function gatherFields(action) {
   const g = id => (document.getElementById(id) || {}).value || '';
   if (action === 'L') return { name: g('f-L-name'), type: g('f-L-type'), match_mode: g('f-L-match_mode'), match: g('f-L-match'), notes: g('f-L-notes') };
   if (action === 'V') return { name: g('f-V-name'), type: g('f-V-type'), match_mode: g('f-V-match_mode'), match: g('f-V-match'), modifiers: g('f-V-modifiers'), notes: g('f-V-notes') };
-  if (action === 'C') return { name: g('f-C-name') };
   if (action === 'T') {
     const mult   = g('f-T-mult') || '*';
     const endRef = (g('f-T-end_ref') || '').toUpperCase().trim();
@@ -1640,7 +1708,6 @@ function renderStats(stats) {
   const setText = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
   setText('sb-L', stats.L || 0);
   setText('sb-V', stats.V || 0);
-  setText('sb-C', stats.C || 0);
   setText('sb-T', stats.T || 0);
   setText('sb-I', stats.I || 0);
   setText('sb-U', unclassified);
@@ -1664,6 +1731,10 @@ function renderStats(stats) {
 }
 
 // ── Config ────────────────────────────────────────────────────────────────
+function _cfgSelMark(sel, defaultVal) {
+  sel.classList.toggle('cfg-sel-default', sel.value === defaultVal);
+}
+
 function populateConfigPanel(cfg) {
   setVal('cfg-direction',         cfg.direction  || 'LR');
   setChk('cfg-template',          cfg.template   || false);
@@ -1679,6 +1750,9 @@ function populateConfigPanel(cfg) {
   setVal('cfg-lbl_match',         cfg.lbl_match  || '');
   setVal('cfg-var_match',         cfg.var_match  || '');
   setVal('cfg-aliases',           (cfg.empty_aliases || []).join(', '));
+  _cfgSelMark(document.getElementById('cfg-direction'), 'LR');
+  _cfgSelMark(document.getElementById('cfg-lbl_match'), '');
+  _cfgSelMark(document.getElementById('cfg-var_match'), '');
 }
 
 async function saveConfig() {
@@ -1808,22 +1882,28 @@ async function refreshLogs() {
     const r    = await fetch('/api/logs');
     const data = await r.json();
 
-    // ── Preload warnings ──────────────────────────────────────────────────
+    // ── Preload warnings / errors ─────────────────────────────────────────
     const warns = data.preload_warnings || [];
+    const hasErrors = warns.some(w => w.startsWith('[ERROR]'));
     if (warns.length) {
-      warnBox.innerHTML = warns.map(w =>
-        `<div style="background:var(--warn,#7c4a00);color:#ffe;border-radius:4px;padding:5px 8px;margin:0 8px 4px;font-size:11px;">⚠️ ${_esc(w)}</div>`
-      ).join('');
+      warnBox.innerHTML = warns.map(w => {
+        const isErr = w.startsWith('[ERROR]');
+        const label = isErr ? '🔴' : '⚠️';
+        const bg    = isErr ? 'var(--err-bg,#5c1a1a)' : 'var(--warn,#7c4a00)';
+        return `<div style="background:${bg};color:#ffe;border-radius:4px;padding:5px 8px;margin:0 8px 4px;font-size:11px;">${label} ${_esc(w)}</div>`;
+      }).join('');
       warnBox.style.display = 'block';
-      // Badge the tab if there are warnings
+      // Badge the tab — red for errors, amber for warnings only
       const btn = document.getElementById('tab-logs-btn');
       if (btn && !btn.dataset.warned) {
         btn.dataset.warned = '1';
-        btn.textContent = '⚠️ Logs';
+        btn.textContent = hasErrors ? '🔴 Logs' : '⚠️ Logs';
       }
     } else {
       warnBox.style.display = 'none';
     }
+    // Show/update the persistent error banner on the main grid view
+    _updatePatternErrorBanner(warns);
 
     // ── Log lines ─────────────────────────────────────────────────────────
     const lines = data.log_lines || [];
@@ -2209,7 +2289,7 @@ function loadKeyboardShortcuts() {
     const k = e.key.toUpperCase();
 
     // ── Classification keys: apply to range if one is active ──────────────
-    if (['L','V','C','I'].includes(k) || k === 'DELETE' || k === 'BACKSPACE') {
+    if (['L','V','I'].includes(k) || k === 'DELETE' || k === 'BACKSPACE') {
       const batchAction = k === 'DELETE' || k === 'BACKSPACE' ? 'CLEAR' : k;
       if (_rangeAnchor && _rangeEnd) {
         e.preventDefault();
@@ -2218,9 +2298,16 @@ function loadKeyboardShortcuts() {
       }
     }
 
+    // Block L/V/I/T keys when the selected cell is inside a table range
+    const _inTable = document.getElementById('table-ops').style.display !== 'none';
+    if (_inTable) {
+      if (k === 'ENTER') openTableModal();
+      else if (k === 'ESCAPE') { _exitTableMode(); prefillForm({}); _clearRange(); }
+      return;
+    }
+
     if (k === 'L') selectAction('L');
     else if (k === 'V') selectAction('V');
-    else if (k === 'C') selectAction('C');
     else if (k === 'T') selectAction('T');
     else if (k === 'I') selectAction('I');
     else if (k === 'ENTER' && selectedAction) applyClassification();
@@ -2408,29 +2495,41 @@ function toggleModDropdown(e) {
   const trigger = document.getElementById('mod-trigger');
   const menu    = document.getElementById('mod-menu');
   if (!trigger || !menu) return;
+
+  // Move to body so it escapes #panel's overflow:hidden (Chrome clips
+  // position:fixed inside overflow:hidden flex containers).
+  if (menu.parentElement !== document.body) {
+    document.body.appendChild(menu);
+  }
+
   const isOpen = menu.classList.contains('open');
   if (isOpen) {
     menu.classList.remove('open');
   } else {
-    // Position the fixed menu aligned to the trigger's viewport rect
     const rect = trigger.getBoundingClientRect();
-    const menuMinW = 170;  // wide enough for "trim-whitespace"
+    const menuMinW = 190;  // wide enough for "trim-whitespace"
     menu.style.top      = (rect.bottom + 2) + 'px';
     menu.style.minWidth = Math.max(menuMinW, rect.width) + 'px';
-    menu.style.width    = '';  // clear any previously forced width
-    // Prevent overflow on the right edge of the viewport
+    menu.style.width    = '';
     const leftPos = Math.min(rect.left, window.innerWidth - menuMinW - 8);
     menu.style.left = Math.max(0, leftPos) + 'px';
     menu.classList.add('open');
   }
 }
 document.addEventListener('click', function(e) {
-  const dd = document.getElementById('mod-dropdown');
-  if (dd && !dd.contains(e.target)) {
-    const menu = document.getElementById('mod-menu');
-    if (menu) menu.classList.remove('open');
+  const trigger = document.getElementById('mod-trigger');
+  const menu    = document.getElementById('mod-menu');
+  if (menu && menu.classList.contains('open')) {
+    if ((!trigger || !trigger.contains(e.target)) && !menu.contains(e.target)) {
+      menu.classList.remove('open');
+    }
   }
 });
+// Close the menu if the sidebar scrolls (trigger moves, menu stays fixed otherwise)
+document.getElementById('panel-body') && document.getElementById('panel-body').addEventListener('scroll', function() {
+  const menu = document.getElementById('mod-menu');
+  if (menu) menu.classList.remove('open');
+}, { passive: true });
 
 function onModChange(which) {
   const noneEl  = document.getElementById('mod-none');

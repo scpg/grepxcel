@@ -13,7 +13,7 @@ pip install grepxcel
 
 **Capabilities at a glance:**
 - **Pattern file** — describe any spreadsheet's layout once; reuse it across all matching files with no code changes
-- **Anchor-based** — finds data even when row or column positions shift between files
+- **Anchor-based** — locates data by content, not position, so it keeps working when rows or columns shift between files
 - **LLM drafter** — auto-generate a starter pattern from any file in ~30 seconds (`grepxcel draft file.xlsx`)
 - **Visual wizard** — browser UI: click cells to classify, download the pattern (`grepxcel web-wizard file.xlsx`)
 - **CI-ready** — deterministic, `--strict` exit-2 mode, JSON / CSV / colored-Excel output, Python 3.11–3.15
@@ -66,7 +66,7 @@ grepxcel extract -p pattern.xlsx data.xlsx
 }
 ```
 
-That's it. Same pattern works on next month's invoice, and the one after that.
+That's it. The same pattern works on next month's invoice — as long as the layout stays consistent.
 
 ## Who is this for?
 
@@ -75,9 +75,28 @@ That's it. Same pattern works on next month's invoice, and the one after that.
 - **ETL pipelines** — replace brittle `openpyxl` scripts that break when a column shifts
 - **Research and clinical data** — reject files that deviate from the expected structure before they corrupt your dataset
 
-You don't need to be a programmer to use grepxcel. You do need to be comfortable editing a simple spreadsheet to create your first pattern.
+You don't need to be a programmer to use grepxcel.
+
+**Non-developers:** use the browser-based web wizard (`pip install "grepxcel[web]"` then `grepxcel web-wizard data.xlsx`) — click cells in the browser to classify them, download the pattern, and run the extraction. No coding required after install. See [docs/web-wizard-guide.md](https://github.com/scpg/grepxcel/blob/main/docs/web-wizard-guide.md) for a walkthrough.
 
 ## Install
+
+### Pre-built binaries (no Python required)
+
+Download the latest binary for your platform from the [Releases page](https://github.com/scpg/grepxcel/releases):
+
+| Platform | File |
+|---|---|
+| Linux x64 | `grepxcel-linux-x64` |
+| macOS (Apple Silicon) | `grepxcel-macos-arm64` |
+| Windows x64 | `grepxcel-windows-x64.exe` |
+
+**First run on macOS:** right-click → Open (bypasses Gatekeeper for unsigned binaries).  
+**First run on Windows:** click "More info" → "Run anyway" (SmartScreen warning for unsigned binaries).
+
+> Binaries are currently unsigned. Code signing — which eliminates these warnings — is on the roadmap once the project reaches sustainable community support. If grepxcel saves you time, [consider supporting it](https://buymeacoffee.com/scpg.dev).
+
+### via pip (recommended for Python users)
 
 ```bash
 pip install grepxcel
@@ -95,6 +114,13 @@ That's all you need to extract data. Optional extras add more capabilities:
 | Use grepxcel as an MCP server for AI agents | `pip install 'grepxcel[mcp]'` |
 
 Requires Python **3.11+**. Works on Linux, macOS, and Windows.
+
+**Shell TAB completion** (bash/zsh/fish) is included. Add this once to your shell config to activate it:
+
+```bash
+# bash (~/.bashrc) or zsh (~/.zshrc)
+eval "$(register-python-argcomplete grepxcel)"
+```
 
 <details>
 <summary>Installing from source (for contributors)</summary>
@@ -212,6 +238,11 @@ import grepxcel
 result = grepxcel.extract("pattern.xlsx", "data.xlsx")
 print(result["po"]["number"])        # "PO-2026"
 
+# Flat tables — skip the {"_source": ..., "data": [...]} envelope
+result = grepxcel.extract("pattern.xlsx", "data.xlsx", flat_tables=True)
+for row in result["line"]:          # each row dict directly, no unwrapping
+    print(row["item"])
+
 # Get DataFrames (pip install 'grepxcel[pandas]' or 'grepxcel[polars]')
 frames = grepxcel.extract_df("pattern.xlsx", "data.xlsx")
 frames["line"]                       # pandas or polars DataFrame of all table rows
@@ -238,6 +269,11 @@ Fields with dot notation are grouped into nested objects. Tables produce arrays.
 }
 ```
 
+Each table instance is wrapped with `{"data": [...], "footer": {...}}` so per-instance
+metadata (source location, header/footer subtotals) survives. If you just want the rows,
+use `--no-source` on the CLI or `flat_tables=True` in the Python API — the wrapper is
+removed and each table key maps directly to a list of row dicts.
+
 ## What's new in v0.3.0
 
 - **Browser-based wizard** — `grepxcel web-wizard file.xlsx` opens a point-and-click UI to classify cells visually
@@ -250,7 +286,10 @@ Full history: [CHANGELOG.md](https://github.com/scpg/grepxcel/blob/main/CHANGELO
 
 | Topic | Where to look |
 |---|---|
+| **Web wizard guide** (mouse-driven UI, non-developers) | [docs/web-wizard-guide.md](https://github.com/scpg/grepxcel/blob/main/docs/web-wizard-guide.md) |
 | Pattern file reference (all instructions, types, config) | [docs/pattern-file.md](https://github.com/scpg/grepxcel/blob/main/docs/pattern-file.md) |
+| Advanced patterns: bounded rows `DATA:{n,m}`, `SKIP_IF` | [docs/pattern-file.md#bounded-and-sparse-rows](https://github.com/scpg/grepxcel/blob/main/docs/pattern-file.md) |
+| Merged cells — how grepxcel handles them | [docs/pattern-file.md#merged-cells](https://github.com/scpg/grepxcel/blob/main/docs/pattern-file.md#merged-cells) |
 | Engineering philosophy and design principles | [docs/MINDSET.md](https://github.com/scpg/grepxcel/blob/main/docs/MINDSET.md) |
 | Draft command evaluation (model quality, benchmarks) | [docs/EVALUATION.md](https://github.com/scpg/grepxcel/blob/main/docs/EVALUATION.md) |
 | CLI flags and options (full reference) | [docs/cli-reference.md](https://github.com/scpg/grepxcel/blob/main/docs/cli-reference.md) |
