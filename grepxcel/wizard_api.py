@@ -25,8 +25,8 @@ import openpyxl
 from openpyxl.utils import get_column_letter
 
 # ── Reuse existing pure functions ─────────────────────────────────────────────
-from grepxcel.wizard import WizardState
-from grepxcel.wizard_tui import (
+from grepxcel.wizard_core import (
+    WizardState,
     _build_state_from_choices,
     _build_cell_order,
     _choices_to_csv,
