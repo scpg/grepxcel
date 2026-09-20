@@ -79,12 +79,30 @@ class TestGenerateExamples:
             wb = openpyxl.load_workbook(d / 'pattern.xlsx')
             assert wb.sheetnames
 
-    def test_refuses_existing_directory(self, tmp_path):
+    def test_overwrites_existing_directory(self, tmp_path):
+        """generate_examples() no longer guards; it overwrites freely."""
         out = tmp_path / 'examples'
         out.mkdir()
         (out / 'somefile.txt').write_text('block')
-        with pytest.raises(SystemExit):
-            generate_examples(str(out))
+        generate_examples(str(out))  # must not raise
+        assert any(out.iterdir())
+
+    def test_cli_refuses_existing_directory_without_force(self, tmp_path):
+        out = tmp_path / 'examples'
+        out.mkdir()
+        (out / 'somefile.txt').write_text('block')
+        with pytest.raises(SystemExit) as exc_info:
+            cli_main(['generate-examples', '-o', str(out)])
+        assert exc_info.value.code != 0
+
+    def test_cli_force_overwrites_existing_directory(self, tmp_path):
+        out = tmp_path / 'examples'
+        out.mkdir()
+        (out / 'somefile.txt').write_text('block')
+        with pytest.raises(SystemExit) as exc_info:
+            cli_main(['generate-examples', '-o', str(out), '--force'])
+        assert exc_info.value.code == 0
+        assert (out / '01_simple_invoice').is_dir()
 
     def test_returns_output_path(self, tmp_path):
         out = tmp_path / 'examples'

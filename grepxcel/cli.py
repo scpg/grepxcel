@@ -315,6 +315,11 @@ examples:
         default='grepxcel-examples',
         help='Directory to create (default: ./grepxcel-examples/)',
     )
+    p.add_argument(
+        '--force',
+        action='store_true',
+        help='Overwrite an existing non-empty directory without prompting',
+    )
 
 
 def _add_sbom_subparser(sub) -> None:
@@ -1196,12 +1201,19 @@ def _run_skill(args) -> int:
 
 
 def _run_examples(args) -> int:
+    output_dir = args.output
+    if os.path.isdir(output_dir) and os.listdir(output_dir):
+        if not getattr(args, 'force', False):
+            print(
+                f'Error: the following output directory already exists and is not empty:\n'
+                f'  {output_dir}\n'
+                f'Use --force to overwrite.',
+                file=sys.stderr,
+            )
+            return 1
     from .examples_generator import generate_examples
-    try:
-        generate_examples(args.output)
-        return 0
-    except SystemExit as e:
-        return e.code if isinstance(e.code, int) else 1
+    generate_examples(output_dir)
+    return 0
 
 
 def _run_mcp(args) -> int:

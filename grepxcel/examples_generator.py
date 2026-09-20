@@ -140,17 +140,8 @@ def generate_examples(output_dir: str) -> str:
     Each example gets its own subdirectory with pattern.xlsx, data.xlsx,
     and a README.txt showing the exact extract command to run.
 
-    Raises SystemExit if *output_dir* already exists and is non-empty.
     Returns the output directory path.
     """
-    if os.path.isdir(output_dir) and os.listdir(output_dir):
-        print(
-            f"Error: directory '{output_dir}' already exists and is not empty.\n"
-            f"Remove it first or choose a different path with -o.",
-            file=sys.stderr,
-        )
-        raise SystemExit(1)
-
     os.makedirs(output_dir, exist_ok=True)
     print(f"Creating examples in: {output_dir}\n", file=sys.stderr)
 
