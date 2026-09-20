@@ -4,7 +4,7 @@ import sys
 
 
 def _color(text: str, code: str) -> str:
-    if not sys.stderr.isatty():
+    if not sys.stdout.isatty():
         return text
     return f'\033[{code}m{text}\033[0m'
 

@@ -33,6 +33,7 @@ Output (default — human-readable):
 
 from __future__ import annotations
 
+import io
 import json
 import os
 from dataclasses import dataclass, field
@@ -172,7 +173,7 @@ def run_tests(
     file_results: list[FileResult] = []
 
     for path in files:
-        logger = Logger(level=VerbosityLevel.QUIET)
+        logger = Logger(level=VerbosityLevel.QUIET, out=io.StringIO())
         engine = Engine()
         issues: list[str] = []
 

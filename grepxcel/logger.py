@@ -197,6 +197,7 @@ class Logger:
         log_format: str = 'text',
         source: Optional[str] = None,
         run_id: Optional[str] = None,
+        out=None,
     ):
         self.level = level
         self.sheet_name = sheet_name
@@ -224,8 +225,11 @@ class Logger:
             # Append (never truncate) — the --log file is documented as appended,
             # and a user pointing it at an existing file should not lose its data.
             self._file = open(log_file, 'a', encoding='utf-8')
-        # Colour the console copy only when stderr is an interactive terminal.
-        self._color = should_color(sys.stderr)
+        # out controls where console text goes; default is stderr so that
+        # grepxcel extract leaves stdout clean for JSON output.  Callers that
+        # want all output on a different stream (e.g. pattern_tester) pass out=.
+        self._out = out if out is not None else sys.stderr
+        self._color = should_color(self._out)
 
     def _record_event_dict(self, rec: LogRecord) -> dict:
         """Build the raw event dict from a LogRecord.
@@ -841,7 +845,7 @@ class Logger:
 
     def _write(self, min_level: VerbosityLevel, text: str):
         if self.level >= min_level:
-            print(colorize_marks(text, self._color), file=sys.stderr)
+            print(colorize_marks(text, self._color), file=self._out)
         # In text mode the file mirrors the console. In json mode the file is
         # NDJSON written per-record by _store(), so skip the human text here.
         if self._file and self._log_format == 'text':
