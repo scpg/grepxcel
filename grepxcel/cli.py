@@ -762,6 +762,7 @@ def _add_docs_subparser(sub) -> None:
 examples:
   grepxcel docs
   grepxcel docs -o reference/
+  grepxcel docs -o reference/ -v   # show created directories
         """,
     )
     p.add_argument(
@@ -774,6 +775,11 @@ examples:
         '--force',
         action='store_true',
         help='Overwrite existing output files without prompting',
+    )
+    p.add_argument(
+        '-v', '--verbose',
+        action='store_true',
+        help='Show created directories',
     )
 
 
@@ -1186,10 +1192,14 @@ def _output_stem(data_file: str, all_files: list[str]) -> str:
 
 def _run_docs(args) -> int:
     from .docs_generator import DocsGenerator
+    verbose = getattr(args, 'verbose', False)
     xlsx_path = os.path.join(args.output, 'pattern-reference.xlsx')
     docx_path = os.path.join(args.output, 'grepxcel-guide.docx')
     _refuse_overwrite([xlsx_path, docx_path], getattr(args, 'force', False))
+    dir_existed = os.path.isdir(args.output)
     paths = DocsGenerator().write(args.output)
+    if verbose and not dir_existed:
+        print(f'Created: {os.path.abspath(args.output)}', file=sys.stderr)
     for path in paths:
         print(f'Written: {path}', file=sys.stderr)
     return 0
