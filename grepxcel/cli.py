@@ -129,7 +129,7 @@ def _commands_help() -> str:
         f"{_sec('compliance & ops:')}\n"
         "  sbom               Generate a CycloneDX 1.6 SBOM for this installation\n"
         "  doctor             Check the environment is ready (deps, API keys, model)\n"
-        "  self-test          Verify the installation with built-in examples\n"
+        "  self-test          Post-install check: parse and extract the 4 bundled examples\n"
         "\n"
         "Run 'grepxcel <command> --help' for per-command options.\n"
         "Run 'grepxcel -h -h' for a synopsis of every command's options."
@@ -400,9 +400,15 @@ examples:
 def _add_self_test_subparser(sub) -> None:
     p = sub.add_parser(
         'self-test',
-        help='Verify the installation with built-in examples (no external files needed)',
+        help='Post-install check: parse and extract the 4 bundled examples via the Python API',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
+Runs 8 checks (validate + extract for each bundled example) using only
+the installed package — no external files, no network, no pytest needed.
+
+For a full CLI and integration check, see the CI smoke test suite
+(tests/smoke/) which runs automatically after every publish.
+
 examples:
   grepxcel self-test        # run all checks, exit 0 on pass
   grepxcel self-test -v     # show full traceback on failure
