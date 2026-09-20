@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] — 2026-09-15
+
+### Changed
+
+- **PyPI listing overhaul** — improved short description, added PyPI/Python/license/downloads
+  badges, added "Capabilities at a glance" feature bullet list for faster scanning by humans
+  and AI agents, added "What's new in v0.3.0" section with CHANGELOG link
+- **Reduced dead whitespace** — removed 10 of 11 `---` horizontal-rule dividers from
+  README (each rendered as ~70 px of blank space on PyPI)
+- **Metadata** — upgraded `Development Status` classifier from `4 - Beta` to
+  `5 - Production/Stable`; added Python 3.15 classifier; added `Environment :: Console`,
+  `Intended Audience :: Science/Research`, `Topic :: Scientific/Engineering :: Information
+  Analysis`, `Topic :: Utilities`, `Typing :: Typed` classifiers; expanded keywords with
+  `automation`, `invoice`, `structured-data`, `data-pipeline`, `mcp`, `ai-agent`, and others
+
+## [0.3.0] — 2026-09-15
+
 ### Features
 
 - **Shell TAB completion** — `grepxcel` now completes subcommands and flags in
