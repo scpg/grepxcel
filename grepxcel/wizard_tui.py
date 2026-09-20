@@ -220,9 +220,9 @@ def _build_state_from_choices(
             _t_groups.setdefault(_k, []).append(_ref2)
 
     seen_t_anchors: set[str] = set()
-    prev_lbl = False      # True when the immediately preceding emitted cell was L or C
-    prev_lbl_row: int | None = None   # row of the last emitted L/C cell
-    prev_lbl_col: int | None = None   # col of the last emitted L/C cell
+    prev_lbl = False      # True when the immediately preceding emitted cell was L
+    prev_lbl_row: int | None = None   # row of the last emitted L cell
+    prev_lbl_col: int | None = None   # col of the last emitted L cell
     for r, c in cells:
         ref  = _cell_ref(r, c)
         meta = choices.get(ref)
@@ -231,7 +231,7 @@ def _build_state_from_choices(
         choice = meta.get('choice', '')
         value  = ws.cell(row=r, column=c).value
         name   = meta.get('name', '')
-        if choice == 'L':
+        if choice in ('L', 'C'):  # 'C' is a legacy alias (removed from UI)
             state.lbl_defs.append((name,
                                    meta.get('ltype', 'string'),
                                    meta.get('lmatch', str(value) if value is not None else ''),
@@ -239,14 +239,6 @@ def _build_state_from_choices(
             # Always emit an absolute cell reference for label cells so the engine
             # jumps directly to the right cell regardless of the previous cursor
             # position (critical when labels follow sequences of absolute-ref vars).
-            state.body_rows.append([f'cell:{_gcl(c)}{r}', name])
-            prev_lbl = True
-            prev_lbl_row, prev_lbl_col = r, c
-        elif choice == 'C':
-            state.lbl_defs.append((name,
-                                   meta.get('ltype', 'string'),
-                                   meta.get('lmatch', str(value) if value is not None else ''),
-                                   meta.get('lbl_mode', '')))
             state.body_rows.append([f'cell:{_gcl(c)}{r}', name])
             prev_lbl = True
             prev_lbl_row, prev_lbl_col = r, c
@@ -730,6 +722,9 @@ def _preload_table(
     last_h_row = header_row_num + len(h_rows_sheet) - 1
 
     # ── Find data rows (scan until fully-empty row or max 200 rows) ───────────
+    _ser = [row for row in instr.rows if row.row_type == 'SKIP_EMPTY_ROW']
+    _max_skip_empty = sum(int(row.multiplicity) for row in _ser)
+    _consecutive_empty = 0
     d_rows_sheet: list[int] = []
     for r in range(last_h_row + 1, min(last_h_row + 201, max_row + 1)):
         has_data = any(
@@ -738,7 +733,10 @@ def _preload_table(
             if start_col + ci <= max_col
         )
         if has_data:
+            _consecutive_empty = 0
             d_rows_sheet.append(r)
+        elif _consecutive_empty < _max_skip_empty:
+            _consecutive_empty += 1  # SKIP_EMPTY_ROW budget — cross this empty row
         else:
             break  # Empty row signals end of table data
 
@@ -1975,7 +1973,7 @@ if _TEXTUAL_OK:
 
 [bold cyan]LEGEND[/bold cyan]
 
-  [bold green]●[/bold green] Label (L)   [bold bright_yellow]●[/bold bright_yellow] Value (V)   [bold blue]●[/bold blue] Header (C)
+  [bold green]●[/bold green] Label (L)   [bold bright_yellow]●[/bold bright_yellow] Value (V)
   [bold magenta]●[/bold magenta] Table (T)   [dim]○[/dim] Ignore (I)  white = not yet classified\
 """
 
@@ -2392,7 +2390,6 @@ if _TEXTUAL_OK:
         BINDINGS = [
             # Classify (shown in footer)
             Binding('l', 'act_L',  'Label',       show=True),
-            Binding('c', 'act_C',  'Header',       show=True),
             Binding('v', 'act_V',  'Value',        show=True),
             Binding('t', 'act_T',  'Table',        show=True),
             Binding('i', 'act_I',  'Ignore',       show=True),
@@ -2877,7 +2874,6 @@ if _TEXTUAL_OK:
                 f'[bold cyan]─ Legend {"─" * 39}[/bold cyan]',
                 '  [bold green]●[/bold green] green   = Label (L)',
                 '  [bold bright_yellow]●[/bold bright_yellow] yellow  = Value (V)',
-                '  [bold blue]●[/bold blue] blue    = Header (C)',
                 '  [bold magenta]●[/bold magenta] magenta = Table (T)',
                 '  [dim]○[/dim] grey    = Ignore (I)',
                 '',
@@ -3528,35 +3524,6 @@ if _TEXTUAL_OK:
                      ('Match  (exact text · F4 cycles presets)',
                       existing_meta.get('lmatch', default_match), None, _MATCH_PRESETS),
                      ('Notes  (written to session log — optional)', existing_note)],
-                ),
-                _done,
-            )
-
-        async def action_act_C(self) -> None:
-            value = self._ws.cell(row=self._ws_row, column=self._ws_col).value
-            ref   = _cell_ref(self._ws_row, self._ws_col)
-            slug  = _slugify(str(value)) if value is not None else 'header'
-
-            def _done(result: list[str] | None) -> None:
-                self._clear_highlights()
-                if result is None:
-                    self._log('HEADER-X', f'{ref}  cancelled')
-                    return
-                name = result[0]
-                old  = self._choices.get(ref, {}).get('choice')
-                self._push_undo(ref)
-                self._last_label_base = None
-                self._commit(ref, {'choice': 'C', 'name': name})
-                reclassify = f'  (was {old})' if old else ''
-                rawval = '' if value is None else f'  "{str(value)[:30]}"'
-                self._log('HEADER', f'{ref}{rawval}  →  {name}{reclassify}')
-                self._refresh_panel()
-                self._advance()
-
-            self.push_screen(
-                _FieldsModal(
-                    '[bold blue]Header[/bold blue] — section title, no value follows',
-                    [('Header name', slug)],
                 ),
                 _done,
             )

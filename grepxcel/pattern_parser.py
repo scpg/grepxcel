@@ -18,7 +18,9 @@ _BOUNDED_DATA_RE = re.compile(r'^\{(\d+),(\d+)\}$')
 _POSINT_RE = re.compile(r'^[1-9][0-9]*$')
 
 # Recognised template-row keywords inside a table: block.
-_VALID_TABLE_ROW_TYPES = frozenset({'HEADER', 'DATA', 'FOOTER', 'SPLITTER', 'SKIP_IF'})
+_VALID_TABLE_ROW_TYPES = frozenset({
+    'HEADER', 'DATA', 'FOOTER', 'SPLITTER', 'SKIP_IF', 'SKIP_EMPTY_ROW',
+})
 
 # Pattern-format/semantics version ("compatibility generation"). A single
 # monotonic integer that bumps ONLY on a backward-incompatible change; additive
@@ -461,7 +463,7 @@ class PatternParser:
                                     f"pattern row {i + 1}. Use 'DATA:*', 'DATA:1', or "
                                     f"a bounded 'DATA:{{n,m}}'."
                                 )
-                        elif row_type in ('HEADER', 'FOOTER', 'SPLITTER'):
+                        elif row_type in ('HEADER', 'FOOTER', 'SPLITTER', 'SKIP_EMPTY_ROW'):
                             if not _POSINT_RE.match(row_mult):
                                 raise PatternError(
                                     f"Invalid {row_type} multiplicity "
@@ -525,6 +527,12 @@ class PatternParser:
                         raise PatternError(
                             'SKIP_IF requires DATA:{n,m} or DATA:*. '
                             'SKIP_IF has no effect with DATA:1.'
+                        )
+                    skip_empty_rows = [r for r in template_rows if r.row_type == 'SKIP_EMPTY_ROW']
+                    if skip_empty_rows and has_one:
+                        raise PatternError(
+                            'SKIP_EMPTY_ROW requires DATA:{n,m} or DATA:*. '
+                            'SKIP_EMPTY_ROW has no effect with DATA:1.'
                         )
 
                 # Structural rules for a table block:

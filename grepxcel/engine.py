@@ -954,10 +954,13 @@ class Engine:
         data_tmpl = data_rows[0] if data_rows else None
         footer_tmpl_first = footer_rows[0] if footer_rows else None
         skip_if_rows = [r for r in instr.rows if r.row_type == 'SKIP_IF']
+        _ser = [r for r in instr.rows if r.row_type == 'SKIP_EMPTY_ROW']
+        max_skip_empty = sum(int(r.multiplicity) for r in _ser)
 
         if data_tmpl:
             is_bounded    = data_tmpl.max_rows is not None
             total_scanned = 0  # physical rows seen (skipped + real), for {n,m} bounds
+            consecutive_empty = 0
 
             while True:
                 # Hard ceiling for bounded DATA
@@ -965,10 +968,17 @@ class Engine:
                     break
 
                 if self._row_is_end_of_data(current_row, anchor_col, data_tmpl, config, scanner):
+                    if consecutive_empty < max_skip_empty:
+                        # SKIP_EMPTY_ROW budget — cross this empty separator row
+                        consecutive_empty += 1
+                        current_row += 1
+                        continue
                     logger.footer_detected(current_row, anchor_col,
                                            scanner.cell_value(current_row, anchor_col))
                     current_row += 1
                     break
+
+                consecutive_empty = 0
 
                 if footer_tmpl_first and self._row_matches_footer(
                     current_row, anchor_col, footer_tmpl_first, defs, config, scanner

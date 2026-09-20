@@ -186,8 +186,8 @@ class TestClassifyEndpoint:
     def test_classify_constant(self, tmp_path):
         client = _make_client(tmp_path)
         r = client.post('/api/classify', json={
-            'ref': 'C1', 'action': 'C',
-            'fields': {'name': 'date_header'},
+            'ref': 'C1', 'action': 'L',
+            'fields': {'name': 'date_label', 'type': 'string', 'match': 'Date', 'match_mode': '(default)', 'notes': ''},
         })
         assert r.status_code == 200
         assert r.json()['ok'] is True
@@ -1814,9 +1814,10 @@ class TestClassifyBatch:
     def test_classify_batch_updates_stats(self, tmp_path):
         """Stats in the response reflect the new classification count."""
         client = _make_client(tmp_path)
-        r = client.post('/api/classify-batch', json={'refs': ['A1', 'B1', 'A2'], 'action': 'C'})
+        r = client.post('/api/classify-batch', json={'refs': ['A1', 'B1', 'A2'], 'action': 'L'})
+        assert r.status_code == 200
         data = r.json()
-        assert data['stats']['classified'] >= 3
+        assert data['n_classified'] >= 3
 
     def test_classify_batch_invalid_action(self, tmp_path):
         """T action in batch is rejected with 422."""

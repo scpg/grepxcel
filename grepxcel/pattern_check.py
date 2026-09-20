@@ -169,6 +169,22 @@ def check_pattern(path: str) -> CheckResult:
                         f"match case-insensitively."
                     )
 
+    # ── SKIP_IF with all-EMPTY/IGNORE columns ────────────────────────────────
+    for instr in sequence:
+        if not isinstance(instr, TableInstruction):
+            continue
+        for trow in instr.rows:
+            if trow.row_type != 'SKIP_IF':
+                continue
+            non_anchor = [c.field for c in trow.columns
+                          if c.field not in ('EMPTY', 'IGNORE', '')]
+            if not non_anchor:
+                result.warnings.append(
+                    "A SKIP_IF row has no anchor fields (all columns are EMPTY or IGNORE). "
+                    "This condition matches every row, including empty separator rows. "
+                    "To allow empty rows within table data use SKIP_EMPTY_ROW:N instead."
+                )
+
     result.valid = not result.errors
     return result
 

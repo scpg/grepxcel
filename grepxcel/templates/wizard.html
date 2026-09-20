@@ -17,7 +17,6 @@
   --accent-dim:  #cfe2ff;
   --L:  #d1f2eb; --L-dark: #198754; --L-sel: #a3e4d7;
   --V:  #fef9c3; --V-dark: #b45309; --V-sel: #fde68a;
-  --C:  #dbeafe; --C-dark: #1d4ed8; --C-sel: #bfdbfe;
   --T:  #ede9fe; --T-dark: #7c3aed; --T-sel: #ddd6fe;
   --I:  #f1f3f5; --I-dark: #868e96; --I-sel: #dee2e6;
   --sel: #fff3cd; --sel-border: #ffc107;
@@ -38,7 +37,6 @@
   --accent-dim: #1a3a5c;
   --L:  #0d3321; --L-dark: #40c878; --L-sel: #0a4226;
   --V:  #3d2e00; --V-dark: #fbbf24; --V-sel: #523d00;
-  --C:  #0c1e40; --C-dark: #60a5fa; --C-sel: #0f2852;
   --T:  #2a1d4a; --T-dark: #a78bfa; --T-sel: #38276a;
   --I:  #2a2b2e; --I-dark: #909296; --I-sel: #373a40;
   --sel: #4a3800; --sel-border: #ffd43b;
@@ -153,7 +151,6 @@ td.gx-cell.selected {
 /* Classification colours */
 td.gx-L { background: var(--L); }
 td.gx-V { background: var(--V); }
-td.gx-C { background: var(--C); }
 td.gx-T { background: var(--T); }
 td.gx-I { background: var(--I); color: var(--text-muted); }
 /* T-HEAD = table column header  |  T-DATA = table data row (both from preload) */
@@ -367,7 +364,6 @@ td.gx-cell[data-field]:not([data-field=""]):hover::before {
 .cbtn.active { border-color: var(--text); }
 .cbtn-L { background: var(--L); color: var(--L-dark); }
 .cbtn-V { background: var(--V); color: var(--V-dark); }
-.cbtn-C { background: var(--C); color: var(--C-dark); }
 .cbtn-T { background: var(--T); color: var(--T-dark); }
 .cbtn-I { background: var(--I); color: var(--I-dark); }
 .cbtn-CLR { background: var(--bg); color: var(--text-muted); border: 1px solid var(--border); }
@@ -395,7 +391,6 @@ td.gx-cell[data-field]:not([data-field=""]):hover::before {
 .sb-chip .sb-n { font-size: 14px; }
 .sb-L { background: var(--L); color: var(--L-dark); }
 .sb-V { background: var(--V); color: var(--V-dark); }
-.sb-C { background: var(--C); color: var(--C-dark); }
 .sb-T { background: var(--T); color: var(--T-dark); }
 .sb-I { background: var(--I); color: var(--I-dark); }
 .sb-U {
@@ -738,13 +733,23 @@ td.gx-T-bottom { border-bottom: 2px solid rgba(124,58,237,0.5) !important; }
           <div>Click any cell in the grid<br>to select and classify it</div>
         </div>
         <div id="classify-form" style="display:none">
-          <div class="classify-btns">
+          <div class="classify-btns" id="classify-btns">
             <button class="cbtn cbtn-L" onclick="selectAction('L')">🏷 Label (L)</button>
             <button class="cbtn cbtn-V" onclick="selectAction('V')">📦 Value (V)</button>
-            <button class="cbtn cbtn-C" onclick="selectAction('C')">📋 Header (C)</button>
             <button class="cbtn cbtn-T" onclick="selectAction('T')">📊 Table (T)</button>
             <button class="cbtn cbtn-I" onclick="selectAction('I')">🚫 Ignore (I)</button>
             <button class="cbtn cbtn-CLR" onclick="clearCell()">✕ Clear</button>
+          </div>
+
+          <!-- Table-cell operations panel (replaces classify-btns when inside a table) -->
+          <div id="table-ops" style="display:none">
+            <p style="font-size:12px;color:var(--text-muted);margin:0 0 10px">
+              This cell is part of a Mini Table. Individual cell classification is not available inside a table range.
+            </p>
+            <button type="button" class="btn btn-primary" style="width:100%;margin-bottom:8px"
+                    onclick="openTableModal()">✏️ Edit Mini-Table…</button>
+            <button type="button" class="btn" style="width:100%;color:var(--error,#c0392b)"
+                    onclick="removeTable()">🗑 Remove Mini-Table</button>
           </div>
 
           <!-- Dynamic fields depending on action -->
@@ -832,12 +837,6 @@ td.gx-T-bottom { border-bottom: 2px solid rgba(124,58,237,0.5) !important; }
               </div></div>
             <div class="form-group"><label>Note <span style="font-weight:400;text-transform:none">(optional)</span></label>
               <textarea id="f-V-notes" rows="2" placeholder="Internal note…"></textarea></div>
-          </div>
-
-          <div id="fields-C" class="action-fields" style="display:none">
-            <div class="form-section-title">Header fields</div>
-            <div class="form-group"><label>Header name</label>
-              <input id="f-C-name" type="text" placeholder="e.g. line_items"></div>
           </div>
 
           <div id="fields-T" class="action-fields" style="display:none">
@@ -1065,7 +1064,6 @@ td.gx-T-bottom { border-bottom: 2px solid rgba(124,58,237,0.5) !important; }
 <div id="stats-bar">
   <span class="sb-chip sb-L" title="Label cells — identify a nearby value"><span class="sb-n" id="sb-L">0</span> Labels</span>
   <span class="sb-chip sb-V" title="Variable cells — fields to extract"><span class="sb-n" id="sb-V">0</span> Variables</span>
-  <span class="sb-chip sb-C" title="Header cells — section titles"><span class="sb-n" id="sb-C">0</span> Headers</span>
   <span class="sb-chip sb-T" id="sb-T-chip"
         title="Mini Table anchors · col-headers (T-HEAD) · data rows (T-DATA)">
     <span class="sb-n" id="sb-T">0</span> Mini Tables<span id="sb-T-detail" style="font-weight:400;opacity:0.75"></span>
@@ -1436,8 +1434,48 @@ async function selectCell(ref) {
   setStatus(`Selected ${ref}` + (info.choice ? ` — currently ${info.choice}` : ''));
 }
 
+function _enterTableMode(anchorRef, clickedRef) {
+  // Switch panel to table-ops: hide classify buttons, show Edit/Remove
+  document.getElementById('classify-btns').style.display = 'none';
+  document.getElementById('table-ops').style.display = 'block';
+  document.querySelectorAll('.action-fields').forEach(d => d.style.display = 'none');
+  document.getElementById('apply-row').style.display = 'none';
+
+  // Move selection highlight to the anchor
+  if (clickedRef && clickedRef !== anchorRef) {
+    const clickedTd = document.querySelector(`td[data-ref="${clickedRef}"]`);
+    if (clickedTd) clickedTd.classList.remove('selected');
+    const anchorTd = document.querySelector(`td[data-ref="${anchorRef}"]`);
+    if (anchorTd) anchorTd.classList.add('selected');
+  }
+  selectedAction = 'T';
+  selectedRef    = anchorRef;
+}
+
+function _exitTableMode() {
+  document.getElementById('classify-btns').style.display = '';
+  document.getElementById('table-ops').style.display = 'none';
+}
+
 function prefillForm(info) {
   const ch = info.choice || '';
+
+  // Table cells get a restricted panel — no classify buttons
+  if (ch === 'T' || ch === 'T-HEAD' || ch === 'T-DATA') {
+    const anchorRef = (ch === 'T') ? (info.ref || selectedRef) : (info.anchor || '');
+    if (!anchorRef) { _exitTableMode(); return; }
+
+    _enterTableMode(anchorRef, info.ref || selectedRef);
+
+    document.getElementById('ph-val').textContent =
+      ch === 'T' ? `Mini Table anchor` : `[${ch}] part of table at ${anchorRef}`;
+
+    return;
+  }
+
+  // Normal (non-table) cell — restore classify buttons
+  _exitTableMode();
+
   // Reset all action buttons
   document.querySelectorAll('.cbtn').forEach(b => b.classList.remove('active'));
   if (ch && ch !== 'CLEAR') {
@@ -1468,68 +1506,30 @@ function prefillForm(info) {
     setVal('f-V-match', info.match || '.*');
     setVal('f-V-modifiers', info.modifiers || 'none');
     setVal('f-V-notes', info.note || '');
-  } else if (ch === 'C') {
-    setVal('f-C-name', info.name || '');
-  } else if (ch === 'T') {
-    setVal('f-T-name', info.name || '');
-    setVal('f-T-mult', info.mult || '*');
-    // Load end_ref and row_config status from table-context
-    fetch(`/api/table-context/${info.ref}`)
-      .then(r => r.json())
-      .then(ctx => {
-        // Prefer stored end_ref; fall back to visible T-HEAD/T-DATA scan
-        if (ctx.end_ref && ctx.end_ref !== info.ref) {
-          setVal('f-T-end_ref', ctx.end_ref);
-        } else {
-          const inferred = _inferTableEndRef(info.ref);
-          if (inferred) setVal('f-T-end_ref', inferred);
-        }
-        _tUpdateRowConfigStatus(ctx);
-        _tLoadColumnsFromContext(ctx);
-      })
-      .catch(() => _tScanColumns(info.ref, []));
-  } else if (ch === 'T-HEAD' || ch === 'T-DATA') {
-    // These are part of a table entity — open the anchor's table editor instead
-    const anchorRef = info.anchor || '';
-    if (anchorRef) {
-      // Move the .selected highlight from the clicked cell to the anchor cell.
-      // selectCell() already added .selected to `ref`; we must remove it and
-      // point it at the anchor so subsequent clicks deselect the right cell.
-      const clickedTd = document.querySelector(`td[data-ref="${ref}"]`);
-      if (clickedTd) clickedTd.classList.remove('selected');
-      const anchorTd = document.querySelector(`td[data-ref="${anchorRef}"]`);
-      if (anchorTd) anchorTd.classList.add('selected');
-
-      // Highlight that we're editing the whole table via the anchor
-      document.getElementById('ph-val').textContent =
-        `[${ch}] part of table at ${anchorRef}`;
-      selectedAction = 'T';
-      selectedRef    = anchorRef;   // switch to anchor so modal uses correct ref
-      showFields('T');
-      // Activate the T button
-      document.querySelectorAll('.cbtn').forEach(b => b.classList.remove('active'));
-      const btn = document.querySelector('.cbtn-T');
-      if (btn) btn.classList.add('active');
-      // Load anchor config and auto-infer end_ref if missing
-      fetch(`/api/table-context/${anchorRef}`)
-        .then(r => r.json())
-        .then(ctx => {
-          setVal('f-T-name', ctx.name || '');
-          setVal('f-T-mult', ctx.mult || '*');
-          // Prefer stored end_ref; fall back to scanning visible T-HEAD/T-DATA cells
-          if (ctx.end_ref && ctx.end_ref !== anchorRef) {
-            setVal('f-T-end_ref', ctx.end_ref);
-          } else {
-            const inferred = _inferTableEndRef(anchorRef);
-            if (inferred) setVal('f-T-end_ref', inferred);
-          }
-          _tUpdateRowConfigStatus(ctx);
-          _tLoadColumnsFromContext(ctx);
-        })
-        .catch(() => {});
-      return;  // skip the normal showFields call below
-    }
   }
+}
+
+async function _clearRefs(anchorRef) {
+  // Send CLEAR to the backend; response includes all cascaded refs
+  const data = await classify(anchorRef, 'CLEAR', {});
+  const cleared = (data && data.cleared) ? data.cleared : [anchorRef];
+  // Wipe cellData cache and refresh grid for every cleared cell
+  for (const r of cleared) {
+    const cached = cellData[r] || {};
+    cached.choice = ''; cached.name = ''; cached.anchor = '';
+    cellData[r] = cached;
+    refreshCell(r);
+  }
+  await loadStats();
+  return cleared;
+}
+
+async function removeTable() {
+  if (!selectedRef) return;
+  await _clearRefs(selectedRef);
+  _exitTableMode();
+  prefillForm({});
+  toast('Mini-Table removed');
 }
 
 function selectAction(action) {
@@ -1560,8 +1560,6 @@ function selectAction(action) {
     setVal('f-V-match', info.match || '.*');
     setVal('f-V-modifiers', 'none');
     setVal('f-V-notes', info.note || '');
-  } else if (action === 'C') {
-    setVal('f-C-name', info.name || slugify(info.raw || 'header'));
   } else if (action === 'T') {
     const defaultName = info.name || (slugify(info.raw || 'table') + '_table');
     setVal('f-T-name', defaultName);
@@ -1616,12 +1614,9 @@ function cancelClassification() {
 
 async function clearCell() {
   if (!selectedRef) return;
-  await classify(selectedRef, 'CLEAR', {});
-  const info = cellData[selectedRef] || {};
-  info.choice = ''; info.name = '';
-  refreshCell(selectedRef);
+  const cleared = await _clearRefs(selectedRef);
   prefillForm({});
-  toast('Cleared ' + selectedRef);
+  toast(`Cleared ${cleared.length > 1 ? cleared.length + ' cells' : selectedRef}`);
 }
 
 async function applyClassification() {
@@ -1650,7 +1645,6 @@ function gatherFields(action) {
   const g = id => (document.getElementById(id) || {}).value || '';
   if (action === 'L') return { name: g('f-L-name'), type: g('f-L-type'), match_mode: g('f-L-match_mode'), match: g('f-L-match'), notes: g('f-L-notes') };
   if (action === 'V') return { name: g('f-V-name'), type: g('f-V-type'), match_mode: g('f-V-match_mode'), match: g('f-V-match'), modifiers: g('f-V-modifiers'), notes: g('f-V-notes') };
-  if (action === 'C') return { name: g('f-C-name') };
   if (action === 'T') {
     const mult   = g('f-T-mult') || '*';
     const endRef = (g('f-T-end_ref') || '').toUpperCase().trim();
@@ -1714,7 +1708,6 @@ function renderStats(stats) {
   const setText = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
   setText('sb-L', stats.L || 0);
   setText('sb-V', stats.V || 0);
-  setText('sb-C', stats.C || 0);
   setText('sb-T', stats.T || 0);
   setText('sb-I', stats.I || 0);
   setText('sb-U', unclassified);
@@ -2296,7 +2289,7 @@ function loadKeyboardShortcuts() {
     const k = e.key.toUpperCase();
 
     // ── Classification keys: apply to range if one is active ──────────────
-    if (['L','V','C','I'].includes(k) || k === 'DELETE' || k === 'BACKSPACE') {
+    if (['L','V','I'].includes(k) || k === 'DELETE' || k === 'BACKSPACE') {
       const batchAction = k === 'DELETE' || k === 'BACKSPACE' ? 'CLEAR' : k;
       if (_rangeAnchor && _rangeEnd) {
         e.preventDefault();
@@ -2305,9 +2298,16 @@ function loadKeyboardShortcuts() {
       }
     }
 
+    // Block L/V/I/T keys when the selected cell is inside a table range
+    const _inTable = document.getElementById('table-ops').style.display !== 'none';
+    if (_inTable) {
+      if (k === 'ENTER') openTableModal();
+      else if (k === 'ESCAPE') { _exitTableMode(); prefillForm({}); _clearRange(); }
+      return;
+    }
+
     if (k === 'L') selectAction('L');
     else if (k === 'V') selectAction('V');
-    else if (k === 'C') selectAction('C');
     else if (k === 'T') selectAction('T');
     else if (k === 'I') selectAction('I');
     else if (k === 'ENTER' && selectedAction) applyClassification();

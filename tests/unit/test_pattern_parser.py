@@ -1192,3 +1192,95 @@ class TestLblMatchMode:
         ]
         _, defs, _ = self._parse(rows, tmp_path)
         assert defs['v'].role == 'var'
+
+
+# ── SKIP_EMPTY_ROW ────────────────────────────────────────────────────────────
+
+class TestSkipEmptyRow:
+    """Parser validation for the SKIP_EMPTY_ROW:N table row type."""
+
+    def _table_pattern(self, rows, extra_fields=None):
+        fields = [['var:', 'item.name', 'string', '.*']]
+        if extra_fields:
+            fields.extend(extra_fields)
+        return fields + [
+            ['lbl:', 'h', 'string', 'Name'],
+            ['START:'],
+            ['TABLE:*'],
+            ['', 'HEADER:1', 'h'],
+        ] + rows + [
+            ['', 'DATA:*', 'item.name'],
+            ['END:'],
+        ]
+
+    def test_skip_empty_row_parses(self, tmp_path):
+        from grepxcel.models import TableInstruction
+        path = _write_pattern(self._table_pattern([['', 'SKIP_EMPTY_ROW:1']]), tmp_path)
+        _, _, seq = PatternParser().parse(path)
+        tables = [s for s in seq if isinstance(s, TableInstruction)]
+        assert len(tables) == 1
+        row_types = {r.row_type for r in tables[0].rows}
+        assert 'SKIP_EMPTY_ROW' in row_types
+
+    def test_skip_empty_row_multiplicity_stored(self, tmp_path):
+        from grepxcel.models import TableInstruction
+        path = _write_pattern(self._table_pattern([['', 'SKIP_EMPTY_ROW:3']]), tmp_path)
+        _, _, seq = PatternParser().parse(path)
+        tables = [s for s in seq if isinstance(s, TableInstruction)]
+        ser = [r for r in tables[0].rows if r.row_type == 'SKIP_EMPTY_ROW']
+        assert len(ser) == 1
+        assert ser[0].multiplicity == '3'
+
+    def test_skip_empty_row_lowercase_normalised(self, tmp_path):
+        from grepxcel.models import TableInstruction
+        path = _write_pattern(self._table_pattern([['', 'skip_empty_row:2']]), tmp_path)
+        _, _, seq = PatternParser().parse(path)
+        tables = [s for s in seq if isinstance(s, TableInstruction)]
+        row_types = {r.row_type for r in tables[0].rows}
+        assert 'SKIP_EMPTY_ROW' in row_types
+
+    def test_skip_empty_row_zero_multiplicity_raises(self, tmp_path):
+        path = _write_pattern(self._table_pattern([['', 'SKIP_EMPTY_ROW:0']]), tmp_path)
+        with pytest.raises(PatternError):
+            PatternParser().parse(path)
+
+    def test_skip_empty_row_non_integer_multiplicity_raises(self, tmp_path):
+        path = _write_pattern(self._table_pattern([['', 'SKIP_EMPTY_ROW:*']]), tmp_path)
+        with pytest.raises(PatternError):
+            PatternParser().parse(path)
+
+    def test_skip_empty_row_with_data_star_ok(self, tmp_path):
+        """SKIP_EMPTY_ROW is valid with DATA:*."""
+        path = _write_pattern(self._table_pattern([['', 'SKIP_EMPTY_ROW:1']]), tmp_path)
+        PatternParser().parse(path)  # must not raise
+
+    def test_skip_empty_row_with_data_bounded_ok(self, tmp_path):
+        """SKIP_EMPTY_ROW is valid with DATA:{n,m}."""
+        rows = [
+            ['var:', 'item.name', 'string', '.*'],
+            ['lbl:', 'h', 'string', 'Name'],
+            ['START:'],
+            ['TABLE:*'],
+            ['', 'HEADER:1', 'h'],
+            ['', 'SKIP_EMPTY_ROW:1'],
+            ['', 'DATA:{2,10}', 'item.name'],
+            ['END:'],
+        ]
+        path = _write_pattern(rows, tmp_path)
+        PatternParser().parse(path)  # must not raise
+
+    def test_skip_empty_row_with_data_one_raises(self, tmp_path):
+        """SKIP_EMPTY_ROW is incompatible with DATA:1 (no budget to use)."""
+        rows = [
+            ['var:', 'item.name', 'string', '.*'],
+            ['lbl:', 'h', 'string', 'Name'],
+            ['START:'],
+            ['TABLE:*'],
+            ['', 'HEADER:1', 'h'],
+            ['', 'SKIP_EMPTY_ROW:1'],
+            ['', 'DATA:1', 'item.name'],
+            ['END:'],
+        ]
+        path = _write_pattern(rows, tmp_path)
+        with pytest.raises(PatternError, match='SKIP_EMPTY_ROW'):
+            PatternParser().parse(path)

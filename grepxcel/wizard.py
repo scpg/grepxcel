@@ -2,7 +2,7 @@
 
 Three phases:
   1. Config   — sheet, direction, ignore.case, currency symbol; template detection
-  2. Cell walk — classify each cell: field label / control label / variable / ignore /
+  2. Cell walk — classify each cell: field label / variable / ignore /
                table / goto / end.  Empty cells are silently skipped unless template
                mode is active and the cell follows a field label.
   3. Summary + save — write the CSV pattern and print a try-it hint
@@ -10,8 +10,7 @@ Three phases:
 Label naming convention
   Field label  [L]: anchor name is ``<base>_label``; base is auto-suggested as the
                variable name for the immediately next cell.
-  Control label [C]: navigation anchor only (section header, separator); no variable
-               lookahead; named ``<slug>`` without a suffix.
+
 
 Table sub-flow (entered with T):
   - Multiplicity (1 / N / N..M / *)
@@ -120,7 +119,6 @@ _HISTORY_PATH = os.path.join(os.path.expanduser('~'), '.grepxcel_wizard_history.
 
 _CHOICE_LABELS = {
     'L': 'field label',
-    'C': 'control label',
     'V': 'variable',
     'I': 'ignore',
     'T': 'table',
@@ -450,7 +448,7 @@ def _run_cell_walk(ws, state: WizardState, data_file: str,
     cells = _build_cell_order(ws, state.direction)
     idx = 0
     sep = _c('─' * 54, _C.DIM)
-    last_label_base: str | None = None   # set after [L]; cleared after [V]/[C]/[I]/[T]
+    last_label_base: str | None = None   # set after [L]; cleared after [V]/[I]/[T]
     goto_target = False  # True for exactly one iteration after a successful G jump
     seen: set[str] = set()              # cell refs classified in this session
 
@@ -506,8 +504,7 @@ def _run_cell_walk(ws, state: WizardState, data_file: str,
                      ' — reclassifying adds a duplicate instruction.', _C.YELLOW))
 
         print(sep)
-        print(f'  {_kl("L", "Field label")}  {_kl("C", "Control")}  '
-              f'{_kl("V", "Variable")}  {_kl("I", "Ignore")}')
+        print(f'  {_kl("L", "Field label")}  {_kl("V", "Variable")}  {_kl("I", "Ignore")}')
         print(f'  {_kl("T", "Table")}  {_kl("G", "Goto ref")}  '
               f'{_kl("N", "Next")}  {_kl("P", "Prev")}  {_kl("E", "End")}')
         enter_hint = 'prior' if prior else 'proposal'
@@ -552,13 +549,6 @@ def _run_cell_walk(ws, state: WizardState, data_file: str,
             base = _handle_field_label(state, value)
             last_label_base = base
             choices[ref] = 'L'
-            seen.add(ref)
-            idx += 1
-
-        elif answer == 'C':
-            _handle_control_label(state, value)
-            last_label_base = None
-            choices[ref] = 'C'
             seen.add(ref)
             idx += 1
 
@@ -614,7 +604,7 @@ def _run_cell_walk(ws, state: WizardState, data_file: str,
                 print(_c('  No non-empty cells before this one.', _C.DIM))
 
         else:
-            print(_c('  Unknown — L / C / V / I / T / G / N / P / E', _C.RED))
+            print(_c('  Unknown — L / V / I / T / G / N / P / E', _C.RED))
 
     _save_history(data_file, choices)
 
