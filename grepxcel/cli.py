@@ -1440,7 +1440,8 @@ def _print_full_help(parser: argparse.ArgumentParser) -> None:
         first = False
         label = paint(name, 'bold', color)
         fill = '─' * max(0, 58 - len(name))
-        print(f'{'─' * 4} {label} {fill}')
+        bar = '─' * 4
+        print(f'{bar} {label} {fill}')
         print()
         print(sp.format_help())
 
