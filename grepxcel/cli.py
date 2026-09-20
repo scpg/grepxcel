@@ -253,6 +253,11 @@ examples:
                    help='Pattern file(s) to generate schema for (.xlsx or .csv)')
     p.add_argument('-o', '--output', metavar='FILE',
                    help='Write schema to file (default: stdout)')
+    p.add_argument(
+        '--force',
+        action='store_true',
+        help='Overwrite an existing output file without prompting',
+    )
 
 
 def _add_skill_subparser(sub) -> None:
@@ -282,6 +287,11 @@ examples:
                    help='AI engine to target (default: claude)')
     p.add_argument('-o', '--output', metavar='FILE',
                    help='Write the skill doc to FILE (default: stdout)')
+    p.add_argument(
+        '--force',
+        action='store_true',
+        help='Overwrite an existing output file without prompting',
+    )
 
 
 def _add_examples_subparser(sub) -> None:
@@ -328,6 +338,11 @@ examples:
         '-o', '--output',
         metavar='FILE',
         help='Write SBOM to file (default: stdout)',
+    )
+    p.add_argument(
+        '--force',
+        action='store_true',
+        help='Overwrite an existing output file without prompting',
     )
 
 
@@ -728,6 +743,11 @@ examples:
         default='.',
         help='Output directory (default: current directory)',
     )
+    p.add_argument(
+        '--force',
+        action='store_true',
+        help='Overwrite existing output files without prompting',
+    )
 
 
 def _add_draft_subparser(sub) -> None:
@@ -822,6 +842,11 @@ def _draft_args(p: argparse.ArgumentParser) -> None:
         help='Print the Excel analysis that would be sent to the model, then exit without running inference',
     )
     p.add_argument(
+        '--force',
+        action='store_true',
+        help='Overwrite an existing output file without prompting',
+    )
+    p.add_argument(
         '--backend',
         choices=['local', 'claude', 'gemini', 'github', 'nvidia', 'server'],
         default='local',
@@ -889,6 +914,23 @@ def _draft_args(p: argparse.ArgumentParser) -> None:
     )
     _add_security_args(p)
     _add_sheet_arg(p)
+
+
+# ── overwrite guard ──────────────────────────────────────────────────────────
+
+def _refuse_overwrite(paths: list[str], force: bool) -> None:
+    """Fail with a clear message if any path already exists and --force is not set."""
+    if force:
+        return
+    existing = [p for p in paths if os.path.exists(p)]
+    if not existing:
+        return
+    lines = ['Error: the following output file(s) already exist:']
+    for p in existing:
+        lines.append(f'  {p}')
+    lines.append('Use --force to overwrite.')
+    print('\n'.join(lines), file=sys.stderr)
+    raise SystemExit(1)
 
 
 # ── extract helpers ───────────────────────────────────────────────────────────
@@ -1116,6 +1158,9 @@ def _output_stem(data_file: str, all_files: list[str]) -> str:
 
 def _run_docs(args) -> int:
     from .docs_generator import DocsGenerator
+    xlsx_path = os.path.join(args.output, 'pattern-reference.xlsx')
+    docx_path = os.path.join(args.output, 'grepxcel-guide.docx')
+    _refuse_overwrite([xlsx_path, docx_path], getattr(args, 'force', False))
     paths = DocsGenerator().write(args.output)
     for path in paths:
         print(f'Written: {path}', file=sys.stderr)
@@ -1143,8 +1188,11 @@ def _run_validate(args) -> int:
 # ── schema handler ──────────────────────────────────────────────────────────
 
 def _run_skill(args) -> int:
+    out_path = getattr(args, 'output', None)
+    if out_path:
+        _refuse_overwrite([out_path], getattr(args, 'force', False))
     from .skill import run_skill
-    return run_skill(args.target, getattr(args, 'output', None))
+    return run_skill(args.target, out_path)
 
 
 def _run_examples(args) -> int:
@@ -1172,14 +1220,18 @@ def _run_mcp_config(args) -> int:
 
 
 def _run_sbom(args) -> int:
+    out_path = getattr(args, 'output', None)
+    if out_path:
+        _refuse_overwrite([out_path], getattr(args, 'force', False))
     from .sbom import run_sbom
-    return run_sbom(output=getattr(args, 'output', None))
+    return run_sbom(output=out_path)
 
 
 def _run_schema(args) -> int:
     from .schema import run_schema
     if not args.output:
         return run_schema(args.files)
+    _refuse_overwrite([args.output], getattr(args, 'force', False))
     out = open(args.output, 'w', encoding='utf-8')
     try:
         rc = run_schema(args.files, out=out)
@@ -1305,6 +1357,8 @@ def _load_dotenv(strict: bool = False) -> None:
 
 
 def _run_draft(args) -> int:
+    if not getattr(args, 'dry_run', False):
+        _refuse_overwrite([args.output], getattr(args, 'force', False))
     _load_dotenv(strict=getattr(args, 'strict_env', False))  # find cloud keys
     # Wire corporate-proxy / custom-CA TLS trust before any network call
     # (model download or cloud backend). Verification stays on.
