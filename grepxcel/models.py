@@ -32,6 +32,7 @@ class FieldDef:
     var_mode: str | None = None    # per-field var mode; None/'regexp' = regex (default);
                                    # 'literal' | 'glob' = non-regex pattern in column D
     required: bool = False         # True → not-null/not-empty: fatal if value is empty/null
+    required_token: str = 'not-null'  # original token: 'not-null' or 'not-empty' (only when required=True)
     trim_whitespace: bool = False  # True → strip leading/trailing whitespace before match/extract
     nullable: bool = False         # True → empty/null accepted silently (no warning); var: fields only
 

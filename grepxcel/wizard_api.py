@@ -93,10 +93,14 @@ class _SessionLog:
             self._fh.write(f'Started   : {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}\n')
             self._fh.write(f'{sep}\n')
             self._fh.write('# Columns: timestamp   EVENT_TYPE    detail\n')
-            self._fh.write('# CLASSIFY ref:ACTION name=… — cell classified\n')
-            self._fh.write('# CONFIG   direction=… — global config changed\n')
-            self._fh.write('# UNDO     ref — last classification reversed\n')
-            self._fh.write('# SAVE     path — pattern file written to disk\n')
+            self._fh.write('# CLASSIFY      ref:ACTION name=… — cell classified\n')
+            self._fh.write('# CONFIG        direction=… — global config changed\n')
+            self._fh.write('# PRELOAD       pattern=… cells_loaded=N — pattern file pre-filled session\n')
+            self._fh.write('# PRELOAD_FIELD ref:role name=… — one field loaded from pattern\n')
+            self._fh.write('# PRELOAD_WARN  message — warning from preload pass\n')
+            self._fh.write('# SCHEMA_SUMMARY lbl=N var=N total=N mods=… — state at save\n')
+            self._fh.write('# UNDO          ref — last classification reversed\n')
+            self._fh.write('# SAVE          path — pattern file written to disk\n')
             self._fh.write(f'{sep}\n\n')
             self._fh.flush()
         except OSError:
@@ -611,6 +615,22 @@ def create_app(
         )
         for w in preload_warnings:
             session_log.write('PRELOAD_WARN', w)
+        for ref, info in sorted(choices.items()):
+            ch = info.get('choice', '?')
+            if ch == 'L':
+                session_log.write('PRELOAD_FIELD',
+                    f'{ref}:lbl name={info.get("name","")!r} '
+                    f'ltype={info.get("ltype","")!r} '
+                    f'lmatch={info.get("lmatch","")!r} '
+                    f'lbl_mode={info.get("lbl_mode","")!r}'
+                )
+            elif ch == 'V':
+                session_log.write('PRELOAD_FIELD',
+                    f'{ref}:var name={info.get("name","")!r} '
+                    f'ftype={info.get("ftype","")!r} '
+                    f'match={info.get("match","")!r} '
+                    f'col_a_extra={info.get("col_a_extra","")!r}'
+                )
 
     # ── Jinja2 env ────────────────────────────────────────────────────────────
     tpl_dir = Path(__file__).parent / 'templates'
@@ -1166,6 +1186,27 @@ def create_app(
             'footer_rows':     anchor_meta.get('footer_rows', []),
         })
 
+    def _schema_summary() -> str:
+        """Return a single-line summary of the current choices for SCHEMA_SUMMARY log events."""
+        ch = _STATE['choices']
+        lbl_count = sum(1 for v in ch.values() if v.get('choice') == 'L')
+        var_count = sum(1 for v in ch.values() if v.get('choice') == 'V')
+        # Collect all modifiers (col_a_extra tokens) across var fields
+        from collections import Counter
+        mod_counts: Counter = Counter()
+        for v in ch.values():
+            if v.get('choice') == 'V':
+                extra = v.get('col_a_extra', '')
+                if extra:
+                    for tok in extra.split(':'):
+                        if tok:
+                            mod_counts[tok] += 1
+        mods_str = ' '.join(f'{k}×{n}' for k, n in sorted(mod_counts.items())) or 'none'
+        return (
+            f'lbl={lbl_count} var={var_count} total={lbl_count + var_count} '
+            f'mods={mods_str}'
+        )
+
     def _make_csv() -> str:
         """Generate pattern CSV from current session state."""
         st: WizardState = _STATE['state']
@@ -1214,6 +1255,7 @@ def create_app(
         except Exception as exc:
             raise HTTPException(500, str(exc))
 
+        _STATE['log'].write('SCHEMA_SUMMARY', _schema_summary())
         _STATE['log'].write('SAVE', f'path={out_path} rows={len(csv_text.splitlines())}')
         return JSONResponse({
             'ok':       True,
@@ -1255,6 +1297,7 @@ def create_app(
         except Exception as exc:
             raise HTTPException(500, str(exc))
 
+        _STATE['log'].write('SCHEMA_SUMMARY', _schema_summary())
         _STATE['log'].write('SAVE', f'path={out_path} format=xlsx rows={len(rows)}')
         return JSONResponse({
             'ok':       True,
@@ -1367,7 +1410,6 @@ def create_app(
         """
         import tempfile
         import os as _os
-        from grepxcel.wizard_tui import _preload_from_pattern
         from starlette.datastructures import UploadFile as _UploadFile
 
         form = await request.form()

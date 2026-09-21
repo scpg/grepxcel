@@ -778,6 +778,22 @@ class Logger:
         rec._formatted = '\n'.join(lines)
         return rec
 
+    def warn_abs_backward_ref(self, target: str, location: str) -> None:
+        """Warn when an absolute cell: reference targets an already-consumed cell.
+
+        A backward abs ref resets the sequential scanner cursor; subsequent
+        cell:N instructions will extract from the wrong position.
+        """
+        msg = (
+            f'cell:{target} references a cell that was already consumed. '
+            'The scanner cursor will reset, which may cause following cell: '
+            'instructions to extract from the wrong position. '
+            'If this is intentional (e.g. after seek: + dir:), you can ignore this warning.'
+        )
+        self._write(VerbosityLevel.NORMAL,
+                    f'\n  {MARK_WARN}  {location}  [cell:{target} / backward ref]\n'
+                    f'     → {msg}')
+
     def warn_uncached_formulas(self) -> None:
         """Emit a one-time warning when the data file contains uncached formula cells."""
         msg = (

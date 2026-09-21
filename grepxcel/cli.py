@@ -1092,12 +1092,18 @@ def _process_file(pattern: str, data_file: str, args,
         from .csv_writer import nested_to_csv
         _csv_table_arg = getattr(args, 'csv_table', None)
         _table_idx = (_csv_table_arg - 1) if _csv_table_arg is not None else None
-        csv_text, csv_dropped = nested_to_csv(
-            result,
-            delimiter=getattr(args, 'csv_delimiter', ','),
-            mode=getattr(args, 'csv_mode', 'extended'),
-            table_idx=_table_idx,
-        )
+        try:
+            csv_text, csv_dropped = nested_to_csv(
+                result,
+                delimiter=getattr(args, 'csv_delimiter', ','),
+                mode=getattr(args, 'csv_mode', 'extended'),
+                table_idx=_table_idx,
+            )
+        except ValueError as _csv_err:
+            print(colorize_marks(
+                f'  {MARK_FAIL}  {_csv_err}',
+                should_color(sys.stderr)), file=sys.stderr)
+            sys.exit(2)
         if csv_dropped:
             dropped_list = ', '.join(csv_dropped)
             print(colorize_marks(

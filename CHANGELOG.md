@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.1] — 2026-09-21
+
+### Fixed
+
+- **`not-null` / `not-empty` round-trip fidelity** — `FieldDef` now stores `required_token`
+  (the original parser token) so the web wizard no longer silently rewrites `not-empty` fields
+  as `not-null` when a pattern is saved after preload.
+- **Single source of truth for token sets** — `VALID_MODE_TOKENS` / `VALID_CONSTRAINT_TOKENS`
+  exported from `pattern_parser.py` and imported by `wizard_core.py`; local duplicate
+  frozensets in `_col_a_extra_to_parts` eliminated.
+- **`var:(default)` guard** — the pattern writer now strips `(default)` from `var:` col-A
+  cells, symmetric with the existing `lbl:(default)` guard.
+- **Stale `lbl:(default)` fixture** — `01_simple_invoice_data_pattern-from-web.csv` had
+  8 rows written with the old `lbl:(default)` syntax that `PatternParser` rejects; fixed to
+  `lbl:`.
+- **Silent test skip** — `test_pattern_tester.py` referenced a non-existent fixture filename,
+  causing 10 tests to silently skip; corrected.
+
+### Improved
+
+- **AI-debug logging in web-wizard session log** — three new structured event types make
+  session logs machine-readable for bug analysis and architecture tracing:
+  - `PRELOAD_FIELD` — one entry per cell loaded from a pattern file (role, name, type,
+    match pattern, col_a_extra modifiers).
+  - `SCHEMA_SUMMARY` — emitted immediately before each SAVE; reports `lbl=N var=N total=N`
+    and a modifier distribution (`not-null×3 trim-whitespace×1 …`).
+  - Session log header updated to document all event types.
+- **Unrecognized-token warning** — `_col_a_extra_to_parts` now emits a `logging.WARNING`
+  when it encounters tokens not in the parser's valid sets, naming the offending tokens and
+  the complete valid token lists.
+
 ## [0.4.0] — 2026-09-20
 
 ### Features
@@ -293,7 +324,8 @@ Initial public release.
 - Structured JSON logs never contain extracted cell values (allow-list
   construction, not redaction).
 
-[Unreleased]: https://github.com/scpg/grepxcel/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/scpg/grepxcel/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/scpg/grepxcel/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/scpg/grepxcel/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/scpg/grepxcel/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/scpg/grepxcel/compare/v0.2.0...v0.3.0

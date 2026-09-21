@@ -378,7 +378,7 @@ class TestRunTestsValidation:
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
             'fixtures', '01_simple_invoice',
         )
-        pattern_f = os.path.join(fixtures_dir, '01_simple_invoice_pattern-from-web.csv')
+        pattern_f = os.path.join(fixtures_dir, '01_simple_invoice_pattern-from-claude.csv')
         data_xlsx = os.path.join(fixtures_dir, '01_simple_invoice_data.xlsx')
         if not os.path.isfile(pattern_f) or not os.path.isfile(data_xlsx):
             pytest.skip('fixture files not available')
@@ -394,7 +394,7 @@ class TestRunTestsValidation:
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
             'fixtures', '01_simple_invoice',
         )
-        pattern = os.path.join(fixtures_dir, '01_simple_invoice_pattern-from-web.csv')
+        pattern = os.path.join(fixtures_dir, '01_simple_invoice_pattern-from-claude.csv')
         data_xlsx = os.path.join(fixtures_dir, '01_simple_invoice_data.xlsx')
 
         if not os.path.isfile(pattern) or not os.path.isfile(data_xlsx):
@@ -430,7 +430,7 @@ class TestFatalErrorClassification:
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
             'fixtures', '01_simple_invoice',
         )
-        pattern = os.path.join(fixtures_dir, '01_simple_invoice_pattern-from-web.csv')
+        pattern = os.path.join(fixtures_dir, '01_simple_invoice_pattern-from-claude.csv')
         data_xlsx = os.path.join(fixtures_dir, '01_simple_invoice_data.xlsx')
 
         if not os.path.isfile(pattern) or not os.path.isfile(data_xlsx):
@@ -468,7 +468,7 @@ class TestFatalErrorClassification:
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
             'fixtures', '01_simple_invoice',
         )
-        pattern = os.path.join(fixtures_dir, '01_simple_invoice_pattern-from-web.csv')
+        pattern = os.path.join(fixtures_dir, '01_simple_invoice_pattern-from-claude.csv')
         data_xlsx = os.path.join(fixtures_dir, '01_simple_invoice_data.xlsx')
 
         if not os.path.isfile(pattern) or not os.path.isfile(data_xlsx):
@@ -544,7 +544,7 @@ class TestTestCLI:
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
             'fixtures', '01_simple_invoice',
         )
-        pattern = os.path.join(fixtures_dir, '01_simple_invoice_pattern-from-web.csv')
+        pattern = os.path.join(fixtures_dir, '01_simple_invoice_pattern-from-claude.csv')
         data_xlsx = os.path.join(fixtures_dir, '01_simple_invoice_data.xlsx')
 
         if not os.path.isfile(pattern) or not os.path.isfile(data_xlsx):
@@ -573,7 +573,7 @@ class TestTestCLI:
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
             'fixtures', '01_simple_invoice',
         )
-        pattern = os.path.join(fixtures_dir, '01_simple_invoice_pattern-from-web.csv')
+        pattern = os.path.join(fixtures_dir, '01_simple_invoice_pattern-from-claude.csv')
         data_xlsx = os.path.join(fixtures_dir, '01_simple_invoice_data.xlsx')
 
         if not os.path.isfile(pattern) or not os.path.isfile(data_xlsx):
@@ -598,7 +598,7 @@ class TestTestCLI:
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
             'fixtures', '01_simple_invoice',
         )
-        pattern = os.path.join(fixtures_dir, '01_simple_invoice_pattern-from-web.csv')
+        pattern = os.path.join(fixtures_dir, '01_simple_invoice_pattern-from-claude.csv')
         data_xlsx = os.path.join(fixtures_dir, '01_simple_invoice_data.xlsx')
 
         if not os.path.isfile(pattern) or not os.path.isfile(data_xlsx):
@@ -624,7 +624,7 @@ class TestTestCLI:
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
             'fixtures', '01_simple_invoice',
         )
-        pattern = os.path.join(fixtures_dir, '01_simple_invoice_pattern-from-web.csv')
+        pattern = os.path.join(fixtures_dir, '01_simple_invoice_pattern-from-claude.csv')
         data_xlsx = os.path.join(fixtures_dir, '01_simple_invoice_data.xlsx')
 
         if not os.path.isfile(pattern) or not os.path.isfile(data_xlsx):
@@ -657,7 +657,7 @@ class TestTestCLI:
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
             'fixtures', '01_simple_invoice',
         )
-        pattern = os.path.join(fixtures_dir, '01_simple_invoice_pattern-from-web.csv')
+        pattern = os.path.join(fixtures_dir, '01_simple_invoice_pattern-from-claude.csv')
         data_xlsx = os.path.join(fixtures_dir, '01_simple_invoice_data.xlsx')
 
         if not os.path.isfile(pattern) or not os.path.isfile(data_xlsx):
@@ -680,7 +680,7 @@ class TestTestCLI:
             os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
             'fixtures', '01_simple_invoice',
         )
-        pattern = os.path.join(fixtures_dir, '01_simple_invoice_pattern-from-web.csv')
+        pattern = os.path.join(fixtures_dir, '01_simple_invoice_pattern-from-claude.csv')
         data_xlsx = os.path.join(fixtures_dir, '01_simple_invoice_data.xlsx')
 
         if not os.path.isfile(pattern) or not os.path.isfile(data_xlsx):

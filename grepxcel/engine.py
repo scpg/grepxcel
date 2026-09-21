@@ -1,3 +1,4 @@
+import datetime as _datetime
 import fnmatch
 import re
 import warnings
@@ -121,7 +122,15 @@ def _validate_field(fd, value, config, max_cell_len: int) -> bool:
                                    max_cell_len, config.ignore_case_values)
         if not type_ok:
             return False
-        return _match_lbl(str(value), fd.regex, effective_var_mode, config.ignore_case_values)
+        # Convert date/datetime to ISO string so var:literal|glob date fields work.
+        # str(datetime(2024,1,1)) gives '2024-01-01 00:00:00', not '2024-01-01'.
+        if isinstance(value, _datetime.datetime):
+            _str_val = value.date().isoformat()
+        elif isinstance(value, _datetime.date):
+            _str_val = value.isoformat()
+        else:
+            _str_val = str(value) if value is not None else ''
+        return _match_lbl(_str_val, fd.regex, effective_var_mode, config.ignore_case_values)
     # regexp mode (default) — validate_type handles both type and regex.
     ok, _ = validate_type(value, fd.type, fd.regex, config.currency_sign,
                           max_cell_len, config.ignore_case_values)
@@ -349,9 +358,11 @@ def _expand_merged_cells(ws) -> dict:
         for row_num in range(min_row, max_row + 1):
             for col_num in range(min_col, max_col + 1):
                 ws.cell(row=row_num, column=col_num).value = anchor_value
-        # Register the entire range in the merge-map.
+        # Register the entire range in the merge-map (frozenset: immutable,
+        # no aliasing risk if future code iterates and modifies).
+        frozen = frozenset(cells_in_range)
         for pos in cells_in_range:
-            merge_map[pos] = cells_in_range
+            merge_map[pos] = frozen
 
     return merge_map
 
@@ -632,10 +643,12 @@ class Engine:
             except SecurityError as exc:
                 logger.fatal(str(exc), found=data_file)
 
+            _pp = PatternParser()
             try:
-                global_config, defs, start_sequence = PatternParser().parse(pattern_file)
+                global_config, defs, start_sequence = _pp.parse(pattern_file)
             except (SecurityError, PatternError) as exc:
                 logger.fatal(str(exc), found=pattern_file)
+            assert_rules = getattr(_pp, 'assert_rules', [])
 
             if not start_sequence:
                 logger.fatal(
@@ -661,6 +674,8 @@ class Engine:
                 try:
                     _check_sheet_dimensions(ws, max_rows, max_cols, logger)
                     _raw = self._process_sheet(ws, global_config, defs, start_sequence, logger)
+                    if assert_rules:
+                        _run_assert_rules(assert_rules, _raw['cells'], logger)
                 except EngineError:
                     pass  # per-sheet fatal; log and continue
                 logger.summary(_raw)
@@ -724,6 +739,13 @@ class Engine:
         # preserved the cursor position from a preceding seek:.  No fatal check here;
         # the cursor is repositioned to idx+1 after the read (see _process_cell).
 
+        # Warn when the target was already consumed: subsequent sequential cell:
+        # instructions will scan from the wrong position.
+        if (row, col) in scanner.consumed:
+            logger.warn_abs_backward_ref(
+                instr.target, cell_ref(row, col, logger.sheet_name)
+            )
+
         value = scanner.cell_value(row, col)
         if is_empty(value, config.empty_aliases, config.ignore_case_values) and instr.field != 'IGNORE':
             fd = defs.get(instr.field)
@@ -747,6 +769,10 @@ class Engine:
             idx = scanner.scan_order_index.get((row, col))
             if idx is not None:
                 scanner.cursor = idx + 1
+            # An abs cell: is a definitive cursor position; clear the seek flag so
+            # a subsequent dir: resets to scan-order start rather than preserving
+            # the stale seek-derived position.
+            scanner._cursor_from_seek = False
         else:
             row, col = scanner.advance_to_next()
             if row is None:
@@ -940,7 +966,10 @@ class Engine:
             current_row += 1
 
         # --- SPLITTER rows (all columns must be empty) ---
-        num_cols = len(instr.rows[0].columns)
+        # Use the widest row type so SPLITTER validation covers the full table
+        # width and _end_col is correct even when HEADER/SPLITTER have fewer
+        # columns than DATA rows.
+        num_cols = max(len(r.columns) for r in instr.rows) if instr.rows else 0
         for _ in splitter_rows:
             for c_offset in range(num_cols):
                 col = anchor_col + c_offset
@@ -965,6 +994,13 @@ class Engine:
             while True:
                 # Hard ceiling for bounded DATA
                 if is_bounded and total_scanned >= data_tmpl.max_rows:
+                    # Drain any SKIP_EMPTY_ROW separator rows so footer matching
+                    # starts on the actual footer row, not the separator.
+                    while (consecutive_empty < max_skip_empty and
+                           self._row_is_end_of_data(
+                               current_row, anchor_col, data_tmpl, config, scanner)):
+                        consecutive_empty += 1
+                        current_row += 1
                     break
 
                 if self._row_is_end_of_data(current_row, anchor_col, data_tmpl, config, scanner):
