@@ -45,6 +45,9 @@ _SAFE_CONSTANT_FORMULAS: dict[str, str] = {
 # Mode tokens map to their canonical name; 're' normalises to 'regexp'.
 _MODE_TOKENS = {'literal': 'literal', 'glob': 'glob', 're': 'regexp', 'regexp': 'regexp'}
 _CONSTRAINT_TOKENS = frozenset({'not-null', 'not-empty', 'trim-whitespace', 'nullable'})
+# Frozenset exports for shared use (e.g. wizard_core round-trip serialisation).
+VALID_MODE_TOKENS: frozenset = frozenset(_MODE_TOKENS)
+VALID_CONSTRAINT_TOKENS: frozenset = _CONSTRAINT_TOKENS
 
 
 def _parse_col_a_modifiers(col_a: str, row_num: int) -> tuple:
@@ -54,13 +57,15 @@ def _parse_col_a_modifiers(col_a: str, row_num: int) -> tuple:
     the caller).  Each subsequent token is either a matching-mode name or a
     constraint keyword.  Order does not matter.
 
-    Returns ``(mode, required, trim_whitespace, nullable)``:
+    Returns ``(mode, required, trim_whitespace, nullable, required_token)``:
       * mode            – ``None | 'literal' | 'glob' | 'regexp'``  (normalised;
                           None means "use the default for this role")
       * required        – ``True`` when ``not-null`` or ``not-empty`` is present.
       * trim_whitespace – ``True`` when ``trim-whitespace`` is present.
       * nullable        – ``True`` when ``nullable`` is present (var: fields only;
                           empty/null is silently accepted without a warning).
+      * required_token  – ``'not-null'`` or ``'not-empty'``; preserves the original
+                          token so round-trips through the wizard emit the same text.
 
     Raises ``PatternError`` on unknown tokens, duplicate mode modifiers, or the
     contradictory combination of ``nullable`` + ``not-null``/``not-empty``.
@@ -68,6 +73,7 @@ def _parse_col_a_modifiers(col_a: str, row_num: int) -> tuple:
     parts = col_a.lower().split(':')
     mode: str | None = None
     required = False
+    required_token = 'not-null'
     trim_whitespace = False
     nullable = False
     seen_mode = False
@@ -90,6 +96,7 @@ def _parse_col_a_modifiers(col_a: str, row_num: int) -> tuple:
                 nullable = True
             else:  # not-null / not-empty
                 required = True
+                required_token = token
         else:
             raise PatternError(
                 f"Unknown modifier {token!r} in {col_a!r} at pattern row {row_num}. "
@@ -104,7 +111,7 @@ def _parse_col_a_modifiers(col_a: str, row_num: int) -> tuple:
             f"fatal) cannot both be specified."
         )
 
-    return mode, required, trim_whitespace, nullable
+    return mode, required, trim_whitespace, nullable, required_token
 
 # Field types the engine knows how to validate (see utils.validate_type).
 # Keep this in lockstep with that function — a name here that it can't handle
@@ -230,14 +237,15 @@ class PatternParser:
                     self._check_comment_zone(row, 3, i + 1, 'config:')    # D+ comment
                 elif isinstance(col_a_l, str) and (col_a_l.startswith('var:')
                                                     or col_a_l.startswith('def:')):
-                    var_mode, required, trim_ws, nullable = _parse_col_a_modifiers(col_a_l, i + 1)
+                    var_mode, required, trim_ws, nullable, req_tok = _parse_col_a_modifiers(col_a_l, i + 1)
                     fd = self._parse_field(row, role='var', row_num=i + 1,
                                            var_mode=var_mode, required=required,
-                                           trim_whitespace=trim_ws, nullable=nullable)
+                                           trim_whitespace=trim_ws, nullable=nullable,
+                                           required_token=req_tok)
                     defs[fd.name] = fd
                     self._check_comment_zone(row, 4, i + 1, col_a_l)      # E+ comment
                 elif isinstance(col_a_l, str) and col_a_l.startswith('lbl:'):
-                    lbl_mode, required, trim_ws, nullable = _parse_col_a_modifiers(col_a_l, i + 1)
+                    lbl_mode, required, trim_ws, nullable, req_tok = _parse_col_a_modifiers(col_a_l, i + 1)
                     if nullable:
                         raise PatternError(
                             f"'nullable' modifier is not valid for lbl: fields at pattern row "
@@ -247,7 +255,7 @@ class PatternParser:
                     fd = self._parse_field(row, role='lbl', row_num=i + 1,
                                            lbl_match_override=lbl_mode, required=required,
                                            global_lbl_match=global_config.lbl_match,
-                                           trim_whitespace=trim_ws)
+                                           trim_whitespace=trim_ws, required_token=req_tok)
                     defs[fd.name] = fd
                     self._check_comment_zone(row, 4, i + 1, col_a_l)
                 elif col_a_l in ('doc:', 'info:'):
@@ -880,6 +888,7 @@ class PatternParser:
                      global_lbl_match: str = 'literal',
                      var_mode: str | None = None,
                      required: bool = False,
+                     required_token: str = 'not-null',
                      trim_whitespace: bool = False,
                      nullable: bool = False) -> FieldDef:
         where = f' at pattern row {row_num}' if row_num is not None else ''
@@ -912,6 +921,7 @@ class PatternParser:
 
         return FieldDef(name=name, type=type_, regex=regex, role=role,
                         lbl_match=lbl_match_override, var_mode=var_mode, required=required,
+                        required_token=required_token,
                         trim_whitespace=trim_whitespace, nullable=nullable)
 
     # backward-compat alias
