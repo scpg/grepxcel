@@ -1,14 +1,14 @@
 config:,read.direction,LR
 config:,trim.whitespace,yes
 config:,currency.sign,€
-lbl:(default),invoice_no_label,string,Invoice No:
-lbl:(default),date_label,string,Date:
-lbl:(default),due_date_label,string,Due Date:
-lbl:(default),client_label,string,Client:
-lbl:(default),email_label,string,Email:
-lbl:(default),net_label,string,Net:
-lbl:(default),vat_label,string,VAT:
-lbl:(default),total_label,string,Total:
+lbl:,invoice_no_label,string,Invoice No:
+lbl:,date_label,string,Date:
+lbl:,due_date_label,string,Due Date:
+lbl:,client_label,string,Client:
+lbl:,email_label,string,Email:
+lbl:,net_label,string,Net:
+lbl:,vat_label,string,VAT:
+lbl:,total_label,string,Total:
 var:not-null:trim-whitespace,ab123456,string,[A-Z]{2}\d+
 var:not-null:trim-whitespace,alice_wonderland,string,.+\s+.+
 START:

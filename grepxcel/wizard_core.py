@@ -9,6 +9,7 @@ import csv
 import datetime
 import io
 import json
+import logging as _logging
 import os
 import re
 from dataclasses import dataclass, field
@@ -22,6 +23,10 @@ except Exception:
     _regex_mod = None  # type: ignore[assignment]
     _HAS_REGEX = False
     _MAX_LBL_LEN = 2000
+
+from .pattern_parser import VALID_MODE_TOKENS as _PP_MODE_TOKENS, VALID_CONSTRAINT_TOKENS as _PP_CONSTRAINT_TOKENS
+
+_logger = _logging.getLogger(__name__)
 
 
 # ── State ─────────────────────────────────────────────────────────────────────
@@ -142,7 +147,7 @@ def _pattern_rows(state: WizardState) -> list[list]:
     for t in state.var_defs:
         name, vtype, match = t[0], t[1], t[2]
         col_a_extra = t[3] if len(t) > 3 else ''
-        col_a = f'var:{col_a_extra}' if col_a_extra else 'var:'
+        col_a = f'var:{col_a_extra}' if col_a_extra and col_a_extra != '(default)' else 'var:'
         rows.append([col_a, name, vtype, match])
     rows.append(['START:'])
     for row in state.body_rows:
@@ -252,13 +257,19 @@ def _col_a_extra_from_parts(var_mode_raw: str, modifiers_raw: str) -> str:
 
 def _col_a_extra_to_parts(col_a_extra: str) -> tuple[str, str]:
     """Split col_a_extra back into (var_mode_raw, modifiers_raw) for UI pre-fill."""
-    _MODE_TOKENS = frozenset({'literal', 'glob', 'regexp', 're'})
-    _MOD_TOKENS  = frozenset({'nullable', 'not-null', 'not-empty', 'trim-whitespace'})
     if not col_a_extra:
         return '(default)', 'none'
     tokens = col_a_extra.split(':')
-    mode_parts = [t for t in tokens if t in _MODE_TOKENS]
-    mod_parts  = [t for t in tokens if t in _MOD_TOKENS]
+    mode_parts = [t for t in tokens if t in _PP_MODE_TOKENS]
+    mod_parts  = [t for t in tokens if t in _PP_CONSTRAINT_TOKENS]
+    unrecognized = [t for t in tokens if t and t not in _PP_MODE_TOKENS and t not in _PP_CONSTRAINT_TOKENS]
+    if unrecognized:
+        _logger.warning(
+            'col_a_extra_to_parts: unrecognized tokens %r in col_a_extra=%r '
+            '(known modes: %s; known constraints: %s)',
+            unrecognized, col_a_extra,
+            sorted(_PP_MODE_TOKENS), sorted(_PP_CONSTRAINT_TOKENS),
+        )
     var_mode_raw  = mode_parts[0] if mode_parts else '(default)'
     modifiers_raw = ':'.join(mod_parts) if mod_parts else 'none'
     return var_mode_raw, modifiers_raw
@@ -270,7 +281,7 @@ def _fd_to_col_a_extra(fd) -> str:
     if fd.var_mode and fd.var_mode not in ('regexp', 're'):
         parts.append(fd.var_mode)
     if fd.required:
-        parts.append('not-null')
+        parts.append(getattr(fd, 'required_token', 'not-null') or 'not-null')
     elif fd.nullable:
         parts.append('nullable')
     if fd.trim_whitespace:
