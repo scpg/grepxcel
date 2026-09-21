@@ -209,6 +209,30 @@ def test_percentage_string_rejected():
     assert 'numeric' in reason
 
 
+# ─── validate_type: url ──────────────────────────────────────────────────────
+
+def test_url_https():
+    ok, _ = validate_type('https://example.com', 'url', r'.*')
+    assert ok
+
+def test_url_www():
+    ok, _ = validate_type('www.example.com', 'url', r'.*')
+    assert ok
+
+def test_url_no_scheme_rejected():
+    ok, reason = validate_type('not-a-url', 'url', r'.*')
+    assert not ok
+    assert 'scheme' in reason or 'URL' in reason
+
+def test_url_regex_applied():
+    ok, _ = validate_type('https://example.com', 'url', r'https://.*')
+    assert ok
+
+def test_url_regex_mismatch():
+    ok, _ = validate_type('http://example.com', 'url', r'https://.*')
+    assert not ok
+
+
 # ─── validate_type: unknown type ─────────────────────────────────────────────
 
 def test_unknown_type():

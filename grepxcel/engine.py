@@ -496,6 +496,109 @@ class SheetScanner:
         return None, None, i
 
 
+def extract_images(data_file: str, images_dir: str, stem: str) -> dict:
+    """Extract embedded images from an xlsx file without requiring Pillow.
+
+    xlsx files are ZIP archives.  Images live in ``xl/media/``; drawing XMLs in
+    ``xl/drawings/drawing*.xml``; anchor relationships in
+    ``xl/drawings/_rels/drawing*.xml.rels``.
+
+    Returns a dict mapping cell reference (e.g. ``"B3"``) to the saved image
+    path (relative to *images_dir*).  If no images are found, returns ``{}``.
+    The *stem* is used to build image filenames:
+    ``{stem}_{col}{row}_{idx}.{ext}``.
+    """
+    import zipfile
+    import xml.etree.ElementTree as _ET
+    import os
+
+    _NS_XDR = 'http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing'
+    _NS_R   = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
+
+    result: dict = {}
+    os.makedirs(images_dir, exist_ok=True)
+
+    try:
+        zf = zipfile.ZipFile(data_file, 'r')
+    except (zipfile.BadZipFile, OSError):
+        return result
+
+    with zf:
+        namelist = zf.namelist()
+
+        # Find all drawing files
+        drawing_names = [n for n in namelist if n.startswith('xl/drawings/drawing')
+                         and n.endswith('.xml') and '/_rels/' not in n]
+
+        idx = 0
+        for drawing_path in sorted(drawing_names):
+            # Read relationship file for this drawing
+            rels_path = drawing_path.replace('xl/drawings/', 'xl/drawings/_rels/') + '.rels'
+            if rels_path not in namelist:
+                continue
+
+            # Parse rels to map rId → media filename
+            try:
+                rels_tree = _ET.fromstring(zf.read(rels_path))
+            except _ET.ParseError:
+                continue
+            rId_to_media: dict = {}
+            for rel in rels_tree:
+                rid = rel.get('Id', '')
+                target = rel.get('Target', '')
+                if '../media/' in target:
+                    rId_to_media[rid] = target.replace('../media/', 'xl/media/')
+
+            # Parse drawing XML to find anchors and their rIds
+            try:
+                draw_tree = _ET.fromstring(zf.read(drawing_path))
+            except _ET.ParseError:
+                continue
+
+            for anchor in draw_tree:
+                # <xdr:twoCellAnchor> or <xdr:oneCellAnchor>
+                from_el = anchor.find(f'{{{_NS_XDR}}}from')
+                if from_el is None:
+                    continue
+                col_el = from_el.find(f'{{{_NS_XDR}}}col')
+                row_el = from_el.find(f'{{{_NS_XDR}}}row')
+                if col_el is None or row_el is None:
+                    continue
+                try:
+                    col_0 = int(col_el.text)
+                    row_0 = int(row_el.text)
+                except (ValueError, TypeError):
+                    continue
+                # Convert 0-based to 1-based cell ref
+                from openpyxl.utils import get_column_letter as _gcl
+                cell_ref_str = f'{_gcl(col_0 + 1)}{row_0 + 1}'
+
+                # Find picture blipFill rId
+                pic = anchor.find('.//' + f'{{{_NS_XDR}}}pic')
+                if pic is None:
+                    continue
+                blip_fill = pic.find('.//' + '{http://schemas.openxmlformats.org/drawingml/2006/main}blip')
+                if blip_fill is None:
+                    continue
+                r_embed = blip_fill.get(f'{{{_NS_R}}}embed')
+                if not r_embed or r_embed not in rId_to_media:
+                    continue
+
+                media_path = rId_to_media[r_embed]
+                if media_path not in namelist:
+                    continue
+
+                ext = os.path.splitext(media_path)[1] or '.bin'
+                idx += 1
+                out_name = f'{stem}_{cell_ref_str}_{idx}{ext}'
+                out_path = os.path.join(images_dir, out_name)
+                with open(out_path, 'wb') as fh:
+                    fh.write(zf.read(media_path))
+                result[cell_ref_str] = out_path
+
+    return result
+
+
 class Engine:
     def process(self, pattern_file: str, data_file: str,
                 logger: Logger = None,

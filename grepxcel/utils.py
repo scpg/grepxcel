@@ -217,6 +217,14 @@ def validate_type(value, field_type: str, regex: str, currency_sign: str = '€'
         ok = isinstance(value, (datetime.date, datetime.datetime))
         return ok, ('' if ok else f'{repr(value)} is not a {field_type}')
 
+    elif field_type == 'url':
+        str_val = str(value) if value is not None else ''
+        has_scheme = '://' in str_val or str_val.lower().startswith('www.')
+        ok = has_scheme and _safe_match(regex, str_val, _re.DOTALL | icase, max_cell_len)
+        if not has_scheme:
+            return False, f'{repr(str_val)} does not look like a URL (no scheme or www.)'
+        return ok, ('' if ok else f'{repr(str_val)} does not match /{regex}/')
+
     return False, f'unknown type {repr(field_type)}'
 
 

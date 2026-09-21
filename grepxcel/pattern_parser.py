@@ -123,6 +123,7 @@ _VALID_FIELD_TYPES = frozenset({
     'currency', 'percentage',
     'boolean', 'bool',
     'time', 'duration', 'date', 'datetime', 'timestamp',
+    'url',
 })
 
 

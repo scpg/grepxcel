@@ -720,6 +720,21 @@ examples:
         metavar='NAME_OR_INDEX',
         help='Sheet to use: name (e.g. Sheet2) or 0-based index (default: active sheet)',
     )
+    p.add_argument(
+        '--include-images',
+        action='store_true',
+        dest='include_images',
+        help='Extract embedded images from the data file and save them to --images-dir. '
+             'Adds an _images key to the JSON output mapping cell references to image paths.',
+    )
+    p.add_argument(
+        '--images-dir',
+        metavar='DIR',
+        dest='images_dir',
+        default=None,
+        help='Directory to save extracted images into (default: next to --output, or cwd). '
+             'Only used with --include-images.',
+    )
     _add_strict_arg(p)
     _add_security_args(p)
 
@@ -1075,6 +1090,13 @@ def _process_file(pattern: str, data_file: str, args,
 
     if getattr(args, 'meta', False):
         result['_meta'] = logger.build_meta()
+
+    if getattr(args, 'include_images', False):
+        from .engine import extract_images
+        _images_dir = getattr(args, 'images_dir', None) or args.output or '.'
+        _images = extract_images(data_file, _images_dir, stem or os.path.splitext(os.path.basename(data_file))[0])
+        if _images:
+            result['_images'] = _images
 
     if getattr(args, 'no_source', False) and engine_format == 'nested':
         if all_sheets:
