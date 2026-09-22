@@ -496,8 +496,111 @@ class SheetScanner:
         return None, None, i
 
 
+def _build_sheet_name_maps(zf, namelist):
+    """Return (sheet_xml_to_name, drawing_to_sheet_name) from workbook metadata.
+
+    sheet_xml_to_name : {'xl/worksheets/sheet1.xml': 'Sheet1', ...}
+    drawing_to_sheet  : {'xl/drawings/drawing1.xml': 'Sheet1', ...}
+    """
+    import xml.etree.ElementTree as _ET
+
+    _NS_SS  = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
+    _NS_R   = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
+    _PKG_R  = 'http://schemas.openxmlformats.org/package/2006/relationships'
+
+    sheet_xml_to_name: dict = {}
+    drawing_to_sheet:  dict = {}
+
+    # workbook.xml → sheet name + rId
+    if 'xl/workbook.xml' not in namelist:
+        return sheet_xml_to_name, drawing_to_sheet
+    try:
+        wb_tree = _ET.fromstring(zf.read('xl/workbook.xml'))
+    except _ET.ParseError:
+        return sheet_xml_to_name, drawing_to_sheet
+
+    # workbook.xml.rels: rId → sheet xml path
+    wb_rels_path = 'xl/_rels/workbook.xml.rels'
+    rId_to_sheet_path: dict = {}
+    if wb_rels_path in namelist:
+        try:
+            for rel in _ET.fromstring(zf.read(wb_rels_path)):
+                rid = rel.get('Id', '')
+                target = rel.get('Target', '')
+                if target.startswith('worksheets/'):
+                    rId_to_sheet_path[rid] = 'xl/' + target
+        except _ET.ParseError:
+            pass
+
+    for sheet_el in wb_tree.findall(f'.//{{{_NS_SS}}}sheet'):
+        name = sheet_el.get('name', '')
+        rid  = sheet_el.get(f'{{{_NS_R}}}id', '')
+        xml_path = rId_to_sheet_path.get(rid, '')
+        if xml_path:
+            sheet_xml_to_name[xml_path] = name
+
+    # For each sheet XML, trace its rels to find the drawing
+    for xml_path, sheet_name in sheet_xml_to_name.items():
+        # xl/worksheets/_rels/sheet1.xml.rels
+        base   = xml_path.replace('xl/worksheets/', '')
+        rels_p = f'xl/worksheets/_rels/{base}.rels'
+        if rels_p not in namelist:
+            continue
+        try:
+            for rel in _ET.fromstring(zf.read(rels_p)):
+                target = rel.get('Target', '')
+                if '../drawings/' in target:
+                    drawing_path = 'xl/drawings/' + target.split('../drawings/')[-1]
+                    drawing_to_sheet[drawing_path] = sheet_name
+        except _ET.ParseError:
+            pass
+
+    return sheet_xml_to_name, drawing_to_sheet
+
+
+def _scan_richdata_image_cells(zf, namelist, sheet_xml_to_name: dict) -> dict:
+    """Return {sheet_name: {cell_ref: count}} for IMAGE() formula cells.
+
+    Reads the richData tables in the xlsx ZIP to find cells that use the
+    ``_localImage`` rich value type (Excel IMAGE() function).  These cells
+    carry a ``vm=`` attribute in the worksheet XML referencing a 1-based index
+    into ``xl/richData/rdrichvalue.xml``.
+    """
+    import xml.etree.ElementTree as _ET
+
+    _NS_SS  = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
+
+    # Quick exit: if there are no richData files, nothing to do.
+    if 'xl/richData/rdrichvalue.xml' not in namelist:
+        return {}
+
+    # Verify at least one _localImage entry exists
+    try:
+        rv_tree = _ET.fromstring(zf.read('xl/richData/rdrichvalue.xml'))
+    except _ET.ParseError:
+        return {}
+
+    result: dict = {}
+    for sheet_xml_path, sheet_name in sheet_xml_to_name.items():
+        if sheet_xml_path not in namelist:
+            continue
+        try:
+            ws_tree = _ET.fromstring(zf.read(sheet_xml_path))
+        except _ET.ParseError:
+            continue
+        for cell in ws_tree.findall(f'.//{{{_NS_SS}}}c'):
+            vm = cell.get('vm')
+            if vm is not None:
+                ref = cell.get('r', '').upper()
+                if ref:
+                    bucket = result.setdefault(sheet_name, {})
+                    bucket[ref] = bucket.get(ref, 0) + 1
+
+    return result
+
+
 def _iter_drawing_anchors(data_file: str):
-    """Yield (cell_ref, media_zip_path, drawing_idx) for every image anchor in the xlsx.
+    """Yield (sheet_name, cell_ref, media_zip_path, drawing_idx, data_bytes).
 
     Uses the ZIP structure directly — no Pillow required.  Yields nothing on any
     parse error (corrupt drawings are silently skipped).
@@ -519,6 +622,8 @@ def _iter_drawing_anchors(data_file: str):
 
     with zf:
         namelist = set(zf.namelist())
+        _, drawing_to_sheet = _build_sheet_name_maps(zf, namelist)
+
         drawing_names = sorted(
             n for n in namelist
             if n.startswith('xl/drawings/drawing') and n.endswith('.xml')
@@ -527,6 +632,8 @@ def _iter_drawing_anchors(data_file: str):
 
         global_idx = 0
         for drawing_path in drawing_names:
+            sheet_name = drawing_to_sheet.get(drawing_path, '')
+
             rels_path = drawing_path.replace('xl/drawings/', 'xl/drawings/_rels/') + '.rels'
             if rels_path not in namelist:
                 continue
@@ -579,19 +686,37 @@ def _iter_drawing_anchors(data_file: str):
                     continue
 
                 global_idx += 1
-                yield cell_ref_str, media_path, global_idx, zf.read(media_path)
+                yield sheet_name, cell_ref_str, media_path, global_idx, zf.read(media_path)
 
 
 def scan_image_cells(data_file: str) -> dict:
-    """Return a mapping of ``{cell_ref: count}`` for cells with embedded images.
+    """Return ``{sheet_name: {cell_ref: count}}`` for cells with embedded images.
 
+    Covers both drawing-anchored images and IMAGE() formula cells (richData).
     Lightweight scan — reads ZIP metadata only, no files are written.
     Returns ``{}`` if the file has no images or cannot be read.
     """
-    counts: dict = {}
-    for cell_ref, _media, _idx, _data in _iter_drawing_anchors(data_file):
-        counts[cell_ref] = counts.get(cell_ref, 0) + 1
-    return counts
+    import zipfile
+
+    result: dict = {}
+    for sheet_name, cell_ref, _media, _idx, _data in _iter_drawing_anchors(data_file):
+        bucket = result.setdefault(sheet_name, {})
+        bucket[cell_ref] = bucket.get(cell_ref, 0) + 1
+
+    # Also include IMAGE() formula cells from richData
+    try:
+        with zipfile.ZipFile(data_file, 'r') as zf:
+            namelist = set(zf.namelist())
+            sheet_xml_to_name, _ = _build_sheet_name_maps(zf, namelist)
+            rich = _scan_richdata_image_cells(zf, namelist, sheet_xml_to_name)
+        for sheet_name, cells in rich.items():
+            bucket = result.setdefault(sheet_name, {})
+            for ref, cnt in cells.items():
+                bucket[ref] = bucket.get(ref, 0) + cnt
+    except (zipfile.BadZipFile, OSError):
+        pass
+
+    return result
 
 
 def extract_images(data_file: str, images_dir: str, stem: str) -> dict:
@@ -607,7 +732,7 @@ def extract_images(data_file: str, images_dir: str, stem: str) -> dict:
     os.makedirs(images_dir, exist_ok=True)
 
     per_cell_count: dict = {}
-    for cell_ref, media_path, idx, data in _iter_drawing_anchors(data_file):
+    for _sheet, cell_ref, media_path, idx, data in _iter_drawing_anchors(data_file):
         ext = os.path.splitext(media_path)[1] or '.bin'
         per_cell_count[cell_ref] = per_cell_count.get(cell_ref, 0) + 1
         n = per_cell_count[cell_ref]

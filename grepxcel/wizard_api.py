@@ -379,7 +379,9 @@ def _build_sheet_data() -> dict:
     ws: openpyxl.worksheet.worksheet.Worksheet = _STATE['ws']
     choices: dict = _STATE['choices']
     notes: dict = _STATE['notes']
-    image_cells: dict = _STATE.get('image_cells', {})
+    # image_cells is {sheet_name: {cell_ref: count}} — look up active sheet
+    _all_image_cells: dict = _STATE.get('image_cells', {})
+    image_cells: dict = _all_image_cells.get(ws.title, {})
     max_row = ws.max_row or 1
     max_col = ws.max_column or 1
     # Cap to reasonable display size
