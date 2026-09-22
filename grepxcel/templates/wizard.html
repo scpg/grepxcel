@@ -572,7 +572,7 @@ td.gx-T-bottom { border-bottom: 2px solid rgba(124,58,237,0.5) !important; }
 #trm-body { flex: 1; display: flex; overflow: hidden; }
 #trm-grid-wrap { flex: 1; overflow: auto; }
 #trm-grid {
-  border-collapse: collapse; min-width: 100%; font-size: 13px;
+  border-collapse: collapse; min-width: 100%; font-size: 16px;
   table-layout: auto;
 }
 #trm-grid th, #trm-grid td {
@@ -603,8 +603,8 @@ td.gx-T-bottom { border-bottom: 2px solid rgba(124,58,237,0.5) !important; }
 .trm-row-X .trm-row-ctrl  { border-left: 3px solid #9ca3af; }
 /* Row type chip inside ctrl cell */
 .trm-rt-chip {
-  display: inline-block; padding: 2px 6px; border-radius: 3px;
-  font-size: 11px; font-weight: 700; border: 1px solid currentColor;
+  display: inline-block; padding: 3px 7px; border-radius: 3px;
+  font-size: 13px; font-weight: 700; border: 1px solid currentColor;
 }
 /* Data cells */
 .trm-cell {
@@ -616,18 +616,18 @@ td.gx-T-bottom { border-bottom: 2px solid rgba(124,58,237,0.5) !important; }
   outline: 2px solid var(--trm-accent); outline-offset: -2px;
 }
 .trm-cell-raw {
-  font-size: 12px; color: var(--text-muted); overflow: hidden;
-  text-overflow: ellipsis; white-space: nowrap; min-height: 18px;
+  font-size: 14px; color: var(--text-muted); overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; min-height: 20px;
 }
 .trm-cell-badge {
-  display: inline-flex; align-items: center; margin-top: 2px;
-  padding: 1px 5px; border-radius: 3px; font-size: 10px; font-weight: 700;
+  display: inline-flex; align-items: center; margin-top: 3px;
+  padding: 2px 7px; border-radius: 3px; font-size: 12px; font-weight: 700;
 }
 .trm-cell-badge-L { background: rgb(21 128 61 / 0.15);  color: #15803d; border: 1px solid rgba(21,128,61,0.3); }
 .trm-cell-badge-V { background: rgb(180 83 9 / 0.15);   color: #b45309; border: 1px solid rgba(180,83,9,0.3); }
 .trm-cell-badge-I { background: rgba(156,163,175,0.12); color: #6b7280; border: 1px solid rgba(156,163,175,0.3); }
 .trm-cell-badge-E { background: transparent;            color: #6b7280; border: 1px dashed rgba(156,163,175,0.5); }
-.trm-cell-badge-inh { font-size: 10px; color: var(--text-muted); font-style: italic; }
+.trm-cell-badge-inh { font-size: 12px; color: var(--text-muted); font-style: italic; }
 /* Right panel */
 #trm-panel {
   width: 272px; flex-shrink: 0; border-left: 1px solid var(--border);
@@ -1235,13 +1235,20 @@ td.gx-T-bottom { border-bottom: 2px solid rgba(124,58,237,0.5) !important; }
         <span id="trm-range-display" style="font-family:monospace;font-size:12px">—</span>
       </span>
       <span><label>Repeat:</label>
-        <select id="trm-mult">
+        <select id="trm-mult" onchange="
+          var ci = document.getElementById('trm-mult-custom');
+          ci.hidden = this.value !== '{n,m}';
+          if (!ci.hidden) { ci.focus(); ci.select(); }
+        ">
           <option value="*">* (repeat)</option>
           <option value="1">1 (once)</option>
           <option value="2">2</option>
           <option value="3">3</option>
           <option value="{n,m}">custom…</option>
         </select>
+        <input id="trm-mult-custom" type="text" placeholder="{2,5}" hidden
+          style="width:70px;margin-left:4px;font-family:monospace"
+          title="e.g. {2,5} for 2 to 5 repeats, {2,} for at least 2">
       </span>
     </div>
     <div id="trm-legend">
@@ -1273,8 +1280,8 @@ td.gx-T-bottom { border-bottom: 2px solid rgba(124,58,237,0.5) !important; }
       <button class="btn btn-primary" onclick="applyTableModal()">✓ Apply</button>
       <button class="btn" onclick="closeTableModal()">Cancel</button>
       <span style="flex:1"></span>
-      <button class="btn" style="font-size:11px" onclick="trmAddRow('header')">+ Header row</button>
-      <button class="btn" style="font-size:11px" onclick="trmAddRow('skip')">+ Skip row</button>
+      <button class="btn" onclick="trmAddRow('header')">+ Header row</button>
+      <button class="btn" onclick="trmAddRow('skip')">+ Skip row</button>
     </div>
   </div>
 </div>
@@ -3072,7 +3079,14 @@ async function openTableModal() {
 
   // Populate settings
   document.getElementById('trm-name').value = nameEl?.value || '';
-  document.getElementById('trm-mult').value = multEl?.value || '*';
+  const multVal = multEl?.value || '*';
+  const multSt = document.getElementById('trm-mult');
+  const multCi = document.getElementById('trm-mult-custom');
+  if (['*','1','2','3'].includes(multVal)) {
+    multSt.value = multVal; multCi.hidden = true;
+  } else {
+    multSt.value = '{n,m}'; multCi.value = multVal; multCi.hidden = false;
+  }
   document.getElementById('trm-range-display').textContent = `${anchorRef} → ${endRef}`;
 
   // Try to load existing row_configs for editing
@@ -3183,9 +3197,9 @@ function _trmRenderGridDOM() {
 
   // Column ref header row
   const headTr = document.createElement('tr');
-  headTr.innerHTML = `<th style="font-size:11px;font-weight:700;padding:4px 8px;min-width:96px;background:var(--surface-raised,var(--surface))">Row type</th>`;
+  headTr.innerHTML = `<th style="font-weight:700;padding:4px 8px;min-width:96px;background:var(--surface-raised,var(--surface))">Row type</th>`;
   _trmState.colRefs.forEach(ref => {
-    headTr.innerHTML += `<th style="font-size:11px;font-weight:700;padding:4px 8px;min-width:100px">${ref}</th>`;
+    headTr.innerHTML += `<th style="font-weight:700;padding:4px 8px;min-width:100px">${ref}</th>`;
   });
   tbody.appendChild(headTr);
 
@@ -3238,7 +3252,7 @@ function _trmColBadgeHTML(row, ci) {
   const col  = row.cols?.[ci] || {};
   const role = col.role || (rt === 'data' ? 'V' : 'L');
   const name = col.name || '';
-  return `<span class="trm-cell-badge trm-cell-badge-${role}">${role}</span>${name ? `<div style="font-size:10px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_esc(name)}</div>` : ''}`;
+  return `<span class="trm-cell-badge trm-cell-badge-${role}">${role}</span>${name ? `<div style="font-size:13px;color:var(--text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${_esc(name)}</div>` : ''}`;
 }
 
 function _trmClickRowType(ri) {
@@ -3515,7 +3529,10 @@ function collectTableRowConfigs() {
 async function applyTableModal() {
   const anchorRef = _trmAnchorRef;
   const name      = document.getElementById('trm-name').value.trim() || 'table';
-  const mult      = document.getElementById('trm-mult').value || '*';
+  const multSel   = document.getElementById('trm-mult').value || '*';
+  const mult      = multSel === '{n,m}'
+    ? (document.getElementById('trm-mult-custom').value.trim() || '*')
+    : multSel;
   const endRefEl  = document.getElementById('f-T-end_ref');
   const endRef    = (endRefEl?.value || '').toUpperCase().trim();
   if (!endRef) { toast('End ref is missing — fill in the bottom-right cell', true); return; }
