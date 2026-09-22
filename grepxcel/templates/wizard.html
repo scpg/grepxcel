@@ -686,7 +686,7 @@ td.gx-T-bottom { border-bottom: 2px solid rgba(124,58,237,0.5) !important; }
       <svg viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px"><path d="M2 4h16v2H2V4zm0 5h16v2H2V9zm0 5h10v2H2v-2z"/></svg>
       Switch Sheet ▾
     </button>
-    <div id="sheet-switcher-menu" style="display:none;position:absolute;right:0;top:110%;background:var(--surface);border:1px solid var(--border);border-radius:6px;min-width:160px;z-index:200;box-shadow:0 4px 12px rgba(0,0,0,.3)">
+    <div id="sheet-switcher-menu" style="display:none;position:fixed;background:var(--surface);border:1px solid var(--border);border-radius:6px;min-width:160px;z-index:200;box-shadow:0 4px 12px rgba(0,0,0,.3)">
       <div id="sheet-switcher-list" style="padding:4px 0;font-size:13px;max-height:220px;overflow-y:auto"></div>
     </div>
   </div>
@@ -694,11 +694,11 @@ td.gx-T-bottom { border-bottom: 2px solid rgba(124,58,237,0.5) !important; }
   <input type="file" id="load-pattern-input" accept=".xlsx,.csv"
          style="display:none" onchange="uploadPattern(this)">
   <div style="position:relative;display:inline-block" id="load-pattern-wrap">
-    <button class="btn btn-sm" onclick="toggleLoadPatternMenu()" title="Load a saved pattern file to pre-fill the grid">
+    <button class="btn btn-sm" onclick="toggleLoadPatternMenu()" title="Load a saved pattern file to pre-fill the grid" id="load-pattern-btn">
       <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M2 6a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1H8a3 3 0 00-3 3v1.5a1.5 1.5 0 01-3 0V6z"/><path d="M6 12a2 2 0 012-2h8a2 2 0 012 2v2a2 2 0 01-2 2H2h2a2 2 0 002-2v-2z"/></svg>
       Load Pattern ▾
     </button>
-    <div id="load-pattern-menu" style="display:none;position:absolute;right:0;top:110%;background:var(--surface);border:1px solid var(--border);border-radius:6px;min-width:220px;z-index:200;box-shadow:0 4px 12px rgba(0,0,0,.3);padding:6px 0">
+    <div id="load-pattern-menu" style="display:none;position:fixed;background:var(--surface);border:1px solid var(--border);border-radius:6px;min-width:220px;z-index:200;box-shadow:0 4px 12px rgba(0,0,0,.3);padding:6px 0">
       <div style="padding:2px 10px 4px;font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em">Upload file</div>
       <div style="padding:0 8px 6px">
         <button class="btn btn-sm" style="width:100%;text-align:left" onclick="document.getElementById('load-pattern-input').click();toggleLoadPatternMenu()">
@@ -1911,6 +1911,9 @@ async function toggleSheetSwitcher() {
                 ${_esc(s)}${isCur?' ✓':''}
               </div>`;
     }).join('');
+    const btnRect = document.getElementById('sheet-switcher-btn').getBoundingClientRect();
+    menu.style.top   = (btnRect.bottom + 4) + 'px';
+    menu.style.right = (window.innerWidth - btnRect.right) + 'px';
     menu.style.display = 'block';
   } catch(e) { toast('Could not load sheets: ' + e, true); }
 }
@@ -1945,6 +1948,10 @@ async function toggleLoadPatternMenu() {
   // Load folder patterns
   const list = document.getElementById('load-pattern-folder-list');
   list.innerHTML = '<em style="color:var(--text-muted);font-size:12px">loading…</em>';
+  const lpBtn = document.getElementById('load-pattern-btn');
+  const lpRect = lpBtn.getBoundingClientRect();
+  menu.style.top   = (lpRect.bottom + 4) + 'px';
+  menu.style.right = (window.innerWidth - lpRect.right) + 'px';
   menu.style.display = 'block';
   try {
     const r = await fetch('/api/list-patterns');
