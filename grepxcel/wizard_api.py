@@ -1489,7 +1489,13 @@ def create_app(
         ct_map = {'.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
                   '.gif': 'image/gif', '.bmp': 'image/bmp', '.webp': 'image/webp',
                   '.tiff': 'image/tiff', '.svg': 'image/svg+xml'}
-        return FileResponse(img_path, media_type=ct_map.get(ext, 'application/octet-stream'))
+        media_type = ct_map.get(ext, 'application/octet-stream')
+        headers: dict[str, str] = {'X-Content-Type-Options': 'nosniff'}
+        if ext == '.svg':
+            # SVG can carry inline scripts; sandbox it so navigating directly
+            # to the endpoint cannot execute scripts in the wizard's origin.
+            headers['Content-Security-Policy'] = "default-src 'none'; sandbox"
+        return FileResponse(img_path, media_type=media_type, headers=headers)
 
     @app.post('/api/extract')
     async def api_extract():
