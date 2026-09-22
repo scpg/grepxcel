@@ -496,48 +496,41 @@ class SheetScanner:
         return None, None, i
 
 
-def extract_images(data_file: str, images_dir: str, stem: str) -> dict:
-    """Extract embedded images from an xlsx file without requiring Pillow.
+def _iter_drawing_anchors(data_file: str):
+    """Yield (cell_ref, media_zip_path, drawing_idx) for every image anchor in the xlsx.
 
-    xlsx files are ZIP archives.  Images live in ``xl/media/``; drawing XMLs in
-    ``xl/drawings/drawing*.xml``; anchor relationships in
-    ``xl/drawings/_rels/drawing*.xml.rels``.
+    Uses the ZIP structure directly — no Pillow required.  Yields nothing on any
+    parse error (corrupt drawings are silently skipped).
 
-    Returns a dict mapping cell reference (e.g. ``"B3"``) to the saved image
-    path (relative to *images_dir*).  If no images are found, returns ``{}``.
-    The *stem* is used to build image filenames:
-    ``{stem}_{col}{row}_{idx}.{ext}``.
+    *drawing_idx* is a global counter across all drawing files; it is 1-based and
+    monotonically increasing, useful for building unique filenames.
     """
     import zipfile
     import xml.etree.ElementTree as _ET
-    import os
 
     _NS_XDR = 'http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing'
     _NS_R   = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
-
-    result: dict = {}
-    os.makedirs(images_dir, exist_ok=True)
+    _NS_A   = 'http://schemas.openxmlformats.org/drawingml/2006/main'
 
     try:
         zf = zipfile.ZipFile(data_file, 'r')
     except (zipfile.BadZipFile, OSError):
-        return result
+        return
 
     with zf:
-        namelist = zf.namelist()
+        namelist = set(zf.namelist())
+        drawing_names = sorted(
+            n for n in namelist
+            if n.startswith('xl/drawings/drawing') and n.endswith('.xml')
+            and '/_rels/' not in n
+        )
 
-        # Find all drawing files
-        drawing_names = [n for n in namelist if n.startswith('xl/drawings/drawing')
-                         and n.endswith('.xml') and '/_rels/' not in n]
-
-        idx = 0
-        for drawing_path in sorted(drawing_names):
-            # Read relationship file for this drawing
+        global_idx = 0
+        for drawing_path in drawing_names:
             rels_path = drawing_path.replace('xl/drawings/', 'xl/drawings/_rels/') + '.rels'
             if rels_path not in namelist:
                 continue
 
-            # Parse rels to map rId → media filename
             try:
                 rels_tree = _ET.fromstring(zf.read(rels_path))
             except _ET.ParseError:
@@ -549,14 +542,12 @@ def extract_images(data_file: str, images_dir: str, stem: str) -> dict:
                 if '../media/' in target:
                     rId_to_media[rid] = target.replace('../media/', 'xl/media/')
 
-            # Parse drawing XML to find anchors and their rIds
             try:
                 draw_tree = _ET.fromstring(zf.read(drawing_path))
             except _ET.ParseError:
                 continue
 
             for anchor in draw_tree:
-                # <xdr:twoCellAnchor> or <xdr:oneCellAnchor>
                 from_el = anchor.find(f'{{{_NS_XDR}}}from')
                 if from_el is None:
                     continue
@@ -569,18 +560,17 @@ def extract_images(data_file: str, images_dir: str, stem: str) -> dict:
                     row_0 = int(row_el.text)
                 except (ValueError, TypeError):
                     continue
-                # Convert 0-based to 1-based cell ref
+
                 from openpyxl.utils import get_column_letter as _gcl
                 cell_ref_str = f'{_gcl(col_0 + 1)}{row_0 + 1}'
 
-                # Find picture blipFill rId
                 pic = anchor.find('.//' + f'{{{_NS_XDR}}}pic')
                 if pic is None:
                     continue
-                blip_fill = pic.find('.//' + '{http://schemas.openxmlformats.org/drawingml/2006/main}blip')
-                if blip_fill is None:
+                blip = pic.find('.//' + f'{{{_NS_A}}}blip')
+                if blip is None:
                     continue
-                r_embed = blip_fill.get(f'{{{_NS_R}}}embed')
+                r_embed = blip.get(f'{{{_NS_R}}}embed')
                 if not r_embed or r_embed not in rId_to_media:
                     continue
 
@@ -588,13 +578,45 @@ def extract_images(data_file: str, images_dir: str, stem: str) -> dict:
                 if media_path not in namelist:
                     continue
 
-                ext = os.path.splitext(media_path)[1] or '.bin'
-                idx += 1
-                out_name = f'{stem}_{cell_ref_str}_{idx}{ext}'
-                out_path = os.path.join(images_dir, out_name)
-                with open(out_path, 'wb') as fh:
-                    fh.write(zf.read(media_path))
-                result[cell_ref_str] = out_path
+                global_idx += 1
+                yield cell_ref_str, media_path, global_idx, zf.read(media_path)
+
+
+def scan_image_cells(data_file: str) -> dict:
+    """Return a mapping of ``{cell_ref: count}`` for cells with embedded images.
+
+    Lightweight scan — reads ZIP metadata only, no files are written.
+    Returns ``{}`` if the file has no images or cannot be read.
+    """
+    counts: dict = {}
+    for cell_ref, _media, _idx, _data in _iter_drawing_anchors(data_file):
+        counts[cell_ref] = counts.get(cell_ref, 0) + 1
+    return counts
+
+
+def extract_images(data_file: str, images_dir: str, stem: str) -> dict:
+    """Extract embedded images from an xlsx file without requiring Pillow.
+
+    Returns a dict mapping cell reference to the saved image path.  When a cell
+    has multiple images the key is ``{ref}`` for the first and ``{ref}_2``,
+    ``{ref}_3`` etc. for subsequent ones.  Returns ``{}`` if no images found.
+    """
+    import os
+
+    result: dict = {}
+    os.makedirs(images_dir, exist_ok=True)
+
+    per_cell_count: dict = {}
+    for cell_ref, media_path, idx, data in _iter_drawing_anchors(data_file):
+        ext = os.path.splitext(media_path)[1] or '.bin'
+        per_cell_count[cell_ref] = per_cell_count.get(cell_ref, 0) + 1
+        n = per_cell_count[cell_ref]
+        key = cell_ref if n == 1 else f'{cell_ref}_{n}'
+        out_name = f'{stem}_{cell_ref}_{idx}{ext}'
+        out_path = os.path.join(images_dir, out_name)
+        with open(out_path, 'wb') as fh:
+            fh.write(data)
+        result[key] = out_path
 
     return result
 

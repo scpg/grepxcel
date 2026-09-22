@@ -484,10 +484,16 @@ examples:
                    help='Local port to listen on (default: 8765)')
     p.add_argument('--no-browser', action='store_true',
                    help='Do not automatically open a browser window')
+    p.add_argument('--sheet', metavar='NAME_OR_INDEX', default=None,
+                   help='Sheet to open on startup — name or 0-based index (default: active sheet)')
     p.add_argument('--max-rows', metavar='N', type=int, default=150,
                    help='Maximum rows to display in the grid (default: 150)')
     p.add_argument('--max-cols', metavar='N', type=int, default=40,
                    help='Maximum columns to display in the grid (default: 40)')
+    p.add_argument('--max-size', type=float, default=5, metavar='MB',
+                   help='Compressed file size limit in MB (default: 5)')
+    p.add_argument('--max-uncompressed', type=float, default=50, metavar='MB',
+                   help='Uncompressed content size limit in MB (default: 50)')
 
 
 def _add_quickstart_subparser(sub) -> None:
@@ -1678,6 +1684,9 @@ def main(argv=None):
             open_browser=not getattr(args, 'no_browser', False),
             max_rows=getattr(args, 'max_rows', 150),
             max_cols=getattr(args, 'max_cols', 40),
+            sheet=getattr(args, 'sheet', None),
+            max_file_mb=getattr(args, 'max_size', 5),
+            max_uncompressed_mb=getattr(args, 'max_uncompressed', 50),
         )
         sys.exit(0)
 

@@ -80,6 +80,11 @@ class WizardState:
 # ── Cell-reference helpers ─────────────────────────────────────────────────────
 
 def _slugify(text: str) -> str:
+    import unicodedata
+    # Decompose accented chars (é→e, ü→u, ñ→n) so they survive the ASCII strip.
+    # For scripts where NFKD produces no ASCII (CJK, Arabic, Hebrew, etc.) the
+    # result will be empty and we fall back to the positional name 'field'.
+    text = unicodedata.normalize('NFKD', text).encode('ascii', 'ignore').decode('ascii')
     text = text.lower().strip()
     text = re.sub(r'[^a-z0-9]+', '_', text)
     return text.strip('_') or 'field'

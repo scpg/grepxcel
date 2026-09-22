@@ -156,6 +156,10 @@ td.gx-I { background: var(--I); color: var(--text-muted); }
 /* T-HEAD = table column header  |  T-DATA = table data row (both from preload) */
 td.gx-T-HEAD { background: rgba(168, 85, 247, 0.18); }
 td.gx-T-DATA { background: rgba(168, 85, 247, 0.07); }
+/* image cell — soft teal tint + camera badge */
+td.gx-image { background: rgba(20,184,166,0.12) !important; }
+td.gx-image::after { content: '🖼'; position: absolute; top: 1px; right: 2px; font-size: 9px; opacity: .7; pointer-events: none; }
+td.gx-image { position: relative; }
 td.gx-L.selected { background: var(--L-sel) !important; }
 td.gx-V.selected { background: var(--V-sel) !important; }
 td.gx-C.selected { background: var(--C-sel) !important; }
@@ -668,20 +672,44 @@ td.gx-T-bottom { border-bottom: 2px solid rgba(124,58,237,0.5) !important; }
 <!-- ── Top Nav ──────────────────────────────────────────────────────────── -->
 <nav id="navbar">
   <span class="brand">📊 grepxcel</span>
-  <span class="file" title="{{ xlsx_path }}">{{ xlsx_path | replace('\\', '/') | truncate(60) }} · <em>{{ sheet_name }}</em></span>
+  <span class="file" id="navbar-file" title="{{ xlsx_path }}">{{ xlsx_path | replace('\\', '/') | truncate(60) }} · <em id="navbar-sheet">{{ sheet_name }}</em></span>
   <input id="cell-jump" type="text" placeholder="Go to cell…"
          title="Jump to cell (e.g. B3) — press Enter or Ctrl+G"
          style="width:100px;border:1px solid var(--border);border-radius:5px;padding:3px 8px;font-size:12px;background:var(--bg);color:var(--text)"
          onkeydown="if(event.key==='Enter'){event.preventDefault();jumpToCell(this.value.trim().toUpperCase())}">
   <div class="spacer"></div>
+  <!-- Switch Sheet dropdown -->
+  <div style="position:relative;display:inline-block" id="sheet-switcher-wrap">
+    <button class="btn btn-sm" onclick="toggleSheetSwitcher()" title="Switch to another sheet in this workbook" id="sheet-switcher-btn">
+      <svg viewBox="0 0 20 20" fill="currentColor" style="width:14px;height:14px"><path d="M2 4h16v2H2V4zm0 5h16v2H2V9zm0 5h10v2H2v-2z"/></svg>
+      Switch Sheet ▾
+    </button>
+    <div id="sheet-switcher-menu" style="display:none;position:absolute;right:0;top:110%;background:var(--surface);border:1px solid var(--border);border-radius:6px;min-width:160px;z-index:200;box-shadow:0 4px 12px rgba(0,0,0,.3)">
+      <div id="sheet-switcher-list" style="padding:4px 0;font-size:13px;max-height:220px;overflow-y:auto"></div>
+    </div>
+  </div>
   <!-- hidden file picker for "Load Pattern" -->
   <input type="file" id="load-pattern-input" accept=".xlsx,.csv"
          style="display:none" onchange="uploadPattern(this)">
-  <button class="btn btn-sm" onclick="document.getElementById('load-pattern-input').click()"
-          title="Load a saved pattern file to pre-fill the grid">
-    <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M2 6a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1H8a3 3 0 00-3 3v1.5a1.5 1.5 0 01-3 0V6z"/><path d="M6 12a2 2 0 012-2h8a2 2 0 012 2v2a2 2 0 01-2 2H2h2a2 2 0 002-2v-2z"/></svg>
-    Load Pattern
-  </button>
+  <div style="position:relative;display:inline-block" id="load-pattern-wrap">
+    <button class="btn btn-sm" onclick="toggleLoadPatternMenu()" title="Load a saved pattern file to pre-fill the grid">
+      <svg viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M2 6a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1H8a3 3 0 00-3 3v1.5a1.5 1.5 0 01-3 0V6z"/><path d="M6 12a2 2 0 012-2h8a2 2 0 012 2v2a2 2 0 01-2 2H2h2a2 2 0 002-2v-2z"/></svg>
+      Load Pattern ▾
+    </button>
+    <div id="load-pattern-menu" style="display:none;position:absolute;right:0;top:110%;background:var(--surface);border:1px solid var(--border);border-radius:6px;min-width:220px;z-index:200;box-shadow:0 4px 12px rgba(0,0,0,.3);padding:6px 0">
+      <div style="padding:2px 10px 4px;font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em">Upload file</div>
+      <div style="padding:0 8px 6px">
+        <button class="btn btn-sm" style="width:100%;text-align:left" onclick="document.getElementById('load-pattern-input').click();toggleLoadPatternMenu()">
+          📂 Browse…
+        </button>
+      </div>
+      <hr style="border:none;border-top:1px solid var(--border);margin:4px 0">
+      <div style="padding:2px 10px 4px;font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.05em">From folder</div>
+      <div id="load-pattern-folder-list" style="padding:0 8px 6px;font-size:13px;max-height:180px;overflow-y:auto">
+        <em style="color:var(--text-muted);font-size:12px">loading…</em>
+      </div>
+    </div>
+  </div>
   <button class="btn btn-sm" onclick="undoLast()" title="Undo last classification (Ctrl+Z)">
     <svg viewBox="0 0 20 20" fill="currentColor"><path d="M7.7 8H5V5.2L2 8.2 5 11V8.3h2.7A5 5 0 0 1 10 18a5 5 0 0 0 5-5 5 5 0 0 0-7.3-4.4z"/></svg>
     Undo
@@ -1355,7 +1383,8 @@ function renderGrid(data) {
       if (cell.skip) continue;
 
       let cls = cell.choice ? `gx-cell gx-${cell.choice}` : 'gx-cell' + (cell.empty ? ' empty' : '');
-      if (cell.merged) cls += ' gx-merged';
+      if (cell.merged)     cls += ' gx-merged';
+      if (cell.has_image)  cls += ' gx-image';
 
       const note    = cell.note ? ' 📝' : '';
       const content = _cellContent(cell.choice, cell.table_role || '', cell.row_class || '',
@@ -1823,35 +1852,140 @@ async function uploadPattern(input) {
   }
 }
 
-async function savePattern() {
+async function savePattern(confirmOverwrite) {
+  const body = confirmOverwrite ? {confirm_overwrite: true} : {};
   const r = await fetch('/api/save', {
     method: 'POST',
     headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({}),
+    body: JSON.stringify(body),
   });
   const data = await r.json();
   if (data.ok) {
     toast(`Saved CSV → ${data.saved_to}`);
     setStatus(`Pattern saved → ${data.saved_to}`);
+  } else if (data.exists) {
+    if (confirm(`File already exists:\n${data.path}\n\nOverwrite?`)) savePattern(true);
   } else {
     toast('Save failed: ' + (data.detail || '?'), true);
   }
 }
 
-async function savePatternXlsx() {
+async function savePatternXlsx(confirmOverwrite) {
+  const body = confirmOverwrite ? {confirm_overwrite: true} : {};
   const r = await fetch('/api/save-xlsx', {
     method: 'POST',
     headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({}),
+    body: JSON.stringify(body),
   });
   const data = await r.json();
   if (data.ok) {
     toast(`Saved Excel → ${data.saved_to}`);
     setStatus(`Pattern saved → ${data.saved_to}`);
+  } else if (data.exists) {
+    if (confirm(`File already exists:\n${data.path}\n\nOverwrite?`)) savePatternXlsx(true);
   } else {
     toast('Save Excel failed: ' + (data.detail || '?'), true);
   }
 }
+
+// ── Sheet switching ────────────────────────────────────────────────────────
+let _sheetList = [];
+async function toggleSheetSwitcher() {
+  const menu = document.getElementById('sheet-switcher-menu');
+  if (menu.style.display !== 'none') { menu.style.display = 'none'; return; }
+  // Close other menus
+  document.getElementById('load-pattern-menu').style.display = 'none';
+  try {
+    const r = await fetch('/api/sheets');
+    const d = await r.json();
+    _sheetList = d.sheets || [];
+    const active = d.active || '';
+    const list = document.getElementById('sheet-switcher-list');
+    list.innerHTML = _sheetList.map(s => {
+      const isCur = s === active;
+      return `<div style="padding:5px 12px;cursor:${isCur?'default':'pointer'};background:${isCur?'var(--accent-dim)':'transparent'};font-weight:${isCur?'600':'400'}"
+                   ${isCur ? '' : `onclick="doSwitchSheet(${JSON.stringify(s)})"`}>
+                ${_esc(s)}${isCur?' ✓':''}
+              </div>`;
+    }).join('');
+    menu.style.display = 'block';
+  } catch(e) { toast('Could not load sheets: ' + e, true); }
+}
+
+async function doSwitchSheet(name) {
+  document.getElementById('sheet-switcher-menu').style.display = 'none';
+  const r = await fetch('/api/switch-sheet', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({sheet: name}),
+  });
+  const d = await r.json();
+  if (!d.ok) { toast('Switch failed: ' + (d.detail || '?'), true); return; }
+  // Update navbar sheet label
+  const el = document.getElementById('navbar-sheet');
+  if (el) el.textContent = name;
+  // Reset local state and reload grid
+  cellData = {};
+  selectedRef = null;
+  sheetData = null;
+  await loadSheet();
+  await loadStats();
+  toast(`Switched to sheet: ${name}`);
+}
+
+// ── Load Pattern from folder ───────────────────────────────────────────────
+async function toggleLoadPatternMenu() {
+  const menu = document.getElementById('load-pattern-menu');
+  if (menu.style.display !== 'none') { menu.style.display = 'none'; return; }
+  // Close other menus
+  document.getElementById('sheet-switcher-menu').style.display = 'none';
+  // Load folder patterns
+  const list = document.getElementById('load-pattern-folder-list');
+  list.innerHTML = '<em style="color:var(--text-muted);font-size:12px">loading…</em>';
+  menu.style.display = 'block';
+  try {
+    const r = await fetch('/api/list-patterns');
+    const d = await r.json();
+    const patterns = d.patterns || [];
+    if (!patterns.length) {
+      list.innerHTML = '<em style="color:var(--text-muted);font-size:12px">No pattern files found</em>';
+    } else {
+      list.innerHTML = patterns.map(p =>
+        `<div style="padding:4px 8px;cursor:pointer;border-radius:3px" class="folder-pat-item"
+              onclick="loadPatternFromFolder(${JSON.stringify(p.path)},${JSON.stringify(p.name)})"
+              onmouseover="this.style.background='var(--accent-dim)'" onmouseout="this.style.background=''">
+           <div style="font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${_esc(p.name)}</div>
+           <div style="font-size:10px;color:var(--text-muted)">${p.size_kb} KB</div>
+         </div>`
+      ).join('');
+    }
+  } catch(e) { list.innerHTML = `<em style="color:var(--text-muted);font-size:12px">Error: ${_esc(String(e))}</em>`; }
+}
+
+async function loadPatternFromFolder(path, name) {
+  document.getElementById('load-pattern-menu').style.display = 'none';
+  try {
+    const r = await fetch('/api/load-pattern-by-path', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({path}),
+    });
+    const d = await r.json();
+    if (!d.ok) { toast('Load failed: ' + (d.detail || '?'), true); return; }
+    cellData = {}; selectedRef = null; sheetData = null;
+    await loadSheet(); await loadStats();
+    if (d.warnings?.length) toast(`Loaded "${name}" with ${d.warnings.length} warning(s)`);
+    else toast(`Loaded pattern: ${name}`);
+  } catch(e) { toast('Load failed: ' + e, true); }
+}
+
+// Close dropdowns when clicking outside
+document.addEventListener('click', e => {
+  if (!document.getElementById('sheet-switcher-wrap')?.contains(e.target))
+    document.getElementById('sheet-switcher-menu').style.display = 'none';
+  if (!document.getElementById('load-pattern-wrap')?.contains(e.target))
+    document.getElementById('load-pattern-menu').style.display = 'none';
+});
 
 // ── Tabs ──────────────────────────────────────────────────────────────────
 function switchTab(name) {
