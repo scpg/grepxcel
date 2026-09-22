@@ -124,6 +124,7 @@ _VALID_FIELD_TYPES = frozenset({
     'boolean', 'bool',
     'time', 'duration', 'date', 'datetime', 'timestamp',
     'url',
+    'image',
 })
 
 

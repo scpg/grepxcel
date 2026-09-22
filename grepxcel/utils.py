@@ -16,6 +16,15 @@ _ZERO_WIDTH = set('​‌‍﻿ ')
 # Prevents ReDoS via extremely long cell content against complex patterns.
 _MAX_REGEX_INPUT_LEN = 1_000
 
+# URL schemes accepted by validate_type for 'url' fields.
+# Covers what realistically appears in Excel: web, file transfer, email/messaging, local files.
+_ALLOWED_URL_SCHEMES = frozenset({
+    'http', 'https',           # web
+    'ftp', 'ftps',             # file transfer
+    'mailto', 'tel', 'sms',   # email / messaging
+    'file',                    # local files
+})
+
 # Hard wall-clock bound on a single regex match (seconds). Safe patterns on a
 # <=1000-char cell finish in microseconds; this only ever fires on catastrophic
 # backtracking. Override with GREPXCEL_REGEX_TIMEOUT for unusual workloads.
@@ -234,12 +243,29 @@ def validate_type(value, field_type: str, regex: str, currency_sign: str = '€'
         return ok, ('' if ok else f'{repr(value)} is not a {field_type}')
 
     elif field_type == 'url':
+        from urllib.parse import urlparse as _urlparse
         str_val = str(value) if value is not None else ''
-        has_scheme = '://' in str_val or str_val.lower().startswith('www.')
-        ok = has_scheme and _safe_match(regex, str_val, _re.DOTALL | icase, max_cell_len)
-        if not has_scheme:
-            return False, f'{repr(str_val)} does not look like a URL (no scheme or www.)'
+        try:
+            _parsed = _urlparse(str_val)
+        except Exception:
+            return False, f'{repr(str_val)} is not a valid URL'
+        _scheme = _parsed.scheme.lower()
+        if not _scheme:
+            return False, f'{repr(str_val)} does not look like a URL (no scheme)'
+        if _scheme == 'javascript':
+            return False, 'javascript: URLs are not permitted'
+        if _scheme not in _ALLOWED_URL_SCHEMES:
+            return False, (
+                f'URL scheme {repr(_scheme)} is not supported '
+                f'(accepted: {", ".join(sorted(_ALLOWED_URL_SCHEMES))})'
+            )
+        ok = _safe_match(regex, str_val, _re.DOTALL | icase, max_cell_len)
         return ok, ('' if ok else f'{repr(str_val)} does not match /{regex}/')
+
+    elif field_type == 'image':
+        # Image cells carry embedded binary data, not a text value.
+        # Presence is confirmed by scan_image_cells(); validate_type() always passes.
+        return True, ''
 
     return False, f'unknown type {repr(field_type)}'
 

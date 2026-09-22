@@ -814,14 +814,16 @@ td.gx-T-bottom { border-bottom: 2px solid rgba(124,58,237,0.5) !important; }
               </label>
               <input id="f-V-name" type="text" placeholder="e.g. invoice_no"></div>
             <div class="form-group"><label>Type
-                <span class="info-icon" title="Expected data type of the extracted value.&#10;string: any text. integer: whole numbers. number: decimals.&#10;date: parsed as ISO date. boolean: true/false.">🛈</span>
+                <span class="info-icon" title="Expected data type of the extracted value.&#10;string: any text. integer: whole numbers. number: decimals.&#10;date: parsed as ISO date. boolean: true/false.&#10;url: web/ftp/mailto/file URL. image: embedded image cell.">🛈</span>
               </label>
-              <select id="f-V-type">
+              <select id="f-V-type" onchange="onVTypeChange(this.value)">
                 <option value="string">string</option>
                 <option value="integer">integer</option>
                 <option value="number">number</option>
                 <option value="date">date</option>
                 <option value="boolean">boolean</option>
+                <option value="url">url</option>
+                <option value="image">image</option>
               </select></div>
             <div class="form-group"><label>Match mode
                 <span class="info-icon" title="How the match pattern below is interpreted.&#10;regexp (default): Python regular expression.&#10;literal: exact text match.&#10;glob: wildcard (* = anything, ? = one char).&#10;Overrides the global default in Config.">🛈</span>
@@ -1602,6 +1604,7 @@ function prefillForm(info) {
     setVal('f-V-match', info.match || '.*');
     setVal('f-V-modifiers', info.modifiers || 'none');
     setVal('f-V-notes', info.note || '');
+    onVTypeChange(info.ftype || 'string');
   }
 }
 
@@ -1650,12 +1653,14 @@ function selectAction(action) {
     setVal('f-L-notes', info.note || '');
   } else if (action === 'V') {
     const suggested = suggestNameFromLabel(selectedRef);
+    const inferredType = info.inferred_type || info.ftype || 'string';
     setVal('f-V-name', info.name || suggested || slugify(info.raw || 'field'));
-    setVal('f-V-type', info.inferred_type || info.ftype || 'string');
+    setVal('f-V-type', inferredType);
     setVal('f-V-match_mode', '(default)');
     setVal('f-V-match', info.match || '.*');
     setVal('f-V-modifiers', 'none');
     setVal('f-V-notes', info.note || '');
+    onVTypeChange(inferredType);
   } else if (action === 'T') {
     const defaultName = info.name || (slugify(info.raw || 'table') + '_table');
     setVal('f-T-name', defaultName);
@@ -2699,6 +2704,15 @@ async function _tRefreshTableCells(anchorRef) {
   } catch(e) {}
   // Also refresh via loadSheet for full grid re-render
   await loadSheet();
+}
+
+// ── Value type change: hide match controls for image ──────────────────────────
+function onVTypeChange(type) {
+  const matchModeRow = document.getElementById('f-V-match_mode')?.closest('.form-group');
+  const matchRow     = document.getElementById('f-V-match')?.closest('.form-group');
+  const hide = type === 'image';
+  if (matchModeRow) matchModeRow.style.display = hide ? 'none' : '';
+  if (matchRow)     matchRow.style.display     = hide ? 'none' : '';
 }
 
 // ── Modifier checkbox dropdown ────────────────────────────────────────────────

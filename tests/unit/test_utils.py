@@ -287,14 +287,54 @@ def test_url_https():
     ok, _ = validate_type('https://example.com', 'url', r'.*')
     assert ok
 
-def test_url_www():
-    ok, _ = validate_type('www.example.com', 'url', r'.*')
+def test_url_http():
+    ok, _ = validate_type('http://example.com/path?q=1', 'url', r'.*')
+    assert ok
+
+def test_url_ftp():
+    ok, _ = validate_type('ftp://files.example.com/pub/file.zip', 'url', r'.*')
+    assert ok
+
+def test_url_ftps():
+    ok, _ = validate_type('ftps://files.example.com/pub/file.zip', 'url', r'.*')
+    assert ok
+
+def test_url_mailto():
+    ok, _ = validate_type('mailto:user@example.com', 'url', r'.*')
+    assert ok
+
+def test_url_tel():
+    ok, _ = validate_type('tel:+1-800-555-0100', 'url', r'.*')
+    assert ok
+
+def test_url_sms():
+    ok, _ = validate_type('sms:+15551234567', 'url', r'.*')
+    assert ok
+
+def test_url_file():
+    ok, _ = validate_type('file:///home/user/document.xlsx', 'url', r'.*')
     assert ok
 
 def test_url_no_scheme_rejected():
     ok, reason = validate_type('not-a-url', 'url', r'.*')
     assert not ok
     assert 'scheme' in reason or 'URL' in reason
+
+def test_url_bare_www_rejected():
+    # www.example.com has no scheme — rejected by urlparse-based check
+    ok, reason = validate_type('www.example.com', 'url', r'.*')
+    assert not ok
+    assert 'scheme' in reason or 'URL' in reason
+
+def test_url_javascript_blocked():
+    ok, reason = validate_type('javascript:alert(1)', 'url', r'.*')
+    assert not ok
+    assert 'javascript' in reason
+
+def test_url_unknown_scheme_rejected():
+    ok, reason = validate_type('myapp://open?id=123', 'url', r'.*')
+    assert not ok
+    assert 'not supported' in reason or 'scheme' in reason
 
 def test_url_regex_applied():
     ok, _ = validate_type('https://example.com', 'url', r'https://.*')
@@ -303,6 +343,25 @@ def test_url_regex_applied():
 def test_url_regex_mismatch():
     ok, _ = validate_type('http://example.com', 'url', r'https://.*')
     assert not ok
+
+
+# ─── validate_type: image ─────────────────────────────────────────────────────
+
+def test_image_none_passes():
+    # Image cells have no text value (openpyxl returns None); always valid.
+    ok, reason = validate_type(None, 'image', r'.*')
+    assert ok
+    assert reason == ''
+
+def test_image_any_value_passes():
+    # validate_type for image never rejects based on cell value.
+    ok, _ = validate_type('anything', 'image', r'.*')
+    assert ok
+
+def test_image_not_unknown_type():
+    # 'image' must not fall through to the 'unknown type' error branch.
+    ok, reason = validate_type(None, 'image', r'.*')
+    assert 'unknown' not in reason
 
 
 # ─── validate_type: unknown type ─────────────────────────────────────────────
