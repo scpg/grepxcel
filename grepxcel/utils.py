@@ -201,10 +201,26 @@ def validate_type(value, field_type: str, regex: str, currency_sign: str = '€'
         return ok, ('' if ok else f'{str_val} does not match /{regex}/')
 
     elif field_type in ('boolean', 'bool'):
-        # Excel TRUE/FALSE → openpyxl returns a Python bool. (bool is a subclass
-        # of int, so the numeric branches above explicitly reject it first.)
-        ok = isinstance(value, bool)
-        return ok, ('' if ok else f'{repr(value)} is not a boolean')
+        # Accepted forms:
+        #   Python bool  — Excel formula =TRUE()/=FALSE() (openpyxl returns bool)
+        #   int 0 or 1   — common in CSV exports and number-formatted columns
+        #   str          — "TRUE"/"FALSE", "YES"/"NO", "1"/"0" (case-insensitive, trimmed)
+        # bool is a subclass of int; the numeric branches above reject it early,
+        # so the isinstance(value, bool) check here is always reached for bools.
+        _BOOL_STRINGS = frozenset({'TRUE', 'FALSE', 'YES', 'NO', '1', '0'})
+        if isinstance(value, bool):
+            str_val = str(value)          # "True" or "False"
+        elif isinstance(value, int) and value in (0, 1):
+            str_val = str(value)          # "0" or "1"
+        elif isinstance(value, str) and value.strip().upper() in _BOOL_STRINGS:
+            str_val = value.strip()
+        else:
+            return False, (
+                f'{repr(value)} is not a boolean '
+                f'(accepted: True/False, Yes/No, 1/0)'
+            )
+        ok = _safe_match(regex, str_val, icase, max_cell_len)
+        return ok, ('' if ok else f'{repr(str_val)} does not match /{regex}/')
 
     elif field_type in ('time', 'duration'):
         # Clock-time cells → datetime.time; duration cells ([h]:mm) → timedelta.
@@ -230,9 +246,10 @@ def validate_type(value, field_type: str, regex: str, currency_sign: str = '€'
 
 def infer_cell_type(values: list) -> str:
     """Return the most common grepxcel type for a list of openpyxl cell values."""
+    _BOOL_STRINGS = frozenset({'TRUE', 'FALSE', 'YES', 'NO'})
     counts: dict[str, int] = {
         'datetime': 0, 'date': 0, 'time': 0, 'currency': 0,
-        'integer': 0, 'string': 0,
+        'integer': 0, 'boolean': 0, 'string': 0,
     }
     for v in values:
         if v is None:
@@ -244,7 +261,7 @@ def infer_cell_type(values: list) -> str:
         elif isinstance(v, (datetime.time, datetime.timedelta)):
             counts['time'] += 1
         elif isinstance(v, bool):
-            counts['string'] += 1
+            counts['boolean'] += 1
         elif isinstance(v, float):
             if v.is_integer():
                 counts['integer'] += 1
@@ -252,6 +269,8 @@ def infer_cell_type(values: list) -> str:
                 counts['currency'] += 1
         elif isinstance(v, int):
             counts['integer'] += 1
+        elif isinstance(v, str) and v.strip().upper() in _BOOL_STRINGS:
+            counts['boolean'] += 1
         else:
             counts['string'] += 1
     total = sum(counts.values())

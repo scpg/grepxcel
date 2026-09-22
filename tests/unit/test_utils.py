@@ -209,6 +209,78 @@ def test_percentage_string_rejected():
     assert 'numeric' in reason
 
 
+# ─── validate_type: boolean ──────────────────────────────────────────────────
+
+def test_bool_python_true():
+    ok, _ = validate_type(True, 'boolean', r'.*')
+    assert ok
+
+def test_bool_python_false():
+    ok, _ = validate_type(False, 'boolean', r'.*')
+    assert ok
+
+def test_bool_str_true_upper():
+    ok, _ = validate_type('TRUE', 'boolean', r'.*')
+    assert ok
+
+def test_bool_str_false_lower():
+    ok, _ = validate_type('false', 'boolean', r'.*')
+    assert ok
+
+def test_bool_str_yes():
+    ok, _ = validate_type('YES', 'boolean', r'.*')
+    assert ok
+
+def test_bool_str_no_lower():
+    ok, _ = validate_type('no', 'boolean', r'.*')
+    assert ok
+
+def test_bool_str_mixed_case():
+    ok, _ = validate_type('  Yes  ', 'boolean', r'.*')
+    assert ok
+
+def test_bool_str_one():
+    ok, _ = validate_type('1', 'boolean', r'.*')
+    assert ok
+
+def test_bool_str_zero():
+    ok, _ = validate_type('0', 'boolean', r'.*')
+    assert ok
+
+def test_bool_int_one():
+    ok, _ = validate_type(1, 'boolean', r'.*')
+    assert ok
+
+def test_bool_int_zero():
+    ok, _ = validate_type(0, 'boolean', r'.*')
+    assert ok
+
+def test_bool_int_two_rejected():
+    ok, reason = validate_type(2, 'boolean', r'.*')
+    assert not ok
+    assert 'boolean' in reason
+
+def test_bool_string_arbitrary_rejected():
+    ok, reason = validate_type('maybe', 'boolean', r'.*')
+    assert not ok
+    assert 'boolean' in reason
+
+def test_bool_regex_applied():
+    # Regex filters the string representation; "True" must match (?i)true|false
+    ok, _ = validate_type(True, 'boolean', r'(?i)true|false')
+    assert ok
+
+def test_bool_regex_rejects_yes_when_restricted():
+    # If the user restricts to true/false only via regex, YES should not match
+    ok, _ = validate_type('YES', 'boolean', r'(?i)true|false')
+    assert not ok
+
+def test_bool_alias():
+    # 'bool' is an alias for 'boolean'
+    ok, _ = validate_type(True, 'bool', r'.*')
+    assert ok
+
+
 # ─── validate_type: url ──────────────────────────────────────────────────────
 
 def test_url_https():

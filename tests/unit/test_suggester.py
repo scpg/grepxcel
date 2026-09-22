@@ -61,8 +61,8 @@ class TestInferCellType:
         dt = datetime.datetime(2024, 1, 1, 12, 0)
         assert infer_cell_type([dt, dt]) == 'datetime'
 
-    def test_booleans_treated_as_string(self):
-        assert infer_cell_type([True, False]) == 'string'
+    def test_booleans_inferred_as_boolean(self):
+        assert infer_cell_type([True, False]) == 'boolean'
 
     def test_majority_wins(self):
         assert infer_cell_type([1, 2, 3, 'text']) == 'integer'

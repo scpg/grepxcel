@@ -191,6 +191,8 @@ def _infer_cell_type(cell) -> str:
         return 'string'
     if isinstance(val, bool):
         return 'boolean'
+    if isinstance(val, str) and val.strip().upper() in ('TRUE', 'FALSE', 'YES', 'NO'):
+        return 'boolean'
     if isinstance(val, _dt.timedelta):
         return 'time'
     if isinstance(val, (_dt.datetime, _dt.date)):
