@@ -1433,6 +1433,8 @@ def create_app(
         choice_info = _STATE['choices'].get(ref, {})
         ex_col_a_extra = choice_info.get('col_a_extra', '')
         ex_var_mode, ex_modifiers = _col_a_extra_to_parts(ex_col_a_extra)
+        _all_img = _STATE.get('image_cells', {})
+        img_info = _all_img.get(ws.title, {}).get(ref)
         return JSONResponse({
             'ref':          ref,
             'row':          row,
@@ -1441,6 +1443,10 @@ def create_app(
             'value':        _cell_display(cell.value, 200),
             'raw':          str(cell.value) if cell.value is not None else '',
             'inferred_type': _infer_cell_type(cell),
+            'has_image':    img_info is not None,
+            'image_count':  img_info['count'] if img_info else 0,
+            'image_suspicious': img_info.get('suspicious', False) if img_info else False,
+            'image_mimes':  img_info.get('mimes', []) if img_info else [],
             'choice':       choice_info.get('choice', ''),
             'anchor':       choice_info.get('anchor', ''),   # set for T-HEAD / T-DATA
             'name':         choice_info.get('name', ''),

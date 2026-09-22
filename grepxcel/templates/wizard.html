@@ -934,6 +934,12 @@ td.gx-T-bottom { border-bottom: 2px solid rgba(124,58,237,0.5) !important; }
             <button class="btn btn-primary" onclick="applyClassification()">✓ Apply</button>
             <button class="btn" onclick="cancelClassification()">Cancel</button>
           </div>
+
+          <!-- ── Cell detail panel ── -->
+          <div id="cell-detail-box" style="margin-top:14px;padding:10px 12px;background:var(--bg);border:1px solid var(--border);border-radius:6px">
+            <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:8px">Cell info</div>
+            <div id="cell-detail-content" style="font-size:12px;line-height:1.7"></div>
+          </div>
         </div>
       </div>
 
@@ -1463,7 +1469,59 @@ async function selectCell(ref) {
 
   // Pre-fill form from existing classification
   prefillForm(info);
+  _updateCellDetail(ref, info);
   setStatus(`Selected ${ref}` + (info.choice ? ` — currently ${info.choice}` : ''));
+}
+
+function _updateCellDetail(ref, info) {
+  const box = document.getElementById('cell-detail-content');
+  if (!box) return;
+  const TYPE_COLOR = {
+    string:'#6ea8d0', integer:'#4ade80', number:'#4ade80', date:'#fb923c',
+    boolean:'#c084fc', url:'#38bdf8', image:'#2dd4bf', empty:'var(--text-muted)',
+  };
+  const rows = [];
+
+  // Raw value (full, scrollable)
+  if (info.raw) {
+    rows.push(`<div style="margin-bottom:7px">
+      <span style="color:var(--text-muted);font-size:11px">Value</span>
+      <div style="margin-top:2px;font-family:monospace;font-size:11px;word-break:break-all;max-height:60px;overflow-y:auto;background:var(--surface);padding:3px 5px;border-radius:3px">${_esc(String(info.raw).substring(0,400))}</div>
+    </div>`);
+  }
+
+  // Inferred type badge
+  const itype = info.inferred_type || 'empty';
+  const tc = TYPE_COLOR[itype] || '#888';
+  rows.push(`<div style="margin-bottom:7px">
+    <span style="color:var(--text-muted);font-size:11px">Type</span>
+    <span style="margin-left:6px;padding:1px 7px;border-radius:10px;font-size:11px;font-weight:600;background:${tc}22;color:${tc}">${_esc(itype)}</span>
+  </div>`);
+
+  // Image info
+  if (info.has_image) {
+    const susp = info.image_suspicious;
+    const mimes = (info.image_mimes || []).filter(m => m !== 'image/embedded').join(', ') || 'embedded';
+    rows.push(`<div style="margin-bottom:7px;padding:6px 8px;border-radius:5px;background:${susp?'rgba(245,158,11,.12)':'rgba(20,184,166,.12)'};border:1px solid ${susp?'rgba(245,158,11,.4)':'rgba(20,184,166,.3)'}">
+      <div style="font-weight:600;color:${susp?'#f59e0b':'#2dd4bf'}">${susp?'⚠️':'🖼'} ${info.image_count} image${info.image_count!==1?'s':''}</div>
+      <div style="font-size:11px;color:var(--text-muted);margin-top:2px">${_esc(mimes)}</div>
+      ${susp?'<div style="font-size:11px;color:#f59e0b;margin-top:3px">Suspicious content — not extracted to disk</div>':''}
+    </div>`);
+  }
+
+  // Current classification
+  if (info.choice) {
+    rows.push(`<div style="margin-bottom:7px">
+      <span style="color:var(--text-muted);font-size:11px">Classified</span>
+      <span style="margin-left:6px;font-size:11px;font-weight:600">${_esc(info.choice)}</span>
+      ${info.name ? `<code style="margin-left:4px;font-size:11px;padding:0 4px;background:var(--surface);border-radius:3px">${_esc(info.name)}</code>` : ''}
+    </div>`);
+  }
+
+  // Position
+  rows.push(`<div style="color:var(--text-muted);font-size:11px">Row ${info.row} · Col ${info.col_letter}${info.col}</div>`);
+
+  box.innerHTML = rows.length ? rows.join('') : '<em style="color:var(--text-muted)">Empty cell</em>';
 }
 
 function _enterTableMode(anchorRef, clickedRef) {
@@ -1907,7 +1965,7 @@ async function toggleSheetSwitcher() {
     list.innerHTML = _sheetList.map(s => {
       const isCur = s === active;
       return `<div style="padding:5px 12px;cursor:${isCur?'default':'pointer'};background:${isCur?'var(--accent-dim)':'transparent'};font-weight:${isCur?'600':'400'}"
-                   ${isCur ? '' : `onclick="doSwitchSheet(${JSON.stringify(s)})"`}>
+                   data-sheet="${_esc(s)}" ${isCur ? '' : 'onclick="doSwitchSheet(this.dataset.sheet)"'}>
                 ${_esc(s)}${isCur?' ✓':''}
               </div>`;
     }).join('');
@@ -1962,10 +2020,11 @@ async function toggleLoadPatternMenu() {
     } else {
       list.innerHTML = patterns.map(p =>
         `<div style="padding:4px 8px;cursor:pointer;border-radius:3px" class="folder-pat-item"
-              onclick="loadPatternFromFolder(${JSON.stringify(p.path)},${JSON.stringify(p.name)})"
+              data-path="${_esc(p.path)}" data-name="${_esc(p.name)}"
+              onclick="loadPatternFromFolder(this.dataset.path,this.dataset.name)"
               onmouseover="this.style.background='var(--accent-dim)'" onmouseout="this.style.background=''">
            <div style="font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${_esc(p.name)}</div>
-           <div style="font-size:10px;color:var(--text-muted)">${p.size_kb} KB</div>
+           <div style="font-size:10px;color:var(--text-muted)">${p.size ? Math.round(p.size/1024)+' KB' : '—'}</div>
          </div>`
       ).join('');
     }
