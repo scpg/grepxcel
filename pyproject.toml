@@ -75,7 +75,7 @@ polars = [
     "polars>=1.0",
 ]
 mcp = [
-    "mcp>=1.23,<2",
+    "mcp>=1.23,<3",
 ]
 wizard = [
     "textual>=8.0",
