@@ -379,7 +379,7 @@ def _build_sheet_data() -> dict:
     ws: openpyxl.worksheet.worksheet.Worksheet = _STATE['ws']
     choices: dict = _STATE['choices']
     notes: dict = _STATE['notes']
-    # image_cells is {sheet_name: {cell_ref: count}} — look up active sheet
+    # image_cells is {sheet_name: {cell_ref: {count, mimes, suspicious}}}
     _all_image_cells: dict = _STATE.get('image_cells', {})
     image_cells: dict = _all_image_cells.get(ws.title, {})
     max_row = ws.max_row or 1
@@ -400,7 +400,9 @@ def _build_sheet_data() -> dict:
             colspan, rowspan = merge_topleft.get(ref, (1, 1))
             is_anchor = ref in merge_topleft
             is_skip   = ref in merge_skip
-            has_img   = ref in image_cells
+            img_info    = image_cells.get(ref)
+            has_img     = img_info is not None
+            img_suspicious = has_img and img_info.get('suspicious', False)
             cell_type = 'image' if has_img and cell.value is None else _cell_type_display(cell)
             row.append({
                 'ref':       ref,
@@ -410,8 +412,9 @@ def _build_sheet_data() -> dict:
                 'value':     _cell_display(cell.value),
                 'raw':       str(cell.value) if cell.value is not None else '',
                 'type':      cell_type,
-                'has_image': has_img,
-                'image_count': image_cells.get(ref, 0),
+                'has_image':       has_img,
+                'image_suspicious': img_suspicious,
+                'image_count': img_info['count'] if img_info else 0,
                 'choice':      choice_info.get('choice', ''),
                 'name':        choice_info.get('name', ''),
                 'anchor':      choice_info.get('anchor', ''),  # set for T-HEAD / T-DATA

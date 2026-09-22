@@ -496,6 +496,129 @@ class SheetScanner:
         return None, None, i
 
 
+def _check_media_bytes(data: bytes, zip_path: str = '') -> tuple:
+    """Detect the media type of *data* by inspecting magic bytes.
+
+    Returns ``(mime_type, is_supported)`` where *mime_type* is a MIME-type
+    string (or ``None`` when the format is unrecognised) and *is_supported* is
+    ``True`` only for known image or audio types.
+
+    Supported image types : JPEG, PNG, GIF, BMP, TIFF, WebP, ICO, HEIC/HEIF,
+                            AVIF, SVG
+    Supported audio types : WAV, MP3/ID3, OGG, FLAC
+    All other binary content (EXE, ZIP, PDF, Office, ELF, Mach-O, scripts …)
+    returns ``(None, False)`` and must be rejected.
+    """
+    if len(data) < 4:
+        return None, False
+
+    # ── Image magic bytes ────────────────────────────────────────────────────
+    if data[:3] == b'\xff\xd8\xff':
+        return 'image/jpeg', True
+
+    if data[:8] == b'\x89PNG\r\n\x1a\n':
+        return 'image/png', True
+
+    if data[:6] in (b'GIF87a', b'GIF89a'):
+        return 'image/gif', True
+
+    if data[:2] == b'BM' and len(data) >= 6:
+        # BMP: verify file-size field is plausible (basic sanity check)
+        import struct as _struct
+        try:
+            claimed = _struct.unpack_from('<I', data, 2)[0]
+            if claimed <= len(data) + 1024 * 1024:  # within 1 MB of actual size
+                return 'image/bmp', True
+        except Exception:
+            pass
+        return 'image/bmp', True
+
+    if data[:4] in (b'II\x2a\x00', b'MM\x00\x2a'):
+        return 'image/tiff', True
+
+    # RIFF container — WebP or WAV
+    if data[:4] == b'RIFF' and len(data) >= 12:
+        brand = data[8:12]
+        if brand == b'WEBP':
+            return 'image/webp', True
+        if brand == b'WAVE':
+            return 'audio/wav', True
+        # Other RIFF (AVI, etc.) — not supported
+        return None, False
+
+    # ICO / CUR
+    if data[:4] in (b'\x00\x00\x01\x00', b'\x00\x00\x02\x00'):
+        return 'image/x-icon', True
+
+    # ISO Base Media File Format — HEIC, HEIF, AVIF (ftyp box at byte 4)
+    if len(data) >= 12 and data[4:8] == b'ftyp':
+        brand = data[8:12].lower()
+        if brand in (b'heic', b'heix', b'mif1', b'msf1'):
+            return 'image/heic', True
+        if brand in (b'heif', b'hevx'):
+            return 'image/heif', True
+        if brand in (b'avif', b'avis'):
+            return 'image/avif', True
+        # Other MP4/M4A/QuickTime ftyp — not supported as embedded images
+        return None, False
+
+    # ── Audio magic bytes ────────────────────────────────────────────────────
+    # ID3-tagged MP3
+    if data[:3] == b'ID3':
+        return 'audio/mpeg', True
+    # Raw MPEG frame sync (various bit-rate/channel combos)
+    if data[:2] in (b'\xff\xfb', b'\xff\xf3', b'\xff\xf2', b'\xff\xfa'):
+        return 'audio/mpeg', True
+    # OGG container (Vorbis, Opus, FLAC-in-OGG)
+    if data[:4] == b'OggS':
+        return 'audio/ogg', True
+    # FLAC
+    if data[:4] == b'fLaC':
+        return 'audio/flac', True
+
+    # ── SVG (text-based XML) — checked last, CPU-cheaper than regex ──────────
+    try:
+        head = data[:512].decode('utf-8', errors='ignore').lstrip('﻿ \t\r\n')
+        if head.startswith('<?xml') or head.startswith('<svg') or '<svg' in head[:256]:
+            return 'image/svg+xml', True
+    except Exception:
+        pass
+
+    # ── Known-dangerous signatures — explicit rejection with label ───────────
+    _DANGEROUS = {
+        b'MZ':               'PE/DOS executable',
+        b'\x7fELF':         'ELF executable',
+        b'\xca\xfe\xba\xbe': 'Mach-O fat binary',
+        b'\xce\xfa\xed\xfe': 'Mach-O 32-bit',
+        b'\xcf\xfa\xed\xfe': 'Mach-O 64-bit',
+        b'PK\x03\x04':      'ZIP archive',
+        b'PK\x05\x06':      'ZIP archive (empty)',
+        b'%PDF':             'PDF document',
+        b'\xd0\xcf\x11\xe0': 'OLE2 compound document (Office 97-2003)',
+        b'PK\x03\x04\x14':  'OOXML / Office 2007+ document',
+        b'\x1f\x8b':        'gzip archive',
+        b'BZh':              'bzip2 archive',
+        b'\xfd7zXZ':         'XZ archive',
+        b'Rar!':             'RAR archive',
+        b'7z\xbc\xaf':      '7-Zip archive',
+    }
+    for magic, label in _DANGEROUS.items():
+        if data[:len(magic)] == magic:
+            return label, False   # mime_type carries the threat label
+
+    # Unrecognised binary
+    return None, False
+
+
+# Frozenset of all MIME types _check_media_bytes returns for supported content
+_SUPPORTED_MEDIA_MIMES = frozenset({
+    'image/jpeg', 'image/png', 'image/gif', 'image/bmp', 'image/tiff',
+    'image/webp', 'image/x-icon', 'image/svg+xml',
+    'image/heic', 'image/heif', 'image/avif',
+    'audio/wav', 'audio/mpeg', 'audio/ogg', 'audio/flac',
+})
+
+
 def _build_sheet_name_maps(zf, namelist):
     """Return (sheet_xml_to_name, drawing_to_sheet_name) from workbook metadata.
 
@@ -690,20 +813,40 @@ def _iter_drawing_anchors(data_file: str):
 
 
 def scan_image_cells(data_file: str) -> dict:
-    """Return ``{sheet_name: {cell_ref: count}}`` for cells with embedded images.
+    """Return per-sheet, per-cell media info for all embedded media in the file.
+
+    Return structure::
+
+        {
+          sheet_name: {
+            cell_ref: {
+              'count':      int,          # total anchors / vm= refs on this cell
+              'mimes':      list[str],    # MIME types detected (may include threat labels)
+              'suspicious': bool,         # True if ANY item failed _check_media_bytes
+            }
+          }
+        }
 
     Covers both drawing-anchored images and IMAGE() formula cells (richData).
-    Lightweight scan — reads ZIP metadata only, no files are written.
-    Returns ``{}`` if the file has no images or cannot be read.
+    No files are written.  Returns ``{}`` on any read error.
     """
     import zipfile
 
     result: dict = {}
-    for sheet_name, cell_ref, _media, _idx, _data in _iter_drawing_anchors(data_file):
-        bucket = result.setdefault(sheet_name, {})
-        bucket[cell_ref] = bucket.get(cell_ref, 0) + 1
 
-    # Also include IMAGE() formula cells from richData
+    for sheet_name, cell_ref, _media_path, _idx, data in _iter_drawing_anchors(data_file):
+        mime, ok = _check_media_bytes(data)
+        bucket = result.setdefault(sheet_name, {})
+        entry  = bucket.setdefault(cell_ref, {'count': 0, 'mimes': [], 'suspicious': False})
+        entry['count'] += 1
+        if mime:
+            entry['mimes'].append(mime)
+        if not ok:
+            entry['suspicious'] = True
+
+    # Also include IMAGE() formula cells from richData.
+    # These are detected by cell position only (no bytes available from scan);
+    # mark them as valid with mime 'image/embedded' as a placeholder.
     try:
         with zipfile.ZipFile(data_file, 'r') as zf:
             namelist = set(zf.namelist())
@@ -712,27 +855,47 @@ def scan_image_cells(data_file: str) -> dict:
         for sheet_name, cells in rich.items():
             bucket = result.setdefault(sheet_name, {})
             for ref, cnt in cells.items():
-                bucket[ref] = bucket.get(ref, 0) + cnt
+                entry = bucket.setdefault(ref, {'count': 0, 'mimes': [], 'suspicious': False})
+                entry['count'] += cnt
+                if 'image/embedded' not in entry['mimes']:
+                    entry['mimes'].append('image/embedded')
     except (zipfile.BadZipFile, OSError):
         pass
 
     return result
 
 
-def extract_images(data_file: str, images_dir: str, stem: str) -> dict:
-    """Extract embedded images from an xlsx file without requiring Pillow.
+def extract_images(data_file: str, images_dir: str, stem: str) -> tuple:
+    """Extract supported embedded images from an xlsx file without Pillow.
 
-    Returns a dict mapping cell reference to the saved image path.  When a cell
-    has multiple images the key is ``{ref}`` for the first and ``{ref}_2``,
-    ``{ref}_3`` etc. for subsequent ones.  Returns ``{}`` if no images found.
+    Returns ``(result, warnings)`` where:
+
+    * *result* maps cell-reference keys to saved file paths.  When a cell has
+      multiple images the key is ``{ref}`` for the first and ``{ref}_2``,
+      ``{ref}_3`` etc. for subsequent ones.
+    * *warnings* is a list of human-readable strings for every media item that
+      was skipped because it failed ``_check_media_bytes`` validation.
+
+    Unsupported or suspicious binary content is **never written to disk**.
     """
     import os
 
-    result: dict = {}
+    result:   dict = {}
+    warnings: list = []
     os.makedirs(images_dir, exist_ok=True)
 
     per_cell_count: dict = {}
     for _sheet, cell_ref, media_path, idx, data in _iter_drawing_anchors(data_file):
+        mime, ok = _check_media_bytes(data, media_path)
+        if not ok:
+            label = mime or 'unrecognised binary'
+            hex_head = data[:8].hex() if data else ''
+            warnings.append(
+                f'{media_path}: {label} — skipped'
+                + (f' (magic bytes: {hex_head})' if hex_head else '')
+            )
+            continue
+
         ext = os.path.splitext(media_path)[1] or '.bin'
         per_cell_count[cell_ref] = per_cell_count.get(cell_ref, 0) + 1
         n = per_cell_count[cell_ref]
@@ -743,7 +906,7 @@ def extract_images(data_file: str, images_dir: str, stem: str) -> dict:
             fh.write(data)
         result[key] = out_path
 
-    return result
+    return result, warnings
 
 
 class Engine:

@@ -157,9 +157,11 @@ td.gx-I { background: var(--I); color: var(--text-muted); }
 td.gx-T-HEAD { background: rgba(168, 85, 247, 0.18); }
 td.gx-T-DATA { background: rgba(168, 85, 247, 0.07); }
 /* image cell — soft teal tint + camera badge */
-td.gx-image { background: rgba(20,184,166,0.12) !important; }
+td.gx-image { background: rgba(20,184,166,0.12) !important; position: relative; }
 td.gx-image::after { content: '🖼'; position: absolute; top: 1px; right: 2px; font-size: 9px; opacity: .7; pointer-events: none; }
-td.gx-image { position: relative; }
+/* suspicious media cell — amber warning + alert badge */
+td.gx-image-suspicious { background: rgba(245,158,11,0.18) !important; position: relative; outline: 1px solid rgba(245,158,11,0.6); }
+td.gx-image-suspicious::after { content: '⚠️'; position: absolute; top: 1px; right: 2px; font-size: 9px; pointer-events: none; }
 td.gx-L.selected { background: var(--L-sel) !important; }
 td.gx-V.selected { background: var(--V-sel) !important; }
 td.gx-C.selected { background: var(--C-sel) !important; }
@@ -1383,8 +1385,9 @@ function renderGrid(data) {
       if (cell.skip) continue;
 
       let cls = cell.choice ? `gx-cell gx-${cell.choice}` : 'gx-cell' + (cell.empty ? ' empty' : '');
-      if (cell.merged)     cls += ' gx-merged';
-      if (cell.has_image)  cls += ' gx-image';
+      if (cell.merged)          cls += ' gx-merged';
+      if (cell.image_suspicious) cls += ' gx-image-suspicious';
+      else if (cell.has_image)   cls += ' gx-image';
 
       const note    = cell.note ? ' 📝' : '';
       const content = _cellContent(cell.choice, cell.table_role || '', cell.row_class || '',

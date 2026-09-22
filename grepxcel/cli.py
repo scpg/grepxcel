@@ -1100,7 +1100,12 @@ def _process_file(pattern: str, data_file: str, args,
     if getattr(args, 'include_images', False):
         from .engine import extract_images
         _images_dir = getattr(args, 'images_dir', None) or args.output or '.'
-        _images = extract_images(data_file, _images_dir, stem or os.path.splitext(os.path.basename(data_file))[0])
+        _images, _img_warns = extract_images(
+            data_file, _images_dir,
+            stem or os.path.splitext(os.path.basename(data_file))[0],
+        )
+        for w in _img_warns:
+            print(f'⚠️  [image] {w}', file=sys.stderr)
         if _images:
             result['_images'] = _images
 
