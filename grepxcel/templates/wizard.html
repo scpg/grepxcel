@@ -1498,14 +1498,20 @@ function _updateCellDetail(ref, info) {
     <span style="margin-left:6px;padding:1px 7px;border-radius:10px;font-size:11px;font-weight:600;background:${tc}22;color:${tc}">${_esc(itype)}</span>
   </div>`);
 
-  // Image info
+  // Image info + preview
   if (info.has_image) {
     const susp = info.image_suspicious;
     const mimes = (info.image_mimes || []).filter(m => m !== 'image/embedded').join(', ') || 'embedded';
+    const preview = info.has_preview
+      ? `<img src="/api/image/${_esc(ref)}" alt="cell image"
+              style="max-width:100%;max-height:120px;margin-top:6px;border-radius:4px;border:1px solid var(--border);display:block"
+              onerror="this.style.display='none'">`
+      : (susp ? '' : '<div style="font-size:11px;color:var(--text-muted);margin-top:4px">Formula image — no binary to preview</div>');
     rows.push(`<div style="margin-bottom:7px;padding:6px 8px;border-radius:5px;background:${susp?'rgba(245,158,11,.12)':'rgba(20,184,166,.12)'};border:1px solid ${susp?'rgba(245,158,11,.4)':'rgba(20,184,166,.3)'}">
       <div style="font-weight:600;color:${susp?'#f59e0b':'#2dd4bf'}">${susp?'⚠️':'🖼'} ${info.image_count} image${info.image_count!==1?'s':''}</div>
       <div style="font-size:11px;color:var(--text-muted);margin-top:2px">${_esc(mimes)}</div>
       ${susp?'<div style="font-size:11px;color:#f59e0b;margin-top:3px">Suspicious content — not extracted to disk</div>':''}
+      ${preview}
     </div>`);
   }
 
@@ -1519,7 +1525,7 @@ function _updateCellDetail(ref, info) {
   }
 
   // Position
-  rows.push(`<div style="color:var(--text-muted);font-size:11px">Row ${info.row} · Col ${info.col_letter}${info.col}</div>`);
+  rows.push(`<div style="color:var(--text-muted);font-size:11px">${_esc(ref)} · Row ${info.row} · Col ${info.col}</div>`);
 
   box.innerHTML = rows.length ? rows.join('') : '<em style="color:var(--text-muted)">Empty cell</em>';
 }

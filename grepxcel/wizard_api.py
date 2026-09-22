@@ -403,7 +403,7 @@ def _build_sheet_data() -> dict:
             img_info    = image_cells.get(ref)
             has_img     = img_info is not None
             img_suspicious = has_img and img_info.get('suspicious', False)
-            cell_type = 'image' if has_img and cell.value is None else _cell_type_display(cell)
+            cell_type = 'image' if has_img else _cell_type_display(cell)
             row.append({
                 'ref':       ref,
                 'row':       r,
@@ -563,6 +563,18 @@ def create_app(
     except Exception:
         _image_cells = {}
 
+    # ── Image extraction for in-wizard preview ────────────────────────────────
+    _extracted_images: dict[str, str] = {}  # {cell_ref: abs_file_path}
+    _img_tmp_dir: str | None = None
+    try:
+        from .engine import extract_images as _ext_img
+        import tempfile
+        _img_tmp_dir = tempfile.mkdtemp(prefix='grepxcel_wizard_img_')
+        _extracted_images, _ = _ext_img(xlsx_path, _img_tmp_dir,
+                                         stem=Path(xlsx_path).stem)
+    except Exception:
+        pass
+
     # ── Pre-populate from existing pattern ────────────────────────────────────
     state = WizardState(sheet_name=ws.title)
     choices: dict[str, dict] = {}
@@ -629,6 +641,8 @@ def create_app(
         'log':              session_log,
         'preload_warnings': preload_warnings,
         'image_cells':      _image_cells,
+        'extracted_images': _extracted_images,
+        'img_tmp_dir':      _img_tmp_dir,
     })
 
     # Log initial config
@@ -1442,11 +1456,11 @@ def create_app(
             'col_letter':   get_column_letter(col),
             'value':        _cell_display(cell.value, 200),
             'raw':          str(cell.value) if cell.value is not None else '',
-            'inferred_type': _infer_cell_type(cell),
             'has_image':    img_info is not None,
             'image_count':  img_info['count'] if img_info else 0,
             'image_suspicious': img_info.get('suspicious', False) if img_info else False,
             'image_mimes':  img_info.get('mimes', []) if img_info else [],
+            'inferred_type': 'image' if img_info is not None else _infer_cell_type(cell),
             'choice':       choice_info.get('choice', ''),
             'anchor':       choice_info.get('anchor', ''),   # set for T-HEAD / T-DATA
             'name':         choice_info.get('name', ''),
@@ -1458,7 +1472,24 @@ def create_app(
             'var_mode':     ex_var_mode,
             'modifiers':    ex_modifiers,
             'note':         _STATE['notes'].get(ref, ''),
+            'has_preview':  ref in _STATE.get('extracted_images', {}),
         })
+
+    @app.get('/api/image/{ref}')
+    async def api_image(ref: str):
+        """Serve an extracted embedded image for the given cell reference."""
+        from fastapi.responses import FileResponse
+        ref = ref.upper()
+        extracted = _STATE.get('extracted_images', {})
+        img_path = extracted.get(ref)
+        if not img_path or not Path(img_path).is_file():
+            raise HTTPException(404, 'No extracted image for this cell')
+        # Infer content type from extension
+        ext = Path(img_path).suffix.lower()
+        ct_map = {'.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+                  '.gif': 'image/gif', '.bmp': 'image/bmp', '.webp': 'image/webp',
+                  '.tiff': 'image/tiff', '.svg': 'image/svg+xml'}
+        return FileResponse(img_path, media_type=ct_map.get(ext, 'application/octet-stream'))
 
     @app.post('/api/extract')
     async def api_extract():
