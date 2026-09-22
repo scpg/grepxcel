@@ -817,13 +817,20 @@ td.gx-T-bottom { border-bottom: 2px solid rgba(124,58,237,0.5) !important; }
                 <span class="info-icon" title="Expected data type of the extracted value.&#10;string: any text. integer: whole numbers. number: decimals.&#10;date: parsed as ISO date. boolean: true/false.&#10;url: web/ftp/mailto/file URL. image: embedded image cell.">🛈</span>
               </label>
               <select id="f-V-type" onchange="onVTypeChange(this.value)">
-                <option value="string">string</option>
-                <option value="integer">integer</option>
-                <option value="number">number</option>
-                <option value="date">date</option>
-                <option value="boolean">boolean</option>
-                <option value="url">url</option>
-                <option value="image">image</option>
+                <optgroup label="Basic">
+                  <option value="string">string</option>
+                  <option value="number">number</option>
+                  <option value="date">date</option>
+                  <option value="boolean">boolean</option>
+                  <option value="url">url</option>
+                  <option value="image">image</option>
+                </optgroup>
+                <optgroup label="Advanced">
+                  <option value="integer">integer</option>
+                  <option value="currency">currency</option>
+                  <option value="datetime">datetime</option>
+                  <option value="time">time</option>
+                </optgroup>
               </select></div>
             <div class="form-group"><label>Match mode
                 <span class="info-icon" title="How the match pattern below is interpreted.&#10;regexp (default): Python regular expression.&#10;literal: exact text match.&#10;glob: wildcard (* = anything, ? = one char).&#10;Overrides the global default in Config.">🛈</span>
@@ -2923,7 +2930,20 @@ const _TRM_ROW_TYPES = [
 // V=Variable, L=Label, I=Ignore, E=Empty  (C was removed — had no distinct table role)
 const _TRM_ROLES       = ['V','L','I','E'];
 const _TRM_ROLE_LABELS = {V:'V — Variable', L:'L — Label', I:'I — Ignore', E:'E — Empty'};
-const _TRM_TYPES  = ['string','integer','number','currency','datetime','date','boolean','url','image'];
+const _TRM_TYPES = {
+  basic:    ['string', 'number', 'date', 'boolean', 'url', 'image'],
+  advanced: ['integer', 'currency', 'datetime', 'time'],
+};
+function _trmTypeOptions(selected) {
+  return [
+    { label: 'Basic',    types: _TRM_TYPES.basic },
+    { label: 'Advanced', types: _TRM_TYPES.advanced },
+  ].map(g =>
+    `<optgroup label="${g.label}">${g.types.map(t =>
+      `<option value="${t}"${t === selected ? ' selected' : ''}>${t}</option>`
+    ).join('')}</optgroup>`
+  ).join('');
+}
 const _TRM_SKIP_COND = ['IGNORE','EMPTY','label'];
 
 async function openTableModal() {
@@ -3151,7 +3171,7 @@ function _trmColEditorHTML(rowType, cfg, ci, cell) {
         <option value="regexp"${lmatch_mode==='regexp'?' selected':''}>regexp</option>
       </select>
       <select class="trm-col-type" style="display:${typeDisp}" title="Field data type">
-        ${_TRM_TYPES.map(t=>`<option value="${t}"${t===ftype?' selected':''}>${t}</option>`).join('')}
+        ${_trmTypeOptions(ftype)}
       </select>
       <input type="text" placeholder="${matchPh}" value="${_esc(matchVal)}"
              class="trm-col-match" style="display:${display}" title="${matchTip}">
@@ -3193,7 +3213,7 @@ function _trmColEditorHTML(rowType, cfg, ci, cell) {
     </div>
     <select class="trm-col-type" style="display:${typeDisp}"
             title="Field data type">
-      ${_TRM_TYPES.map(t=>`<option value="${t}"${t===ftype?' selected':''}>${t}</option>`).join('')}
+      ${_trmTypeOptions(ftype)}
     </select>
     <input type="text" placeholder="match (.*)" value="${_esc(match)}"
            class="trm-col-match" style="display:${display}"
