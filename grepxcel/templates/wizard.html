@@ -1725,7 +1725,7 @@ async function applyClassification() {
   }
 
   const fields = gatherFields(selectedAction);
-  await classify(selectedRef, selectedAction, fields);
+  const classifyData = await classify(selectedRef, selectedAction, fields);
   const info = cellData[selectedRef] || {};
   info.choice = selectedAction;
   info.name   = fields.name || '';
@@ -1733,6 +1733,9 @@ async function applyClassification() {
 
   refreshCell(selectedRef);
   toast(`Classified ${selectedRef} as ${selectedAction}`);
+  if (classifyData?.name_warning) {
+    setTimeout(() => toast('⚠️ ' + classifyData.name_warning, false, 8000), 400);
+  }
   setStatus(`${selectedRef} → ${selectedAction} (${fields.name || ''})`);
   await loadStats();
 }
@@ -2802,12 +2805,12 @@ function setChk(id, v) {
   if (el) el.checked = !!v;
 }
 function setStatus(msg) { document.getElementById('status-msg').textContent = msg; }
-function toast(msg, err) {
+function toast(msg, err, durationMs) {
   const el = document.getElementById('toast');
   el.textContent = msg;
-  el.style.background = err ? '#dc3545' : '#333';
+  el.style.background = err ? '#dc3545' : (msg.startsWith('⚠️') ? '#8a6d00' : '#333');
   el.classList.add('show');
-  setTimeout(() => el.classList.remove('show'), 2800);
+  setTimeout(() => el.classList.remove('show'), durationMs || 2800);
 }
 
 // ── Shift+click → set end_ref ─────────────────────────────────────────────
@@ -2906,7 +2909,7 @@ const _TRM_ROW_TYPES = [
 // V=Variable, L=Label, I=Ignore, E=Empty  (C was removed — had no distinct table role)
 const _TRM_ROLES       = ['V','L','I','E'];
 const _TRM_ROLE_LABELS = {V:'V — Variable', L:'L — Label', I:'I — Ignore', E:'E — Empty'};
-const _TRM_TYPES  = ['string','integer','number','currency','datetime','date','boolean'];
+const _TRM_TYPES  = ['string','integer','number','currency','datetime','date','boolean','url','image'];
 const _TRM_SKIP_COND = ['IGNORE','EMPTY','label'];
 
 async function openTableModal() {

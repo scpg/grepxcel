@@ -1023,12 +1023,30 @@ def create_app(
             log_detail += f' note={note!r}'
         _STATE['log'].write('CLASSIFY', log_detail)
 
-        return JSONResponse({
-            'ok':     True,
-            'ref':    ref,
-            'action': action,
-            'stats':  _build_stats(),
-        })
+        # Detect same-name collisions across roles (lbl vs var).
+        # lbl: and var: are separate namespaces in the engine — same name is
+        # technically allowed — but warn so the author is aware of the overlap.
+        name_warning: str | None = None
+        new_name = info.get('name', '')
+        new_role = action  # 'L' or 'V'
+        if new_name and new_role in ('L', 'V'):
+            opposite = 'V' if new_role == 'L' else 'L'
+            for other_ref, other_meta in choices.items():
+                if other_ref == ref:
+                    continue
+                if other_meta.get('choice') == opposite and other_meta.get('name') == new_name:
+                    role_word = 'value' if opposite == 'V' else 'label'
+                    name_warning = (
+                        f"Name '{new_name}' is also used by {role_word} cell {other_ref}. "
+                        f"lbl: and var: are separate namespaces so both will exist in the pattern, "
+                        f"but consider using distinct names to avoid ambiguity."
+                    )
+                    break
+
+        response: dict = {'ok': True, 'ref': ref, 'action': action, 'stats': _build_stats()}
+        if name_warning:
+            response['name_warning'] = name_warning
+        return JSONResponse(response)
 
     @app.post('/api/classify-batch')
     async def api_classify_batch(request: Request):

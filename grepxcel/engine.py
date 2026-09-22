@@ -9,7 +9,7 @@ from openpyxl.utils import get_column_letter
 from openpyxl.utils.cell import coordinate_to_tuple
 from .models import Config, CellInstruction, TableInstruction, TemplateRow, SeekInstruction, DirectionInstruction
 from .utils import is_empty, validate_type, _MAX_REGEX_INPUT_LEN, _regex_timeout
-from .pattern_parser import PatternParser, PatternError
+from .pattern_parser import PatternParser, PatternError, RoledDefs
 from .logger import Logger, LogRecord, EngineError, cell_ref
 from .security import validate_file, validate_pattern_file, SecurityError, DEFAULT_MAX_UNCOMPRESSED_MB
 
@@ -923,7 +923,7 @@ class Engine:
             logger = Logger()
 
         self._max_cell_len = max_cell_len
-        defs = {}
+        defs = RoledDefs()
         _raw = {'cells': {}, 'tables': []}
 
         try:
@@ -1038,7 +1038,7 @@ class Engine:
             logger = Logger()
 
         self._max_cell_len = max_cell_len
-        defs = {}
+        defs = RoledDefs()
         out: dict = {}
 
         try:
@@ -1521,7 +1521,8 @@ class Engine:
                 tentative_consumed.add((sheet_row, col))
                 continue
 
-            fd = defs.get(tmpl_col.field)
+            fd = (defs.get_for_row_type(tmpl_col.field, tmpl_row.row_type)
+                  if hasattr(defs, 'get_for_row_type') else defs.get(tmpl_col.field))
 
             if is_empty(val, config.empty_aliases, config.ignore_case_values):
                 # required (not-null) check — fatal regardless of strict mode
@@ -1598,7 +1599,7 @@ class Engine:
                    check is skipped (treated as IGNORE) so the SKIP_IF degrades
                    gracefully when defs are incomplete.
         """
-        defs = defs or {}
+        defs = defs if defs is not None else RoledDefs()
         for c_offset, tmpl_col in enumerate(skip_tmpl.columns):
             if tmpl_col.field == 'IGNORE':
                 continue
@@ -1608,8 +1609,9 @@ class Engine:
                 if not is_empty(val, config.empty_aliases, config.ignore_case_values):
                     return False
                 continue
-            # Label-based condition: the cell must match the named label field
-            fd = defs.get(tmpl_col.field)
+            # Label-based condition: prefer lbl: namespace; fall back to var:
+            fd = (defs.get_lbl(tmpl_col.field) or defs.get(tmpl_col.field)
+                  if hasattr(defs, 'get_lbl') else defs.get(tmpl_col.field))
             if fd is None:
                 continue   # unknown label → treat as IGNORE
             if is_empty(val, config.empty_aliases, config.ignore_case_values):
@@ -1646,7 +1648,9 @@ class Engine:
             if tmpl_col.field == 'IGNORE':
                 continue
 
-            fd = defs.get(tmpl_col.field)
+            # Footer rows extract values — prefer var: namespace
+            fd = (defs.get_var(tmpl_col.field) or defs.get(tmpl_col.field)
+                  if hasattr(defs, 'get_var') else defs.get(tmpl_col.field))
             if fd is None:
                 continue
             if is_empty(val, config.empty_aliases, config.ignore_case_values):
