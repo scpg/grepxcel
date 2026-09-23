@@ -60,6 +60,10 @@ _XFAIL_DATA_QUALITY: set[str] = {
     # cells (pay.vacation, pay.grand_total) when the current week has no data
     # yet; the schema correctly rejects '#N/A' as non-numeric.
     '22_weekly_timesheet',
+    # 24: one cell in the 'dayss' column lacks a date number format, so openpyxl
+    # returns the raw Excel serial integer (25602) instead of a datetime object;
+    # the schema correctly rejects the integer as not of type 'string/date-time'.
+    '24_type_tests',
 }
 
 
