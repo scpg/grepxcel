@@ -404,6 +404,9 @@ td.gx-cell[data-field]:not([data-field=""]):hover::before {
 .sb-fill { height: 100%; background: var(--accent); border-radius: 3px; transition: width 0.35s ease; width: 0%; }
 .sb-pct { font-size: 11px; color: var(--text-muted); white-space: nowrap; }
 
+/* Alpine x-cloak: hide until Alpine hydrates */
+[x-cloak] { display: none !important; }
+
 /* ── Config Panel ───────────────────────────────────────────────── */
 /* ── Config tab — section bands + inline rows ── */
 .cfg-band {
@@ -662,8 +665,10 @@ td.gx-T-bottom { border-bottom: 2px solid rgba(124,58,237,0.5) !important; }
   white-space: pre; color: var(--text);
 }
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/alpinejs/3.14.9/cdn.min.js" defer></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/htmx/2.0.3/htmx.min.js"></script>
 </head>
-<body>
+<body x-data>
 
 <!-- ── Top Nav ──────────────────────────────────────────────────────────── -->
 <nav id="navbar">
@@ -719,21 +724,21 @@ td.gx-T-bottom { border-bottom: 2px solid rgba(124,58,237,0.5) !important; }
       <div class="ph-val" id="ph-val">Click any cell to classify it</div>
     </div>
     <div id="panel-tabs">
-      <div class="ptab active" data-tab="classify" onclick="switchTab('classify')">Classify</div>
-      <div class="ptab" data-tab="extract"  onclick="switchTab('extract')">🔎 Extract</div>
-      <div class="ptab" data-tab="config"   onclick="switchTab('config')">Config</div>
-      <div class="ptab" data-tab="logs"     onclick="switchTab('logs')" id="tab-logs-btn">📋 Logs</div>
+      <div class="ptab" :class="{ active: $store.gx.activeTab === 'classify' }" data-tab="classify" @click="$store.gx.activeTab = 'classify'">Classify</div>
+      <div class="ptab" :class="{ active: $store.gx.activeTab === 'extract' }" data-tab="extract" @click="$store.gx.activeTab = 'extract'">🔎 Extract</div>
+      <div class="ptab" :class="{ active: $store.gx.activeTab === 'config' }" data-tab="config" @click="$store.gx.activeTab = 'config'">Config</div>
+      <div class="ptab" :class="{ active: $store.gx.activeTab === 'logs' }" data-tab="logs" id="tab-logs-btn" @click="$store.gx.activeTab = 'logs'; refreshLogs()">📋 Logs</div>
     </div>
     <div id="panel-body">
 
       <!-- ── Classify Tab ── -->
-      <div id="tab-classify">
-        <div class="hint-box" id="classify-hint">
+      <div id="tab-classify" x-show="$store.gx.activeTab === 'classify'" x-cloak>
+        <div class="hint-box" id="classify-hint" x-show="$store.gx.panelMode === 'hint'" x-cloak>
           <div class="arrow">👆</div>
           <div>Click any cell in the grid<br>to select and classify it</div>
         </div>
-        <div id="classify-form" style="display:none">
-          <div class="classify-btns" id="classify-btns">
+        <div id="classify-form" x-show="$store.gx.panelMode !== 'hint'" x-cloak>
+          <div class="classify-btns" id="classify-btns" x-show="$store.gx.panelMode === 'classify'">
             <button class="cbtn cbtn-L" onclick="selectAction('L')">🏷 Label (L)</button>
             <button class="cbtn cbtn-V" onclick="selectAction('V')">📦 Value (V)</button>
             <button class="cbtn cbtn-T" onclick="selectAction('T')">📊 Table (T)</button>
@@ -742,7 +747,7 @@ td.gx-T-bottom { border-bottom: 2px solid rgba(124,58,237,0.5) !important; }
           </div>
 
           <!-- Table-cell operations panel (replaces classify-btns when inside a table) -->
-          <div id="table-ops" style="display:none">
+          <div id="table-ops" x-show="$store.gx.panelMode === 'table'">
             <p style="font-size:12px;color:var(--text-muted);margin:0 0 10px">
               This cell is part of a Mini Table. Individual cell classification is not available inside a table range.
             </p>
@@ -753,7 +758,7 @@ td.gx-T-bottom { border-bottom: 2px solid rgba(124,58,237,0.5) !important; }
           </div>
 
           <!-- Dynamic fields depending on action -->
-          <div id="fields-L" class="action-fields" style="display:none">
+          <div id="fields-L" class="action-fields" x-show="$store.gx.selectedAction === 'L'" x-cloak>
             <div class="form-section-title">Label fields</div>
             <div class="form-group"><label>Anchor name</label>
               <input id="f-L-name" type="text" placeholder="e.g. invoice_no_label"></div>
@@ -777,7 +782,7 @@ td.gx-T-bottom { border-bottom: 2px solid rgba(124,58,237,0.5) !important; }
               <textarea id="f-L-notes" rows="2" placeholder="Internal note…"></textarea></div>
           </div>
 
-          <div id="fields-V" class="action-fields" style="display:none">
+          <div id="fields-V" class="action-fields" x-show="$store.gx.selectedAction === 'V'" x-cloak>
             <div class="form-section-title">Value fields</div>
             <div class="form-group"><label>Field name
                 <span class="info-icon" title="The key used in the extracted JSON output.&#10;Auto-suggested from the adjacent label cell when available.&#10;Use snake_case (e.g. invoice_no, total_amount).">🛈</span>
@@ -839,7 +844,7 @@ td.gx-T-bottom { border-bottom: 2px solid rgba(124,58,237,0.5) !important; }
               <textarea id="f-V-notes" rows="2" placeholder="Internal note…"></textarea></div>
           </div>
 
-          <div id="fields-T" class="action-fields" style="display:none">
+          <div id="fields-T" class="action-fields" x-show="$store.gx.selectedAction === 'T'" x-cloak>
             <div class="form-section-title">Table</div>
             <p style="font-size:12px;color:var(--text-muted);margin-bottom:8px">
               Mark the <strong>top-left header cell</strong> as the table anchor.
@@ -893,14 +898,14 @@ td.gx-T-bottom { border-bottom: 2px solid rgba(124,58,237,0.5) !important; }
             </div>
           </div>
 
-          <div id="fields-I" class="action-fields" style="display:none">
+          <div id="fields-I" class="action-fields" x-show="$store.gx.selectedAction === 'I'" x-cloak>
             <div class="form-section-title">Ignore</div>
             <p style="font-size:12px;color:var(--text-muted)">
               This cell will be skipped during extraction (no entry in the pattern).
             </p>
           </div>
 
-          <div class="action-row" id="apply-row" style="display:none">
+          <div class="action-row" id="apply-row" x-show="$store.gx.selectedAction !== null && $store.gx.selectedAction !== 'T'" x-cloak>
             <button class="btn btn-primary" onclick="applyClassification()">✓ Apply</button>
             <button class="btn" onclick="cancelClassification()">Cancel</button>
           </div>
@@ -908,7 +913,7 @@ td.gx-T-bottom { border-bottom: 2px solid rgba(124,58,237,0.5) !important; }
       </div>
 
       <!-- ── Config Tab ── -->
-      <div id="tab-config" style="display:none">
+      <div id="tab-config" x-show="$store.gx.activeTab === 'config'" x-cloak>
 
         <!-- ── GLOBAL ───────────────────────────────────── -->
         <div class="cfg-band">Global
@@ -1024,7 +1029,7 @@ td.gx-T-bottom { border-bottom: 2px solid rgba(124,58,237,0.5) !important; }
       </div>
 
       <!-- ── Extract Tab ── -->
-      <div id="tab-extract" style="display:none;height:100%;display:none;flex-direction:column">
+      <div id="tab-extract" style="height:100%;flex-direction:column" x-show="$store.gx.activeTab === 'extract'" x-cloak>
         <div id="ext-controls">
           <button class="btn btn-primary" id="ext-run-btn"
                   onclick="runExtraction()" style="width:100%">
@@ -1040,7 +1045,7 @@ td.gx-T-bottom { border-bottom: 2px solid rgba(124,58,237,0.5) !important; }
       </div>
 
       <!-- ── Logs Tab ── -->
-      <div id="tab-logs" style="display:none;padding:8px 0">
+      <div id="tab-logs" style="padding:8px 0" x-show="$store.gx.activeTab === 'logs'" x-cloak>
         <div id="log-warn-box" style="display:none;margin-bottom:8px"></div>
         <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;padding:0 8px">
           <span style="font-size:12px;font-weight:600;color:var(--text-muted);flex:1">Session log</span>
@@ -1086,7 +1091,7 @@ td.gx-T-bottom { border-bottom: 2px solid rgba(124,58,237,0.5) !important; }
 </div>
 
 <!-- ── Table Row Editor Modal ─────────────────────────────────────────── -->
-<div id="table-row-modal">
+<div id="table-row-modal" x-show="$store.gx.trmOpen" x-cloak>
   <div id="trm-box">
     <div class="trm-header">
       <span>✏️ Mini-Table Editor</span>
