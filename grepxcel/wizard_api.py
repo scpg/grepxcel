@@ -17,7 +17,7 @@ import sys
 import threading
 import time
 import webbrowser
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -323,7 +323,19 @@ def _parse_ref(ref: str) -> tuple[int, int]:
 def _cell_display(value: Any, max_len: int = 28) -> str:
     if value is None:
         return ''
-    s = str(value)
+    if isinstance(value, datetime):
+        if value.hour == 0 and value.minute == 0 and value.second == 0 and value.microsecond == 0:
+            s = value.strftime('%Y-%m-%d')
+        else:
+            s = value.strftime('%Y-%m-%d %H:%M:%S')
+    elif isinstance(value, timedelta):
+        total_secs = int(value.total_seconds())
+        h = total_secs // 3600
+        m = (total_secs % 3600) // 60
+        sec = total_secs % 60
+        s = f'{h}:{m:02d}:{sec:02d}'
+    else:
+        s = str(value)
     if len(s) > max_len:
         return s[:max_len] + '…'
     return s
