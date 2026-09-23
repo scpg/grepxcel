@@ -6,6 +6,10 @@ let sheetData = null;
 let currentStats = {};
 let csvText = '';
 
+// ── AG Grid state ─────────────────────────────────────────────────────────
+let gridApi = null;
+let _inRangeRefs = new Set();
+
 // ── Alpine store ──────────────────────────────────────────────────────────
 document.addEventListener('alpine:init', () => {
   Alpine.store('gx', {
@@ -122,32 +126,29 @@ function _tableBadge(choice, table_role, row_class, is_table_end) {
   return anchor + member + rowG + role + endMark;
 }
 
-// ── Column resize state ───────────────────────────────────────────────────
-const _colWidths = {};        // letter → current width in px
-let   _resizeDrag = null;     // {ltr, startX, startW} while dragging
-
-function _initColResizers() {
-  document.querySelectorAll('#grid-head .col-resizer').forEach(rz => {
-    rz.addEventListener('mousedown', e => {
-      e.preventDefault(); e.stopPropagation();
-      const ltr = rz.dataset.col;
-      const th  = rz.parentElement;
-      _resizeDrag = { ltr, startX: e.clientX, startW: th.offsetWidth };
-      document.body.classList.add('col-resizing');
-    });
-  });
+// ── AG Grid cell renderer ─────────────────────────────────────────────────
+class WizardCellRenderer {
+  init(params) {
+    this.eGui = document.createElement('div');
+    this.eGui.style.cssText = 'width:100%;height:100%;overflow:hidden;display:flex;align-items:center';
+    this._update(params.value);
+  }
+  _update(cell) {
+    if (!cell) { this.eGui.innerHTML = ''; return; }
+    if (cell.skip) {
+      this.eGui.innerHTML = '<span class="gx-merge-indicator" title="Part of a merged cell area">⊞</span>';
+      return;
+    }
+    const note = cell.note ? ' 📝' : '';
+    this.eGui.innerHTML = _cellContent(
+      cell.choice, cell.table_role || '', cell.row_class || '',
+      cell.is_table_end || false, cell.value || '', note, cell.type || 'str'
+    );
+  }
+  getGui() { return this.eGui; }
+  refresh(params) { this._update(params.value); return true; }
+  destroy() {}
 }
-document.addEventListener('mousemove', e => {
-  if (!_resizeDrag) return;
-  const dx   = e.clientX - _resizeDrag.startX;
-  const newW = Math.max(40, _resizeDrag.startW + dx);
-  _colWidths[_resizeDrag.ltr] = newW;
-  const col = document.querySelector(`#grid-colgroup col[data-col="${_resizeDrag.ltr}"]`);
-  if (col) col.style.width = newW + 'px';
-});
-document.addEventListener('mouseup', () => {
-  if (_resizeDrag) { _resizeDrag = null; document.body.classList.remove('col-resizing'); }
-});
 
 // ── Cell content builder ──────────────────────────────────────────────────
 // Returns the innerHTML for a grid cell: badge-strip + cell-value wrapper.
@@ -168,88 +169,124 @@ function _cellContent(choice, table_role, row_class, is_table_end, valRaw, note,
   return `<div class="gx-inner"><span class="${stripCls}">${badge}</span><span class="cell-value${alignCls}">${val}${note}</span></div>`;
 }
 
+// ── AG Grid helpers ────────────────────────────────────────────────────────
+function _parseColRow(ref) {
+  const m = ref.match(/^([A-Z]+)(\d+)$/);
+  return m ? [m[1], m[2]] : [null, null];
+}
+
+function _refreshCellsByRef(refs) {
+  if (!gridApi || !refs.length) return;
+  const byRow = {};
+  for (const ref of refs) {
+    if (!ref) continue;
+    const [col, rowStr] = _parseColRow(ref);
+    if (!col) continue;
+    (byRow[rowStr] = byRow[rowStr] || []).push(col);
+  }
+  for (const [rowStr, cols] of Object.entries(byRow)) {
+    const node = gridApi.getRowNode(rowStr);
+    if (node) gridApi.refreshCells({ rowNodes: [node], columns: cols, force: true });
+  }
+}
+
 // ── Grid rendering ────────────────────────────────────────────────────────
 function renderGrid(data) {
-  // ── Colgroup (drives fixed-layout column widths & resize) ────────────────
-  const table = document.getElementById('grid-table');
-  let cg = document.getElementById('grid-colgroup');
-  if (!cg) { cg = document.createElement('colgroup'); cg.id = 'grid-colgroup'; table.prepend(cg); }
-  cg.innerHTML = '';
-  const rcol = document.createElement('col'); rcol.style.width = '36px'; cg.appendChild(rcol);
-  for (const ltr of data.col_letters) {
-    const col = document.createElement('col');
-    col.setAttribute('data-col', ltr);
-    col.style.width = (_colWidths[ltr] || 120) + 'px';
-    cg.appendChild(col);
-  }
+  if (!data?.rows) return;
 
-  // ── Header row with resize handles ──────────────────────────────────────
-  const thead = document.getElementById('grid-head');
-  let th = '<tr><th class="row-num-head"></th>';
-  for (const ltr of data.col_letters) {
-    th += `<th data-col="${ltr}" style="position:relative"><span>${ltr}</span><div class="col-resizer" data-col="${ltr}"></div></th>`;
-  }
-  th += '</tr>';
-  thead.innerHTML = th;
-  _initColResizers();
+  const colDefs = [
+    {
+      headerName: '', field: '_rowNum',
+      pinned: 'left', width: 40, minWidth: 40, maxWidth: 40,
+      suppressMovable: true, resizable: false, sortable: false,
+      cellClass: 'gx-row-num-cell',
+      cellRenderer: p => String(p.value),
+    },
+    ...data.col_letters.map(ltr => ({
+      headerName: ltr, field: ltr,
+      width: 120, minWidth: 40,
+      suppressMovable: true, sortable: false,
+      cellRenderer: WizardCellRenderer,
+      tooltipValueGetter: p => {
+        const c = p.value;
+        if (!c) return '';
+        if (c.skip) return 'Part of a merged cell area';
+        return c.name ? `${c.ref}: ${c.value} · field: ${c.name}` : `${c.ref}: ${c.value}`;
+      },
+      cellClassRules: {
+        'gx-cell':             () => true,
+        'gx-L':                p => p.value?.choice === 'L',
+        'gx-V':                p => p.value?.choice === 'V',
+        'gx-T':                p => ['T','T-HEAD','T-DATA'].includes(p.value?.choice),
+        'gx-T-HEAD':           p => p.value?.choice === 'T-HEAD',
+        'gx-T-DATA':           p => p.value?.choice === 'T-DATA',
+        'gx-I':                p => p.value?.choice === 'I',
+        'gx-merged-ghost':     p => p.value?.skip === true,
+        'gx-image':            p => !p.value?.skip && !!p.value?.has_image && !p.value?.image_suspicious,
+        'gx-image-suspicious': p => !p.value?.skip && !!p.value?.image_suspicious,
+        'empty':               p => !p.value?.skip && !p.value?.choice && !!p.value?.empty,
+        'selected':            p => !!p.value?.ref && p.value.ref === selectedRef,
+        'in-range':            p => !!p.value?.ref && _inRangeRefs.has(p.value.ref),
+      },
+    })),
+  ];
 
-  // ── Body ─────────────────────────────────────────────────────────────────
-  const tbody = document.getElementById('grid-body');
-  let html = '';
-  for (const row of data.rows) {
-    const isEmptyRow = row.every(c => c.skip || c.empty);
-    html += `<tr${isEmptyRow ? ' class="gx-row-empty"' : ''}><td class="row-header">${row[0].row}</td>`;
+  const rowData = data.rows.map(row => {
+    const obj = { _rowNum: row[0]?.row || 0 };
     for (const cell of row) {
-      // Non-anchor merged cells are ghost cells — skip them entirely.
-      if (cell.skip) continue;
-
-      let cls = cell.choice ? `gx-cell gx-${cell.choice}` : 'gx-cell' + (cell.empty ? ' empty' : '');
-      if (cell.merged)          cls += ' gx-merged';
-      if (cell.image_suspicious) cls += ' gx-image-suspicious';
-      else if (cell.has_image)   cls += ' gx-image';
-
-      const note    = cell.note ? ' 📝' : '';
-      const content = _cellContent(cell.choice, cell.table_role || '', cell.row_class || '',
-                                   cell.is_table_end || false, cell.value || '', note,
-                                   cell.type || 'str');
-
-      const csAttr    = (cell.colspan && cell.colspan > 1) ? ` colspan="${cell.colspan}"` : '';
-      const rsAttr    = (cell.rowspan && cell.rowspan > 1) ? ` rowspan="${cell.rowspan}"` : '';
-      const fieldAttr = cell.name ? ` data-field="${escHtml(cell.name)}"` : '';
-      const titleTxt  = cell.name
-        ? `${cell.ref}: ${escHtml(cell.value)} · field: ${escHtml(cell.name)}`
-        : `${cell.ref}${cell.merged ? ` [merged ${cell.colspan}×${cell.rowspan}]` : ''}: ${escHtml(cell.value)}`;
-      html += `<td class="${cls}" data-ref="${cell.ref}" data-merged="${cell.merged ? '1' : ''}"${fieldAttr}
-                   ${csAttr}${rsAttr}
-                   onclick="if(event.shiftKey&&selectedAction==='T'){handleShiftClick('${cell.ref}');return}if(event.shiftKey&&selectedRef){_rangeAnchor=_rangeAnchor||selectedRef;_rangeEnd='${cell.ref}';_renderRangeHighlight();return}selectCell('${cell.ref}')"
-                   title="${titleTxt}">${content}</td>`;
+      if (cell.ref) {
+        const col = cell.ref.match(/^[A-Z]+/)?.[0];
+        if (col) obj[col] = cell;
+      }
     }
-    html += '</tr>';
+    return obj;
+  });
+
+  if (gridApi) {
+    gridApi.setGridOption('columnDefs', colDefs);
+    gridApi.setGridOption('rowData', rowData);
+    return;
   }
-  tbody.innerHTML = html;
+
+  const container = document.getElementById('ag-grid-container');
+  gridApi = agGrid.createGrid(container, {
+    theme: agGrid.themeBalham,
+    columnDefs: colDefs,
+    rowData: rowData,
+    rowHeight: 28,
+    headerHeight: 26,
+    getRowId: p => String(p.data._rowNum),
+    defaultColDef: { resizable: true, sortable: false, filter: false, cellDataType: false },
+    suppressCellFocus: true,
+    suppressMovableColumns: true,
+    tooltipShowDelay: 600,
+    onCellClicked: params => {
+      const cell = params.value;
+      if (!cell || typeof cell !== 'object') return;
+      if (cell.skip) { toast(`Cell ${cell.ref} is part of a merged cell area`); return; }
+      const ref = cell.ref;
+      if (params.event.shiftKey && selectedAction === 'T') {
+        handleShiftClick(ref);
+      } else if (params.event.shiftKey && selectedRef) {
+        _rangeAnchor = _rangeAnchor || selectedRef;
+        _rangeEnd = ref;
+        _renderRangeHighlight();
+      } else {
+        selectCell(ref);
+      }
+    },
+  });
 }
 
 function refreshCell(ref) {
-  const td = document.querySelector(`td[data-ref="${ref}"]`);
-  if (!td) return;
+  if (!gridApi) return;
+  const [col, rowStr] = _parseColRow(ref);
+  if (!col) return;
+  const node = gridApi.getRowNode(rowStr);
+  if (!node) return;
   const info = cellData[ref] || {};
-  const ch = info.choice || '';
-  const isMerged = td.dataset.merged === '1';
-  td.className = 'gx-cell' + (ch ? ` gx-${ch}` : '') + (info.empty ? ' empty' : '') + (isMerged ? ' gx-merged' : '');
-  if (ref === selectedRef) td.classList.add('selected');
-  const note    = info.note ? ' 📝' : '';
-  td.innerHTML  = _cellContent(ch, info.table_role || '', info.row_class || '',
-                               info.is_table_end || false, info.value || '', note,
-                               info.type || 'str');
-  // Phase B: keep provenance data-field and title in sync after reclassification
-  const fname = info.name || '';
-  if (fname) {
-    td.dataset.field = fname;
-    td.title = `${ref}: ${info.value || ''} · field: ${fname}`;
-  } else {
-    delete td.dataset.field;
-    td.title = `${ref}: ${info.value || ''}`;
-  }
+  const oldCell = node.data[col] || {};
+  node.setDataValue(col, { ...oldCell, ...info });
 }
 
 // ── Cell selection ─────────────────────────────────────────────────────────
@@ -257,14 +294,9 @@ async function selectCell(ref) {
   // Clear any active range selection and T-mode anchor when clicking normally
   _clearRange();
   _tModeAnchor = null;
-  // Deselect old
-  if (selectedRef) {
-    const old = document.querySelector(`td[data-ref="${selectedRef}"]`);
-    if (old) old.classList.remove('selected');
-  }
+  const oldRef = selectedRef;
   selectedRef = ref;
-  const td = document.querySelector(`td[data-ref="${ref}"]`);
-  if (td) td.classList.add('selected');
+  _refreshCellsByRef([oldRef, ref].filter(Boolean));
 
   // Fetch full cell info
   const r = await fetch(`/api/cell/${ref}`);
@@ -347,14 +379,10 @@ function _enterTableMode(anchorRef, clickedRef) {
   Alpine.store('gx').selectedAction = 'T';
 
   // Move selection highlight to the anchor
-  if (clickedRef && clickedRef !== anchorRef) {
-    const clickedTd = document.querySelector(`td[data-ref="${clickedRef}"]`);
-    if (clickedTd) clickedTd.classList.remove('selected');
-    const anchorTd = document.querySelector(`td[data-ref="${anchorRef}"]`);
-    if (anchorTd) anchorTd.classList.add('selected');
-  }
+  const prevRef = selectedRef;
   selectedAction = 'T';
   selectedRef    = anchorRef;
+  _refreshCellsByRef([prevRef, anchorRef, clickedRef].filter(Boolean));
 }
 
 function _exitTableMode() {
@@ -593,7 +621,6 @@ async function undoLast() {
       cellData[selectedRef] = { ...cellData[selectedRef], ...info };
       prefillForm(info);
       refreshCell(selectedRef);
-      document.querySelector(`td[data-ref="${selectedRef}"]`)?.classList.add('selected');
     }
   } else {
     toast(data.msg || 'Nothing to undo');
@@ -1069,11 +1096,14 @@ function renderExtTableGroup(key, instances, path) {
 function jumpToCell(ref) {
   if (!ref) return;
   ref = ref.toUpperCase().trim();
-  const td = document.querySelector(`td[data-ref="${ref}"]`);
-  if (!td) { toast(`Cell ${ref} not found in visible grid`, true); return; }
+  if (!gridApi) { toast('Grid not ready', true); return; }
+  const [col, rowStr] = _parseColRow(ref);
+  if (!col) { toast(`Cell ${ref} not found in visible grid`, true); return; }
+  const node = gridApi.getRowNode(rowStr);
+  if (!node) { toast(`Cell ${ref} not found in visible grid`, true); return; }
+  gridApi.ensureColumnVisible(col);
+  gridApi.ensureIndexVisible(node.rowIndex, 'middle');
   selectCell(ref);
-  // Use sticky-aware scroll after a brief tick so selectCell's DOM update settles
-  setTimeout(() => scrollCellIntoView(td), 20);
   document.getElementById('cell-jump').value = '';
 }
 
@@ -1089,31 +1119,6 @@ function numToColLetter(n) {
   return s;
 }
 
-// ── Sticky-aware scroll: bring a <td> into view inside #grid-wrap ──────────
-function scrollCellIntoView(td) {
-  const wrap = document.getElementById('grid-wrap');
-  if (!wrap || !td) return;
-
-  // Measure live sticky offsets from the DOM (handles any zoom/font size)
-  const headRow = document.querySelector('#grid-head tr');
-  const rowHdr  = document.querySelector('#grid-body td.row-header');
-  const stickyTop  = headRow ? headRow.getBoundingClientRect().height : 24;
-  const stickyLeft = rowHdr  ? rowHdr.getBoundingClientRect().width  : 30;
-
-  const wrapRect = wrap.getBoundingClientRect();
-  const tdRect   = td.getBoundingClientRect();
-
-  // Positions relative to the grid-wrap viewport
-  const relTop    = tdRect.top    - wrapRect.top;
-  const relBottom = tdRect.bottom - wrapRect.top;
-  const relLeft   = tdRect.left   - wrapRect.left;
-  const relRight  = tdRect.right  - wrapRect.left;
-
-  if (relTop    < stickyTop)         wrap.scrollTop  -= (stickyTop  - relTop  + 4);
-  if (relBottom > wrap.clientHeight) wrap.scrollTop  += (relBottom  - wrap.clientHeight + 4);
-  if (relLeft   < stickyLeft)        wrap.scrollLeft -= (stickyLeft - relLeft + 4);
-  if (relRight  > wrap.clientWidth)  wrap.scrollLeft += (relRight   - wrap.clientWidth  + 4);
-}
 
 // ── Range selection state ─────────────────────────────────────────────────
 // _rangeAnchor: the cell where the range began (stays fixed as end moves)
@@ -1136,28 +1141,26 @@ function _rangeRefs(anchorRef, endRef) {
   return refs;
 }
 
-/** Apply `.in-range` CSS to all cells in the bounding box; clear stale marks. */
+/** Apply `in-range` class to all cells in bounding box via AG Grid refresh. */
 function _renderRangeHighlight() {
-  // Clear previous
-  document.querySelectorAll('td.in-range').forEach(td => td.classList.remove('in-range'));
+  const oldRefs = _inRangeRefs;
+  _inRangeRefs = new Set(_rangeAnchor && _rangeEnd ? _rangeRefs(_rangeAnchor, _rangeEnd) : []);
+  const toRefresh = new Set([...oldRefs, ..._inRangeRefs]);
+  _refreshCellsByRef([...toRefresh]);
   if (!_rangeAnchor || !_rangeEnd) return;
-  const refs = _rangeRefs(_rangeAnchor, _rangeEnd);
-  refs.forEach(ref => {
-    const td = document.querySelector(`td[data-ref="${ref}"]`);
-    if (td) td.classList.add('in-range');
-  });
-  // Show selection dimensions in the status bar
   const [r1, c1] = _parseRef(_rangeAnchor);
   const [r2, c2] = _parseRef(_rangeEnd);
   const rows = Math.abs(r2 - r1) + 1, cols = Math.abs(c2 - c1) + 1;
-  setStatus(`Range ${_rangeAnchor}:${_rangeEnd} — ${rows}×${cols} (${refs.length} cells) · press L/V/C/I to classify, Esc to cancel`);
+  setStatus(`Range ${_rangeAnchor}:${_rangeEnd} — ${rows}×${cols} (${_inRangeRefs.size} cells) · press L/V/C/I to classify, Esc to cancel`);
 }
 
 /** Cancel any active range selection. */
 function _clearRange() {
+  const toRefresh = [..._inRangeRefs];
   _rangeAnchor = null;
   _rangeEnd    = null;
-  document.querySelectorAll('td.in-range').forEach(td => td.classList.remove('in-range'));
+  _inRangeRefs = new Set();
+  _refreshCellsByRef(toRefresh);
 }
 
 /** Apply a batch classification to the current range.  Returns false if no range active. */
@@ -1205,15 +1208,18 @@ async function _classifyRange(action) {
 // ── Light navigation: update highlight immediately, defer API fetch ─────────
 let _arrowDebounce = null;
 function lightMoveToCell(ref) {
-  if (selectedRef) {
-    const old = document.querySelector(`td[data-ref="${selectedRef}"]`);
-    if (old) old.classList.remove('selected');
-  }
+  const oldRef = selectedRef;
   selectedRef = ref;
-  const td = document.querySelector(`td[data-ref="${ref}"]`);
-  if (td) {
-    td.classList.add('selected');
-    scrollCellIntoView(td);
+  _refreshCellsByRef([oldRef, ref].filter(Boolean));
+  if (gridApi) {
+    const [col, rowStr] = _parseColRow(ref);
+    if (col) {
+      const node = gridApi.getRowNode(rowStr);
+      if (node) {
+        gridApi.ensureColumnVisible(col);
+        gridApi.ensureIndexVisible(node.rowIndex, 'middle');
+      }
+    }
   }
 }
 
@@ -1249,12 +1255,15 @@ function loadKeyboardShortcuts() {
         const curCol = colLetterToNum(fromMatch ? fromMatch[1] : match[1]);
         const curRow = parseInt(fromMatch ? fromMatch[2] : match[2]);
         let newRow = curRow + dr, newCol = curCol + dc;
-        // Skip merged ghost cells (absent from DOM)
+        // Skip merged ghost cells
         for (let attempt = 0; attempt < 20; attempt++) {
           if (newRow < 1 || newCol < 1) break;
           const newRef = numToColLetter(newCol) + newRow;
-          const td = document.querySelector(`td[data-ref="${newRef}"]`);
-          if (td) {
+          const newColLtr = numToColLetter(newCol);
+          const cellExists = gridApi
+            ? !!gridApi.getRowNode(String(newRow)) && !!gridApi.getColumn(newColLtr)
+            : !!document.querySelector(`td[data-ref="${newRef}"]`);
+          if (cellExists) {
             if (e.shiftKey && selectedAction === 'T') {
               // In T (table) mode: Shift+Arrow extends the end-ref range.
               // Store the original anchor so openTableModal uses it, then
@@ -1304,7 +1313,7 @@ function loadKeyboardShortcuts() {
     }
 
     // Block L/V/I/T keys when the selected cell is inside a table range
-    const _inTable = document.getElementById('table-ops').style.display !== 'none';
+    const _inTable = Alpine?.store?.('gx')?.panelMode === 'table';
     if (_inTable) {
       if (k === 'ENTER') openTableModal();
       else if (k === 'ESCAPE') { _exitTableMode(); prefillForm({}); _clearRange(); }

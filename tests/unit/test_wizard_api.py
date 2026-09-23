@@ -85,7 +85,7 @@ class TestIndexPage:
     def test_html_contains_grid_element(self, tmp_path):
         client = _make_client(tmp_path)
         r = client.get('/')
-        assert 'grid-table' in r.text
+        assert 'ag-grid-container' in r.text
 
     def test_html_contains_sheet_name(self, tmp_path):
         client = _make_client(tmp_path)

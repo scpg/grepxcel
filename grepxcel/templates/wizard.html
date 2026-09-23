@@ -7,6 +7,7 @@
 <link rel="stylesheet" href="/static/wizard.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/alpinejs/3.14.9/cdn.min.js" defer></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/htmx/2.0.3/htmx.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/ag-grid/36.2.0/ag-grid-community.min.js"></script>
 </head>
 <body x-data>
 
@@ -74,12 +75,7 @@
 <div id="main">
 
   <!-- Grid -->
-  <div id="grid-wrap">
-    <table id="grid-table">
-      <thead id="grid-head"></thead>
-      <tbody id="grid-body"></tbody>
-    </table>
-  </div>
+  <div id="ag-grid-container"></div>
 
   <!-- Side Panel -->
   <div id="panel">

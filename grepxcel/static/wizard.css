@@ -68,107 +68,96 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
 }
 
 /* ── Grid Area ──────────────────────────────────────────────────── */
-#grid-wrap {
-  flex: 1; overflow: auto; position: relative;
-  background: var(--bg);
-}
-#grid-table {
-  border-collapse: collapse;
-  font-size: 12px;
-  table-layout: fixed;   /* enables column resize */
-  min-width: 100%;
-}
-#grid-table th, #grid-table td {
-  border: 1px solid var(--border);
-  padding: 1px 4px;
-  white-space: nowrap;
+/* ── AG Grid container ────────────────────────────────────────────── */
+#ag-grid-container {
+  flex: 1;
   overflow: hidden;
-  height: 22px;
-  vertical-align: middle;
+  font-size: 12px;
+  /* Theme CSS variables — mapped to wizard's design tokens */
+  --ag-background-color:          var(--bg);
+  --ag-foreground-color:          var(--text);
+  --ag-border-color:              var(--border);
+  --ag-header-background-color:   var(--surface);
+  --ag-header-foreground-color:   var(--text-muted);
+  --ag-row-hover-color:           transparent;
+  --ag-selected-row-background-color: transparent;
+  --ag-cell-horizontal-padding:   4px;
+  --ag-font-size:                 12px;
+  --ag-font-family:               inherit;
+  --ag-row-height:                28px;
+  --ag-header-height:             26px;
+  --ag-odd-row-background-color:  var(--bg);
 }
-#grid-table thead th {
-  position: sticky; top: 0; z-index: 10;
-  background: var(--surface);
-  text-align: center; font-weight: 600;
-  color: var(--text-muted);
+
+/* Row number pinned column */
+.gx-row-num-cell {
+  text-align: right !important;
   font-size: 11px;
-  padding: 3px 6px;
-}
-#grid-table thead th:first-child {
-  min-width: 36px; width: 36px; max-width: 36px;
-  position: sticky; left: 0; z-index: 20;
-}
-/* Column resize handle sits at the right edge of each header cell */
-.col-resizer {
-  position: absolute; right: 0; top: 0; bottom: 0; width: 5px;
-  cursor: col-resize; z-index: 1; user-select: none;
-}
-.col-resizer:hover { background: rgba(99,102,241,0.35); }
-body.col-resizing { cursor: col-resize !important; user-select: none !important; }
-body.col-resizing * { cursor: col-resize !important; }
-.row-header {
-  position: sticky; left: 0; z-index: 5;
+  color: var(--text-muted);
+  font-weight: 600;
   background: var(--surface) !important;
-  text-align: right; font-size: 11px; color: var(--text-muted);
-  font-weight: 600; min-width: 36px !important; width: 36px !important; max-width: 36px !important;
-  padding: 2px 6px;
+  padding-right: 8px !important;
 }
-td.gx-cell {
+
+/* ── Cell states ──────────────────────────────────────────────────── */
+.ag-cell.gx-cell {
   cursor: pointer;
   user-select: none;
   transition: background 0.08s;
+  padding: 1px 4px !important;
+  white-space: nowrap;
+  overflow: hidden;
 }
-td.gx-cell:hover:not(.selected) { background: var(--accent-dim) !important; }
-td.gx-cell.empty { color: var(--text-muted); }
-tr.gx-row-empty { height: 10px; }
-tr.gx-row-empty td { border-top: 1px dashed var(--border); padding: 0 !important; background: var(--surface) !important; }
-tr.gx-row-empty .row-header { font-size: 9px; color: var(--border); }
-td.gx-cell.gx-merged {
-  /* Subtle diagonal stripe to signal a merged region */
-  background-image: repeating-linear-gradient(
-    -45deg, transparent, transparent 5px,
-    rgba(127,127,127,0.04) 5px, rgba(127,127,127,0.04) 6px
-  );
+.ag-cell.gx-cell:hover:not(.selected) { background: var(--accent-dim) !important; }
+.ag-cell.gx-cell.empty { color: var(--text-muted); }
+
+/* Merged ghost cells */
+.ag-cell.gx-merged-ghost {
+  background: var(--surface) !important;
+  cursor: default;
 }
-td.gx-cell.gx-merged::after {
-  content: '⊞'; font-size: 9px; color: var(--text-muted);
-  position: absolute; top: 1px; right: 2px; pointer-events: none;
+.gx-merge-indicator {
+  font-size: 11px; color: var(--text-muted); opacity: 0.55;
+  padding-left: 4px;
 }
-td.gx-cell.gx-merged { position: relative; }
-td.gx-cell.selected {
+
+/* Selected cell */
+.ag-cell.gx-cell.selected {
   background: var(--sel) !important;
   outline: 2px solid var(--sel-border);
   outline-offset: -2px;
   z-index: 2; position: relative;
 }
-/* Classification colours */
-td.gx-L { background: var(--L); }
-td.gx-V { background: var(--V); }
-td.gx-T { background: var(--T); }
-td.gx-I { background: var(--I); color: var(--text-muted); }
-/* T-HEAD = table column header  |  T-DATA = table data row (both from preload) */
-td.gx-T-HEAD { background: rgba(168, 85, 247, 0.18); }
-td.gx-T-DATA { background: rgba(168, 85, 247, 0.07); }
-/* image cell — soft teal tint + camera badge */
-td.gx-image { background: rgba(20,184,166,0.12) !important; position: relative; }
-td.gx-image::after { content: '🖼'; position: absolute; top: 1px; right: 2px; font-size: 9px; opacity: .7; pointer-events: none; }
-/* suspicious media cell — amber warning + alert badge */
-td.gx-image-suspicious { background: rgba(245,158,11,0.18) !important; position: relative; outline: 1px solid rgba(245,158,11,0.6); }
-td.gx-image-suspicious::after { content: '⚠️'; position: absolute; top: 1px; right: 2px; font-size: 9px; pointer-events: none; }
-td.gx-L.selected { background: var(--L-sel) !important; }
-td.gx-V.selected { background: var(--V-sel) !important; }
-td.gx-C.selected { background: var(--C-sel) !important; }
-td.gx-T.selected { background: var(--T-sel) !important; }
-td.gx-I.selected { background: var(--I-sel) !important; }
-td.gx-T-HEAD.selected, td.gx-T-DATA.selected { outline: 2px solid var(--accent); outline-offset: -2px; }
 
-/* ── Range selection (Shift+Arrow / Shift+Click) ─────────────────── */
-td.gx-cell.in-range {
+/* Classification colours */
+.ag-cell.gx-L { background: var(--L); }
+.ag-cell.gx-V { background: var(--V); }
+.ag-cell.gx-T { background: var(--T); }
+.ag-cell.gx-I { background: var(--I); color: var(--text-muted); }
+.ag-cell.gx-T-HEAD { background: rgba(168, 85, 247, 0.18); }
+.ag-cell.gx-T-DATA { background: rgba(168, 85, 247, 0.07); }
+
+/* Image cells */
+.ag-cell.gx-image { background: rgba(20,184,166,0.12) !important; position: relative; }
+.ag-cell.gx-image::after { content: '🖼'; position: absolute; top: 1px; right: 2px; font-size: 9px; opacity: .7; pointer-events: none; }
+.ag-cell.gx-image-suspicious { background: rgba(245,158,11,0.18) !important; position: relative; outline: 1px solid rgba(245,158,11,0.6); }
+.ag-cell.gx-image-suspicious::after { content: '⚠️'; position: absolute; top: 1px; right: 2px; font-size: 9px; pointer-events: none; }
+
+/* Selected + classified */
+.ag-cell.gx-L.selected { background: var(--L-sel) !important; }
+.ag-cell.gx-V.selected { background: var(--V-sel) !important; }
+.ag-cell.gx-C.selected { background: var(--C-sel) !important; }
+.ag-cell.gx-T.selected { background: var(--T-sel) !important; }
+.ag-cell.gx-I.selected { background: var(--I-sel) !important; }
+.ag-cell.gx-T-HEAD.selected, .ag-cell.gx-T-DATA.selected { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+/* ── Range selection ──────────────────────────────────────────────── */
+.ag-cell.gx-cell.in-range {
   background: rgba(99, 102, 241, 0.18) !important;
   outline: 1px dashed rgba(99, 102, 241, 0.7);
   outline-offset: -1px;
 }
-td.gx-cell.in-range.selected {
+.ag-cell.gx-cell.in-range.selected {
   background: rgba(99, 102, 241, 0.35) !important;
   outline: 2px solid rgba(99, 102, 241, 0.9);
   outline-offset: -2px;
@@ -288,14 +277,7 @@ td.gx-cell.in-range.selected {
 }
 #ext-status { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
 
-/* Provenance tooltip in grid: field-name badge on hover */
-td.gx-cell[data-field]:not([data-field=""]):hover::before {
-  content: attr(data-field);
-  position: absolute; top: -18px; left: 0; z-index: 100;
-  background: rgba(0,0,0,0.8); color: #fff;
-  font-size: 9px; padding: 1px 4px; border-radius: 3px;
-  white-space: nowrap; pointer-events: none; font-family: var(--mono);
-}
+/* Provenance tooltip handled by AG Grid tooltipValueGetter */
 
 /* ── Side Panel ─────────────────────────────────────────────────── */
 #panel {
@@ -465,9 +447,9 @@ select.cfg-sel-default { color: var(--accent); font-style: italic; font-weight: 
   color: var(--text-muted); cursor: pointer; padding: 2px 6px; font-size: 13px; }
 .t-col-del:hover { color: #dc3545; border-color: #dc3545; }
 /* ── Table entity border — thick left edge on T/T-HEAD/T-DATA cells ── */
-td.gx-T-anchor-first { border-left: 3px solid #7c3aed !important; }
-td.gx-T-top    { border-top: 2px solid rgba(124,58,237,0.5) !important; }
-td.gx-T-bottom { border-bottom: 2px solid rgba(124,58,237,0.5) !important; }
+.ag-cell.gx-T-anchor-first { border-left: 3px solid #7c3aed !important; }
+.ag-cell.gx-T-top    { border-top: 2px solid rgba(124,58,237,0.5) !important; }
+.ag-cell.gx-T-bottom { border-bottom: 2px solid rgba(124,58,237,0.5) !important; }
 /* ── Modifier checkbox dropdown ── */
 .mod-dropdown { position: relative; }
 .mod-trigger {
