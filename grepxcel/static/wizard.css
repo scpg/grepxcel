@@ -138,7 +138,7 @@ body { background: var(--bg); color: var(--text); height: 100vh; display: flex; 
 .ag-cell.gx-T-DATA { background: rgba(168, 85, 247, 0.07); }
 
 /* Image cells */
-.ag-cell.gx-image { background: rgba(20,184,166,0.12) !important; position: relative; }
+.ag-cell.gx-image { background: rgba(20,184,166,0.12) !important; }
 .ag-cell.gx-image::after { content: '🖼'; position: absolute; top: 1px; right: 2px; font-size: 9px; opacity: .7; pointer-events: none; }
 .ag-cell.gx-image-suspicious { background: rgba(245,158,11,0.18) !important; position: relative; outline: 1px solid rgba(245,158,11,0.6); }
 .ag-cell.gx-image-suspicious::after { content: '⚠️'; position: absolute; top: 1px; right: 2px; font-size: 9px; pointer-events: none; }
