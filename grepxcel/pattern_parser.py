@@ -123,6 +123,8 @@ _VALID_FIELD_TYPES = frozenset({
     'currency', 'percentage',
     'boolean', 'bool',
     'time', 'duration', 'date', 'datetime', 'timestamp',
+    'url',
+    'image',
 })
 
 
@@ -187,6 +189,77 @@ def _coord_str(pos: tuple) -> str:
     return f'{get_column_letter(pos[1])}{pos[0]}'
 
 
+class RoledDefs:
+    """Two-namespace dict for FieldDef objects.
+
+    ``lbl:`` and ``var:`` fields are stored in separate internal dicts so the
+    same name can exist in both namespaces independently (an ``lbl:`` anchor
+    and a ``var:`` extractor may legitimately share a name without clobbering
+    each other).
+
+    The public ``dict``-like interface supports iteration, ``in``, ``get()``,
+    ``items()``, ``values()``, and ``keys()`` — covering all uses in
+    ``engine.py`` and ``pattern_check.py``.
+    """
+
+    __slots__ = ('_lbl', '_var')
+
+    def __init__(self) -> None:
+        self._lbl: dict[str, 'FieldDef'] = {}
+        self._var: dict[str, 'FieldDef'] = {}
+
+    def __setitem__(self, name: str, fd: 'FieldDef') -> None:
+        if fd.role == 'lbl':
+            self._lbl[name] = fd
+        else:
+            self._var[name] = fd
+
+    def __getitem__(self, name: str):
+        result = self._var.get(name) or self._lbl.get(name)
+        if result is None:
+            raise KeyError(name)
+        return result
+
+    def get(self, name: str, default=None):
+        """Prefer var: over lbl: when both namespaces have the same name."""
+        return self._var.get(name) or self._lbl.get(name, default)
+
+    def get_lbl(self, name: str, default=None):
+        """Look up strictly in the lbl: namespace."""
+        return self._lbl.get(name, default)
+
+    def get_var(self, name: str, default=None):
+        """Look up strictly in the var: namespace."""
+        return self._var.get(name, default)
+
+    def get_for_row_type(self, name: str, row_type: str, default=None):
+        """Context-aware lookup: HEADER rows prefer lbl:; DATA/FOOTER rows prefer var:."""
+        if row_type == 'HEADER':
+            return self._lbl.get(name) or self._var.get(name, default)
+        return self._var.get(name) or self._lbl.get(name, default)
+
+    def __contains__(self, name: str) -> bool:
+        return name in self._lbl or name in self._var
+
+    def __iter__(self):
+        return iter(set(self._lbl) | set(self._var))
+
+    def __len__(self) -> int:
+        return len(set(self._lbl) | set(self._var))
+
+    def items(self):
+        """Yield all (name, fd) pairs — lbl: entries first, then all var: entries."""
+        yield from self._lbl.items()
+        yield from self._var.items()
+
+    def values(self):
+        yield from self._lbl.values()
+        yield from self._var.values()
+
+    def keys(self):
+        return set(self._lbl) | set(self._var)
+
+
 class PatternParser:
     def parse(self, filepath: str) -> tuple:
         """
@@ -203,7 +276,7 @@ class PatternParser:
         rows = self._read_grid(filepath)
 
         global_config = Config()
-        defs = {}
+        defs = RoledDefs()
         start_sequence = []
         self.assert_rules = []   # list[AssertRule]; populated below
 
