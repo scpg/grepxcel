@@ -80,6 +80,11 @@ class WizardState:
 # ── Cell-reference helpers ─────────────────────────────────────────────────────
 
 def _slugify(text: str) -> str:
+    import unicodedata
+    # Decompose accented chars (é→e, ü→u, ñ→n) so they survive the ASCII strip.
+    # For scripts where NFKD produces no ASCII (CJK, Arabic, Hebrew, etc.) the
+    # result will be empty and we fall back to the positional name 'field'.
+    text = unicodedata.normalize('NFKD', text).encode('ascii', 'ignore').decode('ascii')
     text = text.lower().strip()
     text = re.sub(r'[^a-z0-9]+', '_', text)
     return text.strip('_') or 'field'
@@ -186,6 +191,10 @@ def _infer_cell_type(cell) -> str:
         return 'string'
     if isinstance(val, bool):
         return 'boolean'
+    if isinstance(val, str) and val.strip().upper() in ('TRUE', 'FALSE', 'YES', 'NO'):
+        return 'boolean'
+    if isinstance(val, _dt.timedelta):
+        return 'time'
     if isinstance(val, (_dt.datetime, _dt.date)):
         return 'date'
     if isinstance(val, (int, float)):
@@ -193,7 +202,15 @@ def _infer_cell_type(cell) -> str:
         if any(p in fmt for p in ('yyyy', 'yy/', '/yy', 'dd', 'd-mmm',
                                    'd/m', 'm/d', 'mmm', 'mmmm')):
             return 'date'
+        if '%' in fmt:
+            return 'percentage'
+        if any(c in fmt for c in ('$', '€', '£', '¥', '₹', '₩')):
+            return 'currency'
         return 'number'
+    if isinstance(val, str):
+        s = val.strip()
+        if '://' in s or s.lower().startswith('www.'):
+            return 'url'
     return 'string'
 
 
@@ -207,7 +224,9 @@ def _propose_type(value: Any, ws=None, row: int = None, col: int = None) -> str:
         s = value.strip()
         if s.endswith(':') or s.endswith('：'):
             return 'label'
-        if '@' in s or '://' in s or s.lower().startswith('www.'):
+        if '://' in s or s.lower().startswith('www.'):
+            return 'var:url'
+        if '@' in s:
             return 'var:string'
         words = s.split()
         if len(words) == 1:

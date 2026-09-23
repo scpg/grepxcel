@@ -484,10 +484,16 @@ examples:
                    help='Local port to listen on (default: 8765)')
     p.add_argument('--no-browser', action='store_true',
                    help='Do not automatically open a browser window')
+    p.add_argument('--sheet', metavar='NAME_OR_INDEX', default=None,
+                   help='Sheet to open on startup — name or 0-based index (default: active sheet)')
     p.add_argument('--max-rows', metavar='N', type=int, default=150,
                    help='Maximum rows to display in the grid (default: 150)')
     p.add_argument('--max-cols', metavar='N', type=int, default=40,
                    help='Maximum columns to display in the grid (default: 40)')
+    p.add_argument('--max-size', type=float, default=5, metavar='MB',
+                   help='Compressed file size limit in MB (default: 5)')
+    p.add_argument('--max-uncompressed', type=float, default=50, metavar='MB',
+                   help='Uncompressed content size limit in MB (default: 50)')
 
 
 def _add_quickstart_subparser(sub) -> None:
@@ -719,6 +725,21 @@ examples:
         '--sheet',
         metavar='NAME_OR_INDEX',
         help='Sheet to use: name (e.g. Sheet2) or 0-based index (default: active sheet)',
+    )
+    p.add_argument(
+        '--include-images',
+        action='store_true',
+        dest='include_images',
+        help='Extract embedded images from the data file and save them to --images-dir. '
+             'Adds an _images key to the JSON output mapping cell references to image paths.',
+    )
+    p.add_argument(
+        '--images-dir',
+        metavar='DIR',
+        dest='images_dir',
+        default=None,
+        help='Directory to save extracted images into (default: next to --output, or cwd). '
+             'Only used with --include-images.',
     )
     _add_strict_arg(p)
     _add_security_args(p)
@@ -1075,6 +1096,18 @@ def _process_file(pattern: str, data_file: str, args,
 
     if getattr(args, 'meta', False):
         result['_meta'] = logger.build_meta()
+
+    if getattr(args, 'include_images', False):
+        from .engine import extract_images
+        _images_dir = getattr(args, 'images_dir', None) or args.output or '.'
+        _images, _img_warns = extract_images(
+            data_file, _images_dir,
+            stem or os.path.splitext(os.path.basename(data_file))[0],
+        )
+        for w in _img_warns:
+            print(f'⚠️  [image] {w}', file=sys.stderr)
+        if _images:
+            result['_images'] = _images
 
     if getattr(args, 'no_source', False) and engine_format == 'nested':
         if all_sheets:
@@ -1656,6 +1689,9 @@ def main(argv=None):
             open_browser=not getattr(args, 'no_browser', False),
             max_rows=getattr(args, 'max_rows', 150),
             max_cols=getattr(args, 'max_cols', 40),
+            sheet=getattr(args, 'sheet', None),
+            max_file_mb=getattr(args, 'max_size', 5),
+            max_uncompressed_mb=getattr(args, 'max_uncompressed', 50),
         )
         sys.exit(0)
 
