@@ -6,6 +6,16 @@ let sheetData = null;
 let currentStats = {};
 let csvText = '';
 
+// ── Alpine store ──────────────────────────────────────────────────────────
+document.addEventListener('alpine:init', () => {
+  Alpine.store('gx', {
+    activeTab:      'classify',  // 'classify' | 'extract' | 'config' | 'logs'
+    panelMode:      'hint',      // 'hint' | 'classify' | 'table'
+    selectedAction: null,        // 'L' | 'V' | 'T' | 'I' | null
+    trmOpen:        false,       // mini-table editor modal open
+  });
+});
+
 // ── Init ─────────────────────────────────────────────────────────────────
 (async function init() {
   await Promise.all([loadSheet(), loadConfig(), loadStats()]);
@@ -267,8 +277,7 @@ async function selectCell(ref) {
     info.raw ? `"${info.raw.substring(0,80)}"  [${info.inferred_type}]` : '(empty cell)';
 
   // Show classify form
-  document.getElementById('classify-hint').style.display = 'none';
-  document.getElementById('classify-form').style.display = 'block';
+  Alpine.store('gx').panelMode = 'classify';
 
   // Pre-fill form from existing classification
   prefillForm(info);
@@ -334,11 +343,8 @@ function _updateCellDetail(ref, info) {
 }
 
 function _enterTableMode(anchorRef, clickedRef) {
-  // Switch panel to table-ops: hide classify buttons, show Edit/Remove
-  document.getElementById('classify-btns').style.display = 'none';
-  document.getElementById('table-ops').style.display = 'block';
-  document.querySelectorAll('.action-fields').forEach(d => d.style.display = 'none');
-  document.getElementById('apply-row').style.display = 'none';
+  Alpine.store('gx').panelMode      = 'table';
+  Alpine.store('gx').selectedAction = 'T';
 
   // Move selection highlight to the anchor
   if (clickedRef && clickedRef !== anchorRef) {
@@ -352,8 +358,7 @@ function _enterTableMode(anchorRef, clickedRef) {
 }
 
 function _exitTableMode() {
-  document.getElementById('classify-btns').style.display = '';
-  document.getElementById('table-ops').style.display = 'none';
+  Alpine.store('gx').panelMode = 'classify';
 }
 
 function prefillForm(info) {
@@ -381,12 +386,10 @@ function prefillForm(info) {
     const btn = document.querySelector(`.cbtn-${ch}`);
     if (btn) btn.classList.add('active');
   }
-  // Hide all field sections
-  document.querySelectorAll('.action-fields').forEach(d => d.style.display = 'none');
-  document.getElementById('apply-row').style.display = 'none';
 
   if (!ch) {
     selectedAction = null;
+    Alpine.store('gx').selectedAction = null;
     return;
   }
   selectedAction = ch;
@@ -501,17 +504,14 @@ function selectAction(action) {
 }
 
 function showFields(action) {
-  const div = document.getElementById(`fields-${action}`);
-  if (div) div.style.display = 'block';
-  // T action goes through the modal — sidebar Apply/Cancel are misleading, hide them
-  document.getElementById('apply-row').style.display = action === 'T' ? 'none' : 'flex';
+  Alpine.store('gx').selectedAction = action;
 }
 
 function cancelClassification() {
   selectedAction = null;
   document.querySelectorAll('.cbtn').forEach(b => b.classList.remove('active'));
-  document.querySelectorAll('.action-fields').forEach(d => d.style.display = 'none');
-  document.getElementById('apply-row').style.display = 'none';
+  Alpine.store('gx').selectedAction = null;
+  Alpine.store('gx').panelMode      = selectedRef ? 'classify' : 'hint';
 }
 
 async function clearCell() {
@@ -873,22 +873,7 @@ document.addEventListener('click', e => {
 
 // ── Tabs ──────────────────────────────────────────────────────────────────
 function switchTab(name) {
-  document.querySelectorAll('.ptab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
-  ['classify','extract','config','logs'].forEach(n => {
-    const el = document.getElementById('tab-' + n);
-    if (!el) return;
-    if (n === 'extract') {
-      // extract tab uses flex column — must show as flex, not block
-      el.style.display = n === name ? 'flex' : 'none';
-      el.style.flexDirection = 'column';
-      el.style.height = '100%';
-    } else {
-      el.style.display = n === name ? 'block' : 'none';
-    }
-  });
-  // Config tab: do NOT reload from server on every tab-switch — that races with
-  // in-progress edits. The form is populated once on page init; the user's
-  // unsaved changes remain visible if they switch away and back.
+  Alpine.store('gx').activeTab = name;
   if (name === 'logs') refreshLogs();
 }
 
@@ -1245,7 +1230,7 @@ function loadKeyboardShortcuts() {
     // Ignore when typing in an input / select / textarea
     if (['INPUT','SELECT','TEXTAREA'].includes(e.target.tagName)) return;
     // Ignore when the mini-table editor modal is open
-    if (document.getElementById('table-row-modal')?.classList.contains('open')) return;
+    if (Alpine?.store?.('gx')?.trmOpen) return;
 
     if (e.ctrlKey && e.key === 'z') { e.preventDefault(); undoLast(); return; }
 
@@ -1632,7 +1617,7 @@ function toast(msg, err, durationMs) {
 
 // ── Shift+click → set end_ref ─────────────────────────────────────────────
 document.addEventListener('keydown', e => {
-  if (document.getElementById('table-row-modal')?.classList.contains('open')) return;
+  if (Alpine?.store?.('gx')?.trmOpen) return;
   if (e.key === 'Shift') document.body.classList.add('shift-mode');
 });
 document.addEventListener('keyup', e => { if (e.key === 'Shift') document.body.classList.remove('shift-mode'); });
@@ -1803,11 +1788,11 @@ async function openTableModal() {
   _trmRenderGrid(rangeData, existingConfigs);
 
   // Open modal
-  document.getElementById('table-row-modal').classList.add('open');
+  Alpine.store('gx').trmOpen = true;
 }
 
 function closeTableModal() {
-  document.getElementById('table-row-modal').classList.remove('open');
+  Alpine.store('gx').trmOpen = false;
   // Drop shift-select mode so Shift+click no longer fires handleShiftClick
   // after the modal is dismissed.  applyTableModal → loadSheet resets state
   // automatically; Cancel without Apply must do it explicitly.
