@@ -2549,6 +2549,8 @@ function loadKeyboardShortcuts() {
     }
     // Ignore when typing in an input / select / textarea
     if (['INPUT','SELECT','TEXTAREA'].includes(e.target.tagName)) return;
+    // Ignore when the mini-table editor modal is open
+    if (document.getElementById('table-row-modal')?.classList.contains('open')) return;
 
     if (e.ctrlKey && e.key === 'z') { e.preventDefault(); undoLast(); return; }
 
@@ -2934,8 +2936,11 @@ function toast(msg, err, durationMs) {
 }
 
 // ── Shift+click → set end_ref ─────────────────────────────────────────────
-document.addEventListener('keydown', e => { if (e.key === 'Shift') document.body.classList.add('shift-mode'); });
-document.addEventListener('keyup',   e => { if (e.key === 'Shift') document.body.classList.remove('shift-mode'); });
+document.addEventListener('keydown', e => {
+  if (document.getElementById('table-row-modal')?.classList.contains('open')) return;
+  if (e.key === 'Shift') document.body.classList.add('shift-mode');
+});
+document.addEventListener('keyup', e => { if (e.key === 'Shift') document.body.classList.remove('shift-mode'); });
 
 function handleShiftClick(ref) {
   if (selectedAction !== 'T') return false;
