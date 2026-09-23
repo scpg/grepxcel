@@ -751,4 +751,9 @@ td.gx-T-bottom { border-bottom: 2px solid rgba(124,58,237,0.5) !important; }
   font-family: 'Fira Mono', monospace; font-size: 11px;
   white-space: pre; color: var(--text);
 }
-</style>
+
+/* ── Alpine.js + HTMX utilities ─────────────────────────────────────────── */
+[x-cloak] { display: none !important; }
+.htmx-request { opacity: 0.55; transition: opacity 150ms ease; }
+.htmx-indicator { display: none; }
+.htmx-request .htmx-indicator { display: inline; }
