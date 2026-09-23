@@ -515,11 +515,10 @@ select.cfg-sel-default { color: var(--accent); font-style: italic; font-weight: 
 /* ── Preview Modal ──────────────────────────────────────────────── */
 /* ── Table Row Editor Modal ──────────────────────────────────────────────── */
 #table-row-modal {
-  display: none; position: fixed; inset: 0; z-index: 600;
+  display: flex; position: fixed; inset: 0; z-index: 600;
   background: rgba(0,0,0,0.55); align-items: flex-start; justify-content: center;
   padding: 32px 16px;
 }
-#table-row-modal.open { display: flex; }
 #trm-box {
   background: var(--surface); border-radius: 10px;
   width: 98%; max-width: 1200px; height: calc(100vh - 64px); max-height: 860px;

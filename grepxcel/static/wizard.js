@@ -506,7 +506,13 @@ function selectAction(action) {
             setVal('f-T-end_ref', ctx.end_ref);
           } else {
             const inferred = _inferTableEndRef(selectedRef);
-            if (inferred) setVal('f-T-end_ref', inferred);
+            if (inferred) {
+              setVal('f-T-end_ref', inferred);
+            } else if (_rangeAnchor === selectedRef && _rangeEnd) {
+              // Active range selection covers this anchor — use it as end_ref
+              setVal('f-T-end_ref', _rangeEnd.toUpperCase());
+              _tModeAnchor = selectedRef;
+            }
           }
           _tUpdateRowConfigStatus(ctx);
         })
@@ -1755,6 +1761,11 @@ async function openTableModal() {
   if (!endRef) {
     endRef = _inferTableEndRef(anchorRef);
     if (endRef && endEl) { endEl.value = endRef; }  // write back so sidebar shows it
+  }
+  if (!endRef && _rangeAnchor && _rangeEnd &&
+      _rangeAnchor.toUpperCase() === anchorRef.toUpperCase()) {
+    endRef = _rangeEnd.toUpperCase();
+    if (endEl) { endEl.value = endRef; }
   }
   if (!endRef) {
     toast('Set the bottom-right cell (end ref): Shift+click any cell in the table', true);
