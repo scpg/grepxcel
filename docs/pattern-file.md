@@ -53,7 +53,7 @@ Optional. Placed before `START:`. Each `config:` row sets one global option.
 - `LR` — left-to-right, top-to-bottom (row by row). Most common.
 - `TD` — top-to-bottom, left-to-right (column by column).
 
-**`currency.sign`** is prepended to the string representation of currency values when matching their regex.
+**`currency.sign`** sets the expected currency symbol for `currency` fields (e.g. `€`, `$`). The sign is stored in the pattern and available to custom regex — Excel stores currency cell values as plain numbers, so a regex like `\d+\.\d{2}` matches the raw value directly without the sign prefix.
 
 **`empty.aliases`** lists strings that should be treated as empty cells (e.g. `N/A`, `-`, `—`). Add one alias per row.
 

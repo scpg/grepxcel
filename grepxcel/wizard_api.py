@@ -1079,6 +1079,8 @@ def create_app(
 
         if not refs:
             raise HTTPException(400, 'refs list is empty')
+        if len(refs) > 5000:
+            raise HTTPException(400, 'refs list exceeds maximum of 5000 cells per batch')
         if action not in ('L', 'V', 'I', 'CLEAR'):
             raise HTTPException(400, f'action must be L, V, I, or CLEAR (got {action!r}); '
                                     'T is not supported for batch classification')
@@ -1734,12 +1736,17 @@ def create_app(
             raise HTTPException(403, 'Cross-origin shutdown rejected')
         # Clean up any uploaded temp pattern file before exiting.
         import tempfile as _tmpmod
+        import shutil as _shutil
         _tmp_pat = _STATE.get('pattern_path')
         if _tmp_pat and _tmp_pat.startswith(_tmpmod.gettempdir()):
             try:
                 os.unlink(_tmp_pat)
             except OSError:
                 pass
+        # Clean up extracted image temp directory (IMAGE() formula cells).
+        _img_dir = _STATE.get('img_tmp_dir')
+        if _img_dir:
+            _shutil.rmtree(_img_dir, ignore_errors=True)
         _STATE['log'].close(_STATE.get('choices', {}), _STATE.get('notes', {}))
         def _stop():
             time.sleep(0.3)

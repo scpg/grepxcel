@@ -1900,3 +1900,213 @@ class TestClassifyBatch:
         assert r.status_code == 200
         assert r.json()['n_classified'] == 1
         assert client.get('/api/cell/B2').json()['choice'] == 'V'
+
+    def test_classify_batch_size_cap_rejected(self, tmp_path):
+        """More than 5000 refs in a single batch request returns 400."""
+        client = _make_client(tmp_path)
+        big_refs = [f'A{i+1}' for i in range(5001)]
+        r = client.post('/api/classify-batch', json={'refs': big_refs, 'action': 'V'})
+        assert r.status_code == 400
+
+
+# ── Security: /api/load-pattern-by-path path traversal ────────────────────
+
+@_skip_no_api
+class TestLoadPatternByPathSecurity:
+    def test_path_in_same_dir_accepted(self, tmp_path):
+        """A pattern file in the data file's directory is accepted."""
+        wb2 = openpyxl.Workbook()
+        ws2 = wb2.active
+        ws2.title = 'Sheet1'
+        ws2['A1'] = 'pattern_type'
+        ws2['B1'] = 'pattern_name'
+        ws2['C1'] = 'L'
+        ws2['D1'] = 'label'
+        ws2['E1'] = 'Invoice No:'
+        pat_path = str(tmp_path / 'pattern.xlsx')
+        wb2.save(pat_path)
+
+        client = _make_client(tmp_path)
+        r = client.post('/api/load-pattern-by-path', json={'path': pat_path})
+        # Should succeed (200) or raise 400/500 from pattern parsing — but NOT 403.
+        assert r.status_code != 403
+
+    def test_path_traversal_outside_dir_rejected(self, tmp_path):
+        """A path pointing outside the data directory must return 403."""
+        client = _make_client(tmp_path)
+        # Point at a file one level up (or /etc/passwd on Linux).
+        outside = str(tmp_path.parent / 'evil_pattern.xlsx')
+        r = client.post('/api/load-pattern-by-path', json={'path': outside})
+        assert r.status_code == 403
+
+    def test_dotdot_traversal_rejected(self, tmp_path):
+        """A ../../ path traversal must return 403."""
+        client = _make_client(tmp_path)
+        traversal = str(tmp_path / '..' / '..' / 'etc' / 'passwd')
+        r = client.post('/api/load-pattern-by-path', json={'path': traversal})
+        assert r.status_code == 403
+
+    def test_missing_path_field_returns_400(self, tmp_path):
+        """Missing 'path' field in the request body returns 400."""
+        client = _make_client(tmp_path)
+        r = client.post('/api/load-pattern-by-path', json={})
+        assert r.status_code == 400
+
+    def test_absent_file_returns_404(self, tmp_path):
+        """A path inside the data directory that does not exist returns 404."""
+        client = _make_client(tmp_path)
+        missing = str(tmp_path / 'nonexistent_pattern.xlsx')
+        r = client.post('/api/load-pattern-by-path', json={'path': missing})
+        assert r.status_code == 404
+
+
+# ── Security: /api/shutdown CSRF guard ────────────────────────────────────
+
+@_skip_no_api
+class TestShutdownCsrfGuard:
+    def test_no_origin_header_accepted(self, tmp_path):
+        """Request with no Origin header (same-origin form POST) is accepted."""
+        client = _make_client(tmp_path)
+        # TestClient does not add an Origin header by default.
+        r = client.post('/api/shutdown')
+        # 200 or redirect — not 403. Server may os._exit so we just check status.
+        assert r.status_code != 403
+
+    def test_localhost_origin_accepted(self, tmp_path):
+        """Request with Origin: http://localhost:<port> is accepted."""
+        client = _make_client(tmp_path)
+        r = client.post('/api/shutdown', headers={'Origin': 'http://localhost:8765'})
+        assert r.status_code != 403
+
+    def test_loopback_origin_accepted(self, tmp_path):
+        """Request with Origin: http://127.0.0.1:<port> is accepted."""
+        client = _make_client(tmp_path)
+        r = client.post('/api/shutdown', headers={'Origin': 'http://127.0.0.1:8765'})
+        assert r.status_code != 403
+
+    def test_cross_origin_rejected(self, tmp_path):
+        """Request from a foreign Origin must return 403."""
+        client = _make_client(tmp_path)
+        r = client.post('/api/shutdown', headers={'Origin': 'https://evil.example.com'})
+        assert r.status_code == 403
+
+    def test_http_origin_rejected(self, tmp_path):
+        """Origin without a localhost host must return 403."""
+        client = _make_client(tmp_path)
+        r = client.post('/api/shutdown', headers={'Origin': 'http://attacker.com'})
+        assert r.status_code == 403
+
+
+# ── /api/switch-sheet ─────────────────────────────────────────────────────
+
+@_skip_no_api
+class TestSwitchSheet:
+    def _make_two_sheet_client(self, tmp_path: Path) -> 'TestClient':
+        xlsx_path = str(tmp_path / 'multi.xlsx')
+        wb = openpyxl.Workbook()
+        ws1 = wb.active
+        ws1.title = 'Alpha'
+        ws1['A1'] = 'Invoice No:'
+        ws1['B1'] = 'INV-001'
+        ws2 = wb.create_sheet('Beta')
+        ws2['A1'] = 'Amount:'
+        ws2['B1'] = 999.0
+        wb.save(xlsx_path)
+        app = create_app(xlsx_path)
+        return TestClient(app)
+
+    def test_switch_to_valid_sheet(self, tmp_path):
+        """Switching to a sheet that exists returns 200 with changed=True."""
+        client = self._make_two_sheet_client(tmp_path)
+        r = client.post('/api/switch-sheet', json={'sheet': 'Beta'})
+        assert r.status_code == 200
+        data = r.json()
+        assert data['ok'] is True
+        assert data['sheet'] == 'Beta'
+        assert data['changed'] is True
+
+    def test_switch_to_same_sheet(self, tmp_path):
+        """Switching to the already-active sheet returns changed=False."""
+        client = self._make_two_sheet_client(tmp_path)
+        r = client.post('/api/switch-sheet', json={'sheet': 'Alpha'})
+        assert r.status_code == 200
+        assert r.json()['changed'] is False
+
+    def test_switch_to_unknown_sheet_returns_404(self, tmp_path):
+        """Switching to a nonexistent sheet returns 404."""
+        client = self._make_two_sheet_client(tmp_path)
+        r = client.post('/api/switch-sheet', json={'sheet': 'DoesNotExist'})
+        assert r.status_code == 404
+
+    def test_choices_preserved_across_switch(self, tmp_path):
+        """Choices made on Alpha survive a round-trip switch to Beta and back."""
+        client = self._make_two_sheet_client(tmp_path)
+        # Classify a cell on the first sheet
+        client.post('/api/classify', json={'ref': 'A1', 'action': 'L'})
+        assert client.get('/api/cell/A1').json()['choice'] == 'L'
+
+        # Switch away
+        client.post('/api/switch-sheet', json={'sheet': 'Beta'})
+        # Switch back
+        client.post('/api/switch-sheet', json={'sheet': 'Alpha'})
+
+        # Choice must still be present
+        assert client.get('/api/cell/A1').json()['choice'] == 'L'
+
+    def test_api_sheet_reflects_new_sheet_after_switch(self, tmp_path):
+        """After switching, /api/sheet returns data from the new sheet."""
+        client = self._make_two_sheet_client(tmp_path)
+        client.post('/api/switch-sheet', json={'sheet': 'Beta'})
+        sheet_data = client.get('/api/sheet').json()
+        # Beta has 'Amount:' in A1, not 'Invoice No:'
+        all_values = [c['value'] for row in sheet_data['rows'] for c in row]
+        assert 'Amount:' in all_values
+        assert 'Invoice No:' not in all_values
+
+    def test_switch_by_numeric_index(self, tmp_path):
+        """Numeric index '1' resolves to the second sheet."""
+        client = self._make_two_sheet_client(tmp_path)
+        r = client.post('/api/switch-sheet', json={'sheet': '1'})
+        assert r.status_code == 200
+        assert r.json()['sheet'] == 'Beta'
+
+
+# ── /api/logs ─────────────────────────────────────────────────────────────
+
+@_skip_no_api
+class TestApiLogs:
+    def test_returns_expected_keys(self, tmp_path):
+        """/api/logs response contains the three required keys."""
+        client = _make_client(tmp_path)
+        r = client.get('/api/logs')
+        assert r.status_code == 200
+        data = r.json()
+        assert 'preload_warnings' in data
+        assert 'log_path' in data
+        assert 'log_lines' in data
+
+    def test_log_lines_are_strings(self, tmp_path):
+        """log_lines must be a list of strings (no raw dicts or cell objects)."""
+        client = _make_client(tmp_path)
+        r = client.get('/api/logs')
+        assert r.status_code == 200
+        log_lines = r.json()['log_lines']
+        assert isinstance(log_lines, list)
+        for line in log_lines:
+            assert isinstance(line, str), f'Expected str, got {type(line)}: {line!r}'
+
+    def test_no_cell_values_in_logs(self, tmp_path):
+        """Classify a cell and confirm its *value* does not appear in log lines."""
+        secret_value = 'SENSITIVE-DATA-XYZ'
+        client = _make_client(tmp_path, cells={
+            (1, 1): secret_value,
+            (1, 2): 'Other data',
+        })
+        # Classify the cell containing the secret value
+        client.post('/api/classify', json={'ref': 'A1', 'action': 'V'})
+        r = client.get('/api/logs')
+        assert r.status_code == 200
+        full_log = '\n'.join(r.json()['log_lines'])
+        assert secret_value not in full_log, (
+            f'Cell value {secret_value!r} leaked into session log'
+        )

@@ -33,7 +33,7 @@ def _json_default(obj):
     as ``timedelta``, which has no isoformat, so render it as ``str`` (e.g.
     ``"8:30:00"``).
     """
-    if isinstance(obj, (datetime.date, datetime.datetime, datetime.time)):
+    if isinstance(obj, (datetime.datetime, datetime.date, datetime.time)):
         return obj.isoformat()
     if isinstance(obj, datetime.timedelta):
         return str(obj)
@@ -1155,10 +1155,10 @@ def _process_file(pattern: str, data_file: str, args,
         os.makedirs(args.output, exist_ok=True)
         out_path = os.path.join(args.output, f'{stem}.json')
         with open(out_path, 'w', encoding='utf-8') as f:
-            json.dump(result, f, indent=2, default=_json_default)
+            json.dump(result, f, indent=2, default=_json_default, ensure_ascii=False)
         print(f'\n  JSON written to: {out_path}', file=sys.stderr)
     else:
-        json.dump(result, sys.stdout, indent=2, default=_json_default)
+        json.dump(result, sys.stdout, indent=2, default=_json_default, ensure_ascii=False)
         sys.stdout.write('\n')
 
     ok = not (logger.has_errors() or logger.has_warnings())

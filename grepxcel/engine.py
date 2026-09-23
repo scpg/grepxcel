@@ -625,7 +625,7 @@ def _build_sheet_name_maps(zf, namelist):
     sheet_xml_to_name : {'xl/worksheets/sheet1.xml': 'Sheet1', ...}
     drawing_to_sheet  : {'xl/drawings/drawing1.xml': 'Sheet1', ...}
     """
-    import xml.etree.ElementTree as _ET
+    import defusedxml.ElementTree as _ET
 
     _NS_SS  = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
     _NS_R   = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
@@ -689,7 +689,7 @@ def _scan_richdata_image_cells(zf, namelist, sheet_xml_to_name: dict) -> dict:
     carry a ``vm=`` attribute in the worksheet XML referencing a 1-based index
     into ``xl/richData/rdrichvalue.xml``.
     """
-    import xml.etree.ElementTree as _ET
+    import defusedxml.ElementTree as _ET
 
     _NS_SS  = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
 
@@ -732,7 +732,7 @@ def _iter_drawing_anchors(data_file: str):
     monotonically increasing, useful for building unique filenames.
     """
     import zipfile
-    import xml.etree.ElementTree as _ET
+    import defusedxml.ElementTree as _ET
 
     _NS_XDR = 'http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing'
     _NS_R   = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
@@ -821,7 +821,7 @@ def _iter_richdata_images(data_file: str):
       →  xl/media/imageN.*  (bytes)
     """
     import zipfile
-    import xml.etree.ElementTree as _ET
+    import defusedxml.ElementTree as _ET
 
     _NS_RVR  = 'http://schemas.microsoft.com/office/spreadsheetml/2022/richvaluerel'
     _NS_R    = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'

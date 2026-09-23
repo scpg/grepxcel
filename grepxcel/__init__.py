@@ -1,9 +1,11 @@
 from .engine import Engine
-from .logger import Logger, VerbosityLevel
+from .logger import Logger, VerbosityLevel, EngineError
+from .pattern_parser import PatternError
+from .security import SecurityError
 from .utils import flatten_nested as _flatten_pairs
 from .utils import flatten_table_instances as _flatten_table_instances
 
-__version__ = '0.4.1'
+__version__ = '0.4.2rc1'
 
 
 def extract(pattern, data, *, sheet=None, all_sheets=False,
@@ -177,4 +179,4 @@ def _to_frames(result, pd, pl, flat_tables=False):
 
 
 __all__ = ['Engine', 'Logger', 'VerbosityLevel', 'extract', 'extract_df',
-           '__version__']
+           'EngineError', 'PatternError', 'SecurityError', '__version__']

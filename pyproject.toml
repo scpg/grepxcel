@@ -58,6 +58,12 @@ suggest = [
     # certificate store (where IT installs the company CA). Optional + guarded.
     "truststore>=0.9",
 ]
+draft = [  # alias for [suggest] — matches the `grepxcel draft` command name
+    "llama-cpp-python>=0.2.90",
+    "huggingface_hub>=0.23",
+    "platformdirs>=4.0",
+    "truststore>=0.9",
+]
 draft-cloud = [
     "anthropic>=0.40",
     # openai SDK powers the GitHub Models backend (--backend github), which talks
@@ -94,6 +100,7 @@ web = [
 dev = [
     "pytest>=8.0",
     "jsonschema>=4.20",
+    "hypothesis>=6.168.0",
 ]
 build = [
     # CVE-2025-59042 fixed in 6.10 (reworked bootstrap, eliminates sys.path injection)
@@ -118,6 +125,7 @@ where = ["."]
 include = ["grepxcel*"]
 
 [tool.setuptools.package-data]
+"grepxcel"            = ["py.typed"]
 "grepxcel.examples"   = ["*/*.xlsx"]
 "grepxcel.templates"  = ["*.html"]
 "grepxcel.static"     = ["*.css", "*.js"]

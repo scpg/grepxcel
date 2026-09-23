@@ -65,6 +65,19 @@ async function loadSheet() {
   const r = await fetch('/api/sheet');
   sheetData = await r.json();
   renderGrid(sheetData);
+  // Show banner if sheet was truncated (total_rows > displayed rows)
+  const existingBanner = document.getElementById('truncation-banner');
+  if (existingBanner) existingBanner.remove();
+  if (sheetData.total_rows > sheetData.max_row) {
+    const toolbar = document.getElementById('toolbar');
+    if (toolbar) {
+      const truncBanner = document.createElement('div');
+      truncBanner.id = 'truncation-banner';
+      truncBanner.style.cssText = 'background:#78350f;color:#fef3c7;font-size:12px;padding:5px 12px;border-bottom:1px solid #92400e;';
+      truncBanner.textContent = `⚠ Showing rows 1–${sheetData.max_row} of ${sheetData.total_rows} — use --max-rows to extend`;
+      toolbar.after(truncBanner);
+    }
+  }
   // Index cell data
   for (const row of sheetData.rows)
     for (const cell of row)
@@ -222,7 +235,7 @@ function renderGrid(data) {
         'gx-T-DATA':           p => p.value?.choice === 'T-DATA',
         'gx-I':                p => p.value?.choice === 'I',
         'gx-merged-ghost':     p => p.value?.skip === true,
-        'gx-image':            p => !p.value?.skip && !!p.value?.has_image && !p.value?.image_suspicious,
+        'gx-image':            p => !p.value?.skip && (!!p.value?.has_image || !!p.value?.has_preview) && !p.value?.image_suspicious,
         'gx-image-suspicious': p => !p.value?.skip && !!p.value?.image_suspicious,
         'empty':               p => !p.value?.skip && !p.value?.choice && !!p.value?.empty,
         'selected':            p => !!p.value?.ref && p.value.ref === selectedRef,
