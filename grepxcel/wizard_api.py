@@ -40,6 +40,7 @@ from grepxcel.wizard_core import (
 try:
     from fastapi import FastAPI, HTTPException, Request
     from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
+    from fastapi.staticfiles import StaticFiles
     from jinja2 import Environment, FileSystemLoader
     import uvicorn
     _WEB_OK = True
@@ -685,6 +686,8 @@ def create_app(
 
     # ── FastAPI app ───────────────────────────────────────────────────────────
     app = FastAPI(title='grepxcel Web Wizard', docs_url=None, redoc_url=None)
+    static_dir = Path(__file__).parent / 'static'
+    app.mount('/static', StaticFiles(directory=str(static_dir)), name='static')
 
     # ─────────────────────────────── HTML PAGE ────────────────────────────────
 
