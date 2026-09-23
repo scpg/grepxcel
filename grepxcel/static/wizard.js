@@ -507,7 +507,8 @@ function selectAction(action) {
     setVal('f-V-notes', info.note || '');
     onVTypeChange(inferredType);
   } else if (action === 'T') {
-    const defaultName = info.name || (slugify(info.raw || 'table') + '_table');
+    const _slug = slugify(info.raw || 'table');
+    const defaultName = info.name || (_slug.endsWith('_table') ? _slug : _slug + '_table');
     setVal('f-T-name', defaultName);
     setVal('f-T-mult', info.mult || '*');
     // If this cell already has table context, load end_ref + row_config status
@@ -1124,6 +1125,7 @@ function jumpToCell(ref) {
   gridApi.ensureIndexVisible(node.rowIndex, 'middle');
   selectCell(ref);
   document.getElementById('cell-jump').value = '';
+  document.getElementById('cell-jump').blur();
 }
 
 // ── Column-letter helpers (for arrow navigation) ───────────────────────────
