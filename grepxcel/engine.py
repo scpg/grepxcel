@@ -812,6 +812,112 @@ def _iter_drawing_anchors(data_file: str):
                 yield sheet_name, cell_ref_str, media_path, global_idx, zf.read(media_path)
 
 
+def _iter_richdata_images(data_file: str):
+    """Yield (sheet_name, cell_ref, media_zip_path, idx, data_bytes) for IMAGE() formula cells.
+
+    Traverses the richData chain:
+      rdrichvalue.xml  →  richValueRel.xml (ordered rId list)
+      →  _rels/richValueRel.xml.rels (rId → media path)
+      →  xl/media/imageN.*  (bytes)
+    """
+    import zipfile
+    import xml.etree.ElementTree as _ET
+
+    _NS_RVR  = 'http://schemas.microsoft.com/office/spreadsheetml/2022/richvaluerel'
+    _NS_R    = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
+    _NS_RELS = 'http://schemas.openxmlformats.org/package/2006/relationships'
+    _NS_RD   = 'http://schemas.microsoft.com/office/spreadsheetml/2017/richdata'
+    _NS_SS   = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
+
+    try:
+        zf = zipfile.ZipFile(data_file, 'r')
+    except (zipfile.BadZipFile, OSError):
+        return
+
+    with zf:
+        namelist = set(zf.namelist())
+
+        required = (
+            'xl/richData/richValueRel.xml',
+            'xl/richData/_rels/richValueRel.xml.rels',
+            'xl/richData/rdrichvalue.xml',
+        )
+        if not all(p in namelist for p in required):
+            return
+
+        try:
+            rvr_tree = _ET.fromstring(zf.read('xl/richData/richValueRel.xml'))
+        except _ET.ParseError:
+            return
+
+        # Ordered list of rIds from richValueRel.xml (position = 0-based LocalImageIdentifier)
+        rels_by_idx = [
+            rel.get(f'{{{_NS_R}}}id', '')
+            for rel in rvr_tree.findall(f'{{{_NS_RVR}}}rel')
+        ]
+
+        try:
+            reltree = _ET.fromstring(zf.read('xl/richData/_rels/richValueRel.xml.rels'))
+        except _ET.ParseError:
+            return
+
+        rId_to_media: dict = {}
+        for rel in reltree.findall(f'{{{_NS_RELS}}}Relationship'):
+            rid = rel.get('Id', '')
+            target = rel.get('Target', '')
+            if '../media/' in target:
+                rId_to_media[rid] = target.replace('../media/', 'xl/media/')
+
+        try:
+            rv_tree = _ET.fromstring(zf.read('xl/richData/rdrichvalue.xml'))
+        except _ET.ParseError:
+            return
+
+        # Map 1-based vm index → media zip path
+        vm_to_media: dict = {}
+        for vm_1based, rv_el in enumerate(rv_tree.findall(f'{{{_NS_RD}}}rv'), start=1):
+            v_els = rv_el.findall(f'{{{_NS_RD}}}v')
+            if not v_els:
+                continue
+            try:
+                local_img_id = int(v_els[0].text or '')
+            except (ValueError, TypeError):
+                continue
+            if local_img_id >= len(rels_by_idx):
+                continue
+            rid = rels_by_idx[local_img_id]
+            media_path = rId_to_media.get(rid, '')
+            if media_path:
+                vm_to_media[vm_1based] = media_path
+
+        sheet_xml_to_name, _ = _build_sheet_name_maps(zf, namelist)
+
+        global_idx = 0
+        for sheet_xml_path, sheet_name in sheet_xml_to_name.items():
+            if sheet_xml_path not in namelist:
+                continue
+            try:
+                ws_tree = _ET.fromstring(zf.read(sheet_xml_path))
+            except _ET.ParseError:
+                continue
+            for cell_el in ws_tree.findall(f'.//{{{_NS_SS}}}c'):
+                vm = cell_el.get('vm')
+                if vm is None:
+                    continue
+                try:
+                    vm_int = int(vm)
+                except (ValueError, TypeError):
+                    continue
+                ref = cell_el.get('r', '').upper()
+                if not ref:
+                    continue
+                media_path = vm_to_media.get(vm_int)
+                if not media_path or media_path not in namelist:
+                    continue
+                global_idx += 1
+                yield sheet_name, ref, media_path, global_idx, zf.read(media_path)
+
+
 def scan_image_cells(data_file: str) -> dict:
     """Return per-sheet, per-cell media info for all embedded media in the file.
 
@@ -885,7 +991,8 @@ def extract_images(data_file: str, images_dir: str, stem: str) -> tuple:
     os.makedirs(images_dir, exist_ok=True)
 
     per_cell_count: dict = {}
-    for _sheet, cell_ref, media_path, idx, data in _iter_drawing_anchors(data_file):
+
+    def _save_one(cell_ref: str, media_path: str, idx: int, data: bytes) -> None:
         mime, ok = _check_media_bytes(data, media_path)
         if not ok:
             label = mime or 'unrecognised binary'
@@ -894,8 +1001,7 @@ def extract_images(data_file: str, images_dir: str, stem: str) -> tuple:
                 f'{media_path}: {label} — skipped'
                 + (f' (magic bytes: {hex_head})' if hex_head else '')
             )
-            continue
-
+            return
         ext = os.path.splitext(media_path)[1] or '.bin'
         per_cell_count[cell_ref] = per_cell_count.get(cell_ref, 0) + 1
         n = per_cell_count[cell_ref]
@@ -905,6 +1011,12 @@ def extract_images(data_file: str, images_dir: str, stem: str) -> tuple:
         with open(out_path, 'wb') as fh:
             fh.write(data)
         result[key] = out_path
+
+    for _sheet, cell_ref, media_path, idx, data in _iter_drawing_anchors(data_file):
+        _save_one(cell_ref, media_path, idx, data)
+
+    for _sheet, cell_ref, media_path, idx, data in _iter_richdata_images(data_file):
+        _save_one(cell_ref, media_path, idx, data)
 
     return result, warnings
 
