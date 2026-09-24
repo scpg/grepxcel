@@ -355,12 +355,32 @@ function _updateCellDetail(ref, info) {
     <span style="margin-left:6px;padding:1px 7px;border-radius:10px;font-size:11px;font-weight:600;background:${tc}22;color:${tc}">${_esc(itype)}</span>
   </div>`);
 
-  // Excel number format (for date / time / duration cells)
+  // Excel number format (for date / time / duration / number cells)
   const nfmt = info.number_format;
   if (nfmt && nfmt !== 'General' && nfmt !== '@') {
     rows.push(`<div style="margin-bottom:7px">
       <span style="color:var(--text-muted);font-size:11px">Excel format</span>
       <code style="margin-left:6px;font-size:11px;padding:1px 6px;background:var(--surface);border-radius:3px;word-break:break-all">${_esc(nfmt)}</code>
+    </div>`);
+  }
+
+  // Currency source (only for number cells where a currency was applied)
+  const csrc = info.currency_source;
+  const csym = info.currency_applied;
+  if (csrc && csym) {
+    const label = csrc === 'cell'
+      ? `<span title="Currency symbol is specified in the cell's own Excel format">${_esc(csym)} · from cell format</span>`
+      : `<span title="No currency in cell format — applying the default from Config panel">${_esc(csym)} · default (Config)</span>`;
+    const color = csrc === 'cell' ? '#4ade80' : '#fb923c';
+    rows.push(`<div style="margin-bottom:7px">
+      <span style="color:var(--text-muted);font-size:11px">Currency</span>
+      <span style="margin-left:6px;font-size:11px;font-weight:600;color:${color}">${label}</span>
+    </div>`);
+  } else if (info.inferred_type === 'number' || info.inferred_type === 'integer') {
+    // Number cell but no currency was applied — inform the user
+    rows.push(`<div style="margin-bottom:7px">
+      <span style="color:var(--text-muted);font-size:11px">Currency</span>
+      <span style="margin-left:6px;font-size:11px;color:var(--text-muted)">none</span>
     </div>`);
   }
 

@@ -321,14 +321,25 @@ def _parse_ref(ref: str) -> tuple[int, int]:
     return int(row_str), col
 
 
-def _format_number(value: float, number_format: str) -> str | None:
+def _format_number(
+    value: float,
+    number_format: str,
+    fallback_currency: str = '',
+) -> tuple[str, str] | None:
     """Format a numeric value using an Excel number_format string.
 
     Handles the most common patterns: thousands separators, decimal places,
     percentages, leading currency symbols ($€£…), and [$CODE] bracket notation.
-    Returns None for unrecognised formats so the caller falls back to str(value).
+
+    Returns a ``(formatted_string, currency_source, currency_symbol)`` tuple where
+    ``currency_source`` is ``'cell'`` (symbol from the cell's own format),
+    ``'default'`` (fallback_currency was applied), or ``''`` (no currency), and
+    ``currency_symbol`` is the actual symbol string that was applied.
+    Returns ``None`` for unrecognised formats so the caller falls back to
+    ``str(value)``.
     """
     if not number_format or number_format in ('General', '@'):
+        # General format carries no numeric intent — don't apply fallback currency.
         return None
 
     # Use only the first (positive) section of a multi-section format.
@@ -399,20 +410,34 @@ def _format_number(value: float, number_format: str) -> str | None:
     except (ValueError, TypeError, OverflowError):
         return None
 
-    # Assemble: prefix (currency symbol) + number + suffix (bracket currency or %)
-    prefix = currency_prefix
+    # Determine currency source and build prefix/suffix.
+    if currency_prefix or bracket_currency:
+        currency_source = 'cell'
+        currency_symbol = currency_prefix or bracket_currency
+    elif fallback_currency and not is_pct:
+        currency_prefix = fallback_currency
+        currency_source = 'default'
+        currency_symbol = fallback_currency
+    else:
+        currency_source = ''
+        currency_symbol = ''
+
     if is_pct:
         suffix = '%'
     elif bracket_currency:
-        # [$USD] or [$€-407] → append after number; honour any literal space from the format
-        spacer = ' ' if quoted_text.strip() == '' and ' ' in quoted_text else ' '
-        suffix = f'{spacer}{bracket_currency}'
+        suffix = f' {bracket_currency}'
     else:
-        suffix = quoted_text  # e.g. quoted text that was a literal suffix
-    return f'{prefix}{s}{suffix}'
+        suffix = quoted_text
+    return f'{currency_prefix}{s}{suffix}', currency_source, currency_symbol
 
 
-def _cell_display(value: Any, max_len: int = 28, number_format: str = '') -> str:
+def _cell_display(
+    value: Any,
+    max_len: int = 28,
+    number_format: str = '',
+    fallback_currency: str = '',
+) -> str:
+    """Return a display string for a grid cell.  Does not include currency_source metadata."""
     if value is None:
         return ''
     if isinstance(value, bool):                      # bool before int — bool is a subclass of int
@@ -440,8 +465,8 @@ def _cell_display(value: Any, max_len: int = 28, number_format: str = '') -> str
             sec = total_secs % 60
             s = f'{sign}{h:02d}:{m:02d}:{sec:02d}'
     elif isinstance(value, (int, float)):
-        formatted = _format_number(float(value), number_format)
-        s = formatted if formatted is not None else str(value)
+        result = _format_number(float(value), number_format, fallback_currency)
+        s = result[0] if result is not None else str(value)  # result[1]/[2] are metadata only
     else:
         s = str(value)
     if len(s) > max_len:
@@ -500,6 +525,7 @@ def _build_sheet_data() -> dict:
     ws: openpyxl.worksheet.worksheet.Worksheet = _STATE['ws']
     choices: dict = _STATE['choices']
     notes: dict = _STATE['notes']
+    fallback_cur: str = _STATE['state'].currency_sign or ''
     # image_cells is {sheet_name: {cell_ref: {count, mimes, suspicious}}}
     _all_image_cells: dict = _STATE.get('image_cells', {})
     image_cells: dict = _all_image_cells.get(ws.title, {})
@@ -530,7 +556,7 @@ def _build_sheet_data() -> dict:
                 'row':       r,
                 'col':       c,
                 'col_letter': get_column_letter(c),
-                'value':     '' if has_img else _cell_display(cell.value, number_format=cell.number_format or ''),
+                'value':     '' if has_img else _cell_display(cell.value, number_format=cell.number_format or '', fallback_currency=fallback_cur),
                 'raw':       str(cell.value) if cell.value is not None else '',
                 'type':      cell_type,
                 'has_image':       has_img,
@@ -1592,14 +1618,27 @@ def create_app(
         ex_var_mode, ex_modifiers = _col_a_extra_to_parts(ex_col_a_extra)
         _all_img = _STATE.get('image_cells', {})
         img_info = _all_img.get(ws.title, {}).get(ref)
+        fallback_cur = _STATE['state'].currency_sign or ''
+        nfmt = cell.number_format or ''
+
+        # Compute currency_source for the right panel metadata.
+        currency_source = ''
+        currency_applied = ''
+        if img_info is None and isinstance(cell.value, (int, float)) and not isinstance(cell.value, bool):
+            num_result = _format_number(float(cell.value), nfmt, fallback_cur)
+            if num_result is not None:
+                _, currency_source, currency_applied = num_result
+
         return JSONResponse({
             'ref':          ref,
             'row':          row,
             'col':          col,
             'col_letter':   get_column_letter(col),
-            'value':        '' if img_info is not None else _cell_display(cell.value, 200, number_format=cell.number_format or ''),
+            'value':        '' if img_info is not None else _cell_display(cell.value, 200, number_format=nfmt, fallback_currency=fallback_cur),
             'raw':          str(cell.value) if cell.value is not None else '',
-            'number_format': cell.number_format or '',
+            'number_format': nfmt,
+            'currency_source':  currency_source,   # 'cell' | 'default' | ''
+            'currency_applied': currency_applied,  # the symbol that was prepended/suffixed
             'has_image':    img_info is not None,
             'image_count':  img_info['count'] if img_info else 0,
             'image_suspicious': img_info.get('suspicious', False) if img_info else False,
