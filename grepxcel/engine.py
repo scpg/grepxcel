@@ -629,10 +629,19 @@ def _check_media_bytes(data: bytes, zip_path: str = '') -> tuple:
         return 'audio/flac', True
 
     # ── SVG (text-based XML) — checked last, CPU-cheaper than regex ──────────
+    # Require the payload to actually parse as XML with an <svg> root element.
+    # A prefix-only check (e.g. bytes starting with "<svg" followed by shell
+    # or HTML content) would let non-image content masquerade as SVG and be
+    # written to disk with a misleading extension by callers such as
+    # extract_images().
     try:
         head = data[:512].decode('utf-8', errors='ignore').lstrip('﻿ \t\r\n')
         if head.startswith('<?xml') or head.startswith('<svg') or '<svg' in head[:256]:
-            return 'image/svg+xml', True
+            import defusedxml.ElementTree as _ET
+            root = _ET.fromstring(data)
+            tag = root.tag.rsplit('}', 1)[-1] if isinstance(root.tag, str) else ''
+            if tag == 'svg':
+                return 'image/svg+xml', True
     except Exception:
         pass
 
@@ -669,6 +678,33 @@ _SUPPORTED_MEDIA_MIMES = frozenset({
     'image/heic', 'image/heif', 'image/avif',
     'audio/wav', 'audio/mpeg', 'audio/ogg', 'audio/flac',
 })
+
+# Canonical on-disk extension for each supported MIME type. extract_images()
+# uses this — never the zip member's own extension — to name saved files, so
+# a media entry cannot be written to disk under an attacker-chosen extension
+# (e.g. .cmd/.bat/.html) regardless of what its zip path claims to be.
+_MIME_TO_EXT = {
+    'image/jpeg':    '.jpg',
+    'image/png':     '.png',
+    'image/gif':     '.gif',
+    'image/bmp':     '.bmp',
+    'image/tiff':    '.tiff',
+    'image/webp':    '.webp',
+    'image/x-icon':  '.ico',
+    'image/svg+xml': '.svg',
+    'image/heic':    '.heic',
+    'image/heif':    '.heif',
+    'image/avif':    '.avif',
+    'audio/wav':     '.wav',
+    'audio/mpeg':    '.mp3',
+    'audio/ogg':     '.ogg',
+    'audio/flac':    '.flac',
+}
+
+# A worksheet/richData cell reference is always column letters + row digits
+# (e.g. "A1", "AB123"). Anything else is untrusted-input tampering and must
+# not be interpolated into a filename.
+_SAFE_CELL_REF_RE = re.compile(r'^[A-Z]{1,3}[0-9]{1,7}$')
 
 
 def _build_sheet_name_maps(zf, namelist):
@@ -1054,12 +1090,20 @@ def extract_images(data_file: str, images_dir: str, stem: str) -> tuple:
                 + (f' (magic bytes: {hex_head})' if hex_head else '')
             )
             return
-        ext = os.path.splitext(media_path)[1] or '.bin'
+        if not _SAFE_CELL_REF_RE.match(cell_ref):
+            warnings.append(f'{media_path}: invalid cell reference {cell_ref!r} — skipped')
+            return
+        # Extension comes from the detected MIME type, never from the zip
+        # member's own name/extension, which is attacker-controlled.
+        ext = _MIME_TO_EXT.get(mime, '.bin')
         per_cell_count[cell_ref] = per_cell_count.get(cell_ref, 0) + 1
         n = per_cell_count[cell_ref]
         key = cell_ref if n == 1 else f'{cell_ref}_{n}'
         out_name = f'{stem}_{cell_ref}_{idx}{ext}'
         out_path = os.path.join(images_dir, out_name)
+        if os.path.exists(out_path):
+            warnings.append(f'{out_path}: already exists — skipped')
+            return
         with open(out_path, 'wb') as fh:
             fh.write(data)
         result[key] = out_path
