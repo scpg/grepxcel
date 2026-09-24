@@ -325,21 +325,32 @@ def _format_number(
     value: float,
     number_format: str,
     fallback_currency: str = '',
-) -> tuple[str, str] | None:
+    force_currency: bool = False,
+) -> tuple[str, str, str] | None:
     """Format a numeric value using an Excel number_format string.
 
     Handles the most common patterns: thousands separators, decimal places,
     percentages, leading currency symbols ($€£…), and [$CODE] bracket notation.
 
     Returns a ``(formatted_string, currency_source, currency_symbol)`` tuple where
-    ``currency_source`` is ``'cell'`` (symbol from the cell's own format),
-    ``'default'`` (fallback_currency was applied), or ``''`` (no currency), and
-    ``currency_symbol`` is the actual symbol string that was applied.
+    ``currency_source`` is ``'cell'`` (symbol from the cell's own Excel format),
+    ``'classified'`` (cell typed as currency by the wizard, fallback applied),
+    ``'default'`` (fallback applied because format is numeric but has no symbol),
+    or ``''`` (no currency).  ``currency_symbol`` is the actual symbol used.
     Returns ``None`` for unrecognised formats so the caller falls back to
-    ``str(value)``.
+    ``str(value)``.  Pass ``force_currency=True`` when the wizard has classified
+    this cell as the ``currency`` type, enabling fallback even for General format.
     """
     if not number_format or number_format in ('General', '@'):
-        # General format carries no numeric intent — don't apply fallback currency.
+        # General format carries no numeric intent on its own.
+        # But if the wizard has classified this cell as 'currency', honour the fallback.
+        if force_currency and fallback_currency:
+            try:
+                fv = float(value)
+                s = f'{fv:,.2f}' if fv != round(fv) else f'{round(fv):,}'
+                return f'{fallback_currency}{s}', 'classified', fallback_currency
+            except (ValueError, TypeError, OverflowError):
+                pass
         return None
 
     # Use only the first (positive) section of a multi-section format.
@@ -436,6 +447,7 @@ def _cell_display(
     max_len: int = 28,
     number_format: str = '',
     fallback_currency: str = '',
+    force_currency: bool = False,
 ) -> str:
     """Return a display string for a grid cell.  Does not include currency_source metadata."""
     if value is None:
@@ -465,7 +477,7 @@ def _cell_display(
             sec = total_secs % 60
             s = f'{sign}{h:02d}:{m:02d}:{sec:02d}'
     elif isinstance(value, (int, float)):
-        result = _format_number(float(value), number_format, fallback_currency)
+        result = _format_number(float(value), number_format, fallback_currency, force_currency)
         s = result[0] if result is not None else str(value)  # result[1]/[2] are metadata only
     else:
         s = str(value)
@@ -576,7 +588,7 @@ def _build_sheet_data() -> dict:
                 'row':       r,
                 'col':       c,
                 'col_letter': get_column_letter(c),
-                'value':     '' if has_img else _cell_display(cell.value, number_format=cell.number_format or '', fallback_currency=fallback_cur),
+                'value':     '' if has_img else _cell_display(cell.value, number_format=cell.number_format or '', fallback_currency=fallback_cur, force_currency=choice_info.get('ftype') == 'currency'),
                 'raw':       str(cell.value) if cell.value is not None else '',
                 'type':      cell_type,
                 'has_image':       has_img,
@@ -1652,10 +1664,11 @@ def create_app(
         nfmt = cell.number_format or ''
 
         # Compute currency_source for the right panel metadata.
+        is_currency_classified = choice_info.get('ftype') == 'currency'
         currency_source = ''
         currency_applied = ''
         if img_info is None and isinstance(cell.value, (int, float)) and not isinstance(cell.value, bool):
-            num_result = _format_number(float(cell.value), nfmt, fallback_cur)
+            num_result = _format_number(float(cell.value), nfmt, fallback_cur, is_currency_classified)
             if num_result is not None:
                 _, currency_source, currency_applied = num_result
 
@@ -1664,7 +1677,7 @@ def create_app(
             'row':          row,
             'col':          col,
             'col_letter':   get_column_letter(col),
-            'value':        '' if img_info is not None else _cell_display(cell.value, 200, number_format=nfmt, fallback_currency=fallback_cur),
+            'value':        '' if img_info is not None else _cell_display(cell.value, 200, number_format=nfmt, fallback_currency=fallback_cur, force_currency=is_currency_classified),
             'raw':          str(cell.value) if cell.value is not None else '',
             'number_format': nfmt,
             'currency_source':  currency_source,   # 'cell' | 'default' | ''

@@ -368,13 +368,15 @@ function _updateCellDetail(ref, info) {
   const csrc = info.currency_source;
   const csym = info.currency_applied;
   if (csrc && csym) {
-    const label = csrc === 'cell'
-      ? `<span title="Currency symbol is specified in the cell's own Excel format">${_esc(csym)} · from cell format</span>`
-      : `<span title="No currency in cell format — applying the default from Config panel">${_esc(csym)} · default (Config)</span>`;
-    const color = csrc === 'cell' ? '#4ade80' : '#fb923c';
+    const CURRENCY_LABELS = {
+      cell:       { text: `${_esc(csym)} · from cell format`,           title: "Currency symbol is defined in the cell's own Excel format",                              color: '#4ade80' },
+      classified: { text: `${_esc(csym)} · classified as currency`,     title: "Cell is classified as currency in the wizard — Config symbol applied as fallback",      color: '#38bdf8' },
+      default:    { text: `${_esc(csym)} · default (Config)`,           title: "No currency in the cell format — Config fallback symbol applied to numeric format",     color: '#fb923c' },
+    };
+    const info_c = CURRENCY_LABELS[csrc] || { text: _esc(csym), title: csrc, color: '#888' };
     rows.push(`<div style="margin-bottom:7px">
       <span style="color:var(--text-muted);font-size:11px">Currency</span>
-      <span style="margin-left:6px;font-size:11px;font-weight:600;color:${color}">${label}</span>
+      <span style="margin-left:6px;font-size:11px;font-weight:600;color:${info_c.color}" title="${info_c.title}">${info_c.text}</span>
     </div>`);
   } else if (info.inferred_type === 'number' || info.inferred_type === 'integer') {
     // Number cell but no currency was applied — inform the user
