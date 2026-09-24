@@ -716,6 +716,20 @@ function _cfgSelMark(sel, defaultVal) {
   sel.classList.toggle('cfg-sel-default', sel.value === defaultVal);
 }
 
+function _populateCurrencyDetected(detected) {
+  const grp = document.getElementById('cfg-currency-file-group');
+  if (!grp) return;
+  grp.innerHTML = '';
+  if (!detected || detected.length === 0) { grp.style.display = 'none'; return; }
+  detected.forEach(sym => {
+    const opt = document.createElement('option');
+    opt.value = sym;
+    opt.textContent = sym;
+    grp.appendChild(opt);
+  });
+  grp.style.display = '';
+}
+
 function populateConfigPanel(cfg) {
   setVal('cfg-direction',         cfg.direction  || 'LR');
   setChk('cfg-template',          cfg.template   || false);
@@ -727,7 +741,8 @@ function populateConfigPanel(cfg) {
   const legacyTW = cfg.trim_whitespace || false;
   setChk('cfg-trim_ws_labels',    cfg.trim_whitespace_labels != null ? cfg.trim_whitespace_labels : legacyTW);
   setChk('cfg-trim_ws_values',    cfg.trim_whitespace_values != null ? cfg.trim_whitespace_values : legacyTW);
-  setVal('cfg-currency',          cfg.currency_sign || '€');
+  _populateCurrencyDetected(cfg.detected_currencies || []);
+  setVal('cfg-currency',          cfg.currency_sign || '');
   setVal('cfg-lbl_match',         cfg.lbl_match  || '');
   setVal('cfg-var_match',         cfg.var_match  || '');
   setVal('cfg-aliases',           (cfg.empty_aliases || []).join(', '));
@@ -746,7 +761,7 @@ async function saveConfig() {
     ignore_case_values:    document.getElementById('cfg-ignore_case_values').checked,
     trim_whitespace_labels: document.getElementById('cfg-trim_ws_labels').checked,
     trim_whitespace_values: document.getElementById('cfg-trim_ws_values').checked,
-    currency_sign:         document.getElementById('cfg-currency').value || '€',
+    currency_sign:         document.getElementById('cfg-currency').value || '',
     lbl_match:             document.getElementById('cfg-lbl_match').value,
     var_match:             document.getElementById('cfg-var_match').value,
     empty_aliases:         aliases,

@@ -491,6 +491,26 @@ def _to_json_safe(obj: Any) -> Any:
     return str(obj)
 
 
+_KNOWN_CURRENCY_SYMS = ['$', '€', '£', '¥', '₹', '₩', '₽', '₺', '₴', '₦', '₫', '฿', '₱']
+
+
+def _detect_file_currencies(wb: openpyxl.Workbook) -> list[str]:
+    """Scan all worksheets and return distinct currency symbols found in number_format strings."""
+    found: list[str] = []
+    seen: set[str] = set()
+    for ws in wb.worksheets:
+        for row in ws.iter_rows():
+            for cell in row:
+                nf = cell.number_format or ''
+                if not nf or nf in ('General', '@'):
+                    continue
+                for sym in _KNOWN_CURRENCY_SYMS:
+                    if sym in nf and sym not in seen:
+                        seen.add(sym)
+                        found.append(sym)
+    return found
+
+
 def _cell_type_display(cell) -> str:
     """Return a display type string for a cell, using number_format for richer inference."""
     if cell.value is None:
@@ -703,6 +723,9 @@ def create_app(
     else:
         ws = wb.active  # unknown name → fall back to active
 
+    # ── Currency scan (pass over all number_format strings) ──────────────────
+    _detected_currencies = _detect_file_currencies(wb)
+
     # ── Image presence scan (ZIP, no Pillow needed) ───────────────────────────
     try:
         from .engine import scan_image_cells as _scan_img
@@ -768,6 +791,11 @@ def create_app(
         except Exception as exc:  # noqa: BLE001
             preload_warnings.append(f'Could not load pattern: {exc}')
 
+    # Auto-select currency when the file uses exactly one known symbol
+    # and no pattern preload has already set a preference.
+    if len(_detected_currencies) == 1 and state.currency_sign == WizardState().currency_sign:
+        state.currency_sign = _detected_currencies[0]
+
     # ── Session log ───────────────────────────────────────────────────────────
     session_log = _SessionLog(xlsx_path, ws.title)
 
@@ -787,9 +815,10 @@ def create_app(
         'max_cols':         max_cols,
         'log':              session_log,
         'preload_warnings': preload_warnings,
-        'image_cells':      _image_cells,
-        'extracted_images': _extracted_images,
-        'img_tmp_dir':      _img_tmp_dir,
+        'image_cells':          _image_cells,
+        'extracted_images':     _extracted_images,
+        'img_tmp_dir':          _img_tmp_dir,
+        'detected_currencies':  _detected_currencies,
     })
 
     # Log initial config
@@ -927,7 +956,8 @@ def create_app(
                 'ignore_case_values':     st.ignore_case_values,
                 'trim_whitespace_labels': st.trim_whitespace_labels,
                 'trim_whitespace_values': st.trim_whitespace_values,
-                'currency_sign':   st.currency_sign,
+                'currency_sign':         st.currency_sign,
+                'detected_currencies':   _STATE.get('detected_currencies', []),
                 'lbl_match':       st.lbl_match,
                 'var_match':       st.var_match,
                 'empty_aliases':   st.empty_aliases,

@@ -308,11 +308,30 @@
         </div>
 
         <div class="cfg-row">
-          <span class="cfg-row-label">Currency sign
-            <span class="info-icon" title="A character stripped from cell values before number parsing.&#10;e.g. with €: the cell '€1,200.00' is extracted as the number 1200.&#10;Leave blank to disable.">🛈</span>
+          <span class="cfg-row-label">Currency symbol
+            <span class="info-icon" title="Used in two ways:&#10;① Stripped from cell values before number parsing (e.g. '€1,200' → 1200).&#10;② Shown as a fallback in the grid when a numeric cell has no currency in its Excel format.&#10;The dropdown is pre-populated with symbols detected in this file.">🛈</span>
           </span>
           <div class="cfg-ctrl-sm">
-            <input id="cfg-currency" type="text" maxlength="5" placeholder="€">
+            <select id="cfg-currency">
+              <!-- "In this file" group injected by JS when currencies are detected -->
+              <optgroup id="cfg-currency-file-group" label="In this file" style="display:none"></optgroup>
+              <optgroup label="Common symbols">
+                <option value="">— none</option>
+                <option value="$">$</option>
+                <option value="€">€</option>
+                <option value="£">£</option>
+                <option value="¥">¥</option>
+                <option value="₹">₹</option>
+                <option value="₩">₩</option>
+                <option value="₽">₽</option>
+                <option value="₺">₺</option>
+                <option value="₴">₴</option>
+                <option value="₦">₦</option>
+                <option value="₫">₫</option>
+                <option value="฿">฿</option>
+                <option value="₱">₱</option>
+              </optgroup>
+            </select>
           </div>
         </div>
 
