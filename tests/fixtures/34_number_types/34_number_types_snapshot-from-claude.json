@@ -1,0 +1,28 @@
+{
+  "item": [
+    {
+      "_source": {
+        "sheet": "Sheet1",
+        "ref": "A1:B6"
+      },
+      "data": [
+        {
+          "label": "Negative:",
+          "value": -17
+        },
+        {
+          "label": "Float:",
+          "value": 3.14159
+        },
+        {
+          "label": "Large:",
+          "value": 1234567890
+        },
+        {
+          "label": "Zero:",
+          "value": 0
+        }
+      ]
+    }
+  ]
+}

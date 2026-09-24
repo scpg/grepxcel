@@ -1,0 +1,16 @@
+{
+  "table_0": [
+    {
+      "_source": {
+        "sheet": "Sheet1",
+        "ref": "A1:B2"
+      },
+      "data": [
+        {
+          "date_only": "Datetime:",
+          "datetime": "2026-03-15 14:30:00"
+        }
+      ]
+    }
+  ]
+}

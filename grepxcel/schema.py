@@ -122,12 +122,37 @@ def _table_group_name(data_fields: list[str], defs: dict, table_index: int) -> s
     return f'table_{table_index}'
 
 
-def generate_schema(pattern_path: str) -> dict:
+def _field_detail_def() -> dict:
+    """$defs/FieldDetail — per-field metadata shape for --detail extended."""
+    return {
+        'type': 'object',
+        'description': 'Per-field extraction metadata present in the _ext block (--detail extended)',
+        'properties': {
+            'type':            {'type': 'string'},
+            'cell_ref':        {'type': 'string'},
+            'number_format':   {'type': 'string'},
+            'raw_excel':       {},
+            'formatted':       {'type': ['string', 'null']},
+            'currency_symbol': {'type': ['string', 'null']},
+            'currency_source': {
+                'enum': ['cell', 'classified', 'default', ''],
+            },
+        },
+        'required': ['type', 'cell_ref', 'number_format', 'raw_excel'],
+    }
+
+
+def generate_schema(pattern_path: str, detail_level: str = 'normal') -> dict:
     """Generate a JSON Schema from a parsed pattern file.
 
     The schema describes the nested output format that ``grepxcel extract``
     produces, so extraction results can be validated with any JSON Schema
     library.
+
+    Args:
+        pattern_path:  path to the pattern file (.xlsx or .csv).
+        detail_level:  ``'minimal'`` (no _source/_meta), ``'normal'`` (default),
+                       or ``'extended'`` (adds ``_ext`` block with FieldDetail).
     """
     config, defs, sequence = PatternParser().parse(pattern_path)
 
@@ -138,8 +163,10 @@ def generate_schema(pattern_path: str) -> dict:
         'additionalProperties': False,
     }
     props = root['properties']
+    ext_props: dict = {}  # used for extended mode _ext block
 
     table_index = 0
+    scalar_fields: list[str] = []
     for instr in sequence:
         if isinstance(instr, CellInstruction):
             if instr.field in ('IGNORE', 'EMPTY'):
@@ -148,15 +175,17 @@ def generate_schema(pattern_path: str) -> dict:
             if not fd or fd.role == 'lbl':
                 continue
             _set_nested(props, instr.field, _json_type(fd.type))
+            if detail_level == 'extended':
+                scalar_fields.append(instr.field)
 
         elif isinstance(instr, TableInstruction):
             buckets = _collect_table_fields(instr, defs)
             group = _table_group_name(buckets['data'], defs, table_index)
             table_index += 1
 
-            instance_props: dict = {
-                '_source': _source_schema(),
-            }
+            instance_props: dict = {}
+            if detail_level != 'minimal':
+                instance_props['_source'] = _source_schema()
 
             if buckets['header']:
                 header_props = _fields_to_schema(buckets['header'], defs)
@@ -194,7 +223,20 @@ def generate_schema(pattern_path: str) -> dict:
             }
             props[group] = table_schema
 
-    props['_meta'] = _meta_schema()
+    if detail_level != 'minimal':
+        props['_meta'] = _meta_schema()
+
+    if detail_level == 'extended' and scalar_fields:
+        root['$defs'] = {'FieldDetail': _field_detail_def()}
+        ext_field_props: dict = {}
+        for field in scalar_fields:
+            _set_nested(ext_field_props, field, {'$ref': '#/$defs/FieldDetail'})
+        props['_ext'] = {
+            'type': 'object',
+            'description': 'Per-field extraction metadata (present with --detail extended)',
+            'properties': ext_field_props,
+        }
+
     return root
 
 
@@ -236,12 +278,12 @@ def _meta_schema() -> dict:
     }
 
 
-def run_schema(paths: list[str], out=None) -> int:
+def run_schema(paths: list[str], out=None, detail_level: str = 'normal') -> int:
     """Generate and print JSON Schema for each pattern file. Returns 0 on success."""
     out = out or sys.stdout
     for path in paths:
         try:
-            schema = generate_schema(path)
+            schema = generate_schema(path, detail_level=detail_level)
         except FileNotFoundError:
             print(f'Error: file not found: {path}', file=sys.stderr)
             return 1

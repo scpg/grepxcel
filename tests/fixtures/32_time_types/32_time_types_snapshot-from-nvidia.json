@@ -1,0 +1,16 @@
+{
+  "schedule": [
+    {
+      "_source": {
+        "sheet": "Sheet1",
+        "ref": "A1:B2"
+      },
+      "data": [
+        {
+          "morning": "Afternoon:",
+          "time": "14:45:00"
+        }
+      ]
+    }
+  ]
+}

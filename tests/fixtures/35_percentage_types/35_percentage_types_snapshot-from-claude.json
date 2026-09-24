@@ -1,0 +1,24 @@
+{
+  "rate": [
+    {
+      "_source": {
+        "sheet": "Sheet1",
+        "ref": "A1:B5"
+      },
+      "data": [
+        {
+          "label": "Completion:",
+          "value": 0.75
+        },
+        {
+          "label": "Small rate:",
+          "value": 0.005
+        },
+        {
+          "label": "Over 100%:",
+          "value": 1.25
+        }
+      ]
+    }
+  ]
+}

@@ -260,6 +260,14 @@ examples:
         action='store_true',
         help='Overwrite an existing output file without prompting',
     )
+    p.add_argument(
+        '--detail',
+        choices=['minimal', 'normal', 'extended'],
+        default='normal',
+        dest='detail_level',
+        help='Schema detail level: minimal (no _source/_meta), normal (default), '
+             'extended (adds $defs/FieldDetail and _ext block)',
+    )
 
 
 def _add_skill_subparser(sub) -> None:
@@ -741,6 +749,16 @@ examples:
         help='Directory to save extracted images into (default: next to --output, or cwd). '
              'Only used with --include-images.',
     )
+    p.add_argument(
+        '--detail',
+        choices=['minimal', 'normal', 'extended'],
+        default='normal',
+        dest='detail_level',
+        help='Output detail level: '
+             'minimal (data values only, no _source/_meta blocks), '
+             'normal (default — current behaviour, backwards compatible), '
+             'extended (normal output + _ext block with per-field type/cell-ref/format metadata)',
+    )
     _add_strict_arg(p)
     _add_security_args(p)
 
@@ -1062,6 +1080,13 @@ def _process_file(pattern: str, data_file: str, args,
     all_sheets = getattr(args, 'all_sheets', False)
 
     engine_format = 'nested' if (is_csv or is_xlsx) else output_format
+    detail_level = getattr(args, 'detail_level', 'normal')
+    # --detail only makes sense with structured JSON output
+    if (is_csv or is_xlsx) and detail_level != 'normal':
+        print(colorize_marks(
+            f'  {MARK_WARN}  --detail {detail_level} is ignored with --format csv/xlsx',
+            should_color(sys.stderr)), file=sys.stderr)
+        detail_level = 'normal'
 
     try:
         engine = Engine()
@@ -1074,6 +1099,7 @@ def _process_file(pattern: str, data_file: str, args,
                 max_rows=args.max_rows,
                 max_cols=args.max_columns,
                 output_format=engine_format,
+                detail_level=detail_level,
             )
         else:
             result = engine.process(
@@ -1085,6 +1111,7 @@ def _process_file(pattern: str, data_file: str, args,
                 max_cols=args.max_columns,
                 sheet=_resolve_sheet(args),
                 output_format=engine_format,
+                detail_level=detail_level,
             )
     except Exception as exc:
         print(colorize_marks(
@@ -1094,8 +1121,12 @@ def _process_file(pattern: str, data_file: str, args,
     finally:
         logger.close()
 
-    if getattr(args, 'meta', False):
+    if getattr(args, 'meta', False) and detail_level != 'minimal':
         result['_meta'] = logger.build_meta()
+    elif getattr(args, 'meta', False) and detail_level == 'minimal':
+        print(colorize_marks(
+            f'  {MARK_WARN}  --meta is ignored with --detail minimal',
+            should_color(sys.stderr)), file=sys.stderr)
 
     if getattr(args, 'include_images', False):
         from .engine import extract_images
@@ -1350,12 +1381,13 @@ def _run_sbom(args) -> int:
 
 def _run_schema(args) -> int:
     from .schema import run_schema
+    detail_level = getattr(args, 'detail_level', 'normal')
     if not args.output:
-        return run_schema(args.files)
+        return run_schema(args.files, detail_level=detail_level)
     _refuse_overwrite([args.output], getattr(args, 'force', False))
     out = open(args.output, 'w', encoding='utf-8')
     try:
-        rc = run_schema(args.files, out=out)
+        rc = run_schema(args.files, out=out, detail_level=detail_level)
     finally:
         out.close()
     if rc == 0:

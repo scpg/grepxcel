@@ -5,7 +5,7 @@ from .security import SecurityError
 from .utils import flatten_nested as _flatten_pairs
 from .utils import flatten_table_instances as _flatten_table_instances
 
-__version__ = '0.4.2rc1'
+__version__ = '0.4.2rc2'
 
 
 def extract(pattern, data, *, sheet=None, all_sheets=False,

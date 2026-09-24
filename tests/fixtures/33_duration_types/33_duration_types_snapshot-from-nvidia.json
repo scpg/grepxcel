@@ -1,0 +1,16 @@
+{
+  "duration": [
+    {
+      "_source": {
+        "sheet": "Sheet1",
+        "ref": "A1:B2"
+      },
+      "data": [
+        {
+          "type": "Long duration:",
+          "value": "1 day, 1:15:00"
+        }
+      ]
+    }
+  ]
+}

@@ -259,6 +259,58 @@ def _build_row_obj(raw_row: dict, defs: dict) -> dict:
     return obj
 
 
+def _build_minimal_output(nested: dict) -> dict:
+    """Strip all metadata blocks from a nested output dict (minimal detail level).
+
+    Removes top-level ``_``-prefixed keys (``_source``, ``_meta``, ``_images``)
+    and the per-instance ``_source`` block inside table arrays.
+    """
+    result: dict = {}
+    for key, value in nested.items():
+        if key.startswith('_'):
+            continue
+        if isinstance(value, list):
+            cleaned = []
+            for instance in value:
+                if isinstance(instance, dict):
+                    clean_inst = {k: v for k, v in instance.items() if k != '_source'}
+                    cleaned.append(clean_inst)
+                else:
+                    cleaned.append(instance)
+            result[key] = cleaned
+        else:
+            result[key] = value
+    return result
+
+
+def _build_extended_output(raw: dict, defs: dict) -> dict:
+    """Build nested output + parallel ``_ext`` block with per-field metadata.
+
+    The data fields are identical to the normal output.  ``_ext`` mirrors the
+    structure and carries ``type``, ``cell_ref``, ``number_format``,
+    ``raw_excel``, and (for currency fields) ``currency_source`` /
+    ``currency_symbol``.
+
+    Table row-level metadata is not yet tracked (only scalar cell metadata).
+    """
+    out = _build_nested_output(raw, defs)
+    cell_meta = raw.get('cell_meta', {})
+
+    if not cell_meta:
+        return out
+
+    ext: dict = {}
+    for field, meta in cell_meta.items():
+        fd = defs.get(field)
+        if fd and fd.role == 'lbl':
+            continue
+        _set_nested(ext, field, meta)
+
+    if ext:
+        out['_ext'] = ext
+    return out
+
+
 def _build_nested_output(raw: dict, defs: dict) -> dict:
     """
     Convert the internal raw result (cells/tables) into the public nested JSON:
@@ -1030,7 +1082,8 @@ class Engine:
                 max_rows: int = DEFAULT_MAX_DATA_ROWS,
                 max_cols: int = DEFAULT_MAX_DATA_COLS,
                 sheet: str | int | None = None,
-                output_format: str = 'nested') -> dict:
+                output_format: str = 'nested',
+                detail_level: str = 'normal') -> dict:
         if logger is None:
             logger = Logger()
 
@@ -1132,7 +1185,12 @@ class Engine:
                 DeprecationWarning, stacklevel=3,
             )
             return _raw
-        return _build_nested_output(_raw, defs)
+        nested = _build_nested_output(_raw, defs)
+        if detail_level == 'minimal':
+            return _build_minimal_output(nested)
+        if detail_level == 'extended':
+            return _build_extended_output(_raw, defs)
+        return nested
 
     def process_all(self, pattern_file: str, data_file: str,
                     logger: Logger = None,
@@ -1141,7 +1199,8 @@ class Engine:
                     max_cell_len: int = _MAX_REGEX_INPUT_LEN,
                     max_rows: int = DEFAULT_MAX_DATA_ROWS,
                     max_cols: int = DEFAULT_MAX_DATA_COLS,
-                    output_format: str = 'nested') -> dict:
+                    output_format: str = 'nested',
+                    detail_level: str = 'normal') -> dict:
         """
         Process every sheet in data_file using the same pattern.
         Returns a dict keyed by sheet name: {sheet_name: result, ...}.
@@ -1207,7 +1266,13 @@ class Engine:
                 if output_format == 'legacy':
                     out[ws.title] = _raw
                 else:
-                    out[ws.title] = _build_nested_output(_raw, defs)
+                    _nested = _build_nested_output(_raw, defs)
+                    if detail_level == 'minimal':
+                        out[ws.title] = _build_minimal_output(_nested)
+                    elif detail_level == 'extended':
+                        out[ws.title] = _build_extended_output(_raw, defs)
+                    else:
+                        out[ws.title] = _nested
 
         except EngineError:
             pass  # setup-phase fatal
@@ -1217,7 +1282,7 @@ class Engine:
     def _process_sheet(self, ws, global_config, defs: dict,
                        start_sequence: list, logger: Logger) -> dict:
         """Run extraction on a single worksheet. Returns raw flat result dict."""
-        _raw = {'cells': {}, 'tables': []}
+        _raw = {'cells': {}, 'tables': [], 'cell_meta': {}}
         logger.begin_summary_scope()  # scope summary/ISSUES to THIS sheet
         logger.sheet_name = ws.title
         merge_map = _expand_merged_cells(ws)
@@ -1360,6 +1425,17 @@ class Engine:
             logger.commit_warnings([rec])
 
         result['cells'][instr.field] = value
+
+        # Capture per-cell metadata for --detail extended.
+        if 'cell_meta' in result:
+            _nf = scanner.ws.cell(row, col).number_format or 'General'
+            _meta: dict = {
+                'type': fd.type if fd else 'string',
+                'cell_ref': cell_ref(row, col),
+                'number_format': _nf,
+                'raw_excel': value,
+            }
+            result['cell_meta'][instr.field] = _meta
 
     # -------------------------------------------------------------------------
     # seek: processing
