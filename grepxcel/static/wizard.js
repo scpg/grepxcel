@@ -355,6 +355,15 @@ function _updateCellDetail(ref, info) {
     <span style="margin-left:6px;padding:1px 7px;border-radius:10px;font-size:11px;font-weight:600;background:${tc}22;color:${tc}">${_esc(itype)}</span>
   </div>`);
 
+  // Excel number format (for date / time / duration cells)
+  const nfmt = info.number_format;
+  if (nfmt && nfmt !== 'General' && nfmt !== '@') {
+    rows.push(`<div style="margin-bottom:7px">
+      <span style="color:var(--text-muted);font-size:11px">Excel format</span>
+      <code style="margin-left:6px;font-size:11px;padding:1px 6px;background:var(--surface);border-radius:3px;word-break:break-all">${_esc(nfmt)}</code>
+    </div>`);
+  }
+
   // Image info + preview
   if (info.has_image) {
     const susp = info.image_suspicious;

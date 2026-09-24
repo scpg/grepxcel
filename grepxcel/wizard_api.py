@@ -13,6 +13,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import sys
 import threading
 import time
@@ -320,20 +321,127 @@ def _parse_ref(ref: str) -> tuple[int, int]:
     return int(row_str), col
 
 
-def _cell_display(value: Any, max_len: int = 28) -> str:
+def _format_number(value: float, number_format: str) -> str | None:
+    """Format a numeric value using an Excel number_format string.
+
+    Handles the most common patterns: thousands separators, decimal places,
+    percentages, leading currency symbols ($€£…), and [$CODE] bracket notation.
+    Returns None for unrecognised formats so the caller falls back to str(value).
+    """
+    if not number_format or number_format in ('General', '@'):
+        return None
+
+    # Use only the first (positive) section of a multi-section format.
+    fmt = number_format.split(';')[0]
+
+    # Scientific notation (0.00E+000, ##0.0E+0) — not worth approximating.
+    if re.search(r'[Ee][+\-]', fmt):
+        return None
+
+    # Strip Excel alignment / padding tokens:  _x  (pad with x)  and  *x  (fill with x)
+    fmt = re.sub(r'[_*].', '', fmt)
+
+    # Extract and remove quoted literal strings (e.g. " ", "USD").
+    quoted_text = ''.join(re.findall(r'"([^"]*)"', fmt))
+    fmt = re.sub(r'"[^"]*"', '', fmt)
+
+    # Handle bracket codes:
+    #   [$USD]  [$€-407]  →  currency text as suffix  (dollar sign is a meta-prefix, not $)
+    #   [$-409]           →  locale only, no text
+    #   [Red] [Blue]      →  colour codes, strip
+    bracket_currency = ''
+
+    def _handle_bracket(m: re.Match) -> str:
+        nonlocal bracket_currency
+        inner = m.group(1)
+        if inner.startswith('$'):
+            sym = re.split(r'[-]', inner[1:])[0].strip()  # text before optional -locale
+            if sym:
+                bracket_currency = sym
+        return ''  # always remove the bracket token from the format string
+
+    fmt = re.sub(r'\[([^\]]*)\]', _handle_bracket, fmt)
+
+    # Handle Excel escape sequences: \x → literal x (e.g. "\ " → space between number and USD)
+    fmt = re.sub(r'\\(.)', r'\1', fmt)
+
+    # Detect and extract a leading currency symbol: $  €  £  ¥  ₩  ₹  ₽
+    currency_prefix = ''
+    for sym in ('$', '€', '£', '¥', '₩', '₹', '₽'):
+        if sym in fmt:
+            currency_prefix = sym
+            fmt = fmt.replace(sym, '', 1)
+            break
+
+    # Percentage: Excel stores 0.12 for 12 %; multiply before formatting.
+    is_pct = '%' in fmt
+    if is_pct:
+        value = value * 100
+        fmt = fmt.replace('%', '')
+
+    # Thousands separator present when a comma appears between digit placeholders.
+    use_thousands = bool(re.search(r'[#0],[#0]', fmt))
+    fmt_clean = fmt.replace(',', '')
+
+    # Count decimal places (0s and #s after the decimal point in the format).
+    if '.' in fmt_clean:
+        after_dot = fmt_clean.split('.')[-1]
+        decimal_places = sum(1 for c in after_dot if c in '0#')
+    else:
+        decimal_places = 0
+
+    try:
+        if decimal_places > 0:
+            s = f'{value:,.{decimal_places}f}' if use_thousands else f'{value:.{decimal_places}f}'
+        else:
+            rounded = int(round(float(value)))
+            s = f'{rounded:,}' if use_thousands else str(rounded)
+    except (ValueError, TypeError, OverflowError):
+        return None
+
+    # Assemble: prefix (currency symbol) + number + suffix (bracket currency or %)
+    prefix = currency_prefix
+    if is_pct:
+        suffix = '%'
+    elif bracket_currency:
+        # [$USD] or [$€-407] → append after number; honour any literal space from the format
+        spacer = ' ' if quoted_text.strip() == '' and ' ' in quoted_text else ' '
+        suffix = f'{spacer}{bracket_currency}'
+    else:
+        suffix = quoted_text  # e.g. quoted text that was a literal suffix
+    return f'{prefix}{s}{suffix}'
+
+
+def _cell_display(value: Any, max_len: int = 28, number_format: str = '') -> str:
     if value is None:
         return ''
-    if isinstance(value, datetime):
+    if isinstance(value, bool):                      # bool before int — bool is a subclass of int
+        s = 'TRUE' if value else 'FALSE'
+    elif isinstance(value, datetime):
         if value.hour == 0 and value.minute == 0 and value.second == 0 and value.microsecond == 0:
             s = value.strftime('%Y-%m-%d')
         else:
-            s = value.strftime('%Y-%m-%d %H:%M:%S')
+            s = value.strftime('%Y-%m-%d %H:%M')   # omit seconds — too granular for the grid
     elif isinstance(value, timedelta):
         total_secs = int(value.total_seconds())
-        h = total_secs // 3600
-        m = (total_secs % 3600) // 60
-        sec = total_secs % 60
-        s = f'{h}:{m:02d}:{sec:02d}'
+        negative = total_secs < 0
+        total_secs = abs(total_secs)
+        sign = '-' if negative else ''
+        if '[h' in number_format.lower():            # [h]:mm:ss / [hh]:mm:ss → duration
+            days = total_secs // 86400
+            rem  = total_secs % 86400
+            h    = rem // 3600
+            m    = (rem % 3600) // 60
+            sec  = rem % 60
+            s = f'{sign}{days}d:{h:02d}h:{m:02d}m:{sec:02d}s'
+        else:                                        # hh:mm:ss / h:mm → clock time
+            h   = total_secs // 3600
+            m   = (total_secs % 3600) // 60
+            sec = total_secs % 60
+            s = f'{sign}{h:02d}:{m:02d}:{sec:02d}'
+    elif isinstance(value, (int, float)):
+        formatted = _format_number(float(value), number_format)
+        s = formatted if formatted is not None else str(value)
     else:
         s = str(value)
     if len(s) > max_len:
@@ -422,7 +530,7 @@ def _build_sheet_data() -> dict:
                 'row':       r,
                 'col':       c,
                 'col_letter': get_column_letter(c),
-                'value':     _cell_display(cell.value),
+                'value':     '' if has_img else _cell_display(cell.value, number_format=cell.number_format or ''),
                 'raw':       str(cell.value) if cell.value is not None else '',
                 'type':      cell_type,
                 'has_image':       has_img,
@@ -1210,7 +1318,7 @@ def create_app(
                 ch   = choices.get(cref, {}).get('choice', '')
                 cells_out.append({
                     'ref':          cref,
-                    'value':        _cell_display(cell.value, 60),
+                    'value':        _cell_display(cell.value, 60, number_format=cell.number_format or ''),
                     'raw':          str(cell.value).strip() if cell.value is not None else '',
                     'inferred_type': _infer_cell_type(cell),
                     'choice':       ch,
@@ -1489,8 +1597,9 @@ def create_app(
             'row':          row,
             'col':          col,
             'col_letter':   get_column_letter(col),
-            'value':        _cell_display(cell.value, 200),
+            'value':        '' if img_info is not None else _cell_display(cell.value, 200, number_format=cell.number_format or ''),
             'raw':          str(cell.value) if cell.value is not None else '',
+            'number_format': cell.number_format or '',
             'has_image':    img_info is not None,
             'image_count':  img_info['count'] if img_info else 0,
             'image_suspicious': img_info.get('suspicious', False) if img_info else False,

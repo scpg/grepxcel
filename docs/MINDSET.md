@@ -3,7 +3,7 @@
 > This document is the *why*, not the *how*. For usage see the
 > [README](../README.md) and [pattern-file.md](pattern-file.md).
 
-grepxcel exists to fill one specific gap:
+`grepxcel` exists to fill one specific gap:
 
 **the gap between "Excel as a human document" and "Excel as a reliable data source."**
 
@@ -13,10 +13,7 @@ great for people makes it hostile as a data source: labels sit next to values,
 tables start at arbitrary positions, cells get merged for looks, and the same report
 arrives in a slightly different shape every month. Over time it only gets messier.
 
-We are **not** trying to remove Excel. We are trying to build a **trustworthy airlock
-around it**: the messy human surface on one side, clean structured JSON on the other,
-and a deliberate, auditable gate in between. The honest promise is not "replace Excel"
-— it is *"make Excel safe to depend on programmatically."*
+`grepxcel` is **not** trying to remove Excel. `grepxcel` tries to build a **trustworthy airlock around it**: the human surface on one side, clean structured JSON on the other, and a deliberate, auditable gate in between. The honest promise is not "replace Excel" — it is *"make data extracted from Excel safe to depend on programmatically."*
 
 ---
 
@@ -26,14 +23,9 @@ The core audience is **developers and IT-savvy people** who are willing to inves
 effort up front in a pattern, in exchange for processing **hundreds or thousands of
 files** reliably and feeding the result into a system that can actually use the data.
 
-Authoring a good pattern is an engineering task — regex, structure, types — and we
-would rather be excellent for the people who can do that than mediocre for everyone.
-That focus is a feature, not an apology.
+Writing a good pattern is an engineering task — regex, structure, types — and `grepxcel` is designed to reward that investment with extraction that is robust, auditable, and maintainable. That focused scope is intentional.
 
-That said, **the person who authors the pattern and the person who uses it daily don't
-have to be the same person.** We are building accessibility layers — visual wizards,
-AI-assisted drafting, worked examples — specifically so that a developer can build and
-own the pattern while the people who run it every day don't need to touch the internals.
+That said, **the person who authors the pattern and the person who uses it daily don't have to be the same person.** Non-technical users are explicitly accounted for: the web wizard lets anyone build or inspect a pattern by clicking cells in a browser, without writing a line of config. AI-assisted drafting and worked examples lower the bar further. A developer can own the pattern; the people who run it every day never need to touch the internals.
 The engineering rigour stays; the barrier to *using* it comes down.
 
 ---
@@ -47,8 +39,7 @@ it "needs to be rechecked," and rechecking does not scale to thousands of files.
 At that volume nobody wants 80% *silent* accuracy. They want:
 
 - **reproducible** results on the files that conform to the pattern, and
-- a **loud, specific flag** on the files that don't — *which file, which cell, which
-  anchor, and why* — so a human reviews only the small fraction that actually deviated.
+- a **loud, specific flag** on the files that don't — *which file, which cell, which anchor, and why* — so a human reviews only the small fraction that actually deviated.
 
 A validated pattern gives exactly that. Same file + same pattern → same JSON, every
 time. And when reality stops matching the pattern, grepxcel **fails loudly** instead of
