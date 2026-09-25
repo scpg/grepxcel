@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>grepxcel Web Wizard — {{ sheet_name }}</title>
-<link rel="stylesheet" href="/static/wizard.css">
+<link rel="stylesheet" href="/static/wizard.css?v={{ gx_version }}">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/alpinejs/3.14.9/cdn.min.js" defer></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/htmx/2.0.3/htmx.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/ag-grid/36.2.0/ag-grid-community.min.js"></script>
@@ -74,8 +74,39 @@
 <!-- ── Main ─────────────────────────────────────────────────────────────── -->
 <div id="main">
 
-  <!-- Grid -->
-  <div id="ag-grid-container"></div>
+  <!-- Grid column: grid + its own stats-bar/footer, so the side panel can
+       span the full height of #main independently. -->
+  <div id="grid-column">
+    <div id="ag-grid-container"></div>
+
+    <!-- ── Stats Bar ─────────────────────────────────────────────────── -->
+    <div id="stats-bar">
+      <span class="sb-chip sb-L" title="Label cells — identify a nearby value"><span class="sb-n" id="sb-L">0</span> Labels</span>
+      <span class="sb-chip sb-V" title="Variable cells — fields to extract"><span class="sb-n" id="sb-V">0</span> Variables</span>
+      <span class="sb-chip sb-T" id="sb-T-chip"
+            title="Mini Table anchors · col-headers (T-HEAD) · data rows (T-DATA)">
+        <span class="sb-n" id="sb-T">0</span> Mini Tables<span id="sb-T-detail" style="font-weight:400;opacity:0.75"></span>
+      </span>
+      <span class="sb-chip sb-I" title="Ignored — skipped during extraction"><span class="sb-n" id="sb-I">0</span> Ignored</span>
+      <div class="sb-sep"></div>
+      <span class="sb-chip sb-U" id="sb-U-chip" title="Cells with data not yet classified"><span class="sb-n" id="sb-U">0</span> Unclassified</span>
+      <div class="sb-sep"></div>
+      <div class="sb-progress-wrap">
+        <div class="sb-progress-bar"><div id="sb-fill" class="sb-fill"></div></div>
+        <span id="sb-pct" class="sb-pct">0 / 0 classified</span>
+      </div>
+    </div>
+
+    <!-- ── Footer ────────────────────────────────────────────────────── -->
+    <div id="footer">
+      <span class="status-msg" id="status-msg">Ready — click a cell to classify it</span>
+      <span><kbd class="kbd">Click</kbd> select · <kbd class="kbd">↑↓←→</kbd> navigate · <kbd class="kbd">Shift+↑↓←→</kbd>/<kbd class="kbd">Shift+Click</kbd> range · <kbd class="kbd">L V C I T</kbd> classify · <kbd class="kbd">Enter</kbd> apply · <kbd class="kbd">Ctrl+Z</kbd> undo · <kbd class="kbd">Ctrl+G</kbd> jump</span>
+      <span>grepxcel v{{ gx_version }}</span>
+    </div>
+  </div><!-- /grid-column -->
+
+  <!-- Drag handle to resize the side panel -->
+  <div id="panel-resize-handle" title="Drag to resize panel" onmousedown="startPanelResize(event)"></div>
 
   <!-- Side Panel -->
   <div id="panel">
@@ -456,33 +487,21 @@
       </div>
 
     </div><!-- /panel-body -->
+
+    <!-- ── Live Log (always visible, independent of the tab above) ──────── -->
+    <div id="live-log-panel">
+      <div id="live-log-header">
+        <span>📜 Live Log</span>
+        <span id="live-log-count" class="ll-count">0</span>
+        <div class="spacer"></div>
+        <button class="btn btn-sm" onclick="copyLiveLog(10)" title="Copy last 10 entries to clipboard">📋 10</button>
+        <button class="btn btn-sm" onclick="copyLiveLog()" title="Copy all entries to clipboard">📋 All</button>
+        <button class="btn btn-sm" onclick="clearLiveLog()" title="Clear log">Clear</button>
+      </div>
+      <div id="live-log-list"></div>
+    </div>
   </div><!-- /panel -->
 </div><!-- /main -->
-
-<!-- ── Stats Bar ─────────────────────────────────────────────────────────── -->
-<div id="stats-bar">
-  <span class="sb-chip sb-L" title="Label cells — identify a nearby value"><span class="sb-n" id="sb-L">0</span> Labels</span>
-  <span class="sb-chip sb-V" title="Variable cells — fields to extract"><span class="sb-n" id="sb-V">0</span> Variables</span>
-  <span class="sb-chip sb-T" id="sb-T-chip"
-        title="Mini Table anchors · col-headers (T-HEAD) · data rows (T-DATA)">
-    <span class="sb-n" id="sb-T">0</span> Mini Tables<span id="sb-T-detail" style="font-weight:400;opacity:0.75"></span>
-  </span>
-  <span class="sb-chip sb-I" title="Ignored — skipped during extraction"><span class="sb-n" id="sb-I">0</span> Ignored</span>
-  <div class="sb-sep"></div>
-  <span class="sb-chip sb-U" id="sb-U-chip" title="Cells with data not yet classified"><span class="sb-n" id="sb-U">0</span> Unclassified</span>
-  <div class="sb-sep"></div>
-  <div class="sb-progress-wrap">
-    <div class="sb-progress-bar"><div id="sb-fill" class="sb-fill"></div></div>
-    <span id="sb-pct" class="sb-pct">0 / 0 classified</span>
-  </div>
-</div>
-
-<!-- ── Footer ───────────────────────────────────────────────────────────── -->
-<div id="footer">
-  <span class="status-msg" id="status-msg">Ready — click a cell to classify it</span>
-  <span><kbd class="kbd">Click</kbd> select · <kbd class="kbd">↑↓←→</kbd> navigate · <kbd class="kbd">Shift+↑↓←→</kbd>/<kbd class="kbd">Shift+Click</kbd> range · <kbd class="kbd">L V C I T</kbd> classify · <kbd class="kbd">Enter</kbd> apply · <kbd class="kbd">Ctrl+Z</kbd> undo · <kbd class="kbd">Ctrl+G</kbd> jump</span>
-  <span>grepxcel v{{ gx_version }}</span>
-</div>
 
 <!-- ── Table Row Editor Modal ─────────────────────────────────────────── -->
 <div id="table-row-modal" x-show="$store.gx.trmOpen" x-cloak>
@@ -567,6 +586,6 @@
 <!-- ── Toast ────────────────────────────────────────────────────────────── -->
 <div id="toast"></div>
 
-<script src="/static/wizard.js"></script>
+<script src="/static/wizard.js?v={{ gx_version }}"></script>
 </body>
 </html>

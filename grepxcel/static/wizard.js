@@ -1682,13 +1682,96 @@ function setChk(id, v) {
   const el = document.getElementById(id);
   if (el) el.checked = !!v;
 }
-function setStatus(msg) { document.getElementById('status-msg').textContent = msg; }
+function setStatus(msg) { document.getElementById('status-msg').textContent = msg; logActivity(msg); }
 function toast(msg, err, durationMs) {
   const el = document.getElementById('toast');
   el.textContent = msg;
   el.style.background = err ? '#dc3545' : (msg.startsWith('⚠️') ? '#8a6d00' : '#333');
   el.classList.add('show');
   setTimeout(() => el.classList.remove('show'), durationMs || 2800);
+  logActivity(msg, err);
+}
+
+// ── Live Log (persistent activity feed in the side panel) ─────────────────
+// Fed by setStatus()/toast(), which already cover every user-facing action
+// (selection, range selection, classify, undo, clear, save/load, switch
+// sheet, config, table ops) — so no need to instrument each call site.
+const _LIVE_LOG_MAX = 300;
+let _liveLogCount = 0;
+// Newest-first, mirrors what's rendered in #live-log-list — kept separately
+// so copyLiveLog() doesn't need to re-parse the DOM.
+let _liveLogEntries = [];
+
+function logActivity(msg, isErr) {
+  const list = document.getElementById('live-log-list');
+  if (!list) return;
+  const time = new Date().toLocaleTimeString([], { hour12: false });
+  const entry = document.createElement('div');
+  entry.className = 'll-entry' + (isErr ? ' ll-err' : '');
+  const timeEl = document.createElement('span');
+  timeEl.className = 'll-time';
+  timeEl.textContent = time;
+  const msgEl = document.createElement('span');
+  msgEl.className = 'll-msg';
+  msgEl.textContent = msg;
+  entry.appendChild(timeEl);
+  entry.appendChild(msgEl);
+  list.insertBefore(entry, list.firstChild);
+  while (list.children.length > _LIVE_LOG_MAX) list.removeChild(list.lastChild);
+
+  _liveLogEntries.unshift({ time, msg });
+  if (_liveLogEntries.length > _LIVE_LOG_MAX) _liveLogEntries.length = _LIVE_LOG_MAX;
+
+  _liveLogCount++;
+  const countEl = document.getElementById('live-log-count');
+  if (countEl) countEl.textContent = _liveLogCount;
+}
+
+function clearLiveLog() {
+  const list = document.getElementById('live-log-list');
+  if (list) list.innerHTML = '';
+  _liveLogEntries = [];
+  _liveLogCount = 0;
+  const countEl = document.getElementById('live-log-count');
+  if (countEl) countEl.textContent = '0';
+}
+
+// n omitted/undefined → copy everything; otherwise copy only the n most
+// recent entries. Entries are written oldest-first so the copied text reads
+// top-to-bottom in chronological order, like the log itself would if you
+// scrolled to the top.
+async function copyLiveLog(n) {
+  if (!_liveLogEntries.length) { toast('Live log is empty — nothing to copy', true); return; }
+  const slice = (typeof n === 'number' ? _liveLogEntries.slice(0, n) : _liveLogEntries.slice());
+  const text = slice.slice().reverse().map(e => `${e.time}  ${e.msg}`).join('\n');
+  try {
+    await navigator.clipboard.writeText(text);
+    toast(`Copied ${slice.length} log entr${slice.length === 1 ? 'y' : 'ies'} to clipboard`);
+  } catch (e) {
+    toast('Could not copy to clipboard: ' + e, true);
+  }
+}
+
+// ── Side-panel resize (drag handle between grid and panel) ────────────────
+const _PANEL_MIN_W = 260;
+const _PANEL_MAX_W = 640;
+
+function startPanelResize(ev) {
+  ev.preventDefault();
+  document.body.classList.add('panel-resizing');
+  document.getElementById('panel-resize-handle')?.classList.add('dragging');
+  const onMove = (e) => {
+    const w = Math.min(_PANEL_MAX_W, Math.max(_PANEL_MIN_W, window.innerWidth - e.clientX));
+    document.documentElement.style.setProperty('--panel-w', w + 'px');
+  };
+  const onUp = () => {
+    document.body.classList.remove('panel-resizing');
+    document.getElementById('panel-resize-handle')?.classList.remove('dragging');
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+  };
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup', onUp);
 }
 
 // ── Shift+click → set end_ref ─────────────────────────────────────────────
@@ -1812,22 +1895,29 @@ async function openTableModal() {
   const endEl    = document.getElementById('f-T-end_ref');
   // _tModeAnchor is set when Shift+Arrow was used to extend the T range;
   // in that case selectedRef has moved to the cursor (end-ref position),
-  // so we must use the stored anchor instead.
-  const anchorRef = _tModeAnchor || selectedRef || '';
+  // so we must use the stored anchor instead. But an active mouse-driven
+  // range selection (_rangeAnchor/_rangeEnd) reflects the user's most recent
+  // explicit intent, so it takes priority over a possibly-stale _tModeAnchor
+  // left over from an earlier, unrelated Table interaction.
+  const anchorRef = (_rangeAnchor && _rangeEnd)
+    ? _rangeAnchor.toUpperCase()
+    : (_tModeAnchor || selectedRef || '');
 
   if (!anchorRef) { toast('Select the top-left table cell first', true); return; }
 
-  // Resolve end_ref: sidebar input → inferred from visible T-HEAD/T-DATA cells → error
-  let endRef = (endEl?.value || '').toUpperCase().trim();
+  // Resolve end_ref: active range selection → sidebar input →
+  // inferred from visible T-HEAD/T-DATA cells → error
+  let endRef = '';
+  if (_rangeAnchor && _rangeEnd && _rangeAnchor.toUpperCase() === anchorRef) {
+    endRef = _rangeEnd.toUpperCase();
+  }
+  if (!endRef) {
+    endRef = (endEl?.value || '').toUpperCase().trim();
+  }
   if (!endRef) {
     endRef = _inferTableEndRef(anchorRef);
-    if (endRef && endEl) { endEl.value = endRef; }  // write back so sidebar shows it
   }
-  if (!endRef && _rangeAnchor && _rangeEnd &&
-      _rangeAnchor.toUpperCase() === anchorRef.toUpperCase()) {
-    endRef = _rangeEnd.toUpperCase();
-    if (endEl) { endEl.value = endRef; }
-  }
+  if (endRef && endEl) { endEl.value = endRef; }  // write back so sidebar shows it
   if (!endRef) {
     toast('Set the bottom-right cell (end ref): Shift+click any cell in the table', true);
     return;
