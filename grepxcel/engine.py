@@ -108,8 +108,17 @@ def _validate_field(fd, value, config, max_cell_len: int) -> bool:
     Returns True/False; never raises.
     """
     if fd.role == 'lbl':
+        # Convert date/datetime to ISO string first, same as var:literal/glob
+        # below — str(datetime(2024,1,1)) gives '2024-01-01 00:00:00', not
+        # '2024-01-01', which silently breaks literal/glob matches (and any
+        # regexp pattern anchored with $) against a date-formatted label cell.
+        if isinstance(value, _datetime.datetime):
+            lbl_text = value.date().isoformat()
+        elif isinstance(value, _datetime.date):
+            lbl_text = value.isoformat()
+        else:
+            lbl_text = value
         # Trim label cell text before matching when trim_whitespace_labels is active.
-        lbl_text = value
         if isinstance(lbl_text, str) and config.trim_whitespace_labels:
             lbl_text = lbl_text.strip()
         return _match_lbl(lbl_text, fd.regex, fd.lbl_match or config.lbl_match,
