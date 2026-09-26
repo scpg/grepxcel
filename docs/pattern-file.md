@@ -382,13 +382,16 @@ controls direction within the table.
 
 ## table: instructions
 
-Extract one or more instances of a repeating mini-table. The engine searches the data sheet greedily and collects every matching block.
+Extract one or more instances of a repeating mini-table. The engine searches the data sheet and collects matching blocks, up to whatever bound the declared multiplicity sets.
 
-| Column A   | Column B *(leave blank)* |
-|------------|--------------------------|
-| `table:*`  |                          |
+| Multiplicity   | Meaning |
+|----------------|---------|
+| `table:*`      | Unbounded — collect every matching instance found (greedy) |
+| `table:1`      | Collect exactly one instance, then stop |
+| `table:N`      | Collect exactly *N* instances, then stop; warn if fewer than *N* are found |
+| `table:{n,m}`  | Scan at most *m* instances; warn if fewer than *n* are found |
 
-The `*` means "zero or more instances". Immediately below the `table:*` row, add the template rows that describe the mini-table's layout. **Column A must be blank** for all template rows — that is how the parser knows they belong to the table.
+`table:{n,m}` is the only bracketed form accepted — `{n}`, `{n,}`, `{,m}`, and `{}` are all invalid, same as for `DATA:{n,m}`. Immediately below the `table:` row, add the template rows that describe the mini-table's layout. **Column A must be blank** for all template rows — that is how the parser knows they belong to the table.
 
 ### Template row types
 

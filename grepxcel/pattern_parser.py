@@ -450,13 +450,31 @@ class PatternParser:
 
             elif col_a_l and col_a_l.startswith('table:'):
                 mult = col_a.split(':', 1)[1]
-                # table:<mult> must be '*' or a positive instance count.
-                if mult != '*' and not _POSINT_RE.match(mult):
+                # table:<mult> must be '*', a positive exact-instance count, or
+                # a bounded 'table:{n,m}' — mirrors DATA:{n,m}'s accepted forms.
+                if not (mult == '*' or _POSINT_RE.match(mult)
+                        or _BOUNDED_DATA_RE.match(mult)):
                     raise PatternError(
                         f"Invalid table multiplicity 'table:{mult}' at pattern row "
-                        f"{i + 1}. Use 'table:*' (all instances) or a positive "
-                        f"count like 'table:1'."
+                        f"{i + 1}. Use 'table:*' (all instances), a positive "
+                        f"count like 'table:1', or a bounded 'table:{{n,m}}'."
                     )
+                min_instances, max_instances = 0, None
+                if mult == '*':
+                    pass
+                else:
+                    m = _BOUNDED_DATA_RE.match(mult)
+                    if m:
+                        min_instances = int(m.group(1))
+                        max_instances = int(m.group(2))
+                        if min_instances > max_instances:
+                            raise PatternError(
+                                f'table:{{{min_instances},{max_instances}}} at pattern '
+                                f'row {i + 1}: min ({min_instances}) must be ≤ max '
+                                f'({max_instances}).'
+                            )
+                    else:
+                        min_instances = max_instances = int(mult)
                 table_config = Config(
                     read_direction=global_config.read_direction,
                     currency_sign=global_config.currency_sign,
@@ -647,6 +665,8 @@ class PatternParser:
                     config=table_config,
                     rows=template_rows,
                     explicit_config_keys=frozenset(explicit_table_cfg_keys),
+                    min_instances=min_instances,
+                    max_instances=max_instances,
                 ))
 
             elif col_a_l in ('doc:', 'info:'):

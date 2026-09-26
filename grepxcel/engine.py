@@ -1522,8 +1522,12 @@ class Engine:
         logger.table_group_start(table_index, instr.config.read_direction)
         search_cursor = scanner.cursor
         instance_index = 0
+        is_bounded = instr.max_instances is not None
 
         while True:
+            if is_bounded and instance_index >= instr.max_instances:
+                break
+
             match, search_cursor = self._try_match_mini_table(
                 instr, scanner, defs, search_cursor, logger
             )
@@ -1547,6 +1551,11 @@ class Engine:
                 anchor_row, anchor_col, end_row, end_col,
             )
             instance_index += 1
+
+        if is_bounded and instance_index < instr.min_instances:
+            logger.commit_warnings([
+                logger.warn_table_min_not_reached(table_index, instr.min_instances, instance_index)
+            ])
 
         logger.table_group_done(table_index, instance_index)
 

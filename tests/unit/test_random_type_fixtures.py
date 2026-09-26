@@ -437,6 +437,123 @@ class TestTwoMiniTablesShape:
         )
 
 
+# ── table:N / table:{n,m} multiplicity enforcement ──────────────────────────
+# Verifies the real runtime enforcement added to _process_table(): table:*
+# stays unbounded (see TestTwoMiniTablesShape above, unaffected), but a
+# bare table:N is now an exact-count shorthand (min=max=N) and table:{n,m}
+# caps the search at `m` and warns if fewer than `n` instances are found —
+# previously impossible to test meaningfully since these were indistinguishable
+# from table:* (the documented pre-existing gap this closes).
+
+class TestTableMultiplicityEnforcement:
+    def _three_disjoint_tables(self, seed: int) -> tuple[str, list[tuple[int, int]]]:
+        """Three physically separate 1-column, 1-data-row table blocks."""
+        placer = RandomPlacer(seed=seed)
+        headers = [placer.place_table(data_rows=1) for _ in range(3)]
+        return placer, headers
+
+    def test_bare_table_1_caps_search_at_exactly_one_instance(self, tmp_path):
+        type_name = 'integer'
+        tc = TYPE_CASES[type_name]
+        _, headers = self._three_disjoint_tables(seed=31)
+
+        pattern_path = str(tmp_path / 'pattern.csv')
+        data_path = str(tmp_path / 'data.xlsx')
+        _write_table_pattern(pattern_path, type_name, tc['regex'], multiplicity='1')
+        cells = {}
+        for (r, c) in headers:
+            cells[(r, c)] = ('COLHEAD', None)
+            cells[(r + 1, c)] = (tc['valid'], None)
+        write_data_xlsx(data_path, cells)
+
+        result = _run(pattern_path, data_path)
+        assert 'table_0' in result
+        assert len(result['table_0']) == 1, (
+            f'table:1 must stop after the first instance, got: {result["table_0"]}'
+        )
+
+    def test_bare_table_2_caps_search_at_exactly_two_instances(self, tmp_path):
+        type_name = 'integer'
+        tc = TYPE_CASES[type_name]
+        _, headers = self._three_disjoint_tables(seed=32)
+
+        pattern_path = str(tmp_path / 'pattern.csv')
+        data_path = str(tmp_path / 'data.xlsx')
+        _write_table_pattern(pattern_path, type_name, tc['regex'], multiplicity='2')
+        cells = {}
+        for (r, c) in headers:
+            cells[(r, c)] = ('COLHEAD', None)
+            cells[(r + 1, c)] = (tc['valid'], None)
+        write_data_xlsx(data_path, cells)
+
+        result = _run(pattern_path, data_path)
+        assert 'table_0' in result
+        assert len(result['table_0']) == 2, (
+            f'table:2 must stop after the second instance, got: {result["table_0"]}'
+        )
+
+    def test_bounded_n_m_caps_search_at_max(self, tmp_path):
+        type_name = 'integer'
+        tc = TYPE_CASES[type_name]
+        _, headers = self._three_disjoint_tables(seed=33)
+
+        pattern_path = str(tmp_path / 'pattern.csv')
+        data_path = str(tmp_path / 'data.xlsx')
+        _write_table_pattern(pattern_path, type_name, tc['regex'], multiplicity='{1,2}')
+        cells = {}
+        for (r, c) in headers:
+            cells[(r, c)] = ('COLHEAD', None)
+            cells[(r + 1, c)] = (tc['valid'], None)
+        write_data_xlsx(data_path, cells)
+
+        result = _run(pattern_path, data_path)
+        assert 'table_0' in result
+        assert len(result['table_0']) == 2, (
+            f'table:{{1,2}} must stop at the max bound, got: {result["table_0"]}'
+        )
+
+    def test_bounded_n_m_warns_when_min_not_reached(self, tmp_path):
+        type_name = 'integer'
+        tc = TYPE_CASES[type_name]
+        placer = RandomPlacer(seed=34)
+        header = placer.place_table(data_rows=1)
+        row, col = header
+
+        pattern_path = str(tmp_path / 'pattern.csv')
+        data_path = str(tmp_path / 'data.xlsx')
+        _write_table_pattern(pattern_path, type_name, tc['regex'], multiplicity='{2,5}')
+        write_data_xlsx(data_path, {
+            (row, col):     ('COLHEAD', None),
+            (row + 1, col): (tc['valid'], None),
+        })
+
+        result, issues = _run_with_issues(pattern_path, data_path)
+        assert 'table_0' in result
+        assert len(result['table_0']) == 1
+        assert any('min instances not reached' in r.message.lower() or 'minimum instances' in r.message.lower()
+                   for r in issues), f'expected a min-instances warning, got: {[r.message for r in issues]}'
+
+    def test_table_star_remains_unbounded(self, tmp_path):
+        """Sanity check: table:* (the default) is untouched by this fix — it
+        keeps collecting every disjoint instance, same as TestTwoMiniTablesShape."""
+        type_name = 'integer'
+        tc = TYPE_CASES[type_name]
+        _, headers = self._three_disjoint_tables(seed=35)
+
+        pattern_path = str(tmp_path / 'pattern.csv')
+        data_path = str(tmp_path / 'data.xlsx')
+        _write_table_pattern(pattern_path, type_name, tc['regex'], multiplicity='*')
+        cells = {}
+        for (r, c) in headers:
+            cells[(r, c)] = ('COLHEAD', None)
+            cells[(r + 1, c)] = (tc['valid'], None)
+        write_data_xlsx(data_path, cells)
+
+        result = _run(pattern_path, data_path)
+        assert 'table_0' in result
+        assert len(result['table_0']) == 3
+
+
 # ── Shape 5: combined — label(s) before table(s), both directions ─────────
 
 class TestCombinedLabelBeforeTable:

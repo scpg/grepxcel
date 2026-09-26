@@ -662,6 +662,34 @@ class Logger:
         rec._formatted = '\n'.join(lines)
         return rec
 
+    def warn_table_min_not_reached(self, table_index: int, min_instances: int, found: int) -> LogRecord:
+        """Warn when a table:{n,m} (or table:N) block found fewer instances than the declared minimum."""
+        hint = (
+            f'The pattern declares at least {min_instances} instance(s) of table '
+            f'group {table_index}, but only {found} were found in the sheet. '
+            f'Check that the data file has enough repeating table blocks, '
+            f'or lower the minimum bound in the pattern.'
+        )
+        rec = LogRecord(
+            severity=Severity.WARNING,
+            category=Category.VALIDATION,
+            message=(
+                f'Table {table_index} minimum instances not reached: '
+                f'expected ≥{min_instances}, found {found}'
+            ),
+            expected=f'≥{min_instances} table instance(s)',
+            found=str(found),
+            hint=hint,
+        )
+        lines = [
+            f'\n  {MARK_WARN}  [Table {table_index} min instances not reached]',
+            f'     Found:    {found} instance(s)',
+            f'     Expected: ≥{min_instances} instance(s)',
+            f'     → {hint}',
+        ]
+        rec._formatted = '\n'.join(lines)
+        return rec
+
     def footer_detected(self, row: int, col: int, value):
         location = cell_ref(row, col, self.sheet_name)
         rec = LogRecord(Severity.DEBUG, Category.ENGINE,

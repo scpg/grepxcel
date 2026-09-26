@@ -60,13 +60,15 @@ class CellInstruction:
 
 @dataclass
 class TableInstruction:
-    multiplicity: str  # '1' or '*'
+    multiplicity: str  # '*', a positive int (e.g. '1'), or '{n,m}' — as written
     config: Config     # table-level config (may override global)
     rows: list         # list[TemplateRow]
     explicit_config_keys: frozenset = field(default_factory=frozenset)
     # Keys that were explicitly declared in the table's config: block, e.g.
     # frozenset({'read.direction', 'ignore.case'}).  Used by validate-pattern
     # -v to show exactly what the author wrote, independent of the global value.
+    min_instances: int = 0            # table:{n,…} / table:N (exact) — else 0
+    max_instances: int | None = None  # table:{…,m} / table:N (exact) — None = unbounded ('*')
 
 
 @dataclass

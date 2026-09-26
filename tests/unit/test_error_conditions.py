@@ -703,6 +703,52 @@ class TestMultiplicityValidation:
         ], tmp_path)
         _, _, seq = PatternParser().parse(path)
         assert seq[0].multiplicity == '2'
+        # Bare table:N is an exact-count shorthand: min == max == N.
+        assert seq[0].min_instances == 2
+        assert seq[0].max_instances == 2
+
+    def test_table_star_multiplicity_is_unbounded(self, tmp_path):
+        path = _write_pattern([
+            ['var:', 'd', 'string', '.*'],
+            ['START:'], ['table:*'],
+            [None, 'DATA:*', 'd'], ['END:'],
+        ], tmp_path)
+        _, _, seq = PatternParser().parse(path)
+        assert seq[0].min_instances == 0
+        assert seq[0].max_instances is None
+
+    def test_table_bounded_n_m_accepted(self, tmp_path):
+        path = _write_pattern([
+            ['var:', 'd', 'string', '.*'],
+            ['START:'], ['table:{2,5}'],
+            [None, 'DATA:*', 'd'], ['END:'],
+        ], tmp_path)
+        _, _, seq = PatternParser().parse(path)
+        assert seq[0].multiplicity == '{2,5}'
+        assert seq[0].min_instances == 2
+        assert seq[0].max_instances == 5
+
+    def test_table_bounded_min_greater_than_max_rejected(self, tmp_path):
+        path = _write_pattern([
+            ['var:', 'd', 'string', '.*'],
+            ['START:'], ['table:{5,2}'],
+            [None, 'DATA:*', 'd'], ['END:'],
+        ], tmp_path)
+        with pytest.raises(PatternError, match='min .* must be ≤ max'):
+            PatternParser().parse(path)
+
+    @pytest.mark.parametrize('bad_mult', ['{n}', '{n,}', '{,m}', '{}', '{,}', '{*}', '{1}'])
+    def test_table_other_bracket_forms_rejected(self, tmp_path, bad_mult):
+        """table:{n,m} is the only valid bracket form — every other bracket
+        shape (including the un-comma'd exact-count-like '{1}') is invalid,
+        same as it already is for DATA:."""
+        path = _write_pattern([
+            ['var:', 'd', 'string', '.*'],
+            ['START:'], [f'table:{bad_mult}'],
+            [None, 'DATA:*', 'd'], ['END:'],
+        ], tmp_path)
+        with pytest.raises(PatternError, match='Invalid table multiplicity'):
+            PatternParser().parse(path)
 
 
 class TestRegexSanity:
