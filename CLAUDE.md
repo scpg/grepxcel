@@ -81,7 +81,7 @@ If the venv does not exist it prints a clear error with setup instructions and e
 
 ## Running the CLI
 
-The CLI is subcommand-based: `extract`, `validate-pattern`, `draft`, `docs`, `lint`, `schema`, `generate-examples`, `sbom`, `mcp`, `mcp-config`, `doctor`, `quickstart`, `wizard`, `web-wizard` (run `grepxcel <cmd> --help`).
+The CLI is subcommand-based: `extract`, `validate-pattern`, `draft`, `docs`, `lint`, `profile`, `schema`, `generate-examples`, `sbom`, `mcp`, `mcp-config`, `doctor`, `quickstart`, `wizard`, `web-wizard` (run `grepxcel <cmd> --help`).
 
 ```bash
 .venv/bin/grepxcel extract -p pattern.xlsx data.xlsx
@@ -101,6 +101,10 @@ The CLI is subcommand-based: `extract`, `validate-pattern`, `draft`, `docs`, `li
 .venv/bin/grepxcel draft data.xlsx                                 # draft a starter pattern (local LLM)
 .venv/bin/grepxcel draft data.xlsx --ca-bundle corp-ca.pem         # behind a corporate TLS-inspection proxy
 .venv/bin/grepxcel lint data.xlsx                                   # inspect file before extraction
+.venv/bin/grepxcel profile data.xlsx                                 # census every cell's actual type, no pattern needed
+.venv/bin/grepxcel profile data.xlsx -v                             # full detail: every cell listed under its type group
+.venv/bin/grepxcel profile data.xlsx --issues-only                  # errors + text-forced-numeric + suspicious cells only
+.venv/bin/grepxcel profile data.xlsx --format xlsx -o report.xlsx   # colored visual report (for non-JSON users)
 .venv/bin/grepxcel schema pattern.xlsx                              # generate JSON Schema from pattern
 .venv/bin/grepxcel schema pattern.xlsx -o schema.json               # write schema to file
 .venv/bin/grepxcel docs                                            # write pattern-reference.xlsx

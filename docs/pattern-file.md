@@ -2,6 +2,8 @@
 
 A pattern file is an **`.xlsx` workbook** or a **`.csv` text file** that tells grepxcel what to look for and extract from a data file. Think of it as a schema: it describes the layout, field names, types, and validation rules. Both formats are read into the same internal grid and behave identically.
 
+**Before writing a pattern**, `grepxcel profile data.xlsx` censuses every cell's actual type in the data file — no pattern needed — so you know what column C (type) should say for each field before guessing.
+
 ---
 
 ## Rules for pattern files

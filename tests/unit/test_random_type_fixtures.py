@@ -174,11 +174,16 @@ def _tc(valid, invalid, fmt=None, regex='.*'):
 
 
 TYPE_CASES = {
-    'string':  _tc('hello world', None, regex='.*'),  # see note below
-    'integer': _tc(42, True, regex='.*'),              # bool is explicitly rejected
-    'boolean': _tc(True, 'banana', regex='.*'),
-    'date':    _tc(datetime.date(2024, 1, 15), 'not a date', fmt='yyyy-mm-dd', regex='.*'),
-    'url':     _tc('https://example.com', 'not a url', regex='.*'),
+    'string':     _tc('hello world', None, regex='.*'),  # see note below
+    'integer':    _tc(42, True, regex='.*'),               # bool is explicitly rejected
+    'boolean':    _tc(True, 'banana', regex='.*'),
+    'date':       _tc(datetime.date(2024, 1, 15), 'not a date', fmt='yyyy-mm-dd', regex='.*'),
+    'url':        _tc('https://example.com', 'not a url', regex='.*'),
+    'currency':   _tc(1200.50, True, fmt='$#,##0.00', regex='.*'),        # bool rejected, same as integer
+    'percentage': _tc(0.15, 'fifty percent', fmt='0.00%', regex='.*'),
+    'number':     _tc(42.5, False, regex='.*'),                          # bool rejected
+    'time':       _tc(datetime.time(9, 30), '9:30am', fmt='HH:MM', regex='.*'),
+    'duration':   _tc(datetime.timedelta(hours=2), '2 hours', fmt='[h]:mm', regex='.*'),
 }
 # 'string' has no real *type* failure (str(anything) always succeeds) — its
 # "invalid" case instead exercises a regex mismatch, which is the only way
