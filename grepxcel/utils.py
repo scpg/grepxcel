@@ -270,36 +270,40 @@ def validate_type(value, field_type: str, regex: str, currency_sign: str = '€'
     return False, f'unknown type {repr(field_type)}'
 
 
+_INFER_LEGACY_MAP = {
+    # Translates cell_taxonomy's richer semantic vocabulary back to this
+    # function's historical 7-value one (no percentage/number/url/error
+    # buckets — those simply didn't exist before cell_taxonomy.py).
+    'datetime': 'datetime', 'date': 'date', 'time': 'time',
+    'duration': 'time', 'boolean': 'boolean', 'integer': 'integer',
+    'number': 'currency', 'percentage': 'currency', 'currency': 'currency',
+    'string': 'string', 'url': 'string', 'error': 'string',
+}
+
+
 def infer_cell_type(values: list) -> str:
-    """Return the most common grepxcel type for a list of openpyxl cell values."""
-    _BOOL_STRINGS = frozenset({'TRUE', 'FALSE', 'YES', 'NO'})
+    """Return the most common grepxcel type for a list of openpyxl cell values.
+
+    Thin wrapper over cell_taxonomy.classify_value() — the canonical
+    classifier — translated back to this function's original vocabulary so
+    existing callers see no behaviour change. Verified against
+    tests/unit/test_property_based.py and tests/unit/test_suggester.py.
+    """
+    from .cell_taxonomy import classify_value
+    # Fixed insertion order, matching the pre-consolidation implementation
+    # exactly, so max()'s tie-breaking (first-seen wins) is unchanged.
     counts: dict[str, int] = {
         'datetime': 0, 'date': 0, 'time': 0, 'currency': 0,
         'integer': 0, 'boolean': 0, 'string': 0,
     }
+    total = 0
     for v in values:
         if v is None:
             continue
-        if isinstance(v, datetime.datetime):
-            counts['datetime'] += 1
-        elif isinstance(v, datetime.date):
-            counts['date'] += 1
-        elif isinstance(v, (datetime.time, datetime.timedelta)):
-            counts['time'] += 1
-        elif isinstance(v, bool):
-            counts['boolean'] += 1
-        elif isinstance(v, float):
-            if v.is_integer():
-                counts['integer'] += 1
-            else:
-                counts['currency'] += 1
-        elif isinstance(v, int):
-            counts['integer'] += 1
-        elif isinstance(v, str) and v.strip().upper() in _BOOL_STRINGS:
-            counts['boolean'] += 1
-        else:
-            counts['string'] += 1
-    total = sum(counts.values())
+        semantic = classify_value(v).semantic_type
+        legacy = _INFER_LEGACY_MAP.get(semantic, 'string')
+        counts[legacy] += 1
+        total += 1
     if total == 0:
         return 'string'
     return max(counts, key=lambda k: counts[k])

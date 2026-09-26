@@ -18,7 +18,7 @@ import os
 import sys
 
 from .color import MARK_FAIL, MARK_OK, MARK_WARN, colorize_marks, paint, should_color
-from .engine import Engine
+from .engine import Engine, DEFAULT_MAX_DATA_ROWS, DEFAULT_MAX_DATA_COLS
 from .logger import Logger, VerbosityLevel
 from .utils import flatten_table_instances as _flatten_table_instances
 
@@ -124,6 +124,7 @@ def _commands_help() -> str:
         "\n"
         f"{_sec('inspection:')}\n"
         "  lint               Inspect an Excel file for potential extraction issues\n"
+        "  profile            Census every cell's actual type — storage, format, errors\n"
         "  schema             Generate a JSON Schema from a pattern file\n"
         "\n"
         f"{_sec('compliance & ops:')}\n"
@@ -164,6 +165,7 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_web_wizard_subparser(sub)
     _add_docs_subparser(sub)
     _add_lint_subparser(sub)
+    _add_profile_subparser(sub)
     _add_schema_subparser(sub)
     _add_skill_subparser(sub)
     _add_examples_subparser(sub)
@@ -233,6 +235,67 @@ examples:
                    help='Recurse into subdirectories when a directory is given')
     p.add_argument('-v', '--verbose', action='store_true',
                    help='Show full checklist detail (default: one summary line per file)')
+
+
+def _add_profile_subparser(sub) -> None:
+    p = sub.add_parser(
+        'profile',
+        help="Census every cell's actual type — storage, format, errors",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Scans a data file with no pattern required and reports exactly what's in
+it: OOXML storage type, semantic subtype (driven by number format —
+Excel has no separate date/time/currency storage type, it's all numbers
+plus a display format), and edge cases (error cells, formulas,
+text-forced-numeric strings, blanks, merged-cell members). Answers "why
+didn't my pattern match this cell" before a pattern is even written.
+
+Scans every sheet by default (like lint) — use --sheet to narrow to one.
+
+verbosity:
+  (none)  one summary line per (storage, semantic) type group
+  -v      full detail: every affected cell listed under its type group
+  -q      one line per file, cell count only (useful in batch mode)
+
+examples:
+  grepxcel profile data.xlsx
+  grepxcel profile data.xlsx -v
+  grepxcel profile data.xlsx --sheet Sheet2
+  grepxcel profile data/ -r                       # every .xlsx under data/
+  grepxcel profile data.xlsx --errors-only         # Excel-native errors only
+  grepxcel profile data.xlsx --issues-only         # errors + text-forced-numeric
+  grepxcel profile data.xlsx --format json -o profile.json
+  grepxcel profile data.xlsx --format xlsx -o profile_colored.xlsx
+        """,
+    )
+    p.add_argument('files', nargs='+', metavar='FILE_OR_DIR',
+                   help='Excel file(s) or director(ies) to profile')
+    p.add_argument('-r', '--recursive', action='store_true',
+                   help='Recurse into subdirectories when a directory is given')
+    p.add_argument('-v', '--verbose', action='store_true',
+                   help='Full detail: every cell listed under its type group')
+    p.add_argument('-q', '--quiet', action='store_true',
+                   help='One line per file, cell count only')
+    p.add_argument('--sheet', metavar='NAME_OR_INDEX',
+                   help='Narrow to one sheet (default: every sheet)')
+    p.add_argument('--errors-only', action='store_true',
+                   help='Only report strict Excel-native error cells (#DIV/0! etc.)')
+    p.add_argument('--issues-only', action='store_true',
+                   help='Report errors plus text-forced-numeric and other suspicious cells')
+    p.add_argument('--format', choices=['json', 'xlsx'], default='json',
+                   dest='output_format',
+                   help='Output format for -o: json (default, per-cell records) or '
+                        'xlsx (colored copy of the data file, for a human reader)')
+    p.add_argument('-o', '--output', metavar='FILE_OR_DIR',
+                   help='Write to file (or a directory, when profiling multiple '
+                        'files) instead of stdout')
+    p.add_argument('--force', action='store_true',
+                   help='Overwrite an existing output file without prompting')
+    _add_security_args(p)
+    p.add_argument('--max-rows', type=int, default=DEFAULT_MAX_DATA_ROWS,
+                   metavar='N', help=f'Max data-sheet rows to scan (default: {DEFAULT_MAX_DATA_ROWS})')
+    p.add_argument('--max-columns', type=int, default=DEFAULT_MAX_DATA_COLS,
+                   metavar='N', help=f'Max data-sheet columns to scan (default: {DEFAULT_MAX_DATA_COLS})')
 
 
 def _add_schema_subparser(sub) -> None:
@@ -1321,6 +1384,28 @@ def _run_lint(args) -> int:
                     verbose=getattr(args, 'verbose', False))
 
 
+# ── profile handler ──────────────────────────────────────────────────────────
+
+def _run_profile(args) -> int:
+    from .profile import run_profile
+    return run_profile(
+        args.files,
+        recursive=getattr(args, 'recursive', False),
+        sheet=getattr(args, 'sheet', None),
+        verbose=getattr(args, 'verbose', False),
+        quiet=getattr(args, 'quiet', False),
+        errors_only=getattr(args, 'errors_only', False),
+        issues_only=getattr(args, 'issues_only', False),
+        fmt=getattr(args, 'output_format', 'json'),
+        output=getattr(args, 'output', None),
+        force=getattr(args, 'force', False),
+        max_file_mb=getattr(args, 'max_size', 5),
+        max_uncompressed_mb=getattr(args, 'max_uncompressed', 50),
+        max_rows=getattr(args, 'max_rows', DEFAULT_MAX_DATA_ROWS),
+        max_cols=getattr(args, 'max_columns', DEFAULT_MAX_DATA_COLS),
+    )
+
+
 # ── validate-pattern handler ─────────────────────────────────────────────────
 
 def _run_validate(args) -> int:
@@ -1741,6 +1826,9 @@ def main(argv=None):
 
     if args.command == 'lint':
         sys.exit(_run_lint(args))
+
+    if args.command == 'profile':
+        sys.exit(_run_profile(args))
 
     if args.command == 'validate-pattern':
         sys.exit(_run_validate(args))

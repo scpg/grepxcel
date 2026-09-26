@@ -183,35 +183,30 @@ def _write_pattern(state: WizardState, output_path: str) -> None:
 
 # ── Type inference ─────────────────────────────────────────────────────────────
 
+_WIZARD_INFER_LEGACY_MAP = {
+    # Translates cell_taxonomy's richer semantic vocabulary back to this
+    # function's original 8-value one — notably collapsing datetime->date
+    # and duration->time, exactly as the pre-consolidation implementation
+    # did, and treating any numeric value with no special format as
+    # 'number' (no separate 'integer' bucket existed here).
+    'boolean': 'boolean', 'time': 'time', 'duration': 'time',
+    'datetime': 'date', 'date': 'date', 'percentage': 'percentage',
+    'currency': 'currency', 'integer': 'number', 'number': 'number',
+    'string': 'string', 'url': 'url', 'error': 'string', 'empty': 'string',
+}
+
+
 def _infer_cell_type(cell) -> str:
-    """Return the most likely grepxcel type for an openpyxl cell."""
-    import datetime as _dt
-    val = cell.value
-    if val is None:
-        return 'string'
-    if isinstance(val, bool):
-        return 'boolean'
-    if isinstance(val, str) and val.strip().upper() in ('TRUE', 'FALSE', 'YES', 'NO'):
-        return 'boolean'
-    if isinstance(val, _dt.timedelta):
-        return 'time'
-    if isinstance(val, (_dt.datetime, _dt.date)):
-        return 'date'
-    if isinstance(val, (int, float)):
-        fmt = (cell.number_format or '').lower()
-        if any(p in fmt for p in ('yyyy', 'yy/', '/yy', 'dd', 'd-mmm',
-                                   'd/m', 'm/d', 'mmm', 'mmmm')):
-            return 'date'
-        if '%' in fmt:
-            return 'percentage'
-        if any(c in fmt for c in ('$', '€', '£', '¥', '₹', '₩')):
-            return 'currency'
-        return 'number'
-    if isinstance(val, str):
-        s = val.strip()
-        if '://' in s or s.lower().startswith('www.'):
-            return 'url'
-    return 'string'
+    """Return the most likely grepxcel type for an openpyxl cell.
+
+    Thin wrapper over cell_taxonomy.classify_cell() — the canonical
+    classifier — translated back to this function's original vocabulary
+    so existing callers see no behaviour change. Verified against
+    tests/unit/test_suggester.py's TestInferCellType* classes.
+    """
+    from .cell_taxonomy import classify_cell
+    profile = classify_cell(cell)
+    return _WIZARD_INFER_LEGACY_MAP.get(profile.semantic_type, 'string')
 
 
 def _propose_type(value: Any, ws=None, row: int = None, col: int = None) -> str:
