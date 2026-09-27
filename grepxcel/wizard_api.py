@@ -53,6 +53,34 @@ except ImportError:
 _STATE: dict[str, Any] = {}   # single session dict
 
 
+def _unique_name(base: str, choices: dict, own_ref: str, suffix: str = '') -> str:
+    """A generated field name that no other classified cell is already using.
+
+    Names are derived by slugifying the cell's text, so a sheet that repeats the
+    same labelled block — three identical test columns side by side, say — would
+    otherwise produce the same name three times. That is not a cosmetic clash:
+    ``engine._process_cell`` writes ``result['cells'][field] = value``
+    unconditionally, so the last cell silently wins and the earlier values never
+    reach the output. The pattern still validates, and nothing reports the loss.
+
+    Colliding names get ``_2``, ``_3``, … appended. *own_ref* is excluded so
+    re-classifying a cell keeps its current name instead of bumping it every
+    time. A name the user typed is never touched — only generated ones pass
+    through here.
+    """
+    taken = {
+        c.get('name') for ref, c in choices.items()
+        if ref != own_ref and isinstance(c, dict) and c.get('name')
+    }
+    candidate = f'{base}{suffix}'
+    if candidate not in taken:
+        return candidate
+    n = 2
+    while f'{base}_{n}{suffix}' in taken:
+        n += 1
+    return f'{base}_{n}{suffix}'
+
+
 # ── Session log ───────────────────────────────────────────────────────────────
 
 class _SessionLog:
@@ -1099,7 +1127,8 @@ def create_app(
             lbl_mode = '' if lbl_mode_raw == '(default)' else lbl_mode_raw
             choices[ref] = {
                 'choice':   'L',
-                'name':     fields.get('name', _slugify(str(cell_value or '')) + '_label'),
+                'name':     fields.get('name') or _unique_name(
+                    _slugify(str(cell_value or '')), choices, ref, '_label'),
                 'ltype':    fields.get('type', 'string'),
                 'lmatch':   fields.get('match', str(cell_value or '')),
                 'lbl_mode': lbl_mode,
@@ -1119,7 +1148,8 @@ def create_app(
                 raise HTTPException(400, str(exc))
             choices[ref] = {
                 'choice':      'V',
-                'name':        fields.get('name', _slugify(str(cell_value or ''))),
+                'name':        fields.get('name') or _unique_name(
+                    _slugify(str(cell_value or '')), choices, ref),
                 'ftype':       fields.get('type', _infer_cell_type(ws.cell(row=row, column=col))),
                 'match':       match_pattern,
                 'col_a_extra': col_a_extra,
@@ -1293,7 +1323,8 @@ def create_app(
             elif action == 'L':
                 choices[ref] = {
                     'choice':   'L',
-                    'name':     _slugify(str(cell_value or '')) + '_label',
+                    'name':     _unique_name(
+                        _slugify(str(cell_value or '')), choices, ref, '_label'),
                     'ltype':    'string',
                     'lmatch':   str(cell_value or ''),
                     'lbl_mode': '',
@@ -1301,7 +1332,8 @@ def create_app(
             elif action == 'V':
                 choices[ref] = {
                     'choice':      'V',
-                    'name':        _slugify(str(cell_value or '')),
+                    'name':        _unique_name(
+                        _slugify(str(cell_value or '')), choices, ref),
                     'ftype':       _infer_cell_type(ws_.cell(row=row_, column=col_)) if row_ else 'string',
                     'match':       '.*',
                     'col_a_extra': '',

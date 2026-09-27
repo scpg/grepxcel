@@ -34,6 +34,20 @@ MIN_SUPPORTED_PATTERN_VERSION = 1
 _TRUTHY = frozenset({'1', 'true', 'yes', 'on', 'y'})
 _FALSY  = frozenset({'0', 'false', 'no', 'off', 'n', ''})
 
+# Every key `_apply_global_config` understands. Single source of truth: the
+# misplaced-key hint below and validate-pattern's "unknown config key" message
+# both read this. They used to restate it, and drifted — `date.format` and
+# `time.format` were accepted by the parser while validate-pattern still listed
+# them as invalid.
+VALID_CONFIG_KEYS = frozenset({
+    'pattern.version', 'version',
+    'read.direction', 'currency.sign', 'empty.aliases',
+    'ignore.case', 'ignore.case.labels', 'ignore.case.values',
+    'trim.whitespace', 'trim.whitespace.labels', 'trim.whitespace.values',
+    'lbl.match', 'var.match',
+    'date.format', 'time.format',
+})
+
 # Excel constant formulas that are safe to accept in pattern config cells.
 # =TRUE() / =FALSE() appear when a user types TRUE/FALSE without an apostrophe
 # and Excel auto-converts them.  They carry no dynamic logic.
@@ -366,16 +380,8 @@ class PatternParser:
                 elif row[1] is not None and str(row[1]).strip():
                     # Column A is empty but column B has content — likely a
                     # config: row where the author forgot to add 'config:' in A.
-                    _KNOWN_CFG = frozenset({
-                        'pattern.version', 'version', 'read.direction',
-                        'currency.sign', 'ignore.case',
-                        'ignore.case.labels', 'ignore.case.values',
-                        'trim.whitespace', 'trim.whitespace.labels', 'trim.whitespace.values',
-                        'lbl.match', 'var.match', 'empty.aliases',
-                        'date.format', 'time.format',
-                    })
                     col_b = str(row[1]).strip()
-                    if col_b.lower() in _KNOWN_CFG:
+                    if col_b.lower() in VALID_CONFIG_KEYS:
                         raise PatternError(
                             f"Pattern row {i + 1}: column A is empty but column B "
                             f"contains config key {col_b!r}. Add 'config:' in column A "
