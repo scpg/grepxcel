@@ -399,7 +399,7 @@ class DocsGenerator:
         row(['doc:', '', '', '', '── QUICK REFERENCE ──────────────────────────────────────────────'], 'doc')
         ref = [
             ('doc:',     'doc: | free text',           'Inline comment. Ignored by engine.'),
-            ('config:',  'config: | key | value',      'Global setting. Keys: read.direction, currency.sign, empty.aliases, ignore.case'),
+            ('config:',  'config: | key | value',      'Global setting. Keys: read.direction, currency.sign, empty.aliases, ignore.case, date.format, time.format'),
             ('lbl:',     'lbl: | name | type | regex', 'Anchor label. Matched but never in output.'),
             ('var:',     'var: | name | type | regex', 'Extracted variable. Use dot notation for nesting.'),
             ('cell:next','cell:next | FieldName',      'Read next non-empty cell (alias: cell:1).'),

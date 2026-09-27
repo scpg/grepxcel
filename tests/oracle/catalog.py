@@ -58,6 +58,20 @@ compares ``validate_type()`` and ``classify_value()`` to the rows below.
    coverage consequence — §5's "integer | n | float with .is_integer()" row
    cannot reach ``validate_type``'s float branch through a real .xlsx.
 
+7. **The four temporal ``s-text`` rows flipped from rejected to accepted**
+   (``date``, ``datetime``, ``time``, ``duration``). §5 wrote them as rejections
+   ("is not a date", …) and that was true when the spec was written. The engine
+   now *coerces* unambiguous text into the temporal object the field declares
+   (``utils.coerce_temporal_text``), so ``'2024-01-15'`` in a ``date`` field
+   extracts as ``datetime(2024, 1, 15)``. Two consequences encoded here:
+   ``extract_values`` carries the converted value (which differs from
+   ``round_trip``, because openpyxl still returns the raw string), while
+   ``profile_storage``/``profile_semantic`` stay ``s``/``string`` — ``profile``
+   reads the *file*, not the engine's converted value. Each type also gained an
+   ``s-ambiguous`` row keeping the negative case alive: ``'01/02/2024'`` is both
+   1 Feb and 2 Jan, so it is still rejected unless the pattern declares
+   ``config: | date.format |``.
+
 ## Interpretation notes (where two spec sentences had to be reconciled)
 
 * §6 says number formats are "applied only to ``n``-storage cases", yet its
@@ -178,6 +192,11 @@ class StorageCase:
     profile_semantic: str         # classify_value().semantic_type
     profile_flags: frozenset = frozenset()   # flags that MUST be present
     formats: tuple | None = None  # override FORMATS[type]; None → use it
+    #: (written text, expected extracted value) pairs for cells the ENGINE
+    #: converts, where the extracted value differs from what openpyxl returns.
+    #: Declared literally rather than computed by calling the production coercion
+    #: function, which would make the expectation circular.
+    extract_values: tuple = ()
 
     def round_trip(self, value):
         """The value as openpyxl reads it back after a write.
@@ -203,6 +222,20 @@ class StorageCase:
         if isinstance(value, float) and value.is_integer():
             return int(value)
         return value
+
+    def extract_value(self, written):
+        """What ``Engine().process`` must return for a cell holding *written*.
+
+        Usually the same as :meth:`round_trip` — the engine hands back what
+        openpyxl read. It differs only where the engine *converts* the cell:
+        text declared as a date/time is coerced into a real temporal object
+        (``utils.coerce_temporal_text``), so the extracted value is no longer the
+        string the file holds. Those cases are listed in ``extract_values``.
+        """
+        for candidate, expected in self.extract_values:
+            if type(candidate) is type(written) and candidate == written:
+                return expected
+        return self.round_trip(written)
 
 
 def formats_for(type_name: str, case: StorageCase) -> tuple:
@@ -264,12 +297,25 @@ STORAGE_MATRIX: dict[str, list[StorageCase]] = {
         # Note A: accepted as var: date, yet classified n/datetime — openpyxl
         # returns midnight of that day. Two oracles, two truths.
         StorageCase('n-date', 'n', _DATE_POOL, True, None, 'n', 'datetime'),
-        StorageCase('s-text', 's', ('2024-01-15', '1900-01-01'), False,
+        # Correction 7: ISO text in a date field is now COERCED, not rejected.
+        # profile still sees the raw string (s/string) — it reads the file, not
+        # the engine's converted value. Two oracles, two truths, again.
+        StorageCase('s-text', 's', ('2024-01-15', '1900-01-01'), True,
+                    None, 's', 'string',
+                    extract_values=(('2024-01-15', datetime.datetime(2024, 1, 15)),
+                                    ('1900-01-01', datetime.datetime(1900, 1, 1)))),
+        # Still rejected: ambiguous without a declared date.format.
+        StorageCase('s-ambiguous', 's', ('01/02/2024', '15/01/2024'), False,
                     'is not a date', 's', 'string'),
     ],
     'datetime': [
         StorageCase('n-datetime', 'n', _DATETIME_POOL, True, None, 'n', 'datetime'),
-        StorageCase('s-text', 's', ('2024-01-15 09:30', '1900-01-01 00:00'), False,
+        StorageCase('s-text', 's', ('2024-01-15 09:30', '1900-01-01 00:00'), True,
+                    None, 's', 'string',
+                    extract_values=(
+                        ('2024-01-15 09:30', datetime.datetime(2024, 1, 15, 9, 30)),
+                        ('1900-01-01 00:00', datetime.datetime(1900, 1, 1, 0, 0)))),
+        StorageCase('s-ambiguous', 's', ('01/02/2024 09:30',), False,
                     'is not a datetime', 's', 'string'),
     ],
     'time': [
@@ -278,14 +324,23 @@ STORAGE_MATRIX: dict[str, list[StorageCase]] = {
         # makes openpyxl read it back as a timedelta, hence the override.
         StorageCase('n-timedelta', 'n', _DURATION_POOL, True, None, 'n', 'duration',
                     formats=('[h]:mm',)),
-        StorageCase('s-text', 's', ('09:30', '00:00'), False,
+        StorageCase('s-text', 's', ('09:30', '00:00'), True, None, 's', 'string',
+                    extract_values=(('09:30', datetime.time(9, 30)),
+                                    ('00:00', datetime.time(0, 0)))),
+        StorageCase('s-ambiguous', 's', ('9.30am', 'half past nine'), False,
                     'is not a time', 's', 'string'),
     ],
     'duration': [
         StorageCase('n-timedelta', 'n', _DURATION_POOL, True, None, 'n', 'duration'),
         StorageCase('n-time', 'n', _TIME_POOL, True, None, 'n', 'time',
                     formats=('HH:MM',)),
-        StorageCase('s-text', 's', ('2:00', '0:00'), False,
+        # '30:00' is thirty hours elapsed — the case no date library handles.
+        StorageCase('s-text', 's', ('2:00', '0:00', '30:00'), True, None,
+                    's', 'string',
+                    extract_values=(('2:00', datetime.timedelta(hours=2)),
+                                    ('0:00', datetime.timedelta(0)),
+                                    ('30:00', datetime.timedelta(hours=30)))),
+        StorageCase('s-ambiguous', 's', ('2 hours', '2h30'), False,
                     'is not a time', 's', 'string'),
     ],
     'boolean': [

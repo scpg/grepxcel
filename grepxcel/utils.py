@@ -152,6 +152,129 @@ def is_empty(value, empty_aliases=None, ignore_case: bool = False) -> bool:
     return False
 
 
+# ── Temporal text coercion ──────────────────────────────────────────────────
+#
+# A date can arrive as *text* rather than a real Excel date: exported from
+# another system, typed with a leading apostrophe, or written by a tool that
+# never applied a date number format. Before this, such a cell was simply
+# rejected ("'2024-01-15' is not a date") even though the pattern had declared
+# exactly what it was meant to be. When the pattern says a field is a date, and
+# the text says unambiguously which date, converting it is strictly better than
+# refusing it.
+#
+# What is deliberately NOT done here, and why: no lenient/heuristic parsing.
+# `dateutil.parser.parse` was evaluated and rejected — measured, not assumed:
+#
+#   '01/02/2024'  ->  Jan 2, or Feb 1 with dayfirst=True. Same input, two
+#                     different dates, no warning either way. Silently wrong
+#                     data is worse than a refusal.
+#   '09:30'       ->  datetime(<today>, 9, 30). It injects the CURRENT DATE, so
+#                     the same file extracts differently tomorrow.
+#   '2:00'        ->  datetime(<today>, 2, 0), not timedelta(hours=2).
+#   '30:00'       ->  ParserError. It cannot represent elapsed time at all.
+#
+# So: unambiguous ISO 8601 by default (stdlib, no dependency), elapsed-time
+# H:MM[:SS] for durations (which no library handles), and for anything else the
+# user declares the format explicitly via `config: | date.format | %d/%m/%Y`.
+# Declared beats guessed — it gives the same answer on every machine.
+
+#: Field types whose text form is coerced. Mirrors validate_type's own grouping.
+_DATE_TYPES = frozenset({'date', 'datetime', 'timestamp'})
+_TIME_TYPES = frozenset({'time', 'duration'})
+TEMPORAL_TYPES = _DATE_TYPES | _TIME_TYPES
+
+#: Elapsed time: hours are unbounded (30:00 is thirty hours, not a clock time).
+_DURATION_RE = _re.compile(r'^(\d{1,6}):([0-5]\d)(?::([0-5]\d))?$')
+
+
+def parse_duration_text(text: str):
+    """Parse elapsed time ``H:MM`` / ``H:MM:SS`` into a ``timedelta``.
+
+    Hours are unbounded on purpose — ``'30:00'`` is thirty hours, which is a
+    perfectly ordinary timesheet value and is exactly what a clock-time parser
+    refuses. Returns None if *text* is not that shape.
+    """
+    match = _DURATION_RE.match(text.strip())
+    if not match:
+        return None
+    hours, minutes, seconds = match.group(1), match.group(2), match.group(3)
+    return datetime.timedelta(hours=int(hours), minutes=int(minutes),
+                              seconds=int(seconds or 0))
+
+
+def coerce_temporal_text(value, field_type: str, date_format: str | None = None,
+                         time_format: str | None = None):
+    """Convert a text cell into the temporal object its declared type implies.
+
+    Returns the converted value, or **None** when *value* is not text, the type
+    is not temporal, or the text cannot be converted unambiguously — in which
+    case the caller leaves the value alone and normal validation reports it.
+
+    A ``date`` field yields a ``datetime`` at midnight rather than a ``date``,
+    deliberately: that is what openpyxl returns for a real Excel date cell (it
+    has no date-only type), so text and native cells produce the same output
+    shape instead of one field's JSON being ``'2024-01-15'`` and another's
+    ``'2024-01-15T00:00:00'`` depending on how the sheet happened to store it.
+    """
+    if not isinstance(value, str) or field_type not in TEMPORAL_TYPES:
+        return None
+    text = value.strip()
+    if not text:
+        return None
+
+    # A declared format is tried FIRST, then ISO as a fallback — not instead of
+    # it. Both are deterministic, so trying both cannot introduce ambiguity, and
+    # a sheet that mixes '31/12/2024' with '2024-12-31' still converts fully.
+    if field_type in _DATE_TYPES:
+        attempts = [_iso_datetime]
+        if date_format:
+            attempts.insert(0, lambda t: _by_format(t, date_format))
+    elif field_type == 'time':
+        # time and duration both accept a clock time and an elapsed duration (so
+        # does validate_type); the declared type only decides which is tried first.
+        attempts = [_iso_time, parse_duration_text]
+        if time_format:
+            attempts.insert(0, lambda t: _by_format(t, time_format, as_time=True))
+    else:  # duration
+        attempts = [parse_duration_text, _iso_time]
+        if time_format:
+            attempts.insert(0, lambda t: _by_format(t, time_format, as_time=True))
+
+    for attempt in attempts:
+        converted = attempt(text)
+        if converted is not None:
+            return converted
+    return None
+
+
+def _by_format(text: str, fmt: str, as_time: bool = False):
+    try:
+        parsed = datetime.datetime.strptime(text, fmt)
+    except (ValueError, TypeError):
+        return None
+    return parsed.time() if as_time else parsed
+
+
+def _iso_datetime(text: str):
+    """ISO date or datetime, always returned as a ``datetime`` (see docstring)."""
+    try:
+        return datetime.datetime.fromisoformat(text)
+    except ValueError:
+        pass
+    try:
+        day = datetime.date.fromisoformat(text)
+    except ValueError:
+        return None
+    return datetime.datetime(day.year, day.month, day.day)
+
+
+def _iso_time(text: str):
+    try:
+        return datetime.time.fromisoformat(text)
+    except ValueError:
+        return None
+
+
 def _safe_match(regex: str, text: str, flags: int = 0,
                 max_len: int = _MAX_REGEX_INPUT_LEN) -> bool:
     """

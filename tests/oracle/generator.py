@@ -190,7 +190,7 @@ def _build_scalars(params, case, fmt, m, rng, placer, manifest,
     for i, block in enumerate(blocks):
         field_name = f'f{i:02d}'
         value = rng.choice(case.values)
-        expected = normalise(case.round_trip(value))
+        expected = normalise(case.extract_value(value))
 
         if with_anchor:
             anchor_pos = block.anchor
@@ -300,7 +300,7 @@ def _build_tables(params, case, fmt, m, rng, placer, manifest,
                     profile_semantic=case.profile_semantic,
                     profile_flags=case.profile_flags,
                 ))
-                row_values.append(normalise(case.round_trip(value)))
+                row_values.append(normalise(case.extract_value(value)))
             data_rows.append(row_values)
 
         manifest.tables.append(TableSpec(

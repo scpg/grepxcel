@@ -48,6 +48,8 @@ Optional. Placed before `START:`. Each `config:` row sets one global option.
 | `config:` | `trim.whitespace`  | `true` or `false`                  | Default: `false`             |
 | `config:` | `lbl.match`        | `literal`, `glob`, or `regexp`     | Default: `literal`           |
 | `config:` | `var.match`        | `glob`, or `regexp`               | Default: `glob`              |
+| `config:` | `date.format`      | strftime, e.g. `%d/%m/%Y`         | Default: ISO 8601 only       |
+| `config:` | `time.format`      | strftime, e.g. `%H.%M`            | Default: ISO 8601 only       |
 | `config:` | `empty.aliases`    | e.g. `N/A`                        | Repeat the row for each alias|
 
 **`read.direction`** controls how the data sheet is scanned for `cell:` instructions:
@@ -70,6 +72,46 @@ Optional. Placed before `START:`. Each `config:` row sets one global option.
 - `regexp` — full Python `re.search` behaviour (the pre-v0.1.0 default).
 
 Per-field overrides are also supported: write `lbl:literal`, `lbl:glob`, or `lbl:regexp` in column A instead of plain `lbl:`.
+
+**`date.format` / `time.format`** tell grepxcel how to read dates and times that
+are stored as **text** rather than as real Excel date cells.
+
+A date often arrives as text — exported from another system, typed with a leading
+apostrophe, or written without a date number format. When a field is declared
+`date`, `datetime`, `timestamp`, `time` or `duration`, grepxcel converts such text
+into a real date/time value, so the extracted output is a proper timestamp rather
+than a string.
+
+Without these settings it converts **unambiguous ISO 8601 text only**:
+
+| Text in the cell | Field type | Extracted as |
+|---|---|---|
+| `2024-01-15` | `date` | `2024-01-15T00:00:00` |
+| `2024-01-15 09:30` | `datetime` | `2024-01-15T09:30:00` |
+| `09:30` | `time` | `09:30:00` |
+| `2:00` | `duration` | `2:00:00` (2 hours) |
+| `30:00` | `duration` | `1 day, 6:00:00` (30 hours elapsed) |
+| `01/02/2024` | `date` | **not converted** — reported, see below |
+
+`01/02/2024` is refused on purpose: it means 1 February in most of the world and
+2 January in the United States. Rather than pick one, grepxcel reports the cell
+and leaves the value as text. To read it, declare the order:
+
+```
+config:    date.format    %d/%m/%Y      # 01/02/2024 is 1 February
+config:    time.format    %H.%M         # 09.30 is half past nine
+```
+
+Use [Python strftime codes](https://docs.python.org/3/library/datetime.html#strftime-and-strptime-format-codes).
+`date.format` applies to `date`, `datetime` and `timestamp` fields; `time.format`
+to `time` fields. A declared format is tried first and ISO text still converts, so
+a sheet mixing `31/12/2024` and `2024-12-31` is read correctly either way. An
+unusable format string is rejected when the pattern is parsed, not silently
+ignored.
+
+Two things this deliberately does **not** do: it never guesses a date order, and
+it never substitutes today's date for a missing one. Both would make the same file
+extract differently on another machine or on another day.
 
 **`pattern.version`** declares a forward-compatibility version. Currently only version `1` is defined; absent defaults to `1`. Future versions may add new syntax.
 

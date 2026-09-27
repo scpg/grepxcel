@@ -8,7 +8,8 @@ import openpyxl
 from openpyxl.utils import get_column_letter
 from openpyxl.utils.cell import coordinate_to_tuple
 from .models import Config, CellInstruction, TableInstruction, TemplateRow, SeekInstruction, DirectionInstruction
-from .utils import is_empty, validate_type, _MAX_REGEX_INPUT_LEN, _regex_timeout
+from .utils import (is_empty, validate_type, coerce_temporal_text,
+                    TEMPORAL_TYPES, _MAX_REGEX_INPUT_LEN, _regex_timeout)
 from .pattern_parser import PatternParser, PatternError, RoledDefs
 from .logger import Logger, LogRecord, EngineError, cell_ref
 from .security import validate_file, validate_pattern_file, SecurityError, DEFAULT_MAX_UNCOMPRESSED_MB
@@ -93,6 +94,33 @@ def _apply_trim(value, fd, config):
     if isinstance(value, str) and (fd.trim_whitespace or config.trim_whitespace_values):
         return value.strip()
     return value
+
+
+def _coerce_temporal(value, fd, config, logger=None, location: str = ''):
+    """Convert a TEXT cell into the date/time object its ``var:`` type declares.
+
+    A date can reach grepxcel as text — exported from another system, typed with
+    a leading apostrophe, or written without a date number format. The pattern
+    already states what the field is meant to be, so unambiguous text is
+    converted rather than refused. Only ``var:`` fields are touched: a ``lbl:``
+    field is an anchor matched as text, and rewriting its value would break the
+    match.
+
+    Returns the converted value, or *value* unchanged when there is nothing to
+    convert. Conversions are logged at debug level so ``-vv`` shows that the
+    output differs from the literal cell contents.
+    """
+    if fd is None or fd.role != 'var' or not isinstance(value, str):
+        return value
+    if fd.type not in TEMPORAL_TYPES:
+        return value
+    converted = coerce_temporal_text(value, fd.type, config.date_format,
+                                     config.time_format)
+    if converted is None:
+        return value
+    if logger is not None:
+        logger.value_coerced(location, fd.name, fd.type, value, converted)
+    return converted
 
 
 def _validate_field(fd, value, config, max_cell_len: int) -> bool:
@@ -1487,6 +1515,12 @@ class Engine:
         if fd.nullable and is_empty(value, config.empty_aliases, config.ignore_case_values):
             value = None
 
+        # A date/time declared by the pattern but stored as TEXT is converted
+        # here, before validation, so the output carries a real temporal object
+        # rather than the raw string (see utils.coerce_temporal_text).
+        value = _coerce_temporal(value, fd, config, logger,
+                                 cell_ref(row, col, logger.sheet_name))
+
         # Validate before tracing so the -v trace can show 🟢/🔴 per field.
         ok = None
         reason = ''
@@ -1830,6 +1864,9 @@ class Engine:
                 else:
                     # Apply trim-whitespace before validation and storage.
                     val = _apply_trim(val, fd, config)
+                    val = _coerce_temporal(
+                        val, fd, config, logger,
+                        cell_ref(sheet_row, col, logger.sheet_name))
                     ok, reason = _validate_field_with_reason(
                         fd, val, config, self._max_cell_len)
                     if not ok:

@@ -1,4 +1,5 @@
 import csv
+import datetime
 import os
 import re
 
@@ -371,6 +372,7 @@ class PatternParser:
                         'ignore.case.labels', 'ignore.case.values',
                         'trim.whitespace', 'trim.whitespace.labels', 'trim.whitespace.values',
                         'lbl.match', 'var.match', 'empty.aliases',
+                        'date.format', 'time.format',
                     })
                     col_b = str(row[1]).strip()
                     if col_b.lower() in _KNOWN_CFG:
@@ -969,6 +971,26 @@ class PatternParser:
                     f"{', '.join(sorted(VAR_MATCH_MODES))}."
                 )
             config.var_match = mode
+        elif key in ('date.format', 'time.format') and val:
+            fmt = str(val).strip()
+            # Fail at parse time, not on the first cell that uses it: an invalid
+            # strptime format would otherwise silently coerce nothing and every
+            # value would be reported as a plain type mismatch, pointing the user
+            # at their data instead of at their format string.
+            probe = (datetime.datetime(2024, 1, 15, 9, 30) if key == 'date.format'
+                     else datetime.datetime(1900, 1, 1, 9, 30))
+            try:
+                datetime.datetime.strptime(probe.strftime(fmt), fmt)
+            except (ValueError, TypeError) as exc:
+                raise PatternError(
+                    f"Invalid {key} value {val!r}: not a usable strptime format "
+                    f"({exc}). Use Python strftime codes, e.g. '%d/%m/%Y' for "
+                    f"31/12/2024 or '%H.%M' for 09.30."
+                ) from exc
+            if key == 'date.format':
+                config.date_format = fmt
+            else:
+                config.time_format = fmt
         elif key in ('pattern.version', 'version') and val is not None:
             config.pattern_version = _parse_pattern_version(val)
             config.pattern_version_explicit = True

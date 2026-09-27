@@ -19,6 +19,12 @@ class Config:
     pattern_version_explicit: bool = False  # True if the pattern declared it
     lbl_match: str = 'literal'  # how lbl: patterns are matched: literal | glob | regexp
     var_match: str = 'regexp'  # default var: column-D mode: regexp | glob | literal
+    # strptime formats for coercing TEXT cells into date/time values. None =
+    # accept unambiguous ISO 8601 only. Set these when the file uses a local
+    # order such as %d/%m/%Y, which cannot be guessed safely: '01/02/2024' is
+    # both 1 Feb and 2 Jan, so grepxcel refuses it rather than picking one.
+    date_format: str | None = None   # date / datetime / timestamp fields
+    time_format: str | None = None   # time fields
     unknown_config_keys: list = field(default_factory=list)  # unrecognised config: keys
 
 

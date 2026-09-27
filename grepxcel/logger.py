@@ -612,6 +612,23 @@ class Logger:
         self._write(VerbosityLevel.DEBUG,
                     f'    {label}  {location}: {repr(value)}')
 
+    def value_coerced(self, location: str, field: str, field_type: str,
+                      original, converted):
+        """A text cell was converted into the date/time its type declares.
+
+        Recorded because the extracted value then differs from the literal cell
+        contents: without this, `-vv` would show a date in the output that
+        appears nowhere in the sheet, with nothing to explain the difference.
+        """
+        rec = LogRecord(Severity.DEBUG, Category.ENGINE,
+                        f'Coerced text {original!r} to {field_type} {converted!r}',
+                        location=location, field=field, field_type=field_type)
+        self._store(rec)
+        label = paint('[COERCE]', 'dim', self._color)
+        self._write(VerbosityLevel.DEBUG,
+                    f'    {label} {location}: {original!r} -> {converted!r} '
+                    f'({field_type})')
+
     def anchor_rejected(self, row: int, col: int, reason: str):
         location = cell_ref(row, col, self.sheet_name)
         rec = LogRecord(Severity.DEBUG, Category.ENGINE,
