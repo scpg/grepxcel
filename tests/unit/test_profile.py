@@ -13,6 +13,7 @@ from grepxcel.profile import (
     run_profile, to_json_records, write_colored_xlsx, write_json,
 )
 from grepxcel.cell_taxonomy import classify_value
+from grepxcel.engine import scan_image_cells
 from grepxcel.color import MARK_FAIL, MARK_INFO, MARK_WARN
 from grepxcel.security import SecurityError
 
@@ -203,18 +204,58 @@ class TestJsonExport:
 
 class TestProfileWorkbookRealFixtures:
     def test_fixture_24_image_cells_not_misreported_as_errors(self):
-        """M20/E13/H13 are IMAGE()-formula (richData) cells — Excel caches
-        their own formula result as a literal '#VALUE!' string, but the real
-        content lives in the richData chain (scan_image_cells()), not the
-        cached scalar. profile must not report these as Excel errors."""
-        sheets = profile_workbook(_FIXTURE_24)
-        all_cells = [c for sp in sheets for c in sp.cells]
-        error_refs = {c.ref for c in all_cells if 'error' in c.profile.flags}
-        assert not error_refs, f'expected no genuine error cells, got: {error_refs}'
-        image_cells = {c.ref: c for c in all_cells if c.profile.semantic_type == 'image'}
-        for ref in ('M20', 'E13', 'H13'):
-            assert ref in image_cells, f'{ref} should be classified as image, got: {image_cells}'
-            assert 'rich_value' in image_cells[ref].profile.flags
+        """An IMAGE()-formula cell must never be reported as an Excel error.
+
+        Excel caches such a cell's own formula result as the literal string
+        '#VALUE!'; the real content lives in the richData chain that
+        scan_image_cells() walks, not in the cached scalar. Reading only the
+        scalar is what once made profile call them errors.
+
+        The refs are derived from scan_image_cells() rather than hard-coded.
+        They used to be listed as M20/E13/H13, which tied the test to one
+        revision of the fixture: a round-trip through a spreadsheet editor
+        strips richData (no editor outside Excel preserves it), and those three
+        cells then hold a bare '#VALUE!' with no chain behind them — genuinely
+        errors, so a blanket "this file has no error cells" no longer describes
+        the file. Deriving the refs keeps the actual guard at full strength and
+        immune to that churn.
+        """
+        image_by_sheet = scan_image_cells(_FIXTURE_24)
+        checked = 0
+
+        for sp in profile_workbook(_FIXTURE_24):
+            profiled = {c.ref: c for c in sp.cells}
+            # Only image cells that carry a cached scalar reach the profiler at
+            # all: one with no cached value is skipped as an empty cell, so it
+            # cannot be misreported and is not what this guards. Intersecting
+            # keeps the test honest about which cells are actually at risk.
+            at_risk = set(image_by_sheet.get(sp.sheet, {})) & set(profiled)
+
+            for ref in sorted(at_risk):
+                cell = profiled[ref]
+                assert cell.profile.semantic_type == 'image', (
+                    f'{sp.sheet}!{ref} is an IMAGE() cell but profile called it '
+                    f'{cell.profile.semantic_type!r} — the cached #VALUE! scalar '
+                    f'was read instead of the richData chain'
+                )
+                assert 'rich_value' in cell.profile.flags
+                assert 'error' not in cell.profile.flags, (
+                    f'{sp.sheet}!{ref} is an IMAGE() cell flagged as an Excel error'
+                )
+                checked += 1
+
+            # The converse, per sheet: nothing flagged as an error is an image.
+            errors = {c.ref for c in sp.cells if 'error' in c.profile.flags}
+            misreported = errors & set(image_by_sheet.get(sp.sheet, {}))
+            assert not misreported, (
+                f'{sp.sheet}: image cells misreported as errors: {sorted(misreported)}'
+            )
+
+        assert checked >= 3, (
+            f'only {checked} image cell(s) carried a cached value — the fixture '
+            f'no longer exercises this guard. A round-trip through a spreadsheet '
+            f'editor strips richData; restore the fixture from git.'
+        )
 
     def test_fixture_24_all_sheets_by_default(self):
         sheets = profile_workbook(_FIXTURE_24)
