@@ -81,7 +81,18 @@ polars = [
     "polars>=1.0",
 ]
 mcp = [
-    "mcp>=1.23,<2",
+    # Floor is 1.28.1, not 1.23: earlier releases carry CVE-2026-52869 (SSE and
+    # Streamable HTTP route by session id without checking the authenticated
+    # principal; fixed 1.27.2) and CVE-2026-59950 (the deprecated websocket
+    # transport skips Host/Origin validation; fixed 1.28.1). This server runs on
+    # stdio, so neither transport is reachable here — the floor exists so that
+    # installing the extra cannot pull a version with known holes into an
+    # environment that may expose them another way.
+    #
+    # Ceiling stays below 2: mcp 2.x removed `mcp.server.fastmcp`, which
+    # mcp_server.py imports. Widening it makes `grepxcel mcp` fail at import
+    # with ModuleNotFoundError. Lifting it means migrating to MCPServer first.
+    "mcp>=1.28.1,<2",
 ]
 wizard = [
     "textual>=8.0",

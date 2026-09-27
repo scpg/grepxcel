@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-09-27
+
+A minor rather than a patch bump: temporal coercion **changes extraction output** for files
+whose date and time values are stored as text. A field that previously held the raw string
+plus a type-mismatch warning now holds a real temporal value. Patterns do not change, but
+anything consuming the JSON downstream may.
+
 ### Features
 
 - **Date and time text is converted, not refused** — a cell declared `date`, `datetime`,
@@ -60,6 +67,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- **The `[mcp]` extra now requires `mcp>=1.28.1`** (was `>=1.23`). The older range permitted
+  two HIGH-severity advisories: CVE-2026-52869 (CVSS 7.1 — the SSE and Streamable HTTP
+  transports routed requests to a session by id without checking that the caller was the
+  principal who created it; fixed in 1.27.2) and CVE-2026-59950 (CVSS 8.1 — the deprecated
+  websocket transport accepted handshakes without Host or Origin validation; fixed in 1.28.1).
+  grepxcel's server runs on stdio, so neither transport was reachable through it; the floor is
+  raised so installing the extra cannot place a version with known holes into an environment
+  that exposes them another way. The ceiling stays below 2: mcp 2.x removed
+  `mcp.server.fastmcp`, which this server imports.
+- **The `[mcp]` install check actually exercises the SDK.** `grepxcel mcp-config` only prints
+  a JSON blob, and `mcp_server.py` deliberately swallows a failed SDK import
+  (`except ImportError: FastMCP = None`) so the CLI can show an install hint — between them, an
+  incompatible `mcp` release produced a green check and a broken `grepxcel mcp`. CI now asserts
+  the import bound and builds a server instance.
 - **The wizard's CDN scripts are pinned with Subresource Integrity.** The web wizard loads
   three libraries from cdnjs; there is no `package.json`, so neither Dependabot nor Snyk sees
   those versions. Each `<script>` now carries a `sha512` `integrity` hash and
@@ -425,7 +446,8 @@ Initial public release.
 - Structured JSON logs never contain extracted cell values (allow-list
   construction, not redaction).
 
-[Unreleased]: https://github.com/scpg/grepxcel/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/scpg/grepxcel/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/scpg/grepxcel/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/scpg/grepxcel/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/scpg/grepxcel/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/scpg/grepxcel/compare/v0.3.0...v0.3.1

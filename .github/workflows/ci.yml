@@ -92,6 +92,16 @@ jobs:
           grepxcel --help
           if [ "${{ matrix.extra }}" = "mcp" ]; then
             grepxcel mcp-config
+            # mcp-config only prints a JSON blob — it never imports the SDK, so
+            # it passes happily against an mcp release the server cannot run on.
+            # Importing the module is not enough either: mcp_server.py wraps the
+            # SDK import in `except ImportError: FastMCP = None` so the CLI can
+            # print an install hint, which means an incompatible mcp release is
+            # swallowed and the module imports fine. Assert the symbol actually
+            # bound. mcp 2.x removed `mcp.server.fastmcp`, so without this a bump
+            # widening the ceiling goes green while `grepxcel mcp` is broken for
+            # every fresh install.
+            python -c "import grepxcel.mcp_server as m; assert m.FastMCP is not None, 'mcp installed but mcp.server.fastmcp did not import - incompatible mcp release'; m.create_server(); print('mcp import ok')"
           fi
           if [ "${{ matrix.extra }}" = "web" ]; then
             python -c "from grepxcel.wizard_api import create_app; print('web import ok')"
