@@ -7,6 +7,73 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Features
+
+- **Date and time text is converted, not refused** — a cell declared `date`, `datetime`,
+  `timestamp`, `time` or `duration` in the pattern is now converted to a real temporal value
+  when it holds unambiguous text. Dates often arrive as text (exported from another system,
+  typed with a leading apostrophe, or written without a date number format) and were
+  previously reported as type mismatches even though the pattern had already declared what
+  they were. `'2024-01-15'` → a datetime; `'09:30'` → a time; `'2:00'` and `'30:00'` → 2 and
+  30 hours elapsed. **This changes extraction output** for such files: the field now holds a
+  timestamp where it previously held the raw string plus a warning.
+- **`config: | date.format |` and `config: | time.format |`** — declare a strptime format
+  (e.g. `%d/%m/%Y`) for text that ISO 8601 cannot resolve. Without one, ambiguous text is
+  refused rather than guessed: `01/02/2024` is 1 February in most of the world and 2 January
+  in the United States, and picking one silently is how a tool returns confidently wrong data.
+  A declared format is tried first and ISO still converts afterwards, so a sheet mixing
+  `31/12/2024` and `2024-12-31` reads correctly either way. An unusable format string is
+  rejected when the pattern is parsed, so the error names the pattern rather than arriving as
+  a wall of per-cell mismatches pointing at the data.
+  No new dependency: a lenient parser was evaluated and declined, because it reads `'09:30'`
+  as *today's* date at 09:30 (making the same file extract differently tomorrow), returns a
+  datetime rather than a duration for `'2:00'`, and cannot parse `'30:00'` at all.
+
+### Fixed
+
+- **A rejected value now says why it was rejected.** `validate_type` has always computed a
+  precise reason — `is not a whole number`, `boolean is not integer`,
+  `javascript: URLs are not permitted`, and the two that matter most: a cell over
+  `--max-cell-len` and a regex timeout, where the pattern was never evaluated at all. The
+  engine discarded it, so every one of those causes reached the user as the same sentence:
+  *"Value does not match the expected pattern … Expected: matches /…/"*. A cell that could
+  not possibly have matched was reported identically to one that simply did not. The reason
+  now appears in the warning message and as a `Reason:` line in the rendered output.
+- **`schema` and `extract` disagreed about `boolean`.** `validate_type` accepts `1`/`0`,
+  `"1"`/`"0"` and `"yes"`/`"no"`, but the generated JSON Schema declared only
+  `{"type": ["boolean", "null"]}`, so a schema generated from a pattern rejected 3 of the 4
+  boolean forms that same pattern's extraction accepts. The declared types are widened to
+  match. *Known gap:* this makes the boolean schema accept values extraction rejects (`-1`,
+  `'maybe'`); tightening it is tracked in
+  `docs/superpowers/specs/2026-09-27-schema-strictness-decisions.md`.
+- **A bare number is never read as a time.** Python 3.11+ widened `time.fromisoformat` to
+  accept bare-hour and compact forms, which would have read `'12'` as 12:00, `'1230'` as
+  12:30 and `'2024'` as **20:24** — so a year, an ID or a quantity in a time-typed column
+  would have become a plausible-looking time. A separator is now required; compact times
+  remain readable via `time.format`.
+
+### Tests
+
+- **Oracle type-matrix suite** (`tests/oracle/`, ~26,900 generated cases) — for every
+  combination of value type × file shape × OOXML storage type × number format × read
+  direction, the suite generates a manifest of known ground truth and forces
+  `validate-pattern`, `lint`, `profile`, `extract` and `schema` to agree with it. Excluded
+  from `pytest tests/` by the `oracle` marker; run as a pre-PR gate via
+  `scripts/oracle_check.py`, and on pull requests by `.github/workflows/oracle.yml`. It found
+  both `Fixed` entries above on its first full run.
+- **Excel storage-model boundaries pinned** — the 1900 leap-year bug (serials 59 and 60 both
+  read as 1900-02-28, and serials 1–59 sit one day ahead of naive epoch arithmetic); the
+  two-day hole where 1899-12-30 and 1899-12-31 come back as `00:00:00` instead of a date; the
+  2⁵³ integer precision cliff, above which odd integers snap to an even neighbour and a
+  19-digit identifier comes back as a different number while still validating as an integer.
+
+### Documentation
+
+- `docs/pattern-file.md`: `date.format` / `time.format`, why ambiguous text is refused, a
+  note on numbers in duration cells (Excel's unit is one day, so a bare `12` is twelve days),
+  and **"Long numeric identifiers: declare them `string`"** — above 2⁵³ a numeric cell cannot
+  hold a long ID exactly, and the rounding is undetectable after the fact.
+
 ## [0.4.1] — 2026-09-21
 
 ### Fixed
