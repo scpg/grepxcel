@@ -287,6 +287,39 @@ elapsed-time columns.
 > An unknown type name (e.g. a typo like `currncy`) is rejected when the pattern
 > file is parsed, so a mistyped type fails fast instead of silently mis-validating.
 
+### Long numeric identifiers: declare them `string`
+
+Order numbers, bank references, barcodes, VAT numbers and similar long ids belong
+in a `string` field, not an `integer` one.
+
+A numeric Excel cell is an IEEE-754 double, so only whole numbers up to
+**2⁵³ = 9,007,199,254,740,992** are stored exactly. Above that the gap between
+representable integers is 2, then 4, then 8:
+
+| entered | what the file holds |
+|---|---|
+| `9007199254740992` | `9007199254740992` |
+| `9007199254740993` | `9007199254740992` — moved by 1 |
+| `1234567890123456789` | `1234567890123457024` — moved by 235 |
+
+The adjustment happens when the value is stored, before grepxcel ever sees the
+file, and the result is an ordinary whole number afterwards. There is no flag to
+check and nothing for `var: integer` to reject, so it cannot be detected during
+extraction — which is why this is a pattern-authoring choice.
+
+The reliable way to keep every digit is to store the id **as text** in the
+spreadsheet (in Excel: format the column as Text before entry, or prefix with an
+apostrophe) and declare the field `string`:
+
+```
+var:  order.id   string   \d{15,20}
+```
+
+`grepxcel profile` marks such cells `text_forced_numeric`. That flag usually
+means "a number got stored as text by accident" — for a long id it means the
+opposite, that the id was stored correctly. Note this also preserves leading
+zeros, which a numeric cell discards.
+
 ---
 
 ## Comments
