@@ -91,6 +91,27 @@ per-push check. Run it explicitly (a command-line `-m` overrides the one in
 Narrow it while debugging: `GREPXCEL_ORACLE_SEEDS` (default 3),
 `GREPXCEL_ORACLE_TYPES` (default all 11), `GREPXCEL_ORACLE_SHAPES` (default all 6).
 
+### Running tests in parallel
+
+`pytest-xdist` is a dev dependency. The oracle suite parallelises cleanly — each
+case builds into its own pid-keyed directory and every test uses `tmp_path`:
+
+```bash
+.venv/bin/pytest -m oracle tests/oracle -q -n auto    # 124s -> 26s on 32 cores
+```
+
+`scripts/oracle_check.py` uses `-n auto` for the oracle step automatically when
+xdist is installed, and falls back to serial when it is not.
+
+**The fast suite is deliberately left serial.** It takes ~23s, so there is little
+to win, and it is not yet xdist-clean: `proxy_support._truststore_inject()`
+mutates SSL state process-wide, and an xdist worker process shared across tests
+can carry that into a later fully-mocked backend test — seen once as
+`X509: NO_CERTIFICATE_OR_CRL_FOUND` in `test_suggester.py` under `-n 16`, not
+reproducible in isolation. That is a pre-existing test-isolation bug that
+parallelism exposes rather than causes. Fix the global mutation before making
+`pytest tests/` parallel by default.
+
 ## Running the CLI
 
 The CLI is subcommand-based: `extract`, `validate-pattern`, `draft`, `docs`, `lint`, `profile`, `schema`, `generate-examples`, `sbom`, `mcp`, `mcp-config`, `doctor`, `quickstart`, `wizard`, `web-wizard` (run `grepxcel <cmd> --help`).

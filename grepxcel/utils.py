@@ -307,6 +307,43 @@ def _safe_match(regex: str, text: str, flags: int = 0,
         return False
 
 
+def _clip(text: str, limit: int = 60) -> str:
+    """A value short enough to sit in a one-line warning.
+
+    A rejected cell can be thousands of characters; pasting it whole turns the
+    issue list into a wall and hides the sentence that explains the problem.
+    """
+    s = repr(text)
+    if len(s) <= limit:
+        return s
+    return f'{s[:limit]}…\' ({len(text)} chars)'
+
+
+def _match_with_reason(regex: str, text: str, flags: int, max_len: int) -> tuple:
+    """Full-match *text*, distinguishing the three ways it can fail.
+
+    ``_safe_match`` collapses all three into False, which is how a cell that
+    could not possibly have been checked came to be reported as "does not match
+    /pattern/" — pointing the reader at a pattern that was never run. The two
+    guard cases say so explicitly, and name the flag that would allow the value.
+    """
+    if len(text) > max_len:
+        return False, (
+            f'value is {len(text)} characters, over the {max_len}-character '
+            f'limit, so the pattern was never evaluated '
+            f'(raise --max-cell-len to allow it)'
+        )
+    try:
+        ok = bool(_re.fullmatch(regex, text, flags, timeout=_regex_timeout()))
+    except TimeoutError:
+        return False, (
+            f'pattern /{regex}/ timed out after {_regex_timeout()}s on this '
+            f'value, so the match was abandoned — the pattern may backtrack '
+            f'catastrophically on input of this shape'
+        )
+    return ok, ('' if ok else f'{_clip(text)} does not match /{regex}/')
+
+
 def validate_type(value, field_type: str, regex: str, currency_sign: str = '€',
                   max_cell_len: int = _MAX_REGEX_INPUT_LEN,
                   ignore_case: bool = False) -> tuple:
@@ -321,8 +358,7 @@ def validate_type(value, field_type: str, regex: str, currency_sign: str = '€'
 
     if field_type in ('string', 'text'):
         str_val = str(value) if value is not None else ''
-        ok = _safe_match(regex, str_val, _re.DOTALL | icase, max_cell_len)
-        return ok, ('' if ok else f'{repr(str_val)} does not match /{regex}/')
+        return _match_with_reason(regex, str_val, _re.DOTALL | icase, max_cell_len)
 
     elif field_type == 'integer':
         if isinstance(value, bool):
@@ -333,17 +369,14 @@ def validate_type(value, field_type: str, regex: str, currency_sign: str = '€'
             value = int(value)
         if not isinstance(value, int):
             return False, f'{repr(value)} is not integer type'
-        ok = _safe_match(regex, str(value), icase, max_cell_len)
-        return ok, ('' if ok else f'{value} does not match /{regex}/')
+        return _match_with_reason(regex, str(value), icase, max_cell_len)
 
     elif field_type in ('currency', 'percentage', 'number', 'float', 'decimal'):
         if isinstance(value, bool):
             return False, f'boolean is not {field_type}'
         if not isinstance(value, (int, float)):
             return False, f'{repr(value)} is not numeric'
-        str_val = str(value)
-        ok = _safe_match(regex, str_val, icase, max_cell_len)
-        return ok, ('' if ok else f'{str_val} does not match /{regex}/')
+        return _match_with_reason(regex, str(value), icase, max_cell_len)
 
     elif field_type in ('boolean', 'bool'):
         # Accepted forms:
@@ -364,8 +397,7 @@ def validate_type(value, field_type: str, regex: str, currency_sign: str = '€'
                 f'{repr(value)} is not a boolean '
                 f'(accepted: True/False, Yes/No, 1/0)'
             )
-        ok = _safe_match(regex, str_val, icase, max_cell_len)
-        return ok, ('' if ok else f'{repr(str_val)} does not match /{regex}/')
+        return _match_with_reason(regex, str_val, icase, max_cell_len)
 
     elif field_type in ('time', 'duration'):
         # Clock-time cells → datetime.time; duration cells ([h]:mm) → timedelta.
@@ -395,8 +427,7 @@ def validate_type(value, field_type: str, regex: str, currency_sign: str = '€'
                 f'URL scheme {repr(_scheme)} is not supported '
                 f'(accepted: {", ".join(sorted(_ALLOWED_URL_SCHEMES))})'
             )
-        ok = _safe_match(regex, str_val, _re.DOTALL | icase, max_cell_len)
-        return ok, ('' if ok else f'{repr(str_val)} does not match /{regex}/')
+        return _match_with_reason(regex, str_val, _re.DOTALL | icase, max_cell_len)
 
     elif field_type == 'image':
         # Image cells carry embedded binary data, not a text value.

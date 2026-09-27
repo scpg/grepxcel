@@ -28,9 +28,33 @@ import time
 ROOT = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), '..'))
 PYTEST = os.path.join(ROOT, '.venv', 'bin', 'pytest')
 
+def _oracle_cmd() -> list:
+    """The oracle step, parallelised across cores when pytest-xdist is present.
+
+    ~27k generated cases are almost entirely CPU-bound workbook round-trips with
+    no shared state: each case builds into its own directory (keyed by pid) and
+    every test uses tmp_path, so the suite distributes cleanly. Measured on a
+    32-core machine: 124s serial, 26s with -n auto, identical counts.
+
+    The FAST suite is deliberately left serial. It takes ~23s, so there is
+    little to win, and it contains at least one test that is order-sensitive
+    under xdist: proxy_support._truststore_inject() mutates SSL state
+    process-wide, and a worker process shared across tests can carry that into
+    a later, fully-mocked backend test (seen once as X509:
+    NO_CERTIFICATE_OR_CRL_FOUND under -n 16). That is a pre-existing isolation
+    bug, not a parallelism bug — but the gate should not be the place it shows up.
+    """
+    cmd = [PYTEST, '-m', 'oracle', 'tests/oracle', '-q']
+    try:
+        import xdist  # noqa: F401
+    except ImportError:
+        return cmd
+    return cmd + ['-n', 'auto']
+
+
 STEPS = [
     ('fast suite', [PYTEST, 'tests/', '-q']),
-    ('oracle matrix suite', [PYTEST, '-m', 'oracle', 'tests/oracle', '-q']),
+    ('oracle matrix suite', _oracle_cmd()),
 ]
 
 GREEN = 'ORACLE GATE: GREEN — safe to open a PR'

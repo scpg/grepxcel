@@ -20,7 +20,7 @@ from datetime import datetime, timezone
 from enum import IntEnum
 from typing import Optional, NoReturn
 
-from .utils import _safe_match, _MAX_REGEX_INPUT_LEN
+from .utils import _clip, _safe_match, _MAX_REGEX_INPUT_LEN
 import hashlib
 import json
 import os
@@ -136,6 +136,12 @@ class LogRecord:
     expected: str = ''      # what the pattern required
     found: str = ''         # what was actually in the cell
     hint: str = ''          # actionable suggestion for fixing
+    # Why the value was refused, in validate_type's own words ("is not a whole
+    # number", "javascript: URLs are not permitted"). Console rendering only:
+    # like message/hint/expected/found it contains the cell value, and
+    # _record_event_dict() allow-lists structured output to coordinate and
+    # metadata keys, so it never reaches an NDJSON log.
+    reason: str = ''
     event: str = ''         # stable machine code for structured logs (allow-list)
     value_len: "int | None" = None  # length of the offending value (no value itself)
     value_sha8: str = ''    # first 8 hex of sha256(value) — non-reversible fingerprint
@@ -485,7 +491,17 @@ class Logger:
         mark = MARK_FAIL if rec.severity == Severity.ERROR else MARK_WARN
         where = rec.location or '(no cell)'
         field = f' [{rec.field}]' if rec.field else ''
-        if rec.found and rec.expected:
+        if rec.reason:
+            # This block is headed "ISSUES (cell — reason)", and until the
+            # reason existed it could only print found/expected — which for a
+            # type failure names the regex rather than the cause. A value over
+            # --max-cell-len, a regex timeout and a genuine mismatch all read
+            # "expected matches /.*/", pointing the user at a pattern that is
+            # not the problem. Lead with the reason; keep found for context.
+            detail = f'{rec.reason}'
+            if rec.found:
+                detail += f' (found {rec.found})'
+        elif rec.found and rec.expected:
             detail = f'found {rec.found}, expected {rec.expected}'
         elif rec.found:
             detail = f'found {rec.found}'
@@ -734,7 +750,10 @@ class Logger:
         stays ``value_mismatch`` so log consumers keying on it are unaffected.
         """
         location = cell_ref(row, col, self.sheet_name)
-        found_repr = repr(value)
+        # A rejected cell can be thousands of characters. Pasting it whole
+        # buries the sentence that explains the problem; value_len and
+        # value_sha8 below still record the real length and a fingerprint.
+        found_repr = _clip(value if isinstance(value, str) else repr(value))
         hint = self._hint_validation(field_type, regex, value)
 
         rec = LogRecord(
@@ -748,6 +767,7 @@ class Logger:
             expected=f'matches /{regex}/',
             found=found_repr,
             hint=hint,
+            reason=reason,
             event='value_mismatch',
         )
         if value is not None:
@@ -959,14 +979,26 @@ class Logger:
 
         if field_type == 'integer':
             try:
-                v = int(float(value))
+                f_val = float(value)
+            except (ValueError, TypeError):
+                f_val = None
+            if f_val is not None:
+                # Only a value that IS a whole number can have failed on the
+                # regex. Saying "the integer 42 does not satisfy /.*/" for 42.5
+                # was wrong twice over: it renamed the value, and it sent the
+                # reader to a pattern that matches everything, when the real
+                # cause was that the cell is not a whole number.
+                if not float(f_val).is_integer():
+                    return (
+                        f'{f_val} has a fractional part, so it is not an '
+                        f'integer. Use type "number" for values with decimals, '
+                        f'or correct the cell.'
+                    )
                 return (
-                    f'The integer {v} does not satisfy /{regex}/. '
+                    f'The integer {int(f_val)} does not satisfy /{regex}/. '
                     f'Check the required digit count and leading-digit rules '
                     f'in the def: section of the pattern file.'
                 )
-            except (ValueError, TypeError):
-                pass
 
         if field_type == 'currency':
             try:
