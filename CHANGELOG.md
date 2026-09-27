@@ -51,6 +51,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   12:30 and `'2024'` as **20:24** — so a year, an ID or a quantity in a time-typed column
   would have become a plausible-looking time. A separator is now required; compact times
   remain readable via `time.format`.
+- **`grepxcel docs` output is reproducible.** The generated `pattern-reference.xlsx` embedded
+  a wall-clock timestamp, the absolute path of the invoking interpreter, and a ZIP host byte
+  that differed between Linux and Windows — so two runs of the same version produced
+  byte-different files and the document shipped a fragment of the machine that built it. The
+  timestamp now derives from a single fixed source, the path is gone, and the archive
+  metadata is pinned.
+
+### Security
+
+- **The wizard's CDN scripts are pinned with Subresource Integrity.** The web wizard loads
+  three libraries from cdnjs; there is no `package.json`, so neither Dependabot nor Snyk sees
+  those versions. Each `<script>` now carries a `sha512` `integrity` hash and
+  `crossorigin="anonymous"`, so a modified file is refused rather than executed against
+  whatever spreadsheet the user pointed the wizard at. A test asserts every external script
+  is hashed, strongly hashed and version-pinned — SRI's own failure mode is bumping a version
+  without recomputing the hash, which leaves the page loading and the library silently absent.
+- **Static analysis is enforced rather than advisory.** `bandit` runs in CI and fails the
+  build at MEDIUM severity and above (configured in `pyproject.toml`; tests are excluded,
+  since a security-conscious suite builds hostile input on purpose). The source already
+  carried seven justified `# nosec` annotations from a hand-run that was never wired up — by
+  the time it was enforced, a second un-triaged `urlopen` had appeared. CodeQL
+  (`security-extended`) runs alongside it on pull requests and weekly, and adds the view
+  bandit cannot give: whether a dangerous call is *reachable from untrusted input*. Secret
+  scanning and push protection are enabled on the repository.
+
+### CI / Infrastructure
+
+- Checks now run on **every** pull request. Both workflows filtered `pull_request` to
+  `[main, dev]`, so a pull request targeting a feature branch ran nothing at all — and the
+  gap was invisible, because no checks appeared to fail rather than appearing red. All
+  third-party actions are pinned to a commit SHA.
+- The oracle job runs under `pytest-xdist` (`-n auto`). The fast suite stays serial by
+  design: `proxy_support` installs a process-global SSL truststore, which a shared worker
+  would carry into tests that mock it.
 
 ### Tests
 
