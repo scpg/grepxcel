@@ -317,6 +317,107 @@ STORAGE_MATRIX: dict[str, list[StorageCase]] = {
 ERROR_CELL_PROFILE = ('e', 'error', frozenset({'error'}))
 
 
+# ── §6 Phase 5: cross-format re-typing ────────────────────────────────────
+# "The number format re-types the value." A numeric Excel cell has no intrinsic
+# date/time-ness — the format decides, and openpyxl applies that decision when it
+# reads the file. So the Python type that reaches grepxcel can differ from the one
+# that was written, which silently changes which `var:` types accept the cell.
+#
+# Every field below was MEASURED by writing the value to a real workbook and
+# reading it back (tmp.local/discover_retyping.py), never predicted. Several are
+# genuinely counter-intuitive:
+#
+#   * `12` with `[h]:mm` is twelve DAYS, not twelve hours — Excel serial 12.
+#   * `12` with `HH:MM` is not a time at all: a serial >= 1 carries a date part,
+#     so it comes back `datetime(1900, 1, 12)` and a `var: time` field REJECTS it.
+#   * a `timedelta` of 30 hours with `HH:MM` overflows the same way, arriving as
+#     `datetime(1900, 1, 1, 6, 0)`.
+#   * `General` DESTROYS a date: `date(2024, 1, 15)` written with no date format
+#     comes back as the bare serial `45306`, and a `var: date` field rejects it.
+#     This is the root cause already documented for fixture 24 in
+#     `test_schema_validation._XFAIL_DATA_QUALITY` ("one cell in the 'dayss'
+#     column lacks a date number format, so openpyxl returns the raw Excel serial
+#     integer") — encoded here as a first-class expectation rather than an xfail.
+#   * a string is never re-typed by a format: `'42'` with `[h]:mm` stays `'42'`.
+
+@dataclass(frozen=True)
+class RetypingCase:
+    """One (value, format) pair whose read-back type differs from what was
+    written, or whose semantic type is decided by the format."""
+    written: object
+    number_format: str
+    read_back: object            # exactly what openpyxl returns
+    profile_storage: str
+    profile_semantic: str
+    accepted_for: frozenset      # declared var: types validate_type accepts
+    note: str
+
+    @property
+    def case_id(self) -> str:
+        return (f'{type(self.written).__name__}-{self.written!r}'
+                f'-{_slug_fmt(self.number_format)}')
+
+
+def _slug_fmt(fmt: str) -> str:
+    return ''.join(ch if ch.isalnum() else '_' for ch in fmt).strip('_') or 'fmt'
+
+
+RETYPING_CASES: tuple[RetypingCase, ...] = (
+    RetypingCase(12, '[h]:mm', datetime.timedelta(days=12), 'n', 'duration',
+                 frozenset(('time', 'duration', 'string')),
+                 'serial 12 under an elapsed-time format is 12 days, not 12 hours'),
+    RetypingCase(0, '[h]:mm', datetime.timedelta(0), 'n', 'duration',
+                 frozenset(('time', 'duration', 'string')),
+                 'zero stays a timedelta, not int 0'),
+    RetypingCase(1.5, '[h]:mm', datetime.timedelta(days=1, seconds=43200),
+                 'n', 'duration', frozenset(('time', 'duration', 'string')),
+                 'fractional serial splits into days + seconds'),
+    RetypingCase(12, 'HH:MM', datetime.datetime(1900, 1, 12, 0, 0), 'n', 'datetime',
+                 frozenset(('date', 'datetime', 'string')),
+                 'a clock format on a serial >= 1 yields a DATETIME; var: time rejects it'),
+    RetypingCase(0.5, 'HH:MM', datetime.time(12, 0), 'n', 'time',
+                 frozenset(('time', 'duration', 'string')),
+                 'a sub-1 serial under a clock format is a real time'),
+    RetypingCase(1, 'yyyy-mm-dd', datetime.datetime(1900, 1, 1, 0, 0), 'n', 'datetime',
+                 frozenset(('date', 'datetime', 'string')),
+                 'serial 1 is the Excel epoch'),
+    RetypingCase(45000, 'yyyy-mm-dd', datetime.datetime(2023, 3, 15, 0, 0),
+                 'n', 'datetime', frozenset(('date', 'datetime', 'string')),
+                 'a plain int becomes a datetime purely because of the format'),
+    RetypingCase(45000.5, 'yyyy-mm-dd hh:mm', datetime.datetime(2023, 3, 15, 12, 0),
+                 'n', 'datetime', frozenset(('date', 'datetime', 'string')),
+                 'the fraction becomes the time of day'),
+    RetypingCase(0.15, '0%', 0.15, 'n', 'percentage',
+                 frozenset(('number', 'currency', 'percentage', 'string')),
+                 'value unchanged; only the semantic type is format-driven'),
+    RetypingCase(2, '0%', 2, 'n', 'percentage',
+                 frozenset(('integer', 'number', 'currency', 'percentage', 'string')),
+                 'a percentage above 100% is still accepted'),
+    RetypingCase(0.15, '$#,##0.00', 0.15, 'n', 'currency',
+                 frozenset(('number', 'currency', 'percentage', 'string')),
+                 'same float reads as currency under a currency format'),
+    RetypingCase('42', '[h]:mm', '42', 's', 'string', frozenset(('string',)),
+                 'a STRING is never re-typed by a number format'),
+    RetypingCase(datetime.time(9, 30), '[h]:mm', datetime.timedelta(seconds=34200),
+                 'n', 'duration', frozenset(('time', 'duration', 'string')),
+                 'a written time comes back a timedelta under an elapsed format'),
+    RetypingCase(datetime.timedelta(seconds=7200), 'HH:MM', datetime.time(2, 0),
+                 'n', 'time', frozenset(('time', 'duration', 'string')),
+                 'and the reverse: a timedelta comes back a time'),
+    RetypingCase(datetime.timedelta(days=1, seconds=21600), 'HH:MM',
+                 datetime.datetime(1900, 1, 1, 6, 0), 'n', 'datetime',
+                 frozenset(('date', 'datetime', 'string')),
+                 '30h overflows a clock format into a datetime; var: duration rejects it'),
+    RetypingCase(datetime.date(2024, 1, 15), 'General', 45306, 'n', 'integer',
+                 frozenset(('integer', 'number', 'currency', 'percentage', 'string')),
+                 'General DESTROYS a date: back as a bare serial; var: date rejects it'),
+    RetypingCase(datetime.datetime(2024, 1, 15, 9, 30), 'General', 45306.39583333334,
+                 'n', 'number',
+                 frozenset(('number', 'currency', 'percentage', 'string')),
+                 'same for a datetime, as a float serial'),
+)
+
+
 def iter_storage_cases(types: list[str] | None = None):
     """Yield ``(type_name, StorageCase, number_format)`` for the whole matrix."""
     for type_name in (types or EXTRACTABLE_TYPES):
