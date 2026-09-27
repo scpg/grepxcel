@@ -32,6 +32,7 @@ so the instruction list is always exhausted before the scanner could reach one.
 """
 from __future__ import annotations
 
+import hashlib
 import os
 import random
 from dataclasses import dataclass
@@ -60,11 +61,21 @@ REGEX = '.*'
 
 
 def _slug(text) -> str:
-    """Filesystem/pytest-id-safe rendering of a number format or value."""
+    """Filesystem/pytest-id-safe rendering of a number format.
+
+    A readable part plus a short digest of the raw string. The digest is not
+    decoration: sanitising punctuation alone is lossy enough to collide —
+    ``$#,##0.00``, ``€#,##0.00`` and ``£#,##0.00`` all reduce to the same
+    token, as do ``0.00`` and ``#,##0.00`` — which silently merged distinct
+    matrix cases into duplicate case_ids (and pytest ids).
+    """
     if text is None:
         return 'nofmt'
-    out = ''.join(ch if (ch.isalnum() or ch in '-_') else '_' for ch in str(text))
-    return out.strip('_') or 'x'
+    raw = str(text)
+    readable = ''.join(ch if (ch.isalnum() or ch in '-_') else '_' for ch in raw)
+    readable = readable.strip('_') or 'fmt'
+    digest = hashlib.blake2s(raw.encode('utf-8'), digest_size=2).hexdigest()
+    return f'{readable}{digest}'
 
 
 @dataclass(frozen=True)

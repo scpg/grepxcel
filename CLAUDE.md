@@ -79,6 +79,18 @@ If the venv does not exist it prints a clear error with setup instructions and e
 .venv/bin/pytest tests/
 ```
 
+`pytest.ini` sets `addopts = -m "not oracle"`, so this **excludes the oracle
+type-matrix suite** (`tests/oracle/`) — it is slow and is a pre-PR gate, not a
+per-push check. Run it explicitly (a command-line `-m` overrides the one in
+`addopts`):
+
+```bash
+.venv/bin/pytest -m oracle tests/oracle -q
+```
+
+Narrow it while debugging: `GREPXCEL_ORACLE_SEEDS` (default 3),
+`GREPXCEL_ORACLE_TYPES` (default all 11), `GREPXCEL_ORACLE_SHAPES` (default all 6).
+
 ## Running the CLI
 
 The CLI is subcommand-based: `extract`, `validate-pattern`, `draft`, `docs`, `lint`, `profile`, `schema`, `generate-examples`, `sbom`, `mcp`, `mcp-config`, `doctor`, `quickstart`, `wizard`, `web-wizard` (run `grepxcel <cmd> --help`).
@@ -167,10 +179,23 @@ Before **every** PR, the oracle suite must run and be green. It is deliberately 
 `pytest tests/` or CI (too slow for the per-push loop) — it is a gate you run once before
 `gh pr create`. Whenever a PR is requested, remind the user of this step and run it.
 
-- Spec (design is final, implementation pending): `docs/superpowers/specs/2026-09-27-oracle-type-matrix-tests.md`
-- Command once implemented: `.venv/bin/python3 scripts/oracle_check.py` — must print `ORACLE GATE: GREEN`
-- Until it is implemented, the reminder is: implementing it is the open item — do not treat
-  a PR as fully gated yet.
+- Spec: `docs/superpowers/specs/2026-09-27-oracle-type-matrix-tests.md`
+- Implementation: `tests/oracle/` (catalog, manifest, placement, generator, oracles, matrix)
+- Command: `.venv/bin/python3 scripts/oracle_check.py` — runs the fast suite then the
+  oracle suite, and must print `ORACLE GATE: GREEN`
+
+**Two open product findings the suite currently reports as RED** (both are
+grepxcel defects it was built to catch, not test bugs — see the branch report):
+1. `engine._validate_field` discards `validate_type`'s reason string, so every
+   rejected value warns with the same generic "Value does not match the expected
+   pattern" and §10.4's message-accuracy assertion fails.
+2. `validate_type` accepts `1`/`0`, `"1"`/`"0"` and `"yes"`/`"no"` as `boolean`
+   but `schema._TYPE_MAP['boolean']` emits `{"type": ["boolean","null"]}`, so the
+   schema generated from a pattern rejects 3 of the 4 boolean forms extraction
+   accepts.
+
+Until those are resolved the gate prints RED by design. Do not silence it by
+weakening the assertions.
 
 ## Branch workflow
 
