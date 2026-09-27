@@ -130,3 +130,31 @@ def test_the_committed_docs_are_current(tmp_path):
             f"docs/{name} is out of date — run 'grepxcel docs -o docs/ --force' "
             f"and commit the result"
         )
+
+
+def test_archives_are_platform_independent(tmp_path):
+    """Every ZIP member must declare a fixed host and mode.
+
+    Caught on a Windows runner: create_system and external_attr are derived
+    from the host OS, so the same content produced a different archive per
+    platform — the central-directory "version made by" byte read 0x0314 (Unix)
+    on Linux and 0x0014 (DOS) on Windows. The committed docs are built
+    somewhere and byte-compared everywhere, so the archive must depend only on
+    its contents. Both writers are covered: the xlsx goes through
+    _pin_core_timestamps, the docx builds its ZIP directly.
+    """
+    import zipfile as _z
+    DocsGenerator().write(str(tmp_path))
+    for name in ('pattern-reference.xlsx', 'grepxcel-guide.docx'):
+        with _z.ZipFile(tmp_path / name) as zf:
+            infos = zf.infolist()
+        assert infos, f'{name} is empty'
+        assert {i.create_system for i in infos} == {3}, (
+            f'{name}: create_system varies with the host OS'
+        )
+        assert {i.external_attr for i in infos} == {0o100644 << 16}, (
+            f'{name}: external_attr varies with the host OS'
+        )
+        assert {i.date_time for i in infos} == {(2020, 1, 1, 0, 0, 0)}, (
+            f'{name}: member timestamps are not pinned'
+        )

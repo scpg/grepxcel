@@ -55,9 +55,17 @@ def _pin_core_timestamps(path: str, ts: datetime.datetime) -> None:
         for info in infos:
             zi = zipfile.ZipInfo(info.filename, date_time=fixed_date)
             zi.compress_type = info.compress_type
-            zi.external_attr = info.external_attr
             zi.internal_attr = info.internal_attr
-            zi.create_system = info.create_system
+            # create_system and external_attr must NOT be copied from what
+            # openpyxl just wrote: both are derived from the host OS, so the
+            # same content produced a different archive per platform. The
+            # central-directory "version made by" byte came out 0x0314 (Unix) on
+            # Linux and 0x0314->0x0014 (DOS) on Windows, which is enough to make
+            # a byte-comparison of the committed docs fail on a Windows runner
+            # while passing everywhere else. Pin both so the archive depends only
+            # on its contents: Unix host, regular file, 0644.
+            zi.create_system = 3                  # Unix, on every platform
+            zi.external_attr = (0o100644 << 16)   # regular file, rw-r--r--
             zout.writestr(zi, data[info.filename])
     os.replace(tmp, path)
 
@@ -513,6 +521,12 @@ class DocsGenerator:
             for name, content in members.items():
                 zi = zipfile.ZipInfo(name, date_time=fixed_date)
                 zi.compress_type = zipfile.ZIP_DEFLATED
+                # Same reason as _pin_core_timestamps: a bare ZipInfo takes
+                # create_system from the host (0 on Windows, 3 elsewhere) and
+                # external_attr from zipfile's default, so the .docx was
+                # platform-dependent even though its content was not.
+                zi.create_system = 3                  # Unix, on every platform
+                zi.external_attr = (0o100644 << 16)   # regular file, rw-r--r--
                 zout.writestr(zi, content.encode('utf-8'))
 
     @staticmethod
