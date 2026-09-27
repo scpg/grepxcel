@@ -370,7 +370,8 @@ class DocsGenerator:
         blank()
 
         row(['doc:', '', '', '', 'table:* matches 0-or-more mini-table instances in greedy order.'], 'doc')
-        row(['doc:', '', '', '', 'Use table:1 when exactly one instance is expected.'], 'doc')
+        row(['doc:', '', '', '', 'table:1 stops after exactly one instance; table:N after exactly N (warns if fewer are found).'], 'doc')
+        row(['doc:', '', '', '', 'table:{n,m} scans at most m instances; warns if fewer than n are found — same bounds as DATA:{n,m}.'], 'doc')
         row(['table:*'], 'table')
         row([None, 'HEADER:1', 'col_item', 'col_qty', 'col_price', 'col_total'], 'tmpl')
         row([None, 'DATA:*',   'line.item', 'line.qty', 'line.price', 'line.total'], 'tmpl')
@@ -405,7 +406,8 @@ class DocsGenerator:
             ('cell:next','cell:next | IGNORE',         'Skip next non-empty cell without capturing.'),
             ('cell:next','cell:B5 | FieldName',        'Jump directly to B5 (absolute reference). Ordering must be forward.'),
             ('seek:',    'seek:G5',                    'Reposition cursor to G5 without reading it. Resets abs-ref ordering constraint.'),
-            ('table:*',  'table:*  (or table:1)',      'Begin a repeating table block.'),
+            ('table:*',  'table:*  (or table:1, table:N)', 'Begin a repeating table block.'),
+            ('table:{n,m}', 'table:{2,5}',             'Bounded table: scan at most m instances, warn if < n.'),
             ('HEADER:N', ' | HEADER:1 | F1 | F2',     'Strict header row template (col A must be blank).'),
             ('DATA:*',      ' | DATA:* | F1 | F2',           'Data row template (greedy, lenient validation).'),
             ('DATA:{n,m}',  ' | DATA:{0,15} | F1 | F2',      'Bounded data: scan at most m physical rows, warn if < n.'),
@@ -418,6 +420,10 @@ class DocsGenerator:
             if fill_key.startswith('header') or fill_key.startswith('data') or \
                fill_key.startswith('footer') or fill_key.startswith('splitter'):
                 fill_key = 'tmpl'
+            elif fill_key.startswith('table'):
+                # rstrip(':*1') doesn't strip the trailing '}' in 'table:{n,m}',
+                # so it wouldn't otherwise collapse to the plain 'table' fill key.
+                fill_key = 'table'
             row([keyword, syntax, '', description], fill_key)
 
         blank()
