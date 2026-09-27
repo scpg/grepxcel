@@ -164,6 +164,17 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt -r requirements-dev.txt
 
+      - name: Static security analysis (bandit)
+        # Gates at MEDIUM and above; config and the rationale for that threshold
+        # are in pyproject.toml's [tool.bandit].
+        #
+        # This was already being done by hand — the source carries seven
+        # `# nosec <ID> — <reason>` suppressions written when someone triaged a
+        # bandit run and never wired it in. Unenforced, they rot: a second
+        # urlopen appeared in doctor.py after the first was annotated and went
+        # untriaged until this step was added.
+        run: bandit -c pyproject.toml -r grepxcel/ -ll
+
       - name: Generate lint security fixtures
         run: python scripts/generate_lint_fixtures.py
 

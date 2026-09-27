@@ -129,3 +129,24 @@ include = ["grepxcel*"]
 "grepxcel.examples"   = ["*/*.xlsx"]
 "grepxcel.templates"  = ["*.html"]
 "grepxcel.static"     = ["*.css", "*.js"]
+
+[tool.bandit]
+# Static security analysis of grepxcel's own source. Runs in CI's lint-security
+# job; see CONTRIBUTING/CLAUDE.md for the local command.
+#
+# Only grepxcel/ is scanned. tests/ deliberately constructs hostile input — ZIP
+# bombs, XXE payloads, oversized cells — and scanning it would report the test
+# fixtures as vulnerabilities.
+exclude_dirs = ["tests", "tmp.local", "samples.local", ".venv", "build", "dist"]
+
+# CI gates at MEDIUM and above (-ll). The LOW findings in this codebase are all
+# false positives of two shapes, and suppressing ~15 of them individually would
+# train contributors to add `# nosec` reflexively — which is worse than not
+# running the tool:
+#   B105/B107  parser token NAMES ('not-null', 'nullable', 'trim-whitespace')
+#              flagged as hardcoded passwords because the variable is *_token.
+#   B603/B607  subprocess with a FIXED argv, no shell, guarded by shutil.which.
+# A genuine LOW is still worth fixing when spotted; it just does not block a PR.
+#
+# Real suppressions live inline as `# nosec <ID> — <reason>` at the call site,
+# where the justification sits next to the code it excuses.
