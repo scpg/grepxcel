@@ -378,15 +378,29 @@ ERROR_CELL_PROFILE = ('e', 'error', frozenset({'error'}))
 # reads the file. So the Python type that reaches grepxcel can differ from the one
 # that was written, which silently changes which `var:` types accept the cell.
 #
-# Every field below was MEASURED by writing the value to a real workbook and
-# reading it back (tmp.local/discover_retyping.py), never predicted. Several are
-# genuinely counter-intuitive:
+# **The unit is ONE DAY.** Excel stores a numeric cell as a serial where 1.0 is
+# twenty-four hours, so a duration is a FRACTION: 12 minutes is 12/1440 =
+# 0.00833…, two hours is 2/24. That is what a cell holds when a human types
+# '0:12' or '2:00', and openpyxl returns exactly the timedelta you would expect
+# for it. Those normal cases come first in the table below.
 #
-#   * `12` with `[h]:mm` is twelve DAYS, not twelve hours — Excel serial 12.
-#   * `12` with `HH:MM` is not a time at all: a serial >= 1 carries a date part,
-#     so it comes back `datetime(1900, 1, 12)` and a `var: time` field REJECTS it.
+# The hazard is the other direction: a bare integer. A script, CSV import or
+# formula that writes the number it *means* instead of the serial puts `12` in
+# the cell, and `12` is twelve DAYS — off by a factor of 1440 from "12 minutes",
+# with nothing in the file to say so.
+#
+# Every field below was MEASURED by writing the value to a real workbook and
+# reading it back (tmp.local/discover_retyping.py and
+# tmp.local/probe_duration_semantics.py), never predicted. The genuinely
+# surprising ones:
+#
+#   * the number format changes only the DISPLAY: the same serial returns the
+#     same timedelta under `[h]:mm` and `[mm]:ss`, so a minutes-framed format
+#     does not make a stored number mean minutes.
+#   * `12` with `HH:MM` is not a duration at all: a serial >= 1 carries a date
+#     part, so it comes back `datetime(1900, 1, 12)` and `var: time` REJECTS it.
 #   * a `timedelta` of 30 hours with `HH:MM` overflows the same way, arriving as
-#     `datetime(1900, 1, 1, 6, 0)`.
+#     `datetime(1900, 1, 1, 6, 0)` — which is why elapsed time needs `[h]:mm`.
 #   * `General` DESTROYS a date: `date(2024, 1, 15)` written with no date format
 #     comes back as the bare serial `45306`, and a `var: date` field rejects it.
 #     This is the root cause already documented for fixture 24 in
@@ -406,21 +420,71 @@ class RetypingCase:
     profile_semantic: str
     accepted_for: frozenset      # declared var: types validate_type accepts
     note: str
+    label: str = ''              # short id for the test name; else repr(written)
 
     @property
     def case_id(self) -> str:
-        return (f'{type(self.written).__name__}-{self.written!r}'
-                f'-{_slug_fmt(self.number_format)}')
+        shown = self.label or repr(self.written)
+        return f'{type(self.written).__name__}-{shown}-{_slug_fmt(self.number_format)}'
 
 
 def _slug_fmt(fmt: str) -> str:
     return ''.join(ch if ch.isalnum() else '_' for ch in fmt).strip('_') or 'fmt'
 
 
+#: Excel's unit for a numeric cell is ONE DAY: serial 1.0 == 24 hours. So the
+#: serial for a duration is hours/24 + minutes/1440 — which is what a cell holds
+#: when a human types '0:12' or '2:00' into it. These are the REALISTIC duration
+#: values; the bare-integer cases further down are the hazard.
+_SERIAL_12_MIN = 12 / 1440
+_SERIAL_30_MIN = 30 / 1440
+_SERIAL_2_HOURS = 2 / 24
+_SERIAL_12_HOURS = 12 / 24
+_SERIAL_30_HOURS = 30 / 24
+
 RETYPING_CASES: tuple[RetypingCase, ...] = (
+    # ── the normal case: a duration cell holds a FRACTION of a day ────────
+    # These behave exactly as a spreadsheet user expects, and they are the
+    # values a real timesheet contains. Note the format changes only the
+    # DISPLAY: the same serial returns the same timedelta under [h]:mm and
+    # [mm]:ss, so grepxcel never has to interpret the format to get the value.
+    RetypingCase(_SERIAL_12_MIN, '[h]:mm', datetime.timedelta(minutes=12),
+                 'n', 'duration', frozenset(('time', 'duration', 'string')),
+                 "what a cell holds when a human types '0:12' — 12 minutes",
+                 label='12min'),
+    RetypingCase(_SERIAL_12_MIN, '[mm]:ss', datetime.timedelta(minutes=12),
+                 'n', 'duration', frozenset(('time', 'duration', 'string')),
+                 'same serial, minutes-framed format, SAME value — the format '
+                 'changes only how Excel displays it',
+                 label='12min'),
+    RetypingCase(_SERIAL_30_MIN, '[h]:mm', datetime.timedelta(minutes=30),
+                 'n', 'duration', frozenset(('time', 'duration', 'string')),
+                 '30 minutes', label='30min'),
+    RetypingCase(_SERIAL_2_HOURS, '[h]:mm', datetime.timedelta(hours=2),
+                 'n', 'duration', frozenset(('time', 'duration', 'string')),
+                 '2 hours', label='2h'),
+    RetypingCase(_SERIAL_12_HOURS, '[h]:mm', datetime.timedelta(hours=12),
+                 'n', 'duration', frozenset(('time', 'duration', 'string')),
+                 '12 hours — serial 0.5, half a day', label='12h'),
+    RetypingCase(_SERIAL_30_HOURS, '[h]:mm', datetime.timedelta(hours=30),
+                 'n', 'duration', frozenset(('time', 'duration', 'string')),
+                 '30 hours elapsed — over a day, which is why [h]:mm exists',
+                 label='30h'),
+
+    # ── the hazard: a BARE INTEGER in a duration-formatted cell ───────────
+    # Not what Excel produces from typed input — this is what a script, a CSV
+    # import or a formula lands in the cell when it writes the number it means
+    # rather than the serial. Since 1.0 is one day, 12 is twelve DAYS: a tool
+    # writing 12 intending "12 minutes" is off by a factor of 1440, and nothing
+    # in the file says so. Pinned precisely because it is silent.
     RetypingCase(12, '[h]:mm', datetime.timedelta(days=12), 'n', 'duration',
                  frozenset(('time', 'duration', 'string')),
-                 'serial 12 under an elapsed-time format is 12 days, not 12 hours'),
+                 'a bare 12 is twelve DAYS (serial 1.0 == one day), not 12 '
+                 'minutes and not 12 hours — the classic off-by-1440 trap'),
+    RetypingCase(12, '[mm]:ss', datetime.timedelta(days=12), 'n', 'duration',
+                 frozenset(('time', 'duration', 'string')),
+                 'still twelve days: a minutes-framed format does NOT make the '
+                 'stored number mean minutes'),
     RetypingCase(0, '[h]:mm', datetime.timedelta(0), 'n', 'duration',
                  frozenset(('time', 'duration', 'string')),
                  'zero stays a timedelta, not int 0'),

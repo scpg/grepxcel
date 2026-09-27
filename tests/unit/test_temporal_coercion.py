@@ -94,6 +94,28 @@ class TestCoerceTemporalText:
         assert coerce_temporal_text('09.30', 'time',
                                     time_format='%H.%M') == datetime.time(9, 30)
 
+    @pytest.mark.parametrize('text', ['12', '1230', '2024', '20240115', '0', '99'])
+    @pytest.mark.parametrize('field_type', ['time', 'duration'])
+    def test_a_bare_number_is_never_read_as_a_time(self, text, field_type):
+        """Python 3.11+ `time.fromisoformat` accepts bare and compact forms:
+        '12'->12:00, '1230'->12:30 and '2024'->20:24. A year, an ID or a quantity
+        landing in a time column would silently become a plausible time, so a
+        colon is required. '12' is also genuinely ambiguous — 12 minutes or 12
+        hours? — and the answer is to refuse, not to pick one."""
+        assert coerce_temporal_text(text, field_type) is None
+
+    @pytest.mark.parametrize('text,expected', [
+        ('12:00', datetime.time(12, 0)),
+        ('0:12', datetime.timedelta(minutes=12)),
+        ('12:30:45', datetime.time(12, 30, 45)),
+    ])
+    def test_separator_forms_still_convert(self, text, expected):
+        assert coerce_temporal_text(text, 'time') == expected
+
+    def test_a_compact_time_can_still_be_read_with_a_declared_format(self):
+        assert coerce_temporal_text('123045', 'time',
+                                    time_format='%H%M%S') == datetime.time(12, 30, 45)
+
     @pytest.mark.parametrize('field_type', ['string', 'integer', 'number',
                                             'currency', 'boolean', 'url'])
     def test_non_temporal_types_are_untouched(self, field_type):

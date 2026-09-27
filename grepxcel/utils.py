@@ -269,6 +269,19 @@ def _iso_datetime(text: str):
 
 
 def _iso_time(text: str):
+    """ISO clock time, but only in a form that cannot be mistaken for a number.
+
+    A colon is required. Python 3.11+ widened ``time.fromisoformat`` to accept
+    bare-hour and compact forms, which makes it dangerous for cells of unknown
+    provenance: it reads ``'12'`` as 12:00, ``'1230'`` as 12:30 and — the one
+    that matters — ``'2024'`` as **20:24**, so a year, an ID or a quantity in a
+    time-typed column would silently become a plausible-looking time. Refusing
+    them costs nothing real: ISO basic format (``'123045'``) is vanishingly rare
+    in spreadsheets, and a file that does use it can declare
+    ``config: | time.format | %H%M%S``.
+    """
+    if ':' not in text:
+        return None
     try:
         return datetime.time.fromisoformat(text)
     except ValueError:

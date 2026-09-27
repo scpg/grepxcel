@@ -92,6 +92,8 @@ Without these settings it converts **unambiguous ISO 8601 text only**:
 | `2:00` | `duration` | `2:00:00` (2 hours) |
 | `30:00` | `duration` | `1 day, 6:00:00` (30 hours elapsed) |
 | `01/02/2024` | `date` | **not converted** — reported, see below |
+| `12` | `time` / `duration` | **not converted** — 12 minutes or 12 hours? |
+| `2024` | `time` | **not converted** — a year is not 20:24 |
 
 `01/02/2024` is refused on purpose: it means 1 February in most of the world and
 2 January in the United States. Rather than pick one, grepxcel reports the cell
@@ -102,12 +104,31 @@ config:    date.format    %d/%m/%Y      # 01/02/2024 is 1 February
 config:    time.format    %H.%M         # 09.30 is half past nine
 ```
 
+Times must contain a separator — `12:00` converts, a bare `12` does not. Both
+because `12` is itself ambiguous (twelve minutes or twelve hours?) and because
+without the requirement a year or an ID in a time column would silently become a
+time: `2024` would read as `20:24`. If a file really does use compact times,
+declare it: `config: | time.format | %H%M%S`.
+
 Use [Python strftime codes](https://docs.python.org/3/library/datetime.html#strftime-and-strptime-format-codes).
 `date.format` applies to `date`, `datetime` and `timestamp` fields; `time.format`
 to `time` fields. A declared format is tried first and ISO text still converts, so
 a sheet mixing `31/12/2024` and `2024-12-31` is read correctly either way. An
 unusable format string is rejected when the pattern is parsed, not silently
 ignored.
+
+### A note on numbers in duration cells
+
+Excel's unit for a numeric cell is **one day**: serial `1.0` is 24 hours. So a
+duration is a fraction — 12 minutes is `12/1440 = 0.00833…`, two hours is `2/24`.
+That is what the cell holds when someone types `0:12` or `2:00`, and grepxcel
+reads it back as exactly that duration.
+
+The trap is a **bare number**. A script or CSV import that writes the number it
+means rather than the serial puts `12` in the cell — and `12` is twelve *days*,
+off by a factor of 1440 from "12 minutes". Nothing in the file records the
+intent, so grepxcel reports what the cell says. If a duration column comes out in
+days, that is what to look for.
 
 Two things this deliberately does **not** do: it never guesses a date order, and
 it never substitutes today's date for a missing one. Both would make the same file
