@@ -3,8 +3,12 @@ name: CI
 on:
   push:
     branches: [main, dev]
+  # Every pull request, whatever its base. Restricting this to [main, dev] meant
+  # a PR into a longer-lived feature branch — the normal shape for stacked work —
+  # merged with no CI at all, and the gap was invisible: the checks simply did
+  # not appear. Pushes stay limited to the integration branches so a feature
+  # branch does not burn a matrix run on every commit.
   pull_request:
-    branches: [main, dev]
 
 permissions:
   contents: read           # least privilege: jobs only read the repo, nothing else

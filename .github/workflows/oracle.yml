@@ -10,8 +10,9 @@ name: Oracle type-matrix
 # with openpyxl and jsonschema, not Python-version portability, which ci.yml
 # already covers across 3.11-3.15.
 on:
+  # Every pull request, whatever its base — see the note in ci.yml: a PR into a
+  # feature branch used to run no checks at all, silently.
   pull_request:
-    branches: [main, dev]
   workflow_dispatch:      # so it can be re-run by hand without pushing
 
 permissions:
@@ -42,7 +43,13 @@ jobs:
       - name: Run the oracle type-matrix suite
         # -m oracle on the command line overrides the `-m "not oracle"` in
         # pytest.ini's addopts, which is what keeps this suite out of ci.yml.
-        run: pytest -m oracle tests/oracle -q --junit-xml=oracle-results.xml
+        #
+        # -n auto distributes the ~27k generated cases across the runner's
+        # cores (pytest-xdist, in requirements-dev.txt). The suite is
+        # xdist-clean: each case builds into a pid-keyed directory and every
+        # test uses tmp_path. Locally this is 124s -> 26s on 32 cores; a hosted
+        # runner has far fewer, but the win still applies.
+        run: pytest -m oracle tests/oracle -q -n auto --junit-xml=oracle-results.xml
 
       - name: Confirm the fast suite still excludes the oracle marker
         # Guards the marker wiring itself: if addopts ever stopped excluding
