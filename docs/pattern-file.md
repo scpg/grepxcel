@@ -4,6 +4,12 @@ A pattern file is an **`.xlsx` workbook** or a **`.csv` text file** that tells g
 
 **Before writing a pattern**, `grepxcel profile data.xlsx` censuses every cell's actual type in the data file — no pattern needed — so you know what column C (type) should say for each field before guessing.
 
+**Why a spreadsheet rather than YAML or JSON?** Because the pattern is meant to be writable by
+someone who knows a bit of Excel, and because a pattern that describes a grid is itself a grid —
+you can open it next to your data and compare row by row. Use `.csv` when you want a pattern you
+can diff and review in a pull request; it parses identically. The reasoning is in
+[MINDSET.md](MINDSET.md#why-is-the-pattern-file-a-spreadsheet).
+
 ---
 
 ## Rules for pattern files

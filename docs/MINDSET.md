@@ -30,6 +30,52 @@ The engineering rigour stays; the barrier to *using* it comes down.
 
 ---
 
+## Why is the pattern file a spreadsheet?
+
+IT experts, developers and data scientists reasonably raise an eyebrow at this one. The
+instinct is that configuration belongs in YAML, JSON or TOML — text, diffable, editable in
+any editor, no binary blob in the repository. It's a fair objection, and the honest answer
+is that the choice optimises for a different person.
+
+**The pattern is a spreadsheet so that someone who knows a bit of Excel can write one.**
+
+That is the whole reason. The people who own these files — the finance analyst who receives
+the same report every month, the operations lead who knows exactly which cell holds the
+total — usually are not the people who are comfortable hand-writing a nested YAML document.
+They *are* comfortable opening a workbook, typing a label into a cell, and seeing it sit
+next to the thing it describes. Asking them to learn a config format to describe a
+spreadsheet adds a step that has nothing to do with the problem they actually understand.
+
+There is a second benefit that falls out of the first: **the pattern has the same shape as
+the thing it describes.** A pattern for a grid is itself a grid. Cell references and reading
+order are spatial concepts, and expressing them spatially means you can put the pattern and
+the data side by side and compare them directly. In a YAML file, `cell:1` three times in a
+row is an abstraction you hold in your head; in a grid, it is three rows you can see.
+
+### What this costs, and what carries it
+
+The objection is not dismissed — a spreadsheet is a zip archive, so it does not diff in a
+pull request, and that is a real loss on an engineering team.
+
+Two things carry it:
+
+- **`.csv` is a first-class pattern format, not a fallback.** Both formats are read into the
+  same internal grid and parse identically, so a team that wants text, diffs and code review
+  can use `.csv` throughout and give up nothing. The spreadsheet is the *default* because of
+  who it is for, not because it is the only supported option.
+- **The pattern is not the only way in.** `grepxcel web-wizard` builds one by clicking cells
+  in a browser, and `grepxcel draft` produces a starting point from the data file itself.
+
+### Where the line is
+
+`grepxcel` is aimed at developers and IT-savvy people, as the section above says — that has
+not changed. The pattern format is where the tool deliberately reaches one step past its core
+audience, because the pattern is the single artefact a non-programmer has a real chance of
+reading and correcting. Everything downstream of it — the CLI, the JSON output, the schema,
+the exit codes — is unapologetically engineering-facing.
+
+---
+
 ## The core principle: deterministic, or honestly broken
 
 This is the heart of the tool.

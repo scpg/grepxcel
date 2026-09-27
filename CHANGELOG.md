@@ -138,6 +138,14 @@ anything consuming the JSON downstream may.
   note on numbers in duration cells (Excel's unit is one day, so a bare `12` is twelve days),
   and **"Long numeric identifiers: declare them `string`"** — above 2⁵³ a numeric cell cannot
   hold a long ID exactly, and the rounding is undetectable after the fact.
+- **"Why is the pattern file a spreadsheet?"** — a new section in `docs/MINDSET.md`, with
+  short callouts in the README and `docs/pattern-file.md`. The question comes up from IT
+  people, developers and data scientists who expect configuration to be YAML or JSON, and it
+  deserves a straight answer: the pattern is a spreadsheet so that someone who knows a bit of
+  Excel can write one, and a pattern describing a grid is itself a grid, so it can be read
+  side by side with the data. The cost — a zip archive does not diff in a pull request — is
+  stated rather than glossed, along with what carries it: `.csv` is a first-class pattern
+  format that parses identically, for teams that want text and code review.
 
 ## [0.4.1] — 2026-09-21
 
