@@ -5,9 +5,25 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>grepxcel Web Wizard — {{ sheet_name }}</title>
 <link rel="stylesheet" href="/static/wizard.css?v={{ gx_version }}">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/alpinejs/3.14.9/cdn.min.js" defer></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/htmx/2.0.3/htmx.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/ag-grid/36.2.0/ag-grid-community.min.js"></script>
+<!-- Subresource Integrity: the browser hashes each file and refuses to run it
+     unless it matches, so a compromised or MITM'd CDN cannot silently serve
+     different JavaScript into the wizard. These three are the only external
+     resources the page loads, and nothing scans them — there is no package.json,
+     so neither Dependabot nor Snyk sees them; they are pinned and updated by
+     hand. When bumping a version you MUST recompute the hash
+     (tmp.local/compute_sri.py, or cdnjs publishes one per file) — a stale hash
+     blocks the script and the wizard silently loses that library.
+     crossorigin="anonymous" is required: without it the response is opaque and
+     the browser cannot verify the hash. -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/alpinejs/3.14.9/cdn.min.js"
+        integrity="sha512-KSdieUYxSxr/laB3Bh5TP8GAng49b2qRfdcnFvh8OuPpPgksA189OQ9v1A3gIz5P9s3A4aXMe5uiHLMfla60Uw=="
+        crossorigin="anonymous" referrerpolicy="no-referrer" defer></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/htmx/2.0.3/htmx.min.js"
+        integrity="sha512-dQu3OKLMpRu85mW24LA1CUZG67BgLPR8Px3mcxmpdyijgl1UpCM1RtJoQP6h8UkufSnaHVRTUx98EQT9fcKohw=="
+        crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/ag-grid/36.2.0/ag-grid-community.min.js"
+        integrity="sha512-uFpNwWaA9t4Qeratr3lYNbFE0B23FWNje7H15lJriUHgYxNw4IhLPFBAOJ5EqqqsdKTviDv8byhOab5/ZTF65A=="
+        crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 </head>
 <body x-data>
 
