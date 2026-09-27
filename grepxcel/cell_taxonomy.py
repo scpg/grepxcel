@@ -26,10 +26,14 @@ discussion for the full taxonomy):
             time, datetime, duration, boolean, url, error, empty.
   Layer 3 — the Python type openpyxl hands back (`type(value).__name__`).
   Layer 4 — flags for the "beyond classic" cases: error, formula,
-            text_forced_numeric, blank, merged_member. (rich_value —
-            IMAGE()/linked-data-type cells — is detected upstream by
-            engine.py's richData-chain walk, not here; this module only
-            sees a plain cell value.)
+            text_forced_numeric, blank, merged_member, rich_value.
+            rich_value (IMAGE()/linked-data-type cells) can't be detected
+            from a plain cell value alone — it needs engine.py's
+            richData-chain walk (`scan_image_cells()`), which only
+            `profile.py` currently wires in as a post-classification
+            override (semantic_type -> 'image', 'error' flag dropped in
+            favour of 'rich_value'). classify_value()/classify_cell()
+            themselves never see it.
 """
 from __future__ import annotations
 
@@ -48,6 +52,7 @@ STORAGE_ERROR = 'e'
 SEMANTIC_TYPES = frozenset({
     'string', 'integer', 'number', 'currency', 'percentage', 'date',
     'time', 'datetime', 'duration', 'boolean', 'url', 'error', 'empty',
+    'image',
 })
 
 _BOOL_STRINGS = frozenset({'TRUE', 'FALSE', 'YES', 'NO'})

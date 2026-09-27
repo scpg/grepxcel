@@ -2,6 +2,7 @@
 import io
 import json
 import os
+import zipfile
 
 import openpyxl
 import pytest
@@ -12,10 +13,26 @@ from grepxcel.profile import (
     run_profile, to_json_records, write_colored_xlsx, write_json,
 )
 from grepxcel.cell_taxonomy import classify_value
+from grepxcel.color import MARK_FAIL, MARK_INFO, MARK_WARN
+from grepxcel.security import SecurityError
 
 _FIXTURES_DIR = os.path.join(os.path.dirname(__file__), '..', 'fixtures')
 _FIXTURE_24 = os.path.join(_FIXTURES_DIR, '24_type_tests', '24_type_tests_data.xlsx')
 _FIXTURE_01 = os.path.join(_FIXTURES_DIR, '01_simple_invoice', '01_simple_invoice_data.xlsx')
+_FIXTURE_19 = os.path.join(_FIXTURES_DIR, '19_blood_pressure_tracker', '19_blood_pressure_tracker_data.xlsx')
+
+
+def _write_error_workbook(path: str) -> str:
+    """A minimal workbook with one genuine Excel error cell (#DIV/0!) and one
+    clean cell. Fixture 24's only 'error'-looking cells are actually IMAGE()
+    rich-value cells (see TestProfileWorkbookRealFixtures below), so exit-code
+    / colored-xlsx tests that need a real error use this instead."""
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws['A1'] = '#DIV/0!'
+    ws['A2'] = 'clean value'
+    wb.save(path)
+    return ws.title
 
 
 def _cell(ref, value, semantic='string', flags=None, sheet='Sheet1'):
@@ -88,7 +105,7 @@ class TestRendering:
             c.profile.storage_type = 'n'
         text = render_summary(cells)
         assert 'n/integer' in text
-        assert '(5 cells)' in text
+        assert '5' in text
         assert '+2 more' in text  # sample limit is 3
 
     def test_summary_empty(self):
@@ -106,6 +123,50 @@ class TestRendering:
         c = _cell('A1', '#DIV/0!', flags=['error'])
         text = render_full([c])
         assert 'error' in text
+
+    def test_summary_disambiguates_refs_across_sheets(self):
+        """Same coordinate on two different sheets must not collapse into
+        one ambiguous sample ref (the bug: `A1, B1` gave no clue that A1
+        and B1 might belong to different sheets)."""
+        cells = [
+            _cell('A1', 1, 'integer', sheet='Sheet1'),
+            _cell('A1', 2, 'integer', sheet='Sheet2'),
+        ]
+        text = render_summary(cells)
+        assert 'Sheet1!A1' in text
+        assert 'Sheet2!A1' in text
+
+    def test_summary_single_sheet_refs_have_no_prefix(self):
+        cells = [_cell('A1', 1, 'integer', sheet='Sheet1')]
+        text = render_summary(cells)
+        assert 'Sheet1!A1' not in text
+        assert 'A1' in text
+
+    def test_full_disambiguates_refs_across_sheets(self):
+        cells = [
+            _cell('A1', 1, 'integer', sheet='Sheet1'),
+            _cell('A1', 2, 'integer', sheet='Sheet2'),
+        ]
+        text = render_full(cells)
+        assert 'Sheet1!A1' in text
+        assert 'Sheet2!A1' in text
+
+    def test_error_cells_get_fail_mark_not_warn(self):
+        """Errors must use the red/FAIL severity, not amber/WARN — matches
+        the semantic palette in color.py (MARK_FAIL = error, MARK_WARN =
+        lesser issue)."""
+        c = _cell('A1', '#DIV/0!', semantic='error', flags=['error'])
+        text = render_summary([c], color=True)
+        assert MARK_FAIL in text
+        assert MARK_WARN not in text
+
+    def test_rich_value_cells_get_info_mark_not_fail(self):
+        """A richData IMAGE() cell is informational, not an error or warning."""
+        c = _cell('A1', '#VALUE!', semantic='image', flags=['rich_value'])
+        text = render_summary([c], color=True)
+        assert MARK_INFO in text
+        assert MARK_FAIL not in text
+        assert MARK_WARN not in text
 
 
 # ── JSON export ──────────────────────────────────────────────────────────────
@@ -141,14 +202,19 @@ class TestJsonExport:
 # ── real-file integration: profile_sheet / profile_workbook ────────────────
 
 class TestProfileWorkbookRealFixtures:
-    def test_fixture_24_finds_known_error_cells(self):
+    def test_fixture_24_image_cells_not_misreported_as_errors(self):
+        """M20/E13/H13 are IMAGE()-formula (richData) cells — Excel caches
+        their own formula result as a literal '#VALUE!' string, but the real
+        content lives in the richData chain (scan_image_cells()), not the
+        cached scalar. profile must not report these as Excel errors."""
         sheets = profile_workbook(_FIXTURE_24)
         all_cells = [c for sp in sheets for c in sp.cells]
         error_refs = {c.ref for c in all_cells if 'error' in c.profile.flags}
-        # M20 is the exact cell this session spent a whole debugging arc on
-        # earlier (the corrupted-fixture investigation) — a stable, known
-        # error cell to anchor this test on.
-        assert 'M20' in error_refs
+        assert not error_refs, f'expected no genuine error cells, got: {error_refs}'
+        image_cells = {c.ref: c for c in all_cells if c.profile.semantic_type == 'image'}
+        for ref in ('M20', 'E13', 'H13'):
+            assert ref in image_cells, f'{ref} should be classified as image, got: {image_cells}'
+            assert 'rich_value' in image_cells[ref].profile.flags
 
     def test_fixture_24_all_sheets_by_default(self):
         sheets = profile_workbook(_FIXTURE_24)
@@ -209,6 +275,26 @@ class TestMergedCells:
         assert 'C1' not in refs
 
 
+# ── non-worksheet sheets (chart sheets) ─────────────────────────────────────
+
+class TestChartsheets:
+    def test_workbook_with_chartsheet_does_not_crash(self):
+        """Fixture 19 has a real chart sheet alongside its data sheet.
+        wb.sheetnames/wb[name] includes it, but a Chartsheet has no
+        .max_row/.max_column/.iter_rows() — profile_workbook must skip it
+        (mirroring lint.py's wb.worksheets iteration) rather than crash."""
+        sheets = profile_workbook(_FIXTURE_19)
+        assert sheets  # at least the real data sheet was profiled
+        assert all(sp.cells for sp in sheets if sp.sheet == 'Blutdruckwerte')
+
+    def test_explicit_chartsheet_name_raises_clear_error(self):
+        wb = openpyxl.load_workbook(_FIXTURE_19)
+        chart_names = [n for n in wb.sheetnames if n not in {ws.title for ws in wb.worksheets}]
+        assert chart_names, 'fixture 19 is expected to have a chart sheet'
+        with pytest.raises(SecurityError, match='chart sheet'):
+            profile_workbook(_FIXTURE_19, sheet_name=chart_names[0])
+
+
 # ── row/column caps ──────────────────────────────────────────────────────────
 
 class TestSizeCaps:
@@ -238,26 +324,82 @@ class TestSizeCaps:
 # ── run_profile: exit codes and CLI-level behaviour ─────────────────────────
 
 class TestRunProfileExitCodes:
-    def test_exit_1_when_errors_present(self):
-        code = run_profile([_FIXTURE_24], out=io.StringIO(), quiet=True)
+    def test_exit_1_when_errors_present(self, tmp_path):
+        path = str(tmp_path / 'error.xlsx')
+        _write_error_workbook(path)
+        code = run_profile([path], out=io.StringIO(), quiet=True)
         assert code == 1
 
     def test_exit_0_when_clean(self):
         code = run_profile([_FIXTURE_01], out=io.StringIO(), quiet=True)
         assert code == 0
 
-    def test_exit_code_independent_of_filter(self):
+    def test_exit_code_independent_of_filter(self, tmp_path):
         # The filter controls what's printed, not the exit code — matches
         # lint's convention (verbose printing more detail doesn't change
         # whether it exits 0 or 1).
+        path = str(tmp_path / 'error.xlsx')
+        _write_error_workbook(path)
         buf = io.StringIO()
-        code_filtered = run_profile([_FIXTURE_24], out=buf, errors_only=True, quiet=True)
-        code_unfiltered = run_profile([_FIXTURE_24], out=io.StringIO(), quiet=True)
+        code_filtered = run_profile([path], out=buf, errors_only=True, quiet=True)
+        code_unfiltered = run_profile([path], out=io.StringIO(), quiet=True)
         assert code_filtered == code_unfiltered == 1
 
     def test_no_excel_files_in_empty_dir_exits_0(self, tmp_path):
         code = run_profile([str(tmp_path)], out=io.StringIO())
         assert code == 0
+
+
+class TestInvisibleDataAdvisories:
+    """profile shares lint's blind spot for Data Model / external connection
+    / external link / embedded object data -- same check, reused directly
+    from lint.py rather than duplicated (see _invisible_data_advisories)."""
+
+    def _inject_zip_part(self, tmp_path, part_name: str) -> str:
+        path = str(tmp_path / 'data.xlsx')
+        wb = openpyxl.Workbook()
+        wb.active['A1'] = 'hello'
+        wb.save(path)
+        with zipfile.ZipFile(path, 'a') as zf:
+            zf.writestr(part_name, b'fake')
+        return path
+
+    def test_no_signal_by_default(self, tmp_path):
+        path = str(tmp_path / 'plain.xlsx')
+        wb = openpyxl.Workbook()
+        wb.active['A1'] = 'hello'
+        wb.save(path)
+        buf = io.StringIO()
+        run_profile([path], out=buf)
+        assert 'Data Model' not in buf.getvalue()
+
+    def test_flags_data_model_in_default_output(self, tmp_path):
+        path = self._inject_zip_part(tmp_path, 'xl/model/item1.data')
+        buf = io.StringIO()
+        run_profile([path], out=buf)
+        assert 'Data Model' in buf.getvalue()
+
+    def test_flags_data_model_in_verbose_output(self, tmp_path):
+        path = self._inject_zip_part(tmp_path, 'xl/model/item1.data')
+        buf = io.StringIO()
+        run_profile([path], out=buf, verbose=True)
+        assert 'Data Model' in buf.getvalue()
+
+    def test_quiet_mode_stays_one_line(self, tmp_path):
+        """Quiet mode's contract is one summary line per file -- the
+        advisory must not break that, even when a signal is present."""
+        path = self._inject_zip_part(tmp_path, 'xl/model/item1.data')
+        buf = io.StringIO()
+        run_profile([path], out=buf, quiet=True)
+        lines = [l for l in buf.getvalue().splitlines() if l.strip()]
+        assert len(lines) == 1
+
+    def test_flagged_in_xlsx_output_mode_too(self, tmp_path):
+        path = self._inject_zip_part(tmp_path, 'xl/embeddings/oleObject1.bin')
+        out_path = str(tmp_path / 'report.xlsx')
+        buf = io.StringIO()
+        run_profile([path], out=buf, fmt='xlsx', output=out_path)
+        assert 'embedded object' in buf.getvalue()
 
 
 class TestRunProfileOutput:
@@ -270,12 +412,14 @@ class TestRunProfileOutput:
         assert len(data) == 16
 
     def test_writes_colored_xlsx(self, tmp_path):
+        src_path = str(tmp_path / 'error.xlsx')
+        sheet_title = _write_error_workbook(src_path)
         out_path = str(tmp_path / 'profile.xlsx')
-        run_profile([_FIXTURE_24], out=io.StringIO(), fmt='xlsx', output=out_path)
+        run_profile([src_path], out=io.StringIO(), fmt='xlsx', output=out_path)
         assert os.path.exists(out_path)
         wb = openpyxl.load_workbook(out_path)
-        # M20's error cell should carry the error fill.
-        cell = wb['Sheet1']['M20']
+        # A1's error cell should carry the error fill.
+        cell = wb[sheet_title]['A1']
         assert cell.fill.fgColor.rgb == '00FFC7CE'
 
     def test_refuses_overwrite_without_force(self, tmp_path):
