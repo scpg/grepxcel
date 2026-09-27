@@ -161,11 +161,25 @@ The CLI is subcommand-based: `extract`, `validate-pattern`, `draft`, `docs`, `li
 - **stdout** — extracted JSON (pipe-friendly)
 - **stderr** — warnings, errors, summary, verbose/debug output (`-q` suppresses summary/header, keeps warnings/errors)
 
+## Pre-PR gate: the oracle type-matrix suite
+
+Before **every** PR, the oracle suite must run and be green. It is deliberately NOT part of
+`pytest tests/` or CI (too slow for the per-push loop) — it is a gate you run once before
+`gh pr create`. Whenever a PR is requested, remind the user of this step and run it.
+
+- Spec (design is final, implementation pending): `docs/superpowers/specs/2026-09-27-oracle-type-matrix-tests.md`
+- Command once implemented: `.venv/bin/python3 scripts/oracle_check.py` — must print `ORACLE GATE: GREEN`
+- Until it is implemented, the reminder is: implementing it is the open item — do not treat
+  a PR as fully gated yet.
+
 ## Branch workflow
 
 Always work on `dev`. Never commit or push directly to `main`.
 
 ```bash
+# 0. Oracle gate (see section above) — must be GREEN before continuing
+.venv/bin/python3 scripts/oracle_check.py
+
 # 1. Make changes on dev, commit, push
 git add <files>
 git commit -m "..."
