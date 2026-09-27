@@ -1285,7 +1285,40 @@ def _preload_from_pattern(ws, pattern_path: str) -> tuple[dict, dict, list[str]]
             continue
 
         name = instr.field
-        if name in ('IGNORE', 'EMPTY', ''):
+        if name == 'IGNORE':
+            # An ignored cell is a real decision the author made, so it has to
+            # come back as one. Skipping it entirely meant the cell reappeared
+            # unclassified on load — the pattern said "skip this", the wizard
+            # showed nothing — and, because it was never claimed, a later field
+            # could match it and quietly take it over.
+            if instr.multiplicity == 'abs' and instr.target:
+                try:
+                    from openpyxl.utils.cell import coordinate_to_tuple
+                    r, c = coordinate_to_tuple(instr.target)
+                except Exception:
+                    warnings.append(
+                        f'Could not parse absolute ref {instr.target!r} for an '
+                        f'IGNORE step; that cell will load unclassified'
+                    )
+                else:
+                    ref = _cell_ref(r, c)
+                    choices[ref] = {'choice': 'I'}
+                    claimed.add(ref)
+                    last_lbl_pos = (r, c)
+                    continue
+            else:
+                # cell:next IGNORE consumes "the next non-empty cell", which
+                # depends on the live scan cursor the wizard does not simulate.
+                # Say so rather than dropping it without trace.
+                warnings.append(
+                    'A sequential "cell:next IGNORE" step cannot be located '
+                    'during preload (it depends on the scan cursor); that cell '
+                    'will load unclassified — mark it Ignore again if needed.'
+                )
+            last_lbl_pos = None
+            continue
+
+        if name in ('EMPTY', ''):
             last_lbl_pos = None
             continue
 

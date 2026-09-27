@@ -585,6 +585,40 @@
   </div>
 </div>
 
+<!-- ── Loaded-pattern notice ────────────────────────────────────────────── -->
+<!-- Shown once when a pattern with existing definitions is opened. A pattern
+     file can express more than this wizard can model, so saying so up front is
+     cheaper than letting someone discover it after saving over their work. -->
+<div id="loaded-pattern-modal">
+  <div id="lpm-box">
+    <div class="lpm-header">Heads up — this pattern was opened, not created here</div>
+    <div class="lpm-body">
+      <p>The wizard has rebuilt its own model of this pattern by finding each
+         field in the sheet. It works from <strong>one cell, one
+         classification</strong> — which is less than a pattern file can say.</p>
+      <p>A hand-written pattern can use a rule that matches in many places at
+         once. <code>lbl:glob</code> with <code>Total *</code> matches every
+         label starting with “Total”, wherever they are; the wizard can only
+         pin that to the single cell it happened to find. The same goes for
+         <code>seek:</code> steps and some table bounds.</p>
+      <p><strong>What this means when you save:</strong> you save the wizard's
+         reconstruction, not the file you opened. Anything it could not place is
+         listed in the <strong>Logs</strong> tab, and anything it cannot express
+         is not written out. Keep a copy of the original if you still need it.</p>
+      <p class="lpm-ok">Patterns created in the wizard round-trip through it
+         unchanged — this notice is about everything else.</p>
+    </div>
+    <div class="lpm-footer">
+      <label class="lpm-dismiss">
+        <input type="checkbox" id="lpm-dont-show"> Don't show this again
+      </label>
+      <div class="spacer"></div>
+      <button class="btn btn-sm" onclick="closeLoadedPatternNotice(); switchTab('logs')">Open Logs</button>
+      <button class="btn btn-sm btn-primary" onclick="closeLoadedPatternNotice()">Got it</button>
+    </div>
+  </div>
+</div>
+
 <!-- ── Toast ────────────────────────────────────────────────────────────── -->
 <div id="toast"></div>
 

@@ -28,10 +28,32 @@ document.addEventListener('alpine:init', () => {
   _checkPreloadWarnings();
 })();
 
+const _LPM_DISMISS_KEY = 'gx_loaded_pattern_notice_dismissed';
+
+/** Show the loaded-pattern notice once per session, unless permanently dismissed. */
+function _maybeShowLoadedPatternNotice(loaded) {
+  if (!loaded) return;
+  let dismissed = false;
+  try { dismissed = localStorage.getItem(_LPM_DISMISS_KEY) === '1'; } catch (_) { /* private mode */ }
+  if (dismissed) return;
+  const el = document.getElementById('loaded-pattern-modal');
+  if (el) el.classList.add('open');
+}
+
+function closeLoadedPatternNotice() {
+  const el = document.getElementById('loaded-pattern-modal');
+  if (el) el.classList.remove('open');
+  const chk = document.getElementById('lpm-dont-show');
+  if (chk && chk.checked) {
+    try { localStorage.setItem(_LPM_DISMISS_KEY, '1'); } catch (_) { /* private mode */ }
+  }
+}
+
 async function _checkPreloadWarnings() {
   try {
     const r    = await fetch('/api/logs');
     const data = await r.json();
+    _maybeShowLoadedPatternNotice(data.pattern_was_loaded);
     const warns = data.preload_warnings || [];
     if (warns.length) {
       const hasErrors = warns.some(w => w.startsWith('[ERROR]'));
@@ -522,7 +544,7 @@ function selectAction(action) {
   // Default pre-fill
   if (action === 'L') {
     const slug = slugify(info.raw || 'field');
-    setVal('f-L-name', info.name || (slug + '_label'));
+    setVal('f-L-name', info.name || uniqueFieldName(slug, selectedRef, '_label'));
     setVal('f-L-type', info.ltype || 'string');
     setVal('f-L-match_mode', '(default)');
     setVal('f-L-match', info.raw || '');
@@ -530,7 +552,8 @@ function selectAction(action) {
   } else if (action === 'V') {
     const suggested = suggestNameFromLabel(selectedRef);
     const inferredType = info.inferred_type || info.ftype || 'string';
-    setVal('f-V-name', info.name || suggested || slugify(info.raw || 'field'));
+    setVal('f-V-name', info.name ||
+      uniqueFieldName(suggested || slugify(info.raw || 'field'), selectedRef));
     setVal('f-V-type', inferredType);
     setVal('f-V-match_mode', '(default)');
     setVal('f-V-match', info.match || '.*');
@@ -1302,8 +1325,15 @@ function loadKeyboardShortcuts() {
     }
     // Ignore when typing in an input / select / textarea
     if (['INPUT','SELECT','TEXTAREA'].includes(e.target.tagName)) return;
-    // Ignore when the mini-table editor modal is open
-    if (Alpine?.store?.('gx')?.trmOpen) return;
+    // The mini-table editor modal owns the keyboard while it is open: the main
+    // grid must not move behind it, but the arrows still have to drive the
+    // modal's own selection rather than fall through and scroll it.
+    if (Alpine?.store?.('gx')?.trmOpen) {
+      if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)) {
+        if (_trmArrowKey(e.key)) e.preventDefault();
+      }
+      return;
+    }
 
     if (e.ctrlKey && e.key === 'z') { e.preventDefault(); undoLast(); return; }
 
@@ -1408,6 +1438,34 @@ function toggleTheme() {
 function escHtml(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
+/**
+ * A suggested field name no other classified cell is already using.
+ *
+ * Names are slugified from the cell's text, so a sheet that repeats the same
+ * labelled block — three identical test columns side by side — suggests the
+ * same name three times. That is not a cosmetic clash: the engine writes
+ * result['cells'][field] unconditionally, so the last cell wins and the earlier
+ * values are dropped with nothing reporting it.
+ *
+ * Deliberately applied to the SUGGESTION, not to what gets saved: the user sees
+ * `total_2` pre-filled and can change it. Silently renaming a name they typed
+ * themselves would be the same class of surprise in the other direction.
+ * wizard_api._unique_name() is the server-side backstop for paths that send no
+ * name at all (batch/range classify).
+ */
+function uniqueFieldName(base, ownRef, suffix) {
+  base = base || 'field';
+  suffix = suffix || '';
+  const taken = new Set();
+  for (const [ref, info] of Object.entries(cellData || {})) {
+    if (ref !== ownRef && info && info.name) taken.add(info.name);
+  }
+  if (!taken.has(base + suffix)) return base + suffix;
+  let n = 2;
+  while (taken.has(`${base}_${n}${suffix}`)) n++;
+  return `${base}_${n}${suffix}`;
+}
+
 function slugify(s) {
   return s.toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'').substring(0,40) || 'field';
 }
@@ -1881,6 +1939,25 @@ const _TRM_TYPES = {
   basic:    ['string', 'number', 'date', 'boolean', 'url', 'image'],
   advanced: ['integer', 'currency', 'percentage', 'datetime', 'time', 'duration'],
 };
+// Every modifier combination the parser accepts, as (value, label) pairs.
+// `nullable` and `not-null` are mutually exclusive (pattern_parser rejects the
+// pair); `trim-whitespace` combines with either. 'not-null:trim-whitespace' was
+// missing from the mini-table's list, so that combination was simply
+// unreachable for a table column — a capability gap, not a styling one.
+const _TRM_MODIFIERS = [
+  ['none',                     'none'],
+  ['nullable',                 'nullable'],
+  ['not-null',                 'not-null'],
+  ['trim-whitespace',          'trim-whitespace'],
+  ['nullable:trim-whitespace', 'nullable + trim'],
+  ['not-null:trim-whitespace', 'not-null + trim'],
+];
+function _trmModifierOptions(selected) {
+  return _TRM_MODIFIERS.map(([value, label]) =>
+    `<option value="${value}"${value === (selected || 'none') ? ' selected' : ''}>${label}</option>`
+  ).join('');
+}
+
 function _trmTypeOptions(selected) {
   return [
     { label: 'Basic',    types: _TRM_TYPES.basic },
@@ -2129,6 +2206,52 @@ function _trmClickCell(ri, ci) {
   _trmRenderPanel();
 }
 
+/**
+ * Arrow-key navigation inside the mini-table editor.
+ *
+ * The global key handler deliberately bails out while this modal is open, so
+ * the main grid does not move behind it — but the modal had no navigation of
+ * its own, which left the arrows falling through to the browser and scrolling
+ * the table instead of moving the active cell.
+ *
+ * Column -1 is the row-type control at the left of each row, so Left from the
+ * first data column lands on it and Right steps back into the grid, matching
+ * how clicking already works.
+ */
+function _trmArrowKey(key) {
+  const rows = _trmState?.rows || [];
+  if (!rows.length) return false;
+
+  // Nothing selected yet: the first arrow press selects the first row.
+  if (_trmSelectedRow === -1) {
+    _trmSelectedRow = 0;
+    _trmSelectedCol = -1;
+    _trmUpdateSelectionHighlight();
+    _trmRenderPanel();
+    return true;
+  }
+
+  const nCols = (_trmState.columns || []).length;
+  let ri = _trmSelectedRow, ci = _trmSelectedCol;
+
+  if (key === 'ArrowUp')         ri = Math.max(0, ri - 1);
+  else if (key === 'ArrowDown')  ri = Math.min(rows.length - 1, ri + 1);
+  else if (key === 'ArrowLeft')  ci = Math.max(-1, ci - 1);
+  else if (key === 'ArrowRight') ci = Math.min(nCols - 1, ci + 1);
+  else return false;
+
+  if (ri === _trmSelectedRow && ci === _trmSelectedCol) return true;  // at an edge
+  _trmSelectedRow = ri;
+  _trmSelectedCol = ci;
+  _trmUpdateSelectionHighlight();
+  _trmRenderPanel();
+
+  // Keep the active cell visible without scrolling the page around it.
+  const sel = document.querySelector('#trm-tbody .trm-sel');
+  if (sel && sel.scrollIntoView) sel.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  return true;
+}
+
 function _trmUpdateSelectionHighlight() {
   document.querySelectorAll('#trm-tbody .trm-sel').forEach(el => el.classList.remove('trm-sel'));
   if (_trmSelectedRow === -1) return;
@@ -2256,11 +2379,7 @@ function _trmPanelRoleFieldsHTML(role, rt, ci, col) {
              oninput="_trmPanelFieldChange('match',this.value,${ci})"></div>
     <div class="form-group"><label>Modifiers</label>
       <select onchange="_trmPanelFieldChange('modifiers',this.value,${ci})">
-        <option value="none"${mods==='none'?' selected':''}>none</option>
-        <option value="nullable"${mods==='nullable'?' selected':''}>nullable</option>
-        <option value="not-null"${mods==='not-null'?' selected':''}>not-null</option>
-        <option value="trim-whitespace"${mods==='trim-whitespace'?' selected':''}>trim-whitespace</option>
-        <option value="nullable:trim-whitespace"${mods==='nullable:trim-whitespace'?' selected':''}>nullable + trim</option>
+        ${_trmModifierOptions(mods)}
       </select></div>`;
   }
   return html;

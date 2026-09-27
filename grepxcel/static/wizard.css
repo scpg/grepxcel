@@ -799,3 +799,39 @@ select.cfg-sel-default { color: var(--accent); font-style: italic; font-weight: 
 .htmx-request { opacity: 0.55; transition: opacity 150ms ease; }
 .htmx-indicator { display: none; }
 .htmx-request .htmx-indicator { display: inline; }
+
+/* ── Loaded-pattern notice ────────────────────────────────────────────────
+   Shown once when a pattern with existing definitions is opened. Styled as a
+   notice, not an error: nothing has gone wrong, but what the wizard can model
+   is narrower than what a pattern file can express. */
+#loaded-pattern-modal {
+  display: none; position: fixed; inset: 0; z-index: 600;
+  background: rgba(0,0,0,0.55); align-items: center; justify-content: center;
+}
+#loaded-pattern-modal.open { display: flex; }
+#lpm-box {
+  background: var(--surface); border-radius: 10px;
+  width: 90%; max-width: 620px; max-height: 85vh;
+  display: flex; flex-direction: column; overflow: hidden;
+  border: 1px solid var(--border);
+}
+#lpm-box .lpm-header {
+  padding: 14px 18px; border-bottom: 1px solid var(--border);
+  font-weight: 700; font-size: 15px;
+}
+#lpm-box .lpm-body { padding: 14px 18px; overflow: auto; line-height: 1.5; }
+#lpm-box .lpm-body p { margin: 0 0 11px; }
+#lpm-box .lpm-body p:last-child { margin-bottom: 0; }
+#lpm-box .lpm-body code {
+  background: var(--bg); padding: 1px 5px; border-radius: 4px; font-size: 12px;
+}
+#lpm-box .lpm-ok { color: var(--text-muted); font-size: 13px; }
+#lpm-box .lpm-footer {
+  padding: 12px 18px; border-top: 1px solid var(--border);
+  display: flex; align-items: center; gap: 8px;
+}
+#lpm-box .lpm-footer .spacer { flex: 1; }
+#lpm-box .lpm-dismiss {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 13px; color: var(--text-muted); cursor: pointer;
+}

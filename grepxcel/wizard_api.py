@@ -855,6 +855,10 @@ def create_app(
         'max_cols':         max_cols,
         'log':              session_log,
         'preload_warnings': preload_warnings,
+        # An existing pattern was opened AND it yielded classifications. Empty
+        # choices means nothing was recognised, so there is nothing to warn
+        # about losing.
+        'pattern_was_loaded': bool(pattern_path and choices),
         'image_cells':          _image_cells,
         'extracted_images':     _extracted_images,
         'img_tmp_dir':          _img_tmp_dir,
@@ -1021,6 +1025,13 @@ def create_app(
                 pass
         return JSONResponse({
             'preload_warnings': _STATE.get('preload_warnings', []),
+            # True when an existing pattern was opened with -p and it actually
+            # contained definitions. Drives the one-off notice explaining that
+            # the wizard models one cell / one classification, which is narrower
+            # than a pattern file can express (a lbl:glob matching many labels,
+            # seek: steps, some table bounds) — so saving writes the wizard's
+            # reconstruction, not the file that was opened.
+            'pattern_was_loaded': bool(_STATE.get('pattern_was_loaded')),
             'log_path':         log_path,
             'log_lines':        [l.rstrip('\n') for l in recent_lines],
         })
