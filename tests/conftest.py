@@ -1,6 +1,8 @@
 import sys
 import os
 
+import pytest
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 # ---------------------------------------------------------------------------
@@ -152,3 +154,32 @@ def list_snapshots(folder: str) -> list[tuple[str, str]]:
         if p:
             result.append((source, p))
     return result
+
+
+@pytest.fixture(scope='session', autouse=True)
+def _never_let_a_test_kill_the_run():
+    """Neutralise the wizard's process-level exit for the whole suite.
+
+    `POST /api/shutdown` arms a *daemon thread* that calls `os._exit(0)` after
+    0.3s. Three tests in test_wizard_api.py exercise that endpoint on the accept
+    path, so the real interpreter died 0.3s later — which landed after the final
+    test and before pytest wrote its epilogue. The suite printed progress to
+    100%, skipped the FAILURES section entirely, and exited 0 while a test was
+    red. CI reported the same failing test correctly, so the masking is
+    intermittent: it depends on whether anything slow runs in the 0.3s window.
+
+    Session-scoped and never restored, both deliberately. A function-scoped
+    `monkeypatch` does not work here and is what was tried first: it reverts at
+    test teardown while the timer is still pending, so the thread wakes up and
+    calls the *real* exit anyway. The pending thread outliving the test that
+    armed it is the actual defect shape, and only a replacement that outlives
+    every test closes it.
+
+    Autouse and suite-wide on purpose: a hard exit is not a failure mode any
+    individual test can be expected to defend against.
+    """
+    try:
+        from grepxcel import wizard_api
+    except ImportError:        # FastAPI not installed - nothing to guard
+        return
+    wizard_api._terminate_process = lambda: None

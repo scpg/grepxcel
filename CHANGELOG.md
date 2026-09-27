@@ -58,6 +58,16 @@ anything consuming the JSON downstream may.
   12:30 and `'2024'` as **20:24** — so a year, an ID or a quantity in a time-typed column
   would have become a plausible-looking time. A separator is now required; compact times
   remain readable via `time.format`.
+- **The test suite could not report a failure.** `POST /api/shutdown` called `os._exit(0)`
+  inline from a daemon thread, 0.3s after responding. Three tests exercise that endpoint on
+  the accept path, so the pytest process was killed 0.3s later — which landed after the final
+  test and before pytest wrote its epilogue. The suite printed progress to 100%, skipped the
+  FAILURES section entirely, and **exited 0 while a test was failing**. Whether it masked
+  anything depended on what happened to run inside that 0.3s window, so it was intermittent
+  rather than absent, and CI reported the same failure correctly. The exit now goes through a
+  named `_terminate_process()` seam that the session fixture replaces, and a test pins
+  `os._exit` to that one function so an inline call cannot come back. Shutdown behaviour in
+  production is unchanged.
 - **`grepxcel docs` output is reproducible.** The generated `pattern-reference.xlsx` embedded
   a wall-clock timestamp, the absolute path of the invoking interpreter, and a ZIP host byte
   that differed between Linux and Windows — so two runs of the same version produced

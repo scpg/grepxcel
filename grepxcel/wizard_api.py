@@ -1984,11 +1984,26 @@ def create_app(
         _STATE['log'].close(_STATE.get('choices', {}), _STATE.get('notes', {}))
         def _stop():
             time.sleep(0.3)
-            os._exit(0)
+            _terminate_process()
         threading.Thread(target=_stop, daemon=True).start()
         return JSONResponse({'ok': True})
 
     return app
+
+
+def _terminate_process() -> None:  # pragma: no cover - replaced under test
+    """Halt the interpreter once the wizard has finished shutting down.
+
+    `os._exit` is deliberate: uvicorn's shutdown does not reliably return control
+    when the request that triggered it is still in flight, so the server is ended
+    from under itself. It exists as a named function purely so tests can replace
+    it. Calling `os._exit` inline here made the three /api/shutdown tests kill the
+    pytest process 0.3s later — after the final test, before pytest printed its
+    summary, and with status 0, so the whole suite reported success while a test
+    was failing. A seam is the difference between a suite that can report and one
+    that cannot.
+    """
+    os._exit(0)
 
 
 def _get_version() -> str:
