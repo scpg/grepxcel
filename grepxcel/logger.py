@@ -703,10 +703,18 @@ class Logger:
     # --- Validation warnings (NORMAL) ---------------------------------------
 
     def warn_validation(self, row: int, col: int, field: str, field_type: str,
-                        regex: str, value) -> LogRecord:
+                        regex: str, value, reason: str = '') -> LogRecord:
         """
         Log a validation warning: value was extracted but does not match its pattern.
         Returns the LogRecord so callers can collect and commit it later.
+
+        *reason* is ``_validate_field_with_reason``'s explanation of what actually
+        failed, and it goes into ``message`` rather than only the hint. Without it
+        every cause reads identically ("Value does not match the expected
+        pattern") even when the regex was never evaluated — a 1500-char cell over
+        ``--max-cell-len``, a regex timeout, a bool in an integer field and a
+        genuine pattern mismatch were indistinguishable to the user. ``event``
+        stays ``value_mismatch`` so log consumers keying on it are unaffected.
         """
         location = cell_ref(row, col, self.sheet_name)
         found_repr = repr(value)
@@ -715,7 +723,8 @@ class Logger:
         rec = LogRecord(
             severity=Severity.WARNING,
             category=Category.VALIDATION,
-            message='Value does not match the expected pattern',
+            message=(f'Value rejected: {reason}' if reason
+                     else 'Value does not match the expected pattern'),
             location=location,
             field=field,
             field_type=field_type,
@@ -731,6 +740,8 @@ class Logger:
             f'     Found:    {found_repr}',
             f'     Expected: matches /{regex}/',
         ]
+        if reason:
+            lines.insert(2, f'     Reason:   {reason}')
         if hint:
             lines.append(f'     → {hint}')
         rec._formatted = '\n'.join(lines)

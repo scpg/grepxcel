@@ -96,7 +96,19 @@ def _apply_trim(value, fd, config):
 
 
 def _validate_field(fd, value, config, max_cell_len: int) -> bool:
-    """Validate a cell value against a FieldDef.
+    """Validate a cell value against a FieldDef. Returns True/False.
+
+    Boolean-only wrapper over :func:`_validate_field_with_reason`. Kept as a
+    plain bool because callers that never emit a warning — ``SKIP_IF`` matching,
+    footer detection — only need the verdict, and a large number of unit tests
+    assert on it directly (``assert not _validate_field(...)``), which a tuple
+    return would silently make vacuous.
+    """
+    return _validate_field_with_reason(fd, value, config, max_cell_len)[0]
+
+
+def _validate_field_with_reason(fd, value, config, max_cell_len: int) -> tuple:
+    """Validate a cell value against a FieldDef, returning ``(ok, reason)``.
 
     Dispatches on ``fd.role`` and ``fd.var_mode``:
 
@@ -105,7 +117,12 @@ def _validate_field(fd, value, config, max_cell_len: int) -> bool:
     * ``var:literal``    — type check + exact-string (or case-insensitive) match.
     * ``var:glob``       — type check + shell-glob match on the string representation.
 
-    Returns True/False; never raises.
+    *reason* is ``''`` when the value is valid, otherwise a short phrase naming
+    **why** it was rejected — ``validate_type``'s own wording where it has one.
+    That string used to be computed and thrown away here, which collapsed every
+    distinct cause ("is not a whole number", "javascript: URLs are not
+    permitted", over ``--max-cell-len``, a regex timeout) into one generic
+    "does not match" warning. Never raises.
     """
     if fd.role == 'lbl':
         # Convert date/datetime to ISO string first, same as var:literal/glob
@@ -121,16 +138,18 @@ def _validate_field(fd, value, config, max_cell_len: int) -> bool:
         # Trim label cell text before matching when trim_whitespace_labels is active.
         if isinstance(lbl_text, str) and config.trim_whitespace_labels:
             lbl_text = lbl_text.strip()
-        return _match_lbl(lbl_text, fd.regex, fd.lbl_match or config.lbl_match,
-                          config.ignore_case_labels)
+        mode = fd.lbl_match or config.lbl_match
+        ok = _match_lbl(lbl_text, fd.regex, mode, config.ignore_case_labels)
+        return ok, ('' if ok else
+                    f'{lbl_text!r} does not match label {fd.regex!r} ({mode} match)')
     # var: field — per-field var_mode wins; fall back to config.var_match global default.
     effective_var_mode = fd.var_mode if fd.var_mode is not None else config.var_match
     if effective_var_mode in ('literal', 'glob'):
         # Type check (use '.*' so it always passes the regex part).
-        type_ok, _ = validate_type(value, fd.type, '.*', config.currency_sign,
-                                   max_cell_len, config.ignore_case_values)
+        type_ok, type_reason = validate_type(value, fd.type, '.*', config.currency_sign,
+                                             max_cell_len, config.ignore_case_values)
         if not type_ok:
-            return False
+            return False, type_reason
         # Convert date/datetime to ISO string so var:literal|glob date fields work.
         # str(datetime(2024,1,1)) gives '2024-01-01 00:00:00', not '2024-01-01'.
         if isinstance(value, _datetime.datetime):
@@ -139,11 +158,13 @@ def _validate_field(fd, value, config, max_cell_len: int) -> bool:
             _str_val = value.isoformat()
         else:
             _str_val = str(value) if value is not None else ''
-        return _match_lbl(_str_val, fd.regex, effective_var_mode, config.ignore_case_values)
+        ok = _match_lbl(_str_val, fd.regex, effective_var_mode, config.ignore_case_values)
+        return ok, ('' if ok else
+                    f'{_str_val!r} does not match {fd.regex!r} '
+                    f'({effective_var_mode} match)')
     # regexp mode (default) — validate_type handles both type and regex.
-    ok, _ = validate_type(value, fd.type, fd.regex, config.currency_sign,
-                          max_cell_len, config.ignore_case_values)
-    return ok
+    return validate_type(value, fd.type, fd.regex, config.currency_sign,
+                         max_cell_len, config.ignore_case_values)
 
 
 # ── Data-sheet size limits ──────────────────────────────────────────────────────
@@ -1468,13 +1489,16 @@ class Engine:
 
         # Validate before tracing so the -v trace can show 🟢/🔴 per field.
         ok = None
+        reason = ''
         if value is not None:
-            ok = _validate_field(fd, value, config, self._max_cell_len)
+            ok, reason = _validate_field_with_reason(
+                fd, value, config, self._max_cell_len)
 
         logger.cell_processed(row, col, instr.field, value, ok=ok, regex=fd.regex)
 
         if ok is False:
-            rec = logger.warn_validation(row, col, instr.field, fd.type, fd.regex, value)
+            rec = logger.warn_validation(row, col, instr.field, fd.type, fd.regex,
+                                         value, reason=reason)
             logger.commit_warnings([rec])
 
         result['cells'][instr.field] = value
@@ -1806,13 +1830,15 @@ class Engine:
                 else:
                     # Apply trim-whitespace before validation and storage.
                     val = _apply_trim(val, fd, config)
-                    ok = _validate_field(fd, val, config, self._max_cell_len)
+                    ok, reason = _validate_field_with_reason(
+                        fd, val, config, self._max_cell_len)
                     if not ok:
                         if strict:
                             return {}, False  # HEADER/FOOTER: wrong value = no match
                         local_warnings.append(
                             logger.warn_validation(sheet_row, col, tmpl_col.field,
-                                                   fd.type, fd.regex, val)
+                                                   fd.type, fd.regex, val,
+                                                   reason=reason)
                         )
                     trace_ok, trace_regex = ok, fd.regex
                 row_data[tmpl_col.field] = val

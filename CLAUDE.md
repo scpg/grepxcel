@@ -184,18 +184,23 @@ Before **every** PR, the oracle suite must run and be green. It is deliberately 
 - Command: `.venv/bin/python3 scripts/oracle_check.py` — runs the fast suite then the
   oracle suite, and must print `ORACLE GATE: GREEN`
 
-**Two open product findings the suite currently reports as RED** (both are
-grepxcel defects it was built to catch, not test bugs — see the branch report):
-1. `engine._validate_field` discards `validate_type`'s reason string, so every
-   rejected value warns with the same generic "Value does not match the expected
-   pattern" and §10.4's message-accuracy assertion fails.
+The suite found two real grepxcel defects on its first full run; both are fixed
+(see `git log` for `feature/oracle-type-matrix/scpg`) and the 1518 cases that
+caught them are now the permanent regression net:
+1. `engine._validate_field` discarded `validate_type`'s reason string, so every
+   rejected value warned with the same generic "Value does not match the expected
+   pattern". Now `_validate_field_with_reason()` carries it into the warning's
+   `message` and a `Reason:` line in the rendered output.
 2. `validate_type` accepts `1`/`0`, `"1"`/`"0"` and `"yes"`/`"no"` as `boolean`
-   but `schema._TYPE_MAP['boolean']` emits `{"type": ["boolean","null"]}`, so the
-   schema generated from a pattern rejects 3 of the 4 boolean forms extraction
-   accepts.
+   but `schema._TYPE_MAP['boolean']` declared only `{"type":["boolean","null"]}`,
+   so the schema generated from a pattern rejected 3 of the 4 boolean forms
+   extraction accepts. The declared types are now widened to match.
 
-Until those are resolved the gate prints RED by design. Do not silence it by
-weakening the assertions.
+If the gate goes red, never silence it by weakening an assertion — a rejected
+value whose warning does not say *why* is the exact failure mode it exists to
+catch. The ~1320 `test_schema` skips are expected and deliberate: they are the
+cases that deliberately hold an invalid value, where schema conformance is not an
+invariant (see `oracles.check_schema`).
 
 ## Branch workflow
 

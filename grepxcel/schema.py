@@ -25,8 +25,15 @@ _TYPE_MAP: dict[str, dict[str, Any]] = {
     'decimal':    {'type': ['number', 'null']},
     'currency':   {'type': ['number', 'null']},
     'percentage': {'type': ['number', 'null']},
-    'boolean':    {'type': ['boolean', 'null']},
-    'bool':       {'type': ['boolean', 'null']},
+    # validate_type accepts four shapes for a boolean cell — a real bool, the
+    # ints 0/1, and the strings TRUE/FALSE/YES/NO/1/0 (trimmed, case-insensitive)
+    # — and the engine writes whichever one the sheet held. Declaring only
+    # `boolean` made the schema generated from a pattern reject 3 of the 4 forms
+    # that same pattern's extraction accepts. An `enum` of the accepted strings
+    # would still be wrong, because trim-whitespace and ignore.case mean ' Yes '
+    # is also valid, so the permitted JSON types are widened instead.
+    'boolean':    {'type': ['boolean', 'integer', 'string', 'null']},
+    'bool':       {'type': ['boolean', 'integer', 'string', 'null']},
     'date':       {'type': ['string', 'null'], 'format': 'date-time'},
     'datetime':   {'type': ['string', 'null'], 'format': 'date-time'},
     'timestamp':  {'type': ['string', 'null'], 'format': 'date-time'},

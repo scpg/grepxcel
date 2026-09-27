@@ -12,20 +12,22 @@ back out of the object that computed it. That rule exists because of a real bug:
 ``SheetProfile.truncated`` was computed correctly and printed by no output path,
 and the test of the day asserted the flag's value rather than its appearance.
 
-## Known gap this module cannot close on its own
+## The two defects this module found on its first full run
 
-§10.4 requires a rejected value's warning to *name the reason*
-(``'is not a whole number'``, ``'javascript: URLs are not permitted'``, …).
-``utils.validate_type`` computes exactly that string, and both of its callers in
-``engine._validate_field`` throw it away (``ok, _ = validate_type(...)``); every
-rejection then surfaces as the same generic ``'Value does not match the expected
-pattern'`` with ``expected='matches /<regex>/'``. The reason text reaches no
-field of any ``LogRecord``, so the §10.4 assertion cannot pass against the
-current engine for any rejected case. It is implemented here **as specified,
-unweakened** — ``REASON_TEXT_REQUIRED`` documents the switch but defaults to the
-spec's behaviour — so the suite reports the gap instead of hiding it. See the
-report accompanying this branch; closing it is a change to
-``engine``/``logger``, not to this suite.
+Both are fixed now; these 1518 cases are the regression net for them.
+
+1. **§10.4, 1320 cases.** ``utils.validate_type`` computes a precise reason for
+   every rejection and ``engine._validate_field`` discarded it
+   (``ok, _ = validate_type(...)``), so every cause — a bool in an integer field,
+   a ``javascript:`` URL, a cell over ``--max-cell-len``, a regex timeout, a
+   genuine mismatch — surfaced as the same generic ``'Value does not match the
+   expected pattern'``. ``engine._validate_field_with_reason()`` now carries it
+   into ``warn_validation``'s ``message``.
+2. **§10.5, 198 cases.** ``validate_type`` accepts ``1``/``0``, ``"1"``/``"0"``
+   and ``"yes"``/``"no"`` as ``boolean``, while ``schema._TYPE_MAP`` declared
+   only ``{"type": ["boolean", "null"]}`` — so the schema generated from a
+   pattern rejected 3 of the 4 boolean forms that same pattern's extraction
+   accepts. The declared types are now widened to match.
 """
 from __future__ import annotations
 
