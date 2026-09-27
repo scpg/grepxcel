@@ -11,21 +11,9 @@
           "diastolisch": 80
         }
       ]
-    },
-    {
-      "_source": {
-        "sheet": "Blutdruckwerte",
-        "ref": "D14:E15"
-      },
-      "data": [
-        {
-          "systolisch": 129,
-          "diastolisch": 79
-        }
-      ]
     }
   ],
-  "table_0": [
+  "table_1": [
     {
       "_source": {
         "sheet": "Blutdruckwerte",

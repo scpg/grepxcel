@@ -1,3 +1,5 @@
 pytest>=8.0
 hypothesis>=6.168.0
 jsonschema>=4.20
+pytest-xdist>=3.8   # parallel test execution: oracle suite 124s -> 26s on 32 cores
+bandit>=1.9            # static security analysis of grepxcel/ (CI: lint-security job)

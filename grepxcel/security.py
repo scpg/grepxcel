@@ -222,6 +222,13 @@ def validate_pattern_file(
         validate_file(path, max_file_mb, max_uncompressed_mb)
         return
 
+    if ext == '.xls':
+        raise SecurityError(
+            "'.xls' pattern files are not accepted — the legacy Excel 97-2003 "
+            "binary format is not supported. In Excel: File > Save As > Excel "
+            "Workbook (.xlsx), then use the converted file as the pattern."
+        )
+
     raise SecurityError(
         f'Unsupported pattern file type {ext!r}. '
         f'Pattern files must be one of: {", ".join(sorted(_PATTERN_EXTENSIONS))}.'
@@ -241,7 +248,20 @@ def _check_extension(path: str) -> None:
     _, ext = os.path.splitext(path)
     ext = ext.lower()
 
-    if ext in ('.xlsm', '.xlsb', '.xls'):
+    if ext == '.xls':
+        # Not a security choice like .xlsm/.xlsb below — .xls is a legacy
+        # OLE2/BIFF8 binary container, not the ZIP+XML structure the rest
+        # of this pipeline (openpyxl) reads, so grepxcel cannot open it at
+        # all, macros or not. Kept as its own message so it doesn't wrongly
+        # imply a clean, macro-free .xls file would work.
+        raise SecurityError(
+            "'.xls' files are not accepted. The legacy Excel 97-2003 binary "
+            "format is not supported — grepxcel reads modern .xlsx files only "
+            "(a format-support limitation, not a security block). In Excel: "
+            "File > Save As > Excel Workbook (.xlsx), then run grepxcel on "
+            "the converted file."
+        )
+    if ext in ('.xlsm', '.xlsb'):
         raise SecurityError(
             f'{ext!r} files are not accepted. '
             f'Macro-enabled and binary Excel formats are blocked for security reasons. '

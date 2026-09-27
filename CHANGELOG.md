@@ -7,6 +7,107 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Features
+
+- **Date and time text is converted, not refused** — a cell declared `date`, `datetime`,
+  `timestamp`, `time` or `duration` in the pattern is now converted to a real temporal value
+  when it holds unambiguous text. Dates often arrive as text (exported from another system,
+  typed with a leading apostrophe, or written without a date number format) and were
+  previously reported as type mismatches even though the pattern had already declared what
+  they were. `'2024-01-15'` → a datetime; `'09:30'` → a time; `'2:00'` and `'30:00'` → 2 and
+  30 hours elapsed. **This changes extraction output** for such files: the field now holds a
+  timestamp where it previously held the raw string plus a warning.
+- **`config: | date.format |` and `config: | time.format |`** — declare a strptime format
+  (e.g. `%d/%m/%Y`) for text that ISO 8601 cannot resolve. Without one, ambiguous text is
+  refused rather than guessed: `01/02/2024` is 1 February in most of the world and 2 January
+  in the United States, and picking one silently is how a tool returns confidently wrong data.
+  A declared format is tried first and ISO still converts afterwards, so a sheet mixing
+  `31/12/2024` and `2024-12-31` reads correctly either way. An unusable format string is
+  rejected when the pattern is parsed, so the error names the pattern rather than arriving as
+  a wall of per-cell mismatches pointing at the data.
+  No new dependency: a lenient parser was evaluated and declined, because it reads `'09:30'`
+  as *today's* date at 09:30 (making the same file extract differently tomorrow), returns a
+  datetime rather than a duration for `'2:00'`, and cannot parse `'30:00'` at all.
+
+### Fixed
+
+- **A rejected value now says why it was rejected.** `validate_type` has always computed a
+  precise reason — `is not a whole number`, `boolean is not integer`,
+  `javascript: URLs are not permitted`, and the two that matter most: a cell over
+  `--max-cell-len` and a regex timeout, where the pattern was never evaluated at all. The
+  engine discarded it, so every one of those causes reached the user as the same sentence:
+  *"Value does not match the expected pattern … Expected: matches /…/"*. A cell that could
+  not possibly have matched was reported identically to one that simply did not. The reason
+  now appears in the warning message and as a `Reason:` line in the rendered output.
+- **`schema` and `extract` disagreed about `boolean`.** `validate_type` accepts `1`/`0`,
+  `"1"`/`"0"` and `"yes"`/`"no"`, but the generated JSON Schema declared only
+  `{"type": ["boolean", "null"]}`, so a schema generated from a pattern rejected 3 of the 4
+  boolean forms that same pattern's extraction accepts. The declared types are widened to
+  match. *Known gap:* this makes the boolean schema accept values extraction rejects (`-1`,
+  `'maybe'`); tightening it is tracked in
+  `docs/superpowers/specs/2026-09-27-schema-strictness-decisions.md`.
+- **A bare number is never read as a time.** Python 3.11+ widened `time.fromisoformat` to
+  accept bare-hour and compact forms, which would have read `'12'` as 12:00, `'1230'` as
+  12:30 and `'2024'` as **20:24** — so a year, an ID or a quantity in a time-typed column
+  would have become a plausible-looking time. A separator is now required; compact times
+  remain readable via `time.format`.
+- **`grepxcel docs` output is reproducible.** The generated `pattern-reference.xlsx` embedded
+  a wall-clock timestamp, the absolute path of the invoking interpreter, and a ZIP host byte
+  that differed between Linux and Windows — so two runs of the same version produced
+  byte-different files and the document shipped a fragment of the machine that built it. The
+  timestamp now derives from a single fixed source, the path is gone, and the archive
+  metadata is pinned.
+
+### Security
+
+- **The wizard's CDN scripts are pinned with Subresource Integrity.** The web wizard loads
+  three libraries from cdnjs; there is no `package.json`, so neither Dependabot nor Snyk sees
+  those versions. Each `<script>` now carries a `sha512` `integrity` hash and
+  `crossorigin="anonymous"`, so a modified file is refused rather than executed against
+  whatever spreadsheet the user pointed the wizard at. A test asserts every external script
+  is hashed, strongly hashed and version-pinned — SRI's own failure mode is bumping a version
+  without recomputing the hash, which leaves the page loading and the library silently absent.
+- **Static analysis is enforced rather than advisory.** `bandit` runs in CI and fails the
+  build at MEDIUM severity and above (configured in `pyproject.toml`; tests are excluded,
+  since a security-conscious suite builds hostile input on purpose). The source already
+  carried seven justified `# nosec` annotations from a hand-run that was never wired up — by
+  the time it was enforced, a second un-triaged `urlopen` had appeared. CodeQL
+  (`security-extended`) runs alongside it on pull requests and weekly, and adds the view
+  bandit cannot give: whether a dangerous call is *reachable from untrusted input*. Secret
+  scanning and push protection are enabled on the repository.
+
+### CI / Infrastructure
+
+- Checks now run on **every** pull request. Both workflows filtered `pull_request` to
+  `[main, dev]`, so a pull request targeting a feature branch ran nothing at all — and the
+  gap was invisible, because no checks appeared to fail rather than appearing red. All
+  third-party actions are pinned to a commit SHA.
+- The oracle job runs under `pytest-xdist` (`-n auto`). The fast suite stays serial by
+  design: `proxy_support` installs a process-global SSL truststore, which a shared worker
+  would carry into tests that mock it.
+
+### Tests
+
+- **Oracle type-matrix suite** (`tests/oracle/`, ~26,900 generated cases) — for every
+  combination of value type × file shape × OOXML storage type × number format × read
+  direction, the suite generates a manifest of known ground truth and forces
+  `validate-pattern`, `lint`, `profile`, `extract` and `schema` to agree with it. Excluded
+  from `pytest tests/` by the `oracle` marker; run as a pre-PR gate via
+  `scripts/oracle_check.py`, and on pull requests by `.github/workflows/oracle.yml`. It found
+  both `Fixed` entries above on its first full run.
+- **Excel storage-model boundaries pinned** — the 1900 leap-year bug (serials 59 and 60 both
+  read as 1900-02-28, and serials 1–59 sit one day ahead of naive epoch arithmetic); the
+  two-day hole where 1899-12-30 and 1899-12-31 come back as `00:00:00` instead of a date; the
+  2⁵³ integer precision cliff, above which odd integers snap to an even neighbour and a
+  19-digit identifier comes back as a different number while still validating as an integer.
+
+### Documentation
+
+- `docs/pattern-file.md`: `date.format` / `time.format`, why ambiguous text is refused, a
+  note on numbers in duration cells (Excel's unit is one day, so a bare `12` is twelve days),
+  and **"Long numeric identifiers: declare them `string`"** — above 2⁵³ a numeric cell cannot
+  hold a long ID exactly, and the rounding is undetectable after the fact.
+
 ## [0.4.1] — 2026-09-21
 
 ### Fixed

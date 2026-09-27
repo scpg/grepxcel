@@ -21,14 +21,14 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 #   {name}_snapshot-manual.json          — stored extraction result using manual pattern
 #
 # Priority for xlsx:  manual > from-claude > from-local > from-github > from-gemini
-#                     > from-draft > pattern (bare legacy)
+#                     > from-nvidia > from-draft > pattern (bare legacy)
 # Priority for csv:   manual > from-claude > from-local > from-github > from-gemini
-#                     > from-draft
+#                     > from-nvidia > from-draft
 #
 # pattern-manual.* files are user-curated — treat as read-only.
 
 # Ordered by priority (highest first).
-_BACKENDS = ('claude', 'local', 'github', 'gemini', 'draft')
+_BACKENDS = ('claude', 'local', 'github', 'gemini', 'nvidia', 'draft')
 
 _PATTERN_XLSX_SUFFIXES = (
     'pattern-manual.xlsx',
@@ -36,6 +36,7 @@ _PATTERN_XLSX_SUFFIXES = (
     'pattern-from-local.xlsx',
     'pattern-from-github.xlsx',
     'pattern-from-gemini.xlsx',
+    'pattern-from-nvidia.xlsx',
     'pattern-from-draft.xlsx',   # legacy / programmatic (01-14) or original draft (15-22)
     'pattern.xlsx',              # bare legacy fallback
 )
@@ -45,6 +46,7 @@ _PATTERN_CSV_SUFFIXES = (
     'pattern-from-local.csv',
     'pattern-from-github.csv',
     'pattern-from-gemini.csv',
+    'pattern-from-nvidia.csv',
     'pattern-from-draft.csv',
 )
 

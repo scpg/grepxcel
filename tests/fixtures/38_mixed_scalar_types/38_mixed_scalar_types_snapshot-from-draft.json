@@ -1,0 +1,11 @@
+{
+  "mix": {
+    "label": "Product Alpha",
+    "count": 250,
+    "rate": 0.085,
+    "price": 49.99,
+    "date": "2026-06-01 00:00:00",
+    "duration": "3:45:00",
+    "is_active": true
+  }
+}

@@ -138,10 +138,13 @@ def test_log_record_to_dict_keys():
     r = LogRecord(Severity.WARNING, Category.VALIDATION, 'bad value',
                   location='A1', field='qty', found='x')
     d = r.to_dict()
+    # 'reason' joins message/expected/found/hint as a console-rendering field.
+    # Like them it can contain the cell value, so it is deliberately absent from
+    # _SAFE_LOG_KEYS — see test_no_cell_values_in_structured_logs.
     assert set(d.keys()) == {'severity', 'category', 'message', 'location',
                               'field', 'field_type', 'expected', 'found',
-                              'hint', 'event', 'value_len', 'value_sha8',
-                              'timestamp'}
+                              'hint', 'reason', 'event', 'value_len',
+                              'value_sha8', 'timestamp'}
     assert d['location'] == 'A1'
     assert d['field'] == 'qty'
 

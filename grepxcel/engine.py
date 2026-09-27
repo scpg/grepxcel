@@ -8,7 +8,8 @@ import openpyxl
 from openpyxl.utils import get_column_letter
 from openpyxl.utils.cell import coordinate_to_tuple
 from .models import Config, CellInstruction, TableInstruction, TemplateRow, SeekInstruction, DirectionInstruction
-from .utils import is_empty, validate_type, _MAX_REGEX_INPUT_LEN, _regex_timeout
+from .utils import (is_empty, validate_type, coerce_temporal_text,
+                    TEMPORAL_TYPES, _MAX_REGEX_INPUT_LEN, _regex_timeout)
 from .pattern_parser import PatternParser, PatternError, RoledDefs
 from .logger import Logger, LogRecord, EngineError, cell_ref
 from .security import validate_file, validate_pattern_file, SecurityError, DEFAULT_MAX_UNCOMPRESSED_MB
@@ -95,8 +96,59 @@ def _apply_trim(value, fd, config):
     return value
 
 
+def _squash(name) -> str:
+    """A sheet name with case and all whitespace removed — used only to explain
+    a near miss in an error message, never to match on."""
+    return ''.join(str(name).split()).lower()
+
+
+def _ci_sheet_matches(sheet, sheetnames: list) -> list:
+    """Sheet names equal to *sheet* ignoring case (exact matches included)."""
+    target = str(sheet).lower()
+    return [n for n in sheetnames if n.lower() == target]
+
+
+def _coerce_temporal(value, fd, config, logger=None, location: str = ''):
+    """Convert a TEXT cell into the date/time object its ``var:`` type declares.
+
+    A date can reach grepxcel as text — exported from another system, typed with
+    a leading apostrophe, or written without a date number format. The pattern
+    already states what the field is meant to be, so unambiguous text is
+    converted rather than refused. Only ``var:`` fields are touched: a ``lbl:``
+    field is an anchor matched as text, and rewriting its value would break the
+    match.
+
+    Returns the converted value, or *value* unchanged when there is nothing to
+    convert. Conversions are logged at debug level so ``-vv`` shows that the
+    output differs from the literal cell contents.
+    """
+    if fd is None or fd.role != 'var' or not isinstance(value, str):
+        return value
+    if fd.type not in TEMPORAL_TYPES:
+        return value
+    converted = coerce_temporal_text(value, fd.type, config.date_format,
+                                     config.time_format)
+    if converted is None:
+        return value
+    if logger is not None:
+        logger.value_coerced(location, fd.name, fd.type, value, converted)
+    return converted
+
+
 def _validate_field(fd, value, config, max_cell_len: int) -> bool:
-    """Validate a cell value against a FieldDef.
+    """Validate a cell value against a FieldDef. Returns True/False.
+
+    Boolean-only wrapper over :func:`_validate_field_with_reason`. Kept as a
+    plain bool because callers that never emit a warning — ``SKIP_IF`` matching,
+    footer detection — only need the verdict, and a large number of unit tests
+    assert on it directly (``assert not _validate_field(...)``), which a tuple
+    return would silently make vacuous.
+    """
+    return _validate_field_with_reason(fd, value, config, max_cell_len)[0]
+
+
+def _validate_field_with_reason(fd, value, config, max_cell_len: int) -> tuple:
+    """Validate a cell value against a FieldDef, returning ``(ok, reason)``.
 
     Dispatches on ``fd.role`` and ``fd.var_mode``:
 
@@ -105,23 +157,39 @@ def _validate_field(fd, value, config, max_cell_len: int) -> bool:
     * ``var:literal``    — type check + exact-string (or case-insensitive) match.
     * ``var:glob``       — type check + shell-glob match on the string representation.
 
-    Returns True/False; never raises.
+    *reason* is ``''`` when the value is valid, otherwise a short phrase naming
+    **why** it was rejected — ``validate_type``'s own wording where it has one.
+    That string used to be computed and thrown away here, which collapsed every
+    distinct cause ("is not a whole number", "javascript: URLs are not
+    permitted", over ``--max-cell-len``, a regex timeout) into one generic
+    "does not match" warning. Never raises.
     """
     if fd.role == 'lbl':
+        # Convert date/datetime to ISO string first, same as var:literal/glob
+        # below — str(datetime(2024,1,1)) gives '2024-01-01 00:00:00', not
+        # '2024-01-01', which silently breaks literal/glob matches (and any
+        # regexp pattern anchored with $) against a date-formatted label cell.
+        if isinstance(value, _datetime.datetime):
+            lbl_text = value.date().isoformat()
+        elif isinstance(value, _datetime.date):
+            lbl_text = value.isoformat()
+        else:
+            lbl_text = value
         # Trim label cell text before matching when trim_whitespace_labels is active.
-        lbl_text = value
         if isinstance(lbl_text, str) and config.trim_whitespace_labels:
             lbl_text = lbl_text.strip()
-        return _match_lbl(lbl_text, fd.regex, fd.lbl_match or config.lbl_match,
-                          config.ignore_case_labels)
+        mode = fd.lbl_match or config.lbl_match
+        ok = _match_lbl(lbl_text, fd.regex, mode, config.ignore_case_labels)
+        return ok, ('' if ok else
+                    f'{lbl_text!r} does not match label {fd.regex!r} ({mode} match)')
     # var: field — per-field var_mode wins; fall back to config.var_match global default.
     effective_var_mode = fd.var_mode if fd.var_mode is not None else config.var_match
     if effective_var_mode in ('literal', 'glob'):
         # Type check (use '.*' so it always passes the regex part).
-        type_ok, _ = validate_type(value, fd.type, '.*', config.currency_sign,
-                                   max_cell_len, config.ignore_case_values)
+        type_ok, type_reason = validate_type(value, fd.type, '.*', config.currency_sign,
+                                             max_cell_len, config.ignore_case_values)
         if not type_ok:
-            return False
+            return False, type_reason
         # Convert date/datetime to ISO string so var:literal|glob date fields work.
         # str(datetime(2024,1,1)) gives '2024-01-01 00:00:00', not '2024-01-01'.
         if isinstance(value, _datetime.datetime):
@@ -130,11 +198,13 @@ def _validate_field(fd, value, config, max_cell_len: int) -> bool:
             _str_val = value.isoformat()
         else:
             _str_val = str(value) if value is not None else ''
-        return _match_lbl(_str_val, fd.regex, effective_var_mode, config.ignore_case_values)
+        ok = _match_lbl(_str_val, fd.regex, effective_var_mode, config.ignore_case_values)
+        return ok, ('' if ok else
+                    f'{_str_val!r} does not match {fd.regex!r} '
+                    f'({effective_var_mode} match)')
     # regexp mode (default) — validate_type handles both type and regex.
-    ok, _ = validate_type(value, fd.type, fd.regex, config.currency_sign,
-                          max_cell_len, config.ignore_case_values)
-    return ok
+    return validate_type(value, fd.type, fd.regex, config.currency_sign,
+                         max_cell_len, config.ignore_case_values)
 
 
 # ── Data-sheet size limits ──────────────────────────────────────────────────────
@@ -257,6 +327,58 @@ def _build_row_obj(raw_row: dict, defs: dict) -> dict:
             continue
         _set_nested(obj, _field_local(field), value)
     return obj
+
+
+def _build_minimal_output(nested: dict) -> dict:
+    """Strip all metadata blocks from a nested output dict (minimal detail level).
+
+    Removes top-level ``_``-prefixed keys (``_source``, ``_meta``, ``_images``)
+    and the per-instance ``_source`` block inside table arrays.
+    """
+    result: dict = {}
+    for key, value in nested.items():
+        if key.startswith('_'):
+            continue
+        if isinstance(value, list):
+            cleaned = []
+            for instance in value:
+                if isinstance(instance, dict):
+                    clean_inst = {k: v for k, v in instance.items() if k != '_source'}
+                    cleaned.append(clean_inst)
+                else:
+                    cleaned.append(instance)
+            result[key] = cleaned
+        else:
+            result[key] = value
+    return result
+
+
+def _build_extended_output(raw: dict, defs: dict) -> dict:
+    """Build nested output + parallel ``_ext`` block with per-field metadata.
+
+    The data fields are identical to the normal output.  ``_ext`` mirrors the
+    structure and carries ``type``, ``cell_ref``, ``number_format``,
+    ``raw_excel``, and (for currency fields) ``currency_source`` /
+    ``currency_symbol``.
+
+    Table row-level metadata is not yet tracked (only scalar cell metadata).
+    """
+    out = _build_nested_output(raw, defs)
+    cell_meta = raw.get('cell_meta', {})
+
+    if not cell_meta:
+        return out
+
+    ext: dict = {}
+    for field, meta in cell_meta.items():
+        fd = defs.get(field)
+        if fd and fd.role == 'lbl':
+            continue
+        _set_nested(ext, field, meta)
+
+    if ext:
+        out['_ext'] = ext
+    return out
 
 
 def _build_nested_output(raw: dict, defs: dict) -> dict:
@@ -577,10 +699,19 @@ def _check_media_bytes(data: bytes, zip_path: str = '') -> tuple:
         return 'audio/flac', True
 
     # ── SVG (text-based XML) — checked last, CPU-cheaper than regex ──────────
+    # Require the payload to actually parse as XML with an <svg> root element.
+    # A prefix-only check (e.g. bytes starting with "<svg" followed by shell
+    # or HTML content) would let non-image content masquerade as SVG and be
+    # written to disk with a misleading extension by callers such as
+    # extract_images().
     try:
         head = data[:512].decode('utf-8', errors='ignore').lstrip('﻿ \t\r\n')
         if head.startswith('<?xml') or head.startswith('<svg') or '<svg' in head[:256]:
-            return 'image/svg+xml', True
+            import defusedxml.ElementTree as _ET
+            root = _ET.fromstring(data)
+            tag = root.tag.rsplit('}', 1)[-1] if isinstance(root.tag, str) else ''
+            if tag == 'svg':
+                return 'image/svg+xml', True
     except Exception:
         pass
 
@@ -618,6 +749,33 @@ _SUPPORTED_MEDIA_MIMES = frozenset({
     'audio/wav', 'audio/mpeg', 'audio/ogg', 'audio/flac',
 })
 
+# Canonical on-disk extension for each supported MIME type. extract_images()
+# uses this — never the zip member's own extension — to name saved files, so
+# a media entry cannot be written to disk under an attacker-chosen extension
+# (e.g. .cmd/.bat/.html) regardless of what its zip path claims to be.
+_MIME_TO_EXT = {
+    'image/jpeg':    '.jpg',
+    'image/png':     '.png',
+    'image/gif':     '.gif',
+    'image/bmp':     '.bmp',
+    'image/tiff':    '.tiff',
+    'image/webp':    '.webp',
+    'image/x-icon':  '.ico',
+    'image/svg+xml': '.svg',
+    'image/heic':    '.heic',
+    'image/heif':    '.heif',
+    'image/avif':    '.avif',
+    'audio/wav':     '.wav',
+    'audio/mpeg':    '.mp3',
+    'audio/ogg':     '.ogg',
+    'audio/flac':    '.flac',
+}
+
+# A worksheet/richData cell reference is always column letters + row digits
+# (e.g. "A1", "AB123"). Anything else is untrusted-input tampering and must
+# not be interpolated into a filename.
+_SAFE_CELL_REF_RE = re.compile(r'^[A-Z]{1,3}[0-9]{1,7}$')
+
 
 def _build_sheet_name_maps(zf, namelist):
     """Return (sheet_xml_to_name, drawing_to_sheet_name) from workbook metadata.
@@ -625,7 +783,7 @@ def _build_sheet_name_maps(zf, namelist):
     sheet_xml_to_name : {'xl/worksheets/sheet1.xml': 'Sheet1', ...}
     drawing_to_sheet  : {'xl/drawings/drawing1.xml': 'Sheet1', ...}
     """
-    import xml.etree.ElementTree as _ET
+    import defusedxml.ElementTree as _ET
 
     _NS_SS  = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
     _NS_R   = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
@@ -689,7 +847,7 @@ def _scan_richdata_image_cells(zf, namelist, sheet_xml_to_name: dict) -> dict:
     carry a ``vm=`` attribute in the worksheet XML referencing a 1-based index
     into ``xl/richData/rdrichvalue.xml``.
     """
-    import xml.etree.ElementTree as _ET
+    import defusedxml.ElementTree as _ET
 
     _NS_SS  = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
 
@@ -732,7 +890,7 @@ def _iter_drawing_anchors(data_file: str):
     monotonically increasing, useful for building unique filenames.
     """
     import zipfile
-    import xml.etree.ElementTree as _ET
+    import defusedxml.ElementTree as _ET
 
     _NS_XDR = 'http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing'
     _NS_R   = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
@@ -812,6 +970,112 @@ def _iter_drawing_anchors(data_file: str):
                 yield sheet_name, cell_ref_str, media_path, global_idx, zf.read(media_path)
 
 
+def _iter_richdata_images(data_file: str):
+    """Yield (sheet_name, cell_ref, media_zip_path, idx, data_bytes) for IMAGE() formula cells.
+
+    Traverses the richData chain:
+      rdrichvalue.xml  →  richValueRel.xml (ordered rId list)
+      →  _rels/richValueRel.xml.rels (rId → media path)
+      →  xl/media/imageN.*  (bytes)
+    """
+    import zipfile
+    import defusedxml.ElementTree as _ET
+
+    _NS_RVR  = 'http://schemas.microsoft.com/office/spreadsheetml/2022/richvaluerel'
+    _NS_R    = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships'
+    _NS_RELS = 'http://schemas.openxmlformats.org/package/2006/relationships'
+    _NS_RD   = 'http://schemas.microsoft.com/office/spreadsheetml/2017/richdata'
+    _NS_SS   = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'
+
+    try:
+        zf = zipfile.ZipFile(data_file, 'r')
+    except (zipfile.BadZipFile, OSError):
+        return
+
+    with zf:
+        namelist = set(zf.namelist())
+
+        required = (
+            'xl/richData/richValueRel.xml',
+            'xl/richData/_rels/richValueRel.xml.rels',
+            'xl/richData/rdrichvalue.xml',
+        )
+        if not all(p in namelist for p in required):
+            return
+
+        try:
+            rvr_tree = _ET.fromstring(zf.read('xl/richData/richValueRel.xml'))
+        except _ET.ParseError:
+            return
+
+        # Ordered list of rIds from richValueRel.xml (position = 0-based LocalImageIdentifier)
+        rels_by_idx = [
+            rel.get(f'{{{_NS_R}}}id', '')
+            for rel in rvr_tree.findall(f'{{{_NS_RVR}}}rel')
+        ]
+
+        try:
+            reltree = _ET.fromstring(zf.read('xl/richData/_rels/richValueRel.xml.rels'))
+        except _ET.ParseError:
+            return
+
+        rId_to_media: dict = {}
+        for rel in reltree.findall(f'{{{_NS_RELS}}}Relationship'):
+            rid = rel.get('Id', '')
+            target = rel.get('Target', '')
+            if '../media/' in target:
+                rId_to_media[rid] = target.replace('../media/', 'xl/media/')
+
+        try:
+            rv_tree = _ET.fromstring(zf.read('xl/richData/rdrichvalue.xml'))
+        except _ET.ParseError:
+            return
+
+        # Map 1-based vm index → media zip path
+        vm_to_media: dict = {}
+        for vm_1based, rv_el in enumerate(rv_tree.findall(f'{{{_NS_RD}}}rv'), start=1):
+            v_els = rv_el.findall(f'{{{_NS_RD}}}v')
+            if not v_els:
+                continue
+            try:
+                local_img_id = int(v_els[0].text or '')
+            except (ValueError, TypeError):
+                continue
+            if local_img_id >= len(rels_by_idx):
+                continue
+            rid = rels_by_idx[local_img_id]
+            media_path = rId_to_media.get(rid, '')
+            if media_path:
+                vm_to_media[vm_1based] = media_path
+
+        sheet_xml_to_name, _ = _build_sheet_name_maps(zf, namelist)
+
+        global_idx = 0
+        for sheet_xml_path, sheet_name in sheet_xml_to_name.items():
+            if sheet_xml_path not in namelist:
+                continue
+            try:
+                ws_tree = _ET.fromstring(zf.read(sheet_xml_path))
+            except _ET.ParseError:
+                continue
+            for cell_el in ws_tree.findall(f'.//{{{_NS_SS}}}c'):
+                vm = cell_el.get('vm')
+                if vm is None:
+                    continue
+                try:
+                    vm_int = int(vm)
+                except (ValueError, TypeError):
+                    continue
+                ref = cell_el.get('r', '').upper()
+                if not ref:
+                    continue
+                media_path = vm_to_media.get(vm_int)
+                if not media_path or media_path not in namelist:
+                    continue
+                global_idx += 1
+                yield sheet_name, ref, media_path, global_idx, zf.read(media_path)
+
+
 def scan_image_cells(data_file: str) -> dict:
     """Return per-sheet, per-cell media info for all embedded media in the file.
 
@@ -885,7 +1149,8 @@ def extract_images(data_file: str, images_dir: str, stem: str) -> tuple:
     os.makedirs(images_dir, exist_ok=True)
 
     per_cell_count: dict = {}
-    for _sheet, cell_ref, media_path, idx, data in _iter_drawing_anchors(data_file):
+
+    def _save_one(cell_ref: str, media_path: str, idx: int, data: bytes) -> None:
         mime, ok = _check_media_bytes(data, media_path)
         if not ok:
             label = mime or 'unrecognised binary'
@@ -894,17 +1159,30 @@ def extract_images(data_file: str, images_dir: str, stem: str) -> tuple:
                 f'{media_path}: {label} — skipped'
                 + (f' (magic bytes: {hex_head})' if hex_head else '')
             )
-            continue
-
-        ext = os.path.splitext(media_path)[1] or '.bin'
+            return
+        if not _SAFE_CELL_REF_RE.match(cell_ref):
+            warnings.append(f'{media_path}: invalid cell reference {cell_ref!r} — skipped')
+            return
+        # Extension comes from the detected MIME type, never from the zip
+        # member's own name/extension, which is attacker-controlled.
+        ext = _MIME_TO_EXT.get(mime, '.bin')
         per_cell_count[cell_ref] = per_cell_count.get(cell_ref, 0) + 1
         n = per_cell_count[cell_ref]
         key = cell_ref if n == 1 else f'{cell_ref}_{n}'
         out_name = f'{stem}_{cell_ref}_{idx}{ext}'
         out_path = os.path.join(images_dir, out_name)
+        if os.path.exists(out_path):
+            warnings.append(f'{out_path}: already exists — skipped')
+            return
         with open(out_path, 'wb') as fh:
             fh.write(data)
         result[key] = out_path
+
+    for _sheet, cell_ref, media_path, idx, data in _iter_drawing_anchors(data_file):
+        _save_one(cell_ref, media_path, idx, data)
+
+    for _sheet, cell_ref, media_path, idx, data in _iter_richdata_images(data_file):
+        _save_one(cell_ref, media_path, idx, data)
 
     return result, warnings
 
@@ -918,7 +1196,8 @@ class Engine:
                 max_rows: int = DEFAULT_MAX_DATA_ROWS,
                 max_cols: int = DEFAULT_MAX_DATA_COLS,
                 sheet: str | int | None = None,
-                output_format: str = 'nested') -> dict:
+                output_format: str = 'nested',
+                detail_level: str = 'normal') -> dict:
         if logger is None:
             logger = Logger()
 
@@ -979,6 +1258,23 @@ class Engine:
             elif sheet in wb.sheetnames:
                 # Exact name match wins — including numeric names like "2025".
                 ws = wb[sheet]
+            elif _ci_sheet_matches(sheet, wb.sheetnames):
+                # Case-insensitive fallback. Safe because a workbook cannot hold
+                # two sheets differing only by case: Excel rejects it, and
+                # openpyxl silently uniquifies (a second 'SHEET1' becomes
+                # 'SHEET11'). Exact match is still tried first, so a file that
+                # somehow contains both is unaffected for the exact spelling,
+                # and the ambiguous branch below catches the rest.
+                _matches = _ci_sheet_matches(sheet, wb.sheetnames)
+                if len(_matches) > 1:
+                    logger.fatal(
+                        f'Sheet {sheet!r} matches {len(_matches)} sheets when '
+                        f'case is ignored',
+                        found=sheet,
+                        expected=(f'an exact name — this workbook contains '
+                                  f'{", ".join(repr(m) for m in _matches)}'),
+                    )
+                ws = wb[_matches[0]]
             elif str(sheet).lstrip('-').isdigit():
                 # Numeric string with no matching name → treat as a 0-based index.
                 idx = int(sheet)
@@ -991,10 +1287,23 @@ class Engine:
                     )
                 ws = wb.worksheets[idx]
             else:
+                # Name the actual difference. Case is already handled above, so
+                # if a whitespace-insensitive comparison matches, whitespace is
+                # the cause — and it is NOT something to normalise away: Excel
+                # treats 'Sheet 1' and 'Sheet1' as two different sheets, so
+                # grepxcel must too. Saying so turns a dead end into a fix.
+                _squashed = _squash(sheet)
+                _near = [n for n in wb.sheetnames if _squash(n) == _squashed]
+                _hint = ''
+                if _near:
+                    _hint = (f' Did you mean {_near[0]!r}? Spaces are part of a '
+                             f'sheet name — {_near[0]!r} and {sheet!r} differ by '
+                             f'whitespace, and Excel treats those as different '
+                             f'sheets. Matching ignores case, not spacing.')
                 logger.fatal(
                     f'Sheet {sheet!r} not found in workbook',
                     found=sheet,
-                    expected=f'one of: {", ".join(wb.sheetnames)}',
+                    expected=f'one of: {", ".join(wb.sheetnames)}.{_hint}',
                 )
                 ws = wb.active  # unreachable (logger.fatal raises); keeps ws bound
 
@@ -1020,7 +1329,12 @@ class Engine:
                 DeprecationWarning, stacklevel=3,
             )
             return _raw
-        return _build_nested_output(_raw, defs)
+        nested = _build_nested_output(_raw, defs)
+        if detail_level == 'minimal':
+            return _build_minimal_output(nested)
+        if detail_level == 'extended':
+            return _build_extended_output(_raw, defs)
+        return nested
 
     def process_all(self, pattern_file: str, data_file: str,
                     logger: Logger = None,
@@ -1029,7 +1343,8 @@ class Engine:
                     max_cell_len: int = _MAX_REGEX_INPUT_LEN,
                     max_rows: int = DEFAULT_MAX_DATA_ROWS,
                     max_cols: int = DEFAULT_MAX_DATA_COLS,
-                    output_format: str = 'nested') -> dict:
+                    output_format: str = 'nested',
+                    detail_level: str = 'normal') -> dict:
         """
         Process every sheet in data_file using the same pattern.
         Returns a dict keyed by sheet name: {sheet_name: result, ...}.
@@ -1095,7 +1410,13 @@ class Engine:
                 if output_format == 'legacy':
                     out[ws.title] = _raw
                 else:
-                    out[ws.title] = _build_nested_output(_raw, defs)
+                    _nested = _build_nested_output(_raw, defs)
+                    if detail_level == 'minimal':
+                        out[ws.title] = _build_minimal_output(_nested)
+                    elif detail_level == 'extended':
+                        out[ws.title] = _build_extended_output(_raw, defs)
+                    else:
+                        out[ws.title] = _nested
 
         except EngineError:
             pass  # setup-phase fatal
@@ -1105,7 +1426,7 @@ class Engine:
     def _process_sheet(self, ws, global_config, defs: dict,
                        start_sequence: list, logger: Logger) -> dict:
         """Run extraction on a single worksheet. Returns raw flat result dict."""
-        _raw = {'cells': {}, 'tables': []}
+        _raw = {'cells': {}, 'tables': [], 'cell_meta': {}}
         logger.begin_summary_scope()  # scope summary/ISSUES to THIS sheet
         logger.sheet_name = ws.title
         merge_map = _expand_merged_cells(ws)
@@ -1236,18 +1557,38 @@ class Engine:
         if fd.nullable and is_empty(value, config.empty_aliases, config.ignore_case_values):
             value = None
 
+        # A date/time declared by the pattern but stored as TEXT is converted
+        # here, before validation, so the output carries a real temporal object
+        # rather than the raw string (see utils.coerce_temporal_text).
+        value = _coerce_temporal(value, fd, config, logger,
+                                 cell_ref(row, col, logger.sheet_name))
+
         # Validate before tracing so the -v trace can show 🟢/🔴 per field.
         ok = None
+        reason = ''
         if value is not None:
-            ok = _validate_field(fd, value, config, self._max_cell_len)
+            ok, reason = _validate_field_with_reason(
+                fd, value, config, self._max_cell_len)
 
         logger.cell_processed(row, col, instr.field, value, ok=ok, regex=fd.regex)
 
         if ok is False:
-            rec = logger.warn_validation(row, col, instr.field, fd.type, fd.regex, value)
+            rec = logger.warn_validation(row, col, instr.field, fd.type, fd.regex,
+                                         value, reason=reason)
             logger.commit_warnings([rec])
 
         result['cells'][instr.field] = value
+
+        # Capture per-cell metadata for --detail extended.
+        if 'cell_meta' in result:
+            _nf = scanner.ws.cell(row, col).number_format or 'General'
+            _meta: dict = {
+                'type': fd.type if fd else 'string',
+                'cell_ref': cell_ref(row, col),
+                'number_format': _nf,
+                'raw_excel': value,
+            }
+            result['cell_meta'][instr.field] = _meta
 
     # -------------------------------------------------------------------------
     # seek: processing
@@ -1281,8 +1622,12 @@ class Engine:
         logger.table_group_start(table_index, instr.config.read_direction)
         search_cursor = scanner.cursor
         instance_index = 0
+        is_bounded = instr.max_instances is not None
 
         while True:
+            if is_bounded and instance_index >= instr.max_instances:
+                break
+
             match, search_cursor = self._try_match_mini_table(
                 instr, scanner, defs, search_cursor, logger
             )
@@ -1306,6 +1651,11 @@ class Engine:
                 anchor_row, anchor_col, end_row, end_col,
             )
             instance_index += 1
+
+        if is_bounded and instance_index < instr.min_instances:
+            logger.commit_warnings([
+                logger.warn_table_min_not_reached(table_index, instr.min_instances, instance_index)
+            ])
 
         logger.table_group_done(table_index, instance_index)
 
@@ -1556,13 +1906,18 @@ class Engine:
                 else:
                     # Apply trim-whitespace before validation and storage.
                     val = _apply_trim(val, fd, config)
-                    ok = _validate_field(fd, val, config, self._max_cell_len)
+                    val = _coerce_temporal(
+                        val, fd, config, logger,
+                        cell_ref(sheet_row, col, logger.sheet_name))
+                    ok, reason = _validate_field_with_reason(
+                        fd, val, config, self._max_cell_len)
                     if not ok:
                         if strict:
                             return {}, False  # HEADER/FOOTER: wrong value = no match
                         local_warnings.append(
                             logger.warn_validation(sheet_row, col, tmpl_col.field,
-                                                   fd.type, fd.regex, val)
+                                                   fd.type, fd.regex, val,
+                                                   reason=reason)
                         )
                     trace_ok, trace_regex = ok, fd.regex
                 row_data[tmpl_col.field] = val

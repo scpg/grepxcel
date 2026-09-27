@@ -1,4 +1,5 @@
 import csv
+import datetime
 import os
 import re
 
@@ -32,6 +33,20 @@ MIN_SUPPORTED_PATTERN_VERSION = 1
 
 _TRUTHY = frozenset({'1', 'true', 'yes', 'on', 'y'})
 _FALSY  = frozenset({'0', 'false', 'no', 'off', 'n', ''})
+
+# Every key `_apply_global_config` understands. Single source of truth: the
+# misplaced-key hint below and validate-pattern's "unknown config key" message
+# both read this. They used to restate it, and drifted — `date.format` and
+# `time.format` were accepted by the parser while validate-pattern still listed
+# them as invalid.
+VALID_CONFIG_KEYS = frozenset({
+    'pattern.version', 'version',
+    'read.direction', 'currency.sign', 'empty.aliases',
+    'ignore.case', 'ignore.case.labels', 'ignore.case.values',
+    'trim.whitespace', 'trim.whitespace.labels', 'trim.whitespace.values',
+    'lbl.match', 'var.match',
+    'date.format', 'time.format',
+})
 
 # Excel constant formulas that are safe to accept in pattern config cells.
 # =TRUE() / =FALSE() appear when a user types TRUE/FALSE without an apostrophe
@@ -365,15 +380,8 @@ class PatternParser:
                 elif row[1] is not None and str(row[1]).strip():
                     # Column A is empty but column B has content — likely a
                     # config: row where the author forgot to add 'config:' in A.
-                    _KNOWN_CFG = frozenset({
-                        'pattern.version', 'version', 'read.direction',
-                        'currency.sign', 'ignore.case',
-                        'ignore.case.labels', 'ignore.case.values',
-                        'trim.whitespace', 'trim.whitespace.labels', 'trim.whitespace.values',
-                        'lbl.match', 'var.match', 'empty.aliases',
-                    })
                     col_b = str(row[1]).strip()
-                    if col_b.lower() in _KNOWN_CFG:
+                    if col_b.lower() in VALID_CONFIG_KEYS:
                         raise PatternError(
                             f"Pattern row {i + 1}: column A is empty but column B "
                             f"contains config key {col_b!r}. Add 'config:' in column A "
@@ -450,13 +458,31 @@ class PatternParser:
 
             elif col_a_l and col_a_l.startswith('table:'):
                 mult = col_a.split(':', 1)[1]
-                # table:<mult> must be '*' or a positive instance count.
-                if mult != '*' and not _POSINT_RE.match(mult):
+                # table:<mult> must be '*', a positive exact-instance count, or
+                # a bounded 'table:{n,m}' — mirrors DATA:{n,m}'s accepted forms.
+                if not (mult == '*' or _POSINT_RE.match(mult)
+                        or _BOUNDED_DATA_RE.match(mult)):
                     raise PatternError(
                         f"Invalid table multiplicity 'table:{mult}' at pattern row "
-                        f"{i + 1}. Use 'table:*' (all instances) or a positive "
-                        f"count like 'table:1'."
+                        f"{i + 1}. Use 'table:*' (all instances), a positive "
+                        f"count like 'table:1', or a bounded 'table:{{n,m}}'."
                     )
+                min_instances, max_instances = 0, None
+                if mult == '*':
+                    pass
+                else:
+                    m = _BOUNDED_DATA_RE.match(mult)
+                    if m:
+                        min_instances = int(m.group(1))
+                        max_instances = int(m.group(2))
+                        if min_instances > max_instances:
+                            raise PatternError(
+                                f'table:{{{min_instances},{max_instances}}} at pattern '
+                                f'row {i + 1}: min ({min_instances}) must be ≤ max '
+                                f'({max_instances}).'
+                            )
+                    else:
+                        min_instances = max_instances = int(mult)
                 table_config = Config(
                     read_direction=global_config.read_direction,
                     currency_sign=global_config.currency_sign,
@@ -647,6 +673,8 @@ class PatternParser:
                     config=table_config,
                     rows=template_rows,
                     explicit_config_keys=frozenset(explicit_table_cfg_keys),
+                    min_instances=min_instances,
+                    max_instances=max_instances,
                 ))
 
             elif col_a_l in ('doc:', 'info:'):
@@ -949,6 +977,26 @@ class PatternParser:
                     f"{', '.join(sorted(VAR_MATCH_MODES))}."
                 )
             config.var_match = mode
+        elif key in ('date.format', 'time.format') and val:
+            fmt = str(val).strip()
+            # Fail at parse time, not on the first cell that uses it: an invalid
+            # strptime format would otherwise silently coerce nothing and every
+            # value would be reported as a plain type mismatch, pointing the user
+            # at their data instead of at their format string.
+            probe = (datetime.datetime(2024, 1, 15, 9, 30) if key == 'date.format'
+                     else datetime.datetime(1900, 1, 1, 9, 30))
+            try:
+                datetime.datetime.strptime(probe.strftime(fmt), fmt)
+            except (ValueError, TypeError) as exc:
+                raise PatternError(
+                    f"Invalid {key} value {val!r}: not a usable strptime format "
+                    f"({exc}). Use Python strftime codes, e.g. '%d/%m/%Y' for "
+                    f"31/12/2024 or '%H.%M' for 09.30."
+                ) from exc
+            if key == 'date.format':
+                config.date_format = fmt
+            else:
+                config.time_format = fmt
         elif key in ('pattern.version', 'version') and val is not None:
             config.pattern_version = _parse_pattern_version(val)
             config.pattern_version_explicit = True

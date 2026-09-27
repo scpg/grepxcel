@@ -13,11 +13,12 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import sys
 import threading
 import time
 import webbrowser
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -40,6 +41,7 @@ from grepxcel.wizard_core import (
 try:
     from fastapi import FastAPI, HTTPException, Request
     from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
+    from fastapi.staticfiles import StaticFiles
     from jinja2 import Environment, FileSystemLoader
     import uvicorn
     _WEB_OK = True
@@ -49,6 +51,34 @@ except ImportError:
 # ── Module-level session (single-user local tool) ─────────────────────────────
 
 _STATE: dict[str, Any] = {}   # single session dict
+
+
+def _unique_name(base: str, choices: dict, own_ref: str, suffix: str = '') -> str:
+    """A generated field name that no other classified cell is already using.
+
+    Names are derived by slugifying the cell's text, so a sheet that repeats the
+    same labelled block — three identical test columns side by side, say — would
+    otherwise produce the same name three times. That is not a cosmetic clash:
+    ``engine._process_cell`` writes ``result['cells'][field] = value``
+    unconditionally, so the last cell silently wins and the earlier values never
+    reach the output. The pattern still validates, and nothing reports the loss.
+
+    Colliding names get ``_2``, ``_3``, … appended. *own_ref* is excluded so
+    re-classifying a cell keeps its current name instead of bumping it every
+    time. A name the user typed is never touched — only generated ones pass
+    through here.
+    """
+    taken = {
+        c.get('name') for ref, c in choices.items()
+        if ref != own_ref and isinstance(c, dict) and c.get('name')
+    }
+    candidate = f'{base}{suffix}'
+    if candidate not in taken:
+        return candidate
+    n = 2
+    while f'{base}_{n}{suffix}' in taken:
+        n += 1
+    return f'{base}_{n}{suffix}'
 
 
 # ── Session log ───────────────────────────────────────────────────────────────
@@ -319,10 +349,166 @@ def _parse_ref(ref: str) -> tuple[int, int]:
     return int(row_str), col
 
 
-def _cell_display(value: Any, max_len: int = 28) -> str:
+def _format_number(
+    value: float,
+    number_format: str,
+    fallback_currency: str = '',
+    force_currency: bool = False,
+) -> tuple[str, str, str] | None:
+    """Format a numeric value using an Excel number_format string.
+
+    Handles the most common patterns: thousands separators, decimal places,
+    percentages, leading currency symbols ($€£…), and [$CODE] bracket notation.
+
+    Returns a ``(formatted_string, currency_source, currency_symbol)`` tuple where
+    ``currency_source`` is ``'cell'`` (symbol from the cell's own Excel format),
+    ``'classified'`` (cell typed as currency by the wizard, fallback applied),
+    ``'default'`` (fallback applied because format is numeric but has no symbol),
+    or ``''`` (no currency).  ``currency_symbol`` is the actual symbol used.
+    Returns ``None`` for unrecognised formats so the caller falls back to
+    ``str(value)``.  Pass ``force_currency=True`` when the wizard has classified
+    this cell as the ``currency`` type, enabling fallback even for General format.
+    """
+    if not number_format or number_format in ('General', '@'):
+        # General format carries no numeric intent on its own.
+        # But if the wizard has classified this cell as 'currency', honour the fallback.
+        if force_currency and fallback_currency:
+            try:
+                fv = float(value)
+                s = f'{fv:,.2f}' if fv != round(fv) else f'{round(fv):,}'
+                return f'{fallback_currency}{s}', 'classified', fallback_currency
+            except (ValueError, TypeError, OverflowError):
+                pass
+        return None
+
+    # Use only the first (positive) section of a multi-section format.
+    fmt = number_format.split(';')[0]
+
+    # Scientific notation (0.00E+000, ##0.0E+0) — not worth approximating.
+    if re.search(r'[Ee][+\-]', fmt):
+        return None
+
+    # Strip Excel alignment / padding tokens:  _x  (pad with x)  and  *x  (fill with x)
+    fmt = re.sub(r'[_*].', '', fmt)
+
+    # Extract and remove quoted literal strings (e.g. " ", "USD").
+    quoted_text = ''.join(re.findall(r'"([^"]*)"', fmt))
+    fmt = re.sub(r'"[^"]*"', '', fmt)
+
+    # Handle bracket codes:
+    #   [$USD]  [$€-407]  →  currency text as suffix  (dollar sign is a meta-prefix, not $)
+    #   [$-409]           →  locale only, no text
+    #   [Red] [Blue]      →  colour codes, strip
+    bracket_currency = ''
+
+    def _handle_bracket(m: re.Match) -> str:
+        nonlocal bracket_currency
+        inner = m.group(1)
+        if inner.startswith('$'):
+            sym = re.split(r'[-]', inner[1:])[0].strip()  # text before optional -locale
+            if sym:
+                bracket_currency = sym
+        return ''  # always remove the bracket token from the format string
+
+    fmt = re.sub(r'\[([^\]]*)\]', _handle_bracket, fmt)
+
+    # Handle Excel escape sequences: \x → literal x (e.g. "\ " → space between number and USD)
+    fmt = re.sub(r'\\(.)', r'\1', fmt)
+
+    # Detect and extract a leading currency symbol: $  €  £  ¥  ₩  ₹  ₽
+    currency_prefix = ''
+    for sym in ('$', '€', '£', '¥', '₩', '₹', '₽'):
+        if sym in fmt:
+            currency_prefix = sym
+            fmt = fmt.replace(sym, '', 1)
+            break
+
+    # Percentage: Excel stores 0.12 for 12 %; multiply before formatting.
+    is_pct = '%' in fmt
+    if is_pct:
+        value = value * 100
+        fmt = fmt.replace('%', '')
+
+    # Thousands separator present when a comma appears between digit placeholders.
+    use_thousands = bool(re.search(r'[#0],[#0]', fmt))
+    fmt_clean = fmt.replace(',', '')
+
+    # Count decimal places (0s and #s after the decimal point in the format).
+    if '.' in fmt_clean:
+        after_dot = fmt_clean.split('.')[-1]
+        decimal_places = sum(1 for c in after_dot if c in '0#')
+    else:
+        decimal_places = 0
+
+    try:
+        if decimal_places > 0:
+            s = f'{value:,.{decimal_places}f}' if use_thousands else f'{value:.{decimal_places}f}'
+        else:
+            rounded = int(round(float(value)))
+            s = f'{rounded:,}' if use_thousands else str(rounded)
+    except (ValueError, TypeError, OverflowError):
+        return None
+
+    # Determine currency source and build prefix/suffix.
+    if currency_prefix or bracket_currency:
+        currency_source = 'cell'
+        currency_symbol = currency_prefix or bracket_currency
+    elif fallback_currency and not is_pct:
+        currency_prefix = fallback_currency
+        currency_source = 'default'
+        currency_symbol = fallback_currency
+    else:
+        currency_source = ''
+        currency_symbol = ''
+
+    if is_pct:
+        suffix = '%'
+    elif bracket_currency:
+        suffix = f' {bracket_currency}'
+    else:
+        suffix = quoted_text
+    return f'{currency_prefix}{s}{suffix}', currency_source, currency_symbol
+
+
+def _cell_display(
+    value: Any,
+    max_len: int = 28,
+    number_format: str = '',
+    fallback_currency: str = '',
+    force_currency: bool = False,
+) -> str:
+    """Return a display string for a grid cell.  Does not include currency_source metadata."""
     if value is None:
         return ''
-    s = str(value)
+    if isinstance(value, bool):                      # bool before int — bool is a subclass of int
+        s = 'TRUE' if value else 'FALSE'
+    elif isinstance(value, datetime):
+        if value.hour == 0 and value.minute == 0 and value.second == 0 and value.microsecond == 0:
+            s = value.strftime('%Y-%m-%d')
+        else:
+            s = value.strftime('%Y-%m-%d %H:%M')   # omit seconds — too granular for the grid
+    elif isinstance(value, timedelta):
+        total_secs = int(value.total_seconds())
+        negative = total_secs < 0
+        total_secs = abs(total_secs)
+        sign = '-' if negative else ''
+        if '[h' in number_format.lower():            # [h]:mm:ss / [hh]:mm:ss → duration
+            days = total_secs // 86400
+            rem  = total_secs % 86400
+            h    = rem // 3600
+            m    = (rem % 3600) // 60
+            sec  = rem % 60
+            s = f'{sign}{days}d:{h:02d}h:{m:02d}m:{sec:02d}s'
+        else:                                        # hh:mm:ss / h:mm → clock time
+            h   = total_secs // 3600
+            m   = (total_secs % 3600) // 60
+            sec = total_secs % 60
+            s = f'{sign}{h:02d}:{m:02d}:{sec:02d}'
+    elif isinstance(value, (int, float)):
+        result = _format_number(float(value), number_format, fallback_currency, force_currency)
+        s = result[0] if result is not None else str(value)  # result[1]/[2] are metadata only
+    else:
+        s = str(value)
     if len(s) > max_len:
         return s[:max_len] + '…'
     return s
@@ -343,6 +529,26 @@ def _to_json_safe(obj: Any) -> Any:
     if obj is None or isinstance(obj, (bool, int, float, str)):
         return obj
     return str(obj)
+
+
+_KNOWN_CURRENCY_SYMS = ['$', '€', '£', '¥', '₹', '₩', '₽', '₺', '₴', '₦', '₫', '฿', '₱']
+
+
+def _detect_file_currencies(wb: openpyxl.Workbook) -> list[str]:
+    """Scan all worksheets and return distinct currency symbols found in number_format strings."""
+    found: list[str] = []
+    seen: set[str] = set()
+    for ws in wb.worksheets:
+        for row in ws.iter_rows():
+            for cell in row:
+                nf = cell.number_format or ''
+                if not nf or nf in ('General', '@'):
+                    continue
+                for sym in _KNOWN_CURRENCY_SYMS:
+                    if sym in nf and sym not in seen:
+                        seen.add(sym)
+                        found.append(sym)
+    return found
 
 
 def _cell_type_display(cell) -> str:
@@ -379,6 +585,7 @@ def _build_sheet_data() -> dict:
     ws: openpyxl.worksheet.worksheet.Worksheet = _STATE['ws']
     choices: dict = _STATE['choices']
     notes: dict = _STATE['notes']
+    fallback_cur: str = _STATE['state'].currency_sign or ''
     # image_cells is {sheet_name: {cell_ref: {count, mimes, suspicious}}}
     _all_image_cells: dict = _STATE.get('image_cells', {})
     image_cells: dict = _all_image_cells.get(ws.title, {})
@@ -409,7 +616,7 @@ def _build_sheet_data() -> dict:
                 'row':       r,
                 'col':       c,
                 'col_letter': get_column_letter(c),
-                'value':     _cell_display(cell.value),
+                'value':     '' if has_img else _cell_display(cell.value, number_format=cell.number_format or '', fallback_currency=fallback_cur, force_currency=choice_info.get('ftype') == 'currency'),
                 'raw':       str(cell.value) if cell.value is not None else '',
                 'type':      cell_type,
                 'has_image':       has_img,
@@ -556,6 +763,9 @@ def create_app(
     else:
         ws = wb.active  # unknown name → fall back to active
 
+    # ── Currency scan (pass over all number_format strings) ──────────────────
+    _detected_currencies = _detect_file_currencies(wb)
+
     # ── Image presence scan (ZIP, no Pillow needed) ───────────────────────────
     try:
         from .engine import scan_image_cells as _scan_img
@@ -621,6 +831,11 @@ def create_app(
         except Exception as exc:  # noqa: BLE001
             preload_warnings.append(f'Could not load pattern: {exc}')
 
+    # Auto-select currency when the file uses exactly one known symbol
+    # and no pattern preload has already set a preference.
+    if len(_detected_currencies) == 1 and state.currency_sign == WizardState().currency_sign:
+        state.currency_sign = _detected_currencies[0]
+
     # ── Session log ───────────────────────────────────────────────────────────
     session_log = _SessionLog(xlsx_path, ws.title)
 
@@ -640,9 +855,14 @@ def create_app(
         'max_cols':         max_cols,
         'log':              session_log,
         'preload_warnings': preload_warnings,
-        'image_cells':      _image_cells,
-        'extracted_images': _extracted_images,
-        'img_tmp_dir':      _img_tmp_dir,
+        # An existing pattern was opened AND it yielded classifications. Empty
+        # choices means nothing was recognised, so there is nothing to warn
+        # about losing.
+        'pattern_was_loaded': bool(pattern_path and choices),
+        'image_cells':          _image_cells,
+        'extracted_images':     _extracted_images,
+        'img_tmp_dir':          _img_tmp_dir,
+        'detected_currencies':  _detected_currencies,
     })
 
     # Log initial config
@@ -685,6 +905,8 @@ def create_app(
 
     # ── FastAPI app ───────────────────────────────────────────────────────────
     app = FastAPI(title='grepxcel Web Wizard', docs_url=None, redoc_url=None)
+    static_dir = Path(__file__).parent / 'static'
+    app.mount('/static', StaticFiles(directory=str(static_dir)), name='static')
 
     # ─────────────────────────────── HTML PAGE ────────────────────────────────
 
@@ -778,7 +1000,8 @@ def create_app(
                 'ignore_case_values':     st.ignore_case_values,
                 'trim_whitespace_labels': st.trim_whitespace_labels,
                 'trim_whitespace_values': st.trim_whitespace_values,
-                'currency_sign':   st.currency_sign,
+                'currency_sign':         st.currency_sign,
+                'detected_currencies':   _STATE.get('detected_currencies', []),
                 'lbl_match':       st.lbl_match,
                 'var_match':       st.var_match,
                 'empty_aliases':   st.empty_aliases,
@@ -802,6 +1025,13 @@ def create_app(
                 pass
         return JSONResponse({
             'preload_warnings': _STATE.get('preload_warnings', []),
+            # True when an existing pattern was opened with -p and it actually
+            # contained definitions. Drives the one-off notice explaining that
+            # the wizard models one cell / one classification, which is narrower
+            # than a pattern file can express (a lbl:glob matching many labels,
+            # seek: steps, some table bounds) — so saving writes the wizard's
+            # reconstruction, not the file that was opened.
+            'pattern_was_loaded': bool(_STATE.get('pattern_was_loaded')),
             'log_path':         log_path,
             'log_lines':        [l.rstrip('\n') for l in recent_lines],
         })
@@ -908,7 +1138,8 @@ def create_app(
             lbl_mode = '' if lbl_mode_raw == '(default)' else lbl_mode_raw
             choices[ref] = {
                 'choice':   'L',
-                'name':     fields.get('name', _slugify(str(cell_value or '')) + '_label'),
+                'name':     fields.get('name') or _unique_name(
+                    _slugify(str(cell_value or '')), choices, ref, '_label'),
                 'ltype':    fields.get('type', 'string'),
                 'lmatch':   fields.get('match', str(cell_value or '')),
                 'lbl_mode': lbl_mode,
@@ -928,7 +1159,8 @@ def create_app(
                 raise HTTPException(400, str(exc))
             choices[ref] = {
                 'choice':      'V',
-                'name':        fields.get('name', _slugify(str(cell_value or ''))),
+                'name':        fields.get('name') or _unique_name(
+                    _slugify(str(cell_value or '')), choices, ref),
                 'ftype':       fields.get('type', _infer_cell_type(ws.cell(row=row, column=col))),
                 'match':       match_pattern,
                 'col_a_extra': col_a_extra,
@@ -1064,6 +1296,8 @@ def create_app(
 
         if not refs:
             raise HTTPException(400, 'refs list is empty')
+        if len(refs) > 5000:
+            raise HTTPException(400, 'refs list exceeds maximum of 5000 cells per batch')
         if action not in ('L', 'V', 'I', 'CLEAR'):
             raise HTTPException(400, f'action must be L, V, I, or CLEAR (got {action!r}); '
                                     'T is not supported for batch classification')
@@ -1100,7 +1334,8 @@ def create_app(
             elif action == 'L':
                 choices[ref] = {
                     'choice':   'L',
-                    'name':     _slugify(str(cell_value or '')) + '_label',
+                    'name':     _unique_name(
+                        _slugify(str(cell_value or '')), choices, ref, '_label'),
                     'ltype':    'string',
                     'lmatch':   str(cell_value or ''),
                     'lbl_mode': '',
@@ -1108,7 +1343,8 @@ def create_app(
             elif action == 'V':
                 choices[ref] = {
                     'choice':      'V',
-                    'name':        _slugify(str(cell_value or '')),
+                    'name':        _unique_name(
+                        _slugify(str(cell_value or '')), choices, ref),
                     'ftype':       _infer_cell_type(ws_.cell(row=row_, column=col_)) if row_ else 'string',
                     'match':       '.*',
                     'col_a_extra': '',
@@ -1193,7 +1429,7 @@ def create_app(
                 ch   = choices.get(cref, {}).get('choice', '')
                 cells_out.append({
                     'ref':          cref,
-                    'value':        _cell_display(cell.value, 60),
+                    'value':        _cell_display(cell.value, 60, number_format=cell.number_format or ''),
                     'raw':          str(cell.value).strip() if cell.value is not None else '',
                     'inferred_type': _infer_cell_type(cell),
                     'choice':       ch,
@@ -1467,13 +1703,28 @@ def create_app(
         ex_var_mode, ex_modifiers = _col_a_extra_to_parts(ex_col_a_extra)
         _all_img = _STATE.get('image_cells', {})
         img_info = _all_img.get(ws.title, {}).get(ref)
+        fallback_cur = _STATE['state'].currency_sign or ''
+        nfmt = cell.number_format or ''
+
+        # Compute currency_source for the right panel metadata.
+        is_currency_classified = choice_info.get('ftype') == 'currency'
+        currency_source = ''
+        currency_applied = ''
+        if img_info is None and isinstance(cell.value, (int, float)) and not isinstance(cell.value, bool):
+            num_result = _format_number(float(cell.value), nfmt, fallback_cur, is_currency_classified)
+            if num_result is not None:
+                _, currency_source, currency_applied = num_result
+
         return JSONResponse({
             'ref':          ref,
             'row':          row,
             'col':          col,
             'col_letter':   get_column_letter(col),
-            'value':        _cell_display(cell.value, 200),
+            'value':        '' if img_info is not None else _cell_display(cell.value, 200, number_format=nfmt, fallback_currency=fallback_cur, force_currency=is_currency_classified),
             'raw':          str(cell.value) if cell.value is not None else '',
+            'number_format': nfmt,
+            'currency_source':  currency_source,   # 'cell' | 'default' | ''
+            'currency_applied': currency_applied,  # the symbol that was prepended/suffixed
             'has_image':    img_info is not None,
             'image_count':  img_info['count'] if img_info else 0,
             'image_suspicious': img_info.get('suspicious', False) if img_info else False,
@@ -1719,12 +1970,17 @@ def create_app(
             raise HTTPException(403, 'Cross-origin shutdown rejected')
         # Clean up any uploaded temp pattern file before exiting.
         import tempfile as _tmpmod
+        import shutil as _shutil
         _tmp_pat = _STATE.get('pattern_path')
         if _tmp_pat and _tmp_pat.startswith(_tmpmod.gettempdir()):
             try:
                 os.unlink(_tmp_pat)
             except OSError:
                 pass
+        # Clean up extracted image temp directory (IMAGE() formula cells).
+        _img_dir = _STATE.get('img_tmp_dir')
+        if _img_dir:
+            _shutil.rmtree(_img_dir, ignore_errors=True)
         _STATE['log'].close(_STATE.get('choices', {}), _STATE.get('notes', {}))
         def _stop():
             time.sleep(0.3)

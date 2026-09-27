@@ -19,6 +19,12 @@ class Config:
     pattern_version_explicit: bool = False  # True if the pattern declared it
     lbl_match: str = 'literal'  # how lbl: patterns are matched: literal | glob | regexp
     var_match: str = 'regexp'  # default var: column-D mode: regexp | glob | literal
+    # strptime formats for coercing TEXT cells into date/time values. None =
+    # accept unambiguous ISO 8601 only. Set these when the file uses a local
+    # order such as %d/%m/%Y, which cannot be guessed safely: '01/02/2024' is
+    # both 1 Feb and 2 Jan, so grepxcel refuses it rather than picking one.
+    date_format: str | None = None   # date / datetime / timestamp fields
+    time_format: str | None = None   # time fields
     unknown_config_keys: list = field(default_factory=list)  # unrecognised config: keys
 
 
@@ -60,13 +66,15 @@ class CellInstruction:
 
 @dataclass
 class TableInstruction:
-    multiplicity: str  # '1' or '*'
+    multiplicity: str  # '*', a positive int (e.g. '1'), or '{n,m}' — as written
     config: Config     # table-level config (may override global)
     rows: list         # list[TemplateRow]
     explicit_config_keys: frozenset = field(default_factory=frozenset)
     # Keys that were explicitly declared in the table's config: block, e.g.
     # frozenset({'read.direction', 'ignore.case'}).  Used by validate-pattern
     # -v to show exactly what the author wrote, independent of the global value.
+    min_instances: int = 0            # table:{n,…} / table:N (exact) — else 0
+    max_instances: int | None = None  # table:{…,m} / table:N (exact) — None = unbounded ('*')
 
 
 @dataclass

@@ -1,0 +1,7 @@
+{
+  "bool": {
+    "flag_true": true,
+    "flag_false": false,
+    "active": true
+  }
+}

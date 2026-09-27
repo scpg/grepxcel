@@ -1,0 +1,28 @@
+{
+  "data": [
+    {
+      "_source": {
+        "sheet": "Sheet1",
+        "ref": "A1:B6"
+      },
+      "data": [
+        {
+          "type": "Negative:",
+          "value": -17
+        },
+        {
+          "type": "Float:",
+          "value": 3.14159
+        },
+        {
+          "type": "Large:",
+          "value": 1234567890
+        },
+        {
+          "type": "Zero:",
+          "value": 0
+        }
+      ]
+    }
+  ]
+}

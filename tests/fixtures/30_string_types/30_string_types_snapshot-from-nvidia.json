@@ -1,0 +1,9 @@
+{
+  "text": {
+    "plain": "Hello World",
+    "long": "This is a longer description that spans more characters than a typical label field would use",
+    "special": "Ñoño / Ünïcödé — \"quoted\" & <tagged>",
+    "numeric_like": "42",
+    "code": "AB-1234"
+  }
+}

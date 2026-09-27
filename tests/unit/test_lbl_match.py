@@ -1,6 +1,8 @@
 """Unit tests for _match_lbl and _resolve_lbl_mode (engine internals)."""
+import datetime
+
 import pytest
-from grepxcel.engine import _match_lbl, _resolve_lbl_mode
+from grepxcel.engine import _match_lbl, _resolve_lbl_mode, _validate_field
 from grepxcel.models import Config, FieldDef
 
 
@@ -104,3 +106,55 @@ class TestResolveLblMode:
 
     def test_global_regexp_no_override(self):
         assert _resolve_lbl_mode(self._fd(None), self._cfg('regexp')) == 'regexp'
+
+
+# ── _validate_field: lbl: role against date/datetime cell values ────────────
+# Regression for the gap where lbl: never got the datetime→isoformat
+# conversion that var:literal/glob already has: str(datetime(2024,1,15))
+# gives '2024-01-15 00:00:00', not '2024-01-15', which used to silently
+# break literal/glob matches (and any $-anchored regexp) against a
+# date-formatted label cell.
+
+class TestValidateFieldLblDate:
+    def _fd(self, mode, regex):
+        return FieldDef(name='h', type='string', regex=regex, role='lbl', lbl_match=mode)
+
+    def test_literal_matches_date_without_time_suffix(self):
+        value = datetime.date(2024, 1, 15)
+        fd = self._fd('literal', '2024-01-15')
+        assert _validate_field(fd, value, Config(), 1000)
+
+    def test_literal_matches_datetime_without_time_suffix(self):
+        value = datetime.datetime(2024, 1, 15, 0, 0, 0)
+        fd = self._fd('literal', '2024-01-15')
+        assert _validate_field(fd, value, Config(), 1000)
+
+    def test_literal_rejects_wrong_date(self):
+        value = datetime.date(2024, 1, 15)
+        fd = self._fd('literal', '2024-01-16')
+        assert not _validate_field(fd, value, Config(), 1000)
+
+    def test_glob_exact_pattern_matches_date(self):
+        # Before the fix, an exact (no-wildcard) glob pattern failed the
+        # same way literal did, for the same trailing-time-suffix reason.
+        value = datetime.date(2024, 1, 15)
+        fd = self._fd('glob', '2024-01-15')
+        assert _validate_field(fd, value, Config(), 1000)
+
+    def test_regexp_end_anchored_matches_date(self):
+        # Before the fix, re.search(r'2024-01-15$', '2024-01-15 00:00:00')
+        # failed — the $ anchor landed before the spurious time suffix.
+        value = datetime.date(2024, 1, 15)
+        fd = self._fd('regexp', r'2024-01-15$')
+        assert _validate_field(fd, value, Config(), 1000)
+
+    def test_datetime_with_nonzero_time_still_uses_date_only(self):
+        # Matches var:literal/glob's own behaviour: only the date portion
+        # is used for lbl: matching, regardless of the time-of-day part.
+        value = datetime.datetime(2024, 1, 15, 13, 45, 0)
+        fd = self._fd('literal', '2024-01-15')
+        assert _validate_field(fd, value, Config(), 1000)
+
+    def test_non_date_value_unaffected(self):
+        fd = self._fd('literal', 'Active')
+        assert _validate_field(fd, 'Active', Config(), 1000)

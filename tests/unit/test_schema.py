@@ -57,12 +57,22 @@ class TestBasicSchema:
         assert schema['properties']['price']['type'] == ['number', 'null']
 
     def test_scalar_boolean_field(self, tmp_path):
+        """A boolean field permits every shape validate_type accepts.
+
+        Deliberately widened from ['boolean', 'null']: utils.validate_type takes
+        a real bool, the ints 0/1 and the strings TRUE/FALSE/YES/NO/1/0, and the
+        engine writes whichever the sheet held — so the narrow declaration made
+        the schema generated from a pattern reject 3 of the 4 forms that same
+        pattern's extraction accepts.
+        """
         path = _write([
             ['var:', 'active', 'boolean', ''],
             ['START:'], ['cell:A1', 'active'], ['END:'],
         ], tmp_path)
         schema = generate_schema(path)
-        assert schema['properties']['active']['type'] == ['boolean', 'null']
+        assert schema['properties']['active']['type'] == [
+            'boolean', 'integer', 'string', 'null',
+        ]
 
     def test_scalar_date_field(self, tmp_path):
         path = _write([
