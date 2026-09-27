@@ -19,8 +19,29 @@ The manifest is written next to the generated files as ``manifest.json``
 """
 from __future__ import annotations
 
+import datetime
 import json
 from dataclasses import asdict, dataclass, field
+
+
+def normalise(value):
+    """The single normalisation both sides of every value comparison go through.
+
+    Mirrors ``tests/integration/test_schema_validation._JSONEncoder`` so the
+    oracle compares what the CLI would actually emit as JSON: ``date`` /
+    ``datetime`` / ``time`` become ISO strings, ``timedelta`` becomes ``str()``,
+    everything else is untouched. Applied recursively to lists and dicts so a
+    whole extract result can be normalised in one call (§10.4).
+    """
+    if isinstance(value, (datetime.datetime, datetime.date, datetime.time)):
+        return value.isoformat()
+    if isinstance(value, datetime.timedelta):
+        return str(value)
+    if isinstance(value, dict):
+        return {k: normalise(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [normalise(v) for v in value]
+    return value
 
 
 @dataclass
