@@ -1873,9 +1873,13 @@ const _TRM_ROW_TYPES = [
 // V=Variable, L=Label, I=Ignore, E=Empty  (C was removed — had no distinct table role)
 const _TRM_ROLES       = ['V','L','I','E'];
 const _TRM_ROLE_LABELS = {V:'V — Variable', L:'L — Label', I:'I — Ignore', E:'E — Empty'};
+// Must stay in step with pattern_parser._VALID_FIELD_TYPES (aliases omitted:
+// text=string, float/decimal=number, bool=boolean, timestamp=datetime).
+// 'duration' and 'percentage' were missing, so a [h]:mm elapsed-time column had
+// no option but 'time', and an Excel percentage could only be declared 'number'.
 const _TRM_TYPES = {
   basic:    ['string', 'number', 'date', 'boolean', 'url', 'image'],
-  advanced: ['integer', 'currency', 'datetime', 'time'],
+  advanced: ['integer', 'currency', 'percentage', 'datetime', 'time', 'duration'],
 };
 function _trmTypeOptions(selected) {
   return [

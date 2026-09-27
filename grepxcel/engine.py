@@ -96,6 +96,18 @@ def _apply_trim(value, fd, config):
     return value
 
 
+def _squash(name) -> str:
+    """A sheet name with case and all whitespace removed — used only to explain
+    a near miss in an error message, never to match on."""
+    return ''.join(str(name).split()).lower()
+
+
+def _ci_sheet_matches(sheet, sheetnames: list) -> list:
+    """Sheet names equal to *sheet* ignoring case (exact matches included)."""
+    target = str(sheet).lower()
+    return [n for n in sheetnames if n.lower() == target]
+
+
 def _coerce_temporal(value, fd, config, logger=None, location: str = ''):
     """Convert a TEXT cell into the date/time object its ``var:`` type declares.
 
@@ -1246,6 +1258,23 @@ class Engine:
             elif sheet in wb.sheetnames:
                 # Exact name match wins — including numeric names like "2025".
                 ws = wb[sheet]
+            elif _ci_sheet_matches(sheet, wb.sheetnames):
+                # Case-insensitive fallback. Safe because a workbook cannot hold
+                # two sheets differing only by case: Excel rejects it, and
+                # openpyxl silently uniquifies (a second 'SHEET1' becomes
+                # 'SHEET11'). Exact match is still tried first, so a file that
+                # somehow contains both is unaffected for the exact spelling,
+                # and the ambiguous branch below catches the rest.
+                _matches = _ci_sheet_matches(sheet, wb.sheetnames)
+                if len(_matches) > 1:
+                    logger.fatal(
+                        f'Sheet {sheet!r} matches {len(_matches)} sheets when '
+                        f'case is ignored',
+                        found=sheet,
+                        expected=(f'an exact name — this workbook contains '
+                                  f'{", ".join(repr(m) for m in _matches)}'),
+                    )
+                ws = wb[_matches[0]]
             elif str(sheet).lstrip('-').isdigit():
                 # Numeric string with no matching name → treat as a 0-based index.
                 idx = int(sheet)
@@ -1258,10 +1287,23 @@ class Engine:
                     )
                 ws = wb.worksheets[idx]
             else:
+                # Name the actual difference. Case is already handled above, so
+                # if a whitespace-insensitive comparison matches, whitespace is
+                # the cause — and it is NOT something to normalise away: Excel
+                # treats 'Sheet 1' and 'Sheet1' as two different sheets, so
+                # grepxcel must too. Saying so turns a dead end into a fix.
+                _squashed = _squash(sheet)
+                _near = [n for n in wb.sheetnames if _squash(n) == _squashed]
+                _hint = ''
+                if _near:
+                    _hint = (f' Did you mean {_near[0]!r}? Spaces are part of a '
+                             f'sheet name — {_near[0]!r} and {sheet!r} differ by '
+                             f'whitespace, and Excel treats those as different '
+                             f'sheets. Matching ignores case, not spacing.')
                 logger.fatal(
                     f'Sheet {sheet!r} not found in workbook',
                     found=sheet,
-                    expected=f'one of: {", ".join(wb.sheetnames)}',
+                    expected=f'one of: {", ".join(wb.sheetnames)}.{_hint}',
                 )
                 ws = wb.active  # unreachable (logger.fatal raises); keeps ws bound
 

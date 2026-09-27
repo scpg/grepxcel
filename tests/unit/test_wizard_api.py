@@ -2110,3 +2110,76 @@ class TestApiLogs:
         assert secret_value not in full_log, (
             f'Cell value {secret_value!r} leaked into session log'
         )
+
+
+# ── Type-list drift guard ────────────────────────────────────────────────────
+# The wizard offers types in two places — the main value panel (wizard.html) and
+# the mini-table column panel (_TRM_TYPES in wizard.js) — while the engine's
+# authority is pattern_parser._VALID_FIELD_TYPES. Nothing tied them together, and
+# they drifted: `duration` and `percentage` were missing from both, so a [h]:mm
+# elapsed-time column could only be declared `time` and an Excel percentage only
+# `number`. These tests fail if the lists diverge again.
+
+import re as _re_drift
+from pathlib import Path as _Path_drift
+
+from grepxcel.pattern_parser import _VALID_FIELD_TYPES
+
+#: Aliases the engine accepts but the wizard deliberately does not offer, to keep
+#: the dropdown short. Each must be a true synonym of an offered type.
+_WIZARD_ALIAS_EXCLUSIONS = frozenset({
+    'text',       # = string
+    'float',      # = number
+    'decimal',    # = number
+    'bool',       # = boolean
+    'timestamp',  # = datetime
+})
+
+_PKG_DRIFT = _Path_drift(__file__).resolve().parents[2] / 'grepxcel'
+
+
+def _expected_wizard_types() -> set:
+    return set(_VALID_FIELD_TYPES) - _WIZARD_ALIAS_EXCLUSIONS
+
+
+def test_main_panel_type_select_offers_every_canonical_type():
+    html = (_PKG_DRIFT / 'templates' / 'wizard.html').read_text(encoding='utf-8')
+    block = html.split('id="f-V-type"', 1)[1].split('</select>', 1)[0]
+    offered = set(_re_drift.findall(r'<option value="([^"]+)"', block))
+    missing = _expected_wizard_types() - offered
+    unknown = offered - set(_VALID_FIELD_TYPES)
+    assert not missing, f'wizard.html type select is missing: {sorted(missing)}'
+    assert not unknown, f'wizard.html offers types the engine rejects: {sorted(unknown)}'
+
+
+def test_mini_table_type_list_offers_every_canonical_type():
+    js = (_PKG_DRIFT / 'static' / 'wizard.js').read_text(encoding='utf-8')
+    block = js.split('const _TRM_TYPES', 1)[1].split('};', 1)[0]
+    offered = set(_re_drift.findall(r"'([a-z]+)'", block))
+    offered -= {'basic', 'advanced'}
+    missing = _expected_wizard_types() - offered
+    unknown = offered - set(_VALID_FIELD_TYPES)
+    assert not missing, f'_TRM_TYPES is missing: {sorted(missing)}'
+    assert not unknown, f'_TRM_TYPES offers types the engine rejects: {sorted(unknown)}'
+
+
+def test_the_two_wizard_type_lists_agree_with_each_other():
+    html = (_PKG_DRIFT / 'templates' / 'wizard.html').read_text(encoding='utf-8')
+    js = (_PKG_DRIFT / 'static' / 'wizard.js').read_text(encoding='utf-8')
+    main = set(_re_drift.findall(
+        r'<option value="([^"]+)"',
+        html.split('id="f-V-type"', 1)[1].split('</select>', 1)[0]))
+    mini = set(_re_drift.findall(
+        r"'([a-z]+)'", js.split('const _TRM_TYPES', 1)[1].split('};', 1)[0]))
+    mini -= {'basic', 'advanced'}
+    assert main == mini, (
+        f'only in main panel: {sorted(main - mini)}; '
+        f'only in mini-table: {sorted(mini - main)}'
+    )
+
+
+def test_every_excluded_alias_really_is_an_alias():
+    """The exclusion list must only hold synonyms — if a real type were added
+    to it, the drift guard above would stop protecting that type."""
+    for alias in _WIZARD_ALIAS_EXCLUSIONS:
+        assert alias in _VALID_FIELD_TYPES, f'{alias} is not an engine type at all'
