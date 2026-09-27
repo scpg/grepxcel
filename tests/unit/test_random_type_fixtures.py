@@ -405,8 +405,8 @@ class TestTwoMiniTablesShape:
     table:1 are both greedy in practice). This test intentionally asserts
     what the engine really does today, not a guarantee it doesn't make."""
 
-    def test_two_disjoint_tables_both_get_collected(self, tmp_path):
-        type_name = 'integer'
+    @pytest.mark.parametrize('type_name', sorted(TYPE_CASES))
+    def test_two_disjoint_tables_both_get_collected(self, tmp_path, type_name):
         tc = TYPE_CASES[type_name]
         placer = RandomPlacer(seed=13)
         header1 = placer.place_table(data_rows=1)
@@ -562,9 +562,9 @@ class TestCombinedLabelBeforeTable:
     under both LR and TD, using the exact same scan-order mirroring as
     TestScanOrderMirroring, not a separately-trusted assumption."""
 
+    @pytest.mark.parametrize('type_name', sorted(TYPE_CASES))
     @pytest.mark.parametrize('direction', ['LR', 'TD'])
-    def test_label_then_table_both_resolve(self, tmp_path, direction):
-        type_name = 'integer'
+    def test_label_then_table_both_resolve(self, tmp_path, direction, type_name):
         tc = TYPE_CASES[type_name]
         placer = RandomPlacer(seed=21)
         label_pos, value_pos = placer.place_label_with_value_after()
@@ -606,3 +606,121 @@ class TestCombinedLabelBeforeTable:
             f'header={_ref(header_pos)} result={result}'
         )
         assert 'table_0' in result, result
+
+
+# ── Border conditions: grid corners + per-type extreme values ──────────────
+# RandomPlacer's fixed seeds happen to land on safely-interior cells; none of
+# the shapes above ever exercise row/col == 1 or == GRID_SIZE, the classic
+# off-by-one risk area for anything walking a scan_order list. Likewise
+# TYPE_CASES only ever uses one canned "valid" value per type -- these add
+# the zero/negative/min/max/midnight-style extremes, plus the one boundary
+# that's a real code constant, not just a type convention: the ReDoS guard's
+# _MAX_REGEX_INPUT_LEN (1000 chars) in utils.py.
+
+_BOUNDARY_VALUES = {
+    'integer':    [0, -1, 999_999_999, -999_999_999],
+    'boolean':    [True, False],
+    'date':       [datetime.date(1900, 1, 1), datetime.date(9999, 12, 31)],
+    'url':        ['https://a.co', 'https://example.com/' + 'x' * 500],
+    'currency':   [0.0, -0.01, 999_999_999.99],
+    'percentage': [0.0, 1.0],
+    'number':     [0.0, -1e15, 1e15],
+    'time':       [datetime.time(0, 0, 0), datetime.time(23, 59, 59)],
+    'duration':   [datetime.timedelta(0), datetime.timedelta(days=999, hours=23, minutes=59)],
+    # 999/1000/1001 chars straddle _MAX_REGEX_INPUT_LEN exactly.
+    'string':     ['x', 'x' * 999, 'x' * 1000, 'x' * 1001],
+}
+_BOUNDARY_CASES = [
+    (type_name, value)
+    for type_name, values in _BOUNDARY_VALUES.items()
+    for value in values
+]
+_BOUNDARY_IDS = [
+    f'{t}-{v if not isinstance(v, str) or len(v) < 20 else f"len{len(v)}"}'
+    for t, v in _BOUNDARY_CASES
+]
+
+
+class TestGridPositionBoundaries:
+    """Off-by-one risk area: does extraction still work when the anchor or
+    mini-table header sits at the very first or very last row/col of the
+    scan range, for every type -- not just the safely-interior positions
+    RandomPlacer's fixed seeds happen to land on?"""
+
+    @pytest.mark.parametrize('type_name', sorted(TYPE_CASES))
+    @pytest.mark.parametrize('corner', ['top_left', 'bottom_right'])
+    def test_single_label_at_grid_corner(self, tmp_path, type_name, corner):
+        tc = TYPE_CASES[type_name]
+        if corner == 'top_left':
+            label_pos, value_pos = (1, 1), (1, 2)
+        else:
+            label_pos, value_pos = (GRID_SIZE, GRID_SIZE - 1), (GRID_SIZE, GRID_SIZE)
+
+        pattern_path = str(tmp_path / 'pattern.csv')
+        data_path = str(tmp_path / 'data.xlsx')
+        write_pattern_csv(pattern_path, [
+            ['lbl:', 'anchor', 'string', 'ANCHOR'],
+            ['var:', 'field', type_name, tc['regex']],
+            [],
+            ['START:'],
+            ['cell:next', 'anchor'],
+            ['cell:next', 'field'],
+            ['END:'],
+        ])
+        write_data_xlsx(data_path, {
+            label_pos: ('ANCHOR', None),
+            value_pos: (tc['valid'], tc['format']),
+        })
+
+        result = _run(pattern_path, data_path)
+        assert 'field' in result, f'type={type_name} corner={corner} result={result}'
+
+    @pytest.mark.parametrize('type_name', sorted(TYPE_CASES))
+    @pytest.mark.parametrize('corner', ['top_left', 'bottom_right'])
+    def test_single_mini_table_at_grid_corner(self, tmp_path, type_name, corner):
+        tc = TYPE_CASES[type_name]
+        if corner == 'top_left':
+            row, col = 1, 1
+        else:
+            row, col = GRID_SIZE - 1, GRID_SIZE
+
+        pattern_path = str(tmp_path / 'pattern.csv')
+        data_path = str(tmp_path / 'data.xlsx')
+        _write_table_pattern(pattern_path, type_name, tc['regex'])
+        write_data_xlsx(data_path, {
+            (row, col):     ('COLHEAD', None),
+            (row + 1, col): (tc['valid'], tc['format']),
+        })
+
+        result = _run(pattern_path, data_path)
+        assert 'table_0' in result, f'type={type_name} corner={corner} result={result}'
+        assert len(result['table_0']) == 1
+
+
+class TestPerTypeBoundaryValues:
+    """Explicit, fixed extreme values per type -- zero, negative, min/max,
+    midnight/end-of-day, and (for string) the exact ReDoS-guard length
+    boundary -- rather than only the single canned 'valid' example
+    TYPE_CASES uses for every other shape in this module."""
+
+    @pytest.mark.parametrize('type_name,value', _BOUNDARY_CASES, ids=_BOUNDARY_IDS)
+    def test_boundary_value_extracts(self, tmp_path, type_name, value):
+        tc = TYPE_CASES[type_name]
+        pattern_path = str(tmp_path / 'pattern.csv')
+        data_path = str(tmp_path / 'data.xlsx')
+        write_pattern_csv(pattern_path, [
+            ['lbl:', 'anchor', 'string', 'ANCHOR'],
+            ['var:', 'field', type_name, tc['regex']],
+            [],
+            ['START:'],
+            ['cell:next', 'anchor'],
+            ['cell:next', 'field'],
+            ['END:'],
+        ])
+        write_data_xlsx(data_path, {
+            (1, 1): ('ANCHOR', None),
+            (1, 2): (value, tc['format']),
+        })
+
+        result = _run(pattern_path, data_path)
+        assert 'field' in result, f'type={type_name} value={value!r} result={result}'
