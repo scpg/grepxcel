@@ -61,8 +61,8 @@ class TestInferCellType:
         dt = datetime.datetime(2024, 1, 1, 12, 0)
         assert infer_cell_type([dt, dt]) == 'datetime'
 
-    def test_booleans_treated_as_string(self):
-        assert infer_cell_type([True, False]) == 'string'
+    def test_booleans_inferred_as_boolean(self):
+        assert infer_cell_type([True, False]) == 'boolean'
 
     def test_majority_wins(self):
         assert infer_cell_type([1, 2, 3, 'text']) == 'integer'
@@ -973,3 +973,68 @@ class TestLocalBackendDepCheck:
             ).run()
         assert rc == 0
         mock_backend.chat.assert_called_once()
+
+
+# ── _infer_cell_type (wizard_core) ────────────────────────────────────────────
+
+class TestWizardInferCellType:
+    """Tests for wizard_core._infer_cell_type — type inference from openpyxl cells."""
+
+    def _cell(self, value, number_format='General'):
+        """Return a minimal fake openpyxl cell."""
+        from unittest.mock import MagicMock
+        c = MagicMock()
+        c.value = value
+        c.number_format = number_format
+        return c
+
+    def test_none_returns_string(self):
+        from grepxcel.wizard_core import _infer_cell_type
+        assert _infer_cell_type(self._cell(None)) == 'string'
+
+    def test_bool_returns_boolean(self):
+        from grepxcel.wizard_core import _infer_cell_type
+        assert _infer_cell_type(self._cell(True)) == 'boolean'
+
+    def test_timedelta_returns_time(self):
+        from grepxcel.wizard_core import _infer_cell_type
+        import datetime
+        assert _infer_cell_type(self._cell(datetime.timedelta(hours=2))) == 'time'
+
+    def test_date_returns_date(self):
+        from grepxcel.wizard_core import _infer_cell_type
+        import datetime
+        assert _infer_cell_type(self._cell(datetime.date(2024, 1, 1))) == 'date'
+
+    def test_datetime_returns_date(self):
+        from grepxcel.wizard_core import _infer_cell_type
+        import datetime
+        assert _infer_cell_type(self._cell(datetime.datetime(2024, 1, 1, 9, 0))) == 'date'
+
+    def test_percentage_format(self):
+        from grepxcel.wizard_core import _infer_cell_type
+        assert _infer_cell_type(self._cell(0.15, '0.00%')) == 'percentage'
+
+    def test_currency_dollar_format(self):
+        from grepxcel.wizard_core import _infer_cell_type
+        assert _infer_cell_type(self._cell(19.99, '$#,##0.00')) == 'currency'
+
+    def test_currency_euro_format(self):
+        from grepxcel.wizard_core import _infer_cell_type
+        assert _infer_cell_type(self._cell(9.99, '€#,##0.00')) == 'currency'
+
+    def test_plain_number_returns_number(self):
+        from grepxcel.wizard_core import _infer_cell_type
+        assert _infer_cell_type(self._cell(42.5)) == 'number'
+
+    def test_url_string_returns_url(self):
+        from grepxcel.wizard_core import _infer_cell_type
+        assert _infer_cell_type(self._cell('https://example.com')) == 'url'
+
+    def test_www_string_returns_url(self):
+        from grepxcel.wizard_core import _infer_cell_type
+        assert _infer_cell_type(self._cell('www.example.com')) == 'url'
+
+    def test_plain_string_returns_string(self):
+        from grepxcel.wizard_core import _infer_cell_type
+        assert _infer_cell_type(self._cell('hello')) == 'string'

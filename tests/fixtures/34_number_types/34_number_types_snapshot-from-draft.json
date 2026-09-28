@@ -1,0 +1,9 @@
+{
+  "num": {
+    "integer": 42,
+    "negative": -17,
+    "float_val": 3.14159,
+    "large": 1234567890,
+    "zero": 0
+  }
+}

@@ -10,19 +10,67 @@ Optional dependency group: ``pip install "grepxcel[web]"``
 """
 from __future__ import annotations
 
+import atexit
 import hashlib
 import json
 import os
+import re
 import sys
 import threading
 import time
 import webbrowser
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 import openpyxl
 from openpyxl.utils import get_column_letter
+
+
+# ── temp files clean themselves up, however the process ends ─────────────────
+#
+# The wizard extracts IMAGE() cells into a temp directory and writes uploaded
+# pattern files to a temp file. Both were removed only by the /api/shutdown
+# handler — i.e. only when the user clicked "Done". Closing the browser,
+# Ctrl+C, a crash, or any test that builds an app without shutting it down
+# leaked them. The test suite alone had left 363 `grepxcel_wizard_img_*`
+# directories on this machine.
+#
+# atexit is the Python spelling of `trap 'rm -rf -- "$TMPDIR"' EXIT`: it runs on
+# normal exit, on an unhandled exception, and on Ctrl+C. It does not run on
+# SIGKILL or os._exit, which is why the shutdown handler still cleans up eagerly
+# rather than relying on this — this is the backstop for every other path.
+_TEMP_PATHS: set[str] = set()
+
+
+def _register_temp_path(path: str | None) -> str | None:
+    """Mark *path* for removal when the process exits. Returns it unchanged so
+    it can wrap a mkdtemp/mkstemp call inline."""
+    if path:
+        _TEMP_PATHS.add(path)
+    return path
+
+
+def _discard_temp_path(path: str | None) -> None:
+    """Forget *path* — it has already been removed by an eager cleanup."""
+    _TEMP_PATHS.discard(path or '')
+
+
+@atexit.register
+def _remove_registered_temp_paths() -> None:
+    import shutil as _sh
+
+    for path in list(_TEMP_PATHS):
+        # Never raise from an exit handler: a failed cleanup must not change
+        # the process's exit status or mask whatever it was doing.
+        try:
+            if os.path.isdir(path):
+                _sh.rmtree(path, ignore_errors=True)
+            elif os.path.exists(path):
+                os.unlink(path)
+        except OSError:
+            pass
+    _TEMP_PATHS.clear()
 
 # ── Reuse existing pure functions ─────────────────────────────────────────────
 from grepxcel.wizard_core import (
@@ -40,6 +88,7 @@ from grepxcel.wizard_core import (
 try:
     from fastapi import FastAPI, HTTPException, Request
     from fastapi.responses import HTMLResponse, JSONResponse, PlainTextResponse
+    from fastapi.staticfiles import StaticFiles
     from jinja2 import Environment, FileSystemLoader
     import uvicorn
     _WEB_OK = True
@@ -49,6 +98,34 @@ except ImportError:
 # ── Module-level session (single-user local tool) ─────────────────────────────
 
 _STATE: dict[str, Any] = {}   # single session dict
+
+
+def _unique_name(base: str, choices: dict, own_ref: str, suffix: str = '') -> str:
+    """A generated field name that no other classified cell is already using.
+
+    Names are derived by slugifying the cell's text, so a sheet that repeats the
+    same labelled block — three identical test columns side by side, say — would
+    otherwise produce the same name three times. That is not a cosmetic clash:
+    ``engine._process_cell`` writes ``result['cells'][field] = value``
+    unconditionally, so the last cell silently wins and the earlier values never
+    reach the output. The pattern still validates, and nothing reports the loss.
+
+    Colliding names get ``_2``, ``_3``, … appended. *own_ref* is excluded so
+    re-classifying a cell keeps its current name instead of bumping it every
+    time. A name the user typed is never touched — only generated ones pass
+    through here.
+    """
+    taken = {
+        c.get('name') for ref, c in choices.items()
+        if ref != own_ref and isinstance(c, dict) and c.get('name')
+    }
+    candidate = f'{base}{suffix}'
+    if candidate not in taken:
+        return candidate
+    n = 2
+    while f'{base}_{n}{suffix}' in taken:
+        n += 1
+    return f'{base}_{n}{suffix}'
 
 
 # ── Session log ───────────────────────────────────────────────────────────────
@@ -319,10 +396,166 @@ def _parse_ref(ref: str) -> tuple[int, int]:
     return int(row_str), col
 
 
-def _cell_display(value: Any, max_len: int = 28) -> str:
+def _format_number(
+    value: float,
+    number_format: str,
+    fallback_currency: str = '',
+    force_currency: bool = False,
+) -> tuple[str, str, str] | None:
+    """Format a numeric value using an Excel number_format string.
+
+    Handles the most common patterns: thousands separators, decimal places,
+    percentages, leading currency symbols ($€£…), and [$CODE] bracket notation.
+
+    Returns a ``(formatted_string, currency_source, currency_symbol)`` tuple where
+    ``currency_source`` is ``'cell'`` (symbol from the cell's own Excel format),
+    ``'classified'`` (cell typed as currency by the wizard, fallback applied),
+    ``'default'`` (fallback applied because format is numeric but has no symbol),
+    or ``''`` (no currency).  ``currency_symbol`` is the actual symbol used.
+    Returns ``None`` for unrecognised formats so the caller falls back to
+    ``str(value)``.  Pass ``force_currency=True`` when the wizard has classified
+    this cell as the ``currency`` type, enabling fallback even for General format.
+    """
+    if not number_format or number_format in ('General', '@'):
+        # General format carries no numeric intent on its own.
+        # But if the wizard has classified this cell as 'currency', honour the fallback.
+        if force_currency and fallback_currency:
+            try:
+                fv = float(value)
+                s = f'{fv:,.2f}' if fv != round(fv) else f'{round(fv):,}'
+                return f'{fallback_currency}{s}', 'classified', fallback_currency
+            except (ValueError, TypeError, OverflowError):
+                pass
+        return None
+
+    # Use only the first (positive) section of a multi-section format.
+    fmt = number_format.split(';')[0]
+
+    # Scientific notation (0.00E+000, ##0.0E+0) — not worth approximating.
+    if re.search(r'[Ee][+\-]', fmt):
+        return None
+
+    # Strip Excel alignment / padding tokens:  _x  (pad with x)  and  *x  (fill with x)
+    fmt = re.sub(r'[_*].', '', fmt)
+
+    # Extract and remove quoted literal strings (e.g. " ", "USD").
+    quoted_text = ''.join(re.findall(r'"([^"]*)"', fmt))
+    fmt = re.sub(r'"[^"]*"', '', fmt)
+
+    # Handle bracket codes:
+    #   [$USD]  [$€-407]  →  currency text as suffix  (dollar sign is a meta-prefix, not $)
+    #   [$-409]           →  locale only, no text
+    #   [Red] [Blue]      →  colour codes, strip
+    bracket_currency = ''
+
+    def _handle_bracket(m: re.Match) -> str:
+        nonlocal bracket_currency
+        inner = m.group(1)
+        if inner.startswith('$'):
+            sym = re.split(r'[-]', inner[1:])[0].strip()  # text before optional -locale
+            if sym:
+                bracket_currency = sym
+        return ''  # always remove the bracket token from the format string
+
+    fmt = re.sub(r'\[([^\]]*)\]', _handle_bracket, fmt)
+
+    # Handle Excel escape sequences: \x → literal x (e.g. "\ " → space between number and USD)
+    fmt = re.sub(r'\\(.)', r'\1', fmt)
+
+    # Detect and extract a leading currency symbol: $  €  £  ¥  ₩  ₹  ₽
+    currency_prefix = ''
+    for sym in ('$', '€', '£', '¥', '₩', '₹', '₽'):
+        if sym in fmt:
+            currency_prefix = sym
+            fmt = fmt.replace(sym, '', 1)
+            break
+
+    # Percentage: Excel stores 0.12 for 12 %; multiply before formatting.
+    is_pct = '%' in fmt
+    if is_pct:
+        value = value * 100
+        fmt = fmt.replace('%', '')
+
+    # Thousands separator present when a comma appears between digit placeholders.
+    use_thousands = bool(re.search(r'[#0],[#0]', fmt))
+    fmt_clean = fmt.replace(',', '')
+
+    # Count decimal places (0s and #s after the decimal point in the format).
+    if '.' in fmt_clean:
+        after_dot = fmt_clean.split('.')[-1]
+        decimal_places = sum(1 for c in after_dot if c in '0#')
+    else:
+        decimal_places = 0
+
+    try:
+        if decimal_places > 0:
+            s = f'{value:,.{decimal_places}f}' if use_thousands else f'{value:.{decimal_places}f}'
+        else:
+            rounded = int(round(float(value)))
+            s = f'{rounded:,}' if use_thousands else str(rounded)
+    except (ValueError, TypeError, OverflowError):
+        return None
+
+    # Determine currency source and build prefix/suffix.
+    if currency_prefix or bracket_currency:
+        currency_source = 'cell'
+        currency_symbol = currency_prefix or bracket_currency
+    elif fallback_currency and not is_pct:
+        currency_prefix = fallback_currency
+        currency_source = 'default'
+        currency_symbol = fallback_currency
+    else:
+        currency_source = ''
+        currency_symbol = ''
+
+    if is_pct:
+        suffix = '%'
+    elif bracket_currency:
+        suffix = f' {bracket_currency}'
+    else:
+        suffix = quoted_text
+    return f'{currency_prefix}{s}{suffix}', currency_source, currency_symbol
+
+
+def _cell_display(
+    value: Any,
+    max_len: int = 28,
+    number_format: str = '',
+    fallback_currency: str = '',
+    force_currency: bool = False,
+) -> str:
+    """Return a display string for a grid cell.  Does not include currency_source metadata."""
     if value is None:
         return ''
-    s = str(value)
+    if isinstance(value, bool):                      # bool before int — bool is a subclass of int
+        s = 'TRUE' if value else 'FALSE'
+    elif isinstance(value, datetime):
+        if value.hour == 0 and value.minute == 0 and value.second == 0 and value.microsecond == 0:
+            s = value.strftime('%Y-%m-%d')
+        else:
+            s = value.strftime('%Y-%m-%d %H:%M')   # omit seconds — too granular for the grid
+    elif isinstance(value, timedelta):
+        total_secs = int(value.total_seconds())
+        negative = total_secs < 0
+        total_secs = abs(total_secs)
+        sign = '-' if negative else ''
+        if '[h' in number_format.lower():            # [h]:mm:ss / [hh]:mm:ss → duration
+            days = total_secs // 86400
+            rem  = total_secs % 86400
+            h    = rem // 3600
+            m    = (rem % 3600) // 60
+            sec  = rem % 60
+            s = f'{sign}{days}d:{h:02d}h:{m:02d}m:{sec:02d}s'
+        else:                                        # hh:mm:ss / h:mm → clock time
+            h   = total_secs // 3600
+            m   = (total_secs % 3600) // 60
+            sec = total_secs % 60
+            s = f'{sign}{h:02d}:{m:02d}:{sec:02d}'
+    elif isinstance(value, (int, float)):
+        result = _format_number(float(value), number_format, fallback_currency, force_currency)
+        s = result[0] if result is not None else str(value)  # result[1]/[2] are metadata only
+    else:
+        s = str(value)
     if len(s) > max_len:
         return s[:max_len] + '…'
     return s
@@ -345,16 +578,32 @@ def _to_json_safe(obj: Any) -> Any:
     return str(obj)
 
 
-def _cell_type_display(value: Any) -> str:
-    if value is None:
+_KNOWN_CURRENCY_SYMS = ['$', '€', '£', '¥', '₹', '₩', '₽', '₺', '₴', '₦', '₫', '฿', '₱']
+
+
+def _detect_file_currencies(wb: openpyxl.Workbook) -> list[str]:
+    """Scan all worksheets and return distinct currency symbols found in number_format strings."""
+    found: list[str] = []
+    seen: set[str] = set()
+    for ws in wb.worksheets:
+        for row in ws.iter_rows():
+            for cell in row:
+                nf = cell.number_format or ''
+                if not nf or nf in ('General', '@'):
+                    continue
+                for sym in _KNOWN_CURRENCY_SYMS:
+                    if sym in nf and sym not in seen:
+                        seen.add(sym)
+                        found.append(sym)
+    return found
+
+
+def _cell_type_display(cell) -> str:
+    """Return a display type string for a cell, using number_format for richer inference."""
+    if cell.value is None:
+        # Check image presence separately via has_image flag in _build_sheet_data
         return 'empty'
-    if isinstance(value, bool):
-        return 'boolean'
-    if isinstance(value, (int, float)):
-        return 'number'
-    if isinstance(value, datetime):
-        return 'date'
-    return 'string'
+    return _infer_cell_type(cell)
 
 
 def _build_merge_info(ws) -> tuple[dict, set]:
@@ -383,6 +632,10 @@ def _build_sheet_data() -> dict:
     ws: openpyxl.worksheet.worksheet.Worksheet = _STATE['ws']
     choices: dict = _STATE['choices']
     notes: dict = _STATE['notes']
+    fallback_cur: str = _STATE['state'].currency_sign or ''
+    # image_cells is {sheet_name: {cell_ref: {count, mimes, suspicious}}}
+    _all_image_cells: dict = _STATE.get('image_cells', {})
+    image_cells: dict = _all_image_cells.get(ws.title, {})
     max_row = ws.max_row or 1
     max_col = ws.max_column or 1
     # Cap to reasonable display size
@@ -401,14 +654,21 @@ def _build_sheet_data() -> dict:
             colspan, rowspan = merge_topleft.get(ref, (1, 1))
             is_anchor = ref in merge_topleft
             is_skip   = ref in merge_skip
+            img_info    = image_cells.get(ref)
+            has_img     = img_info is not None
+            img_suspicious = has_img and img_info.get('suspicious', False)
+            cell_type = 'image' if has_img else _cell_type_display(cell)
             row.append({
                 'ref':       ref,
                 'row':       r,
                 'col':       c,
                 'col_letter': get_column_letter(c),
-                'value':     _cell_display(cell.value),
+                'value':     '' if has_img else _cell_display(cell.value, number_format=cell.number_format or '', fallback_currency=fallback_cur, force_currency=choice_info.get('ftype') == 'currency'),
                 'raw':       str(cell.value) if cell.value is not None else '',
-                'type':      _cell_type_display(cell.value),
+                'type':      cell_type,
+                'has_image':       has_img,
+                'image_suspicious': img_suspicious,
+                'image_count': img_info['count'] if img_info else 0,
                 'choice':      choice_info.get('choice', ''),
                 'name':        choice_info.get('name', ''),
                 'anchor':      choice_info.get('anchor', ''),  # set for T-HEAD / T-DATA
@@ -425,6 +685,8 @@ def _build_sheet_data() -> dict:
         rows.append(row)
 
     col_letters = [get_column_letter(c) for c in range(1, display_cols + 1)]
+    wb = _STATE.get('wb')
+    all_sheets = wb.sheetnames if wb else [ws.title]
 
     return {
         'rows':        rows,
@@ -435,6 +697,8 @@ def _build_sheet_data() -> dict:
         'total_cols':  max_col,
         'choices':     choices,
         'notes':       notes,
+        'sheet_name':  ws.title,
+        'all_sheets':  all_sheets,
     }
 
 
@@ -496,6 +760,9 @@ def create_app(
     pattern_path: str | None = None,
     max_rows: int = 150,
     max_cols: int = 40,
+    sheet: str | None = None,
+    max_file_mb: float = 5,
+    max_uncompressed_mb: float = 50,
 ) -> 'FastAPI':
     """Create and return the FastAPI application for the web wizard."""
     if not _WEB_OK:
@@ -508,7 +775,7 @@ def create_app(
     from .security import validate_file, validate_pattern_file
     from .pattern_check import check_pattern
     from .color import MARK_FAIL, MARK_WARN, colorize_marks, paint, should_color
-    validate_file(xlsx_path)
+    validate_file(xlsx_path, max_file_mb=max_file_mb, max_uncompressed_mb=max_uncompressed_mb)
     _pv_errors: list[str] = []
     _pv_warnings: list[str] = []
     if pattern_path and Path(pattern_path).exists():
@@ -531,7 +798,40 @@ def create_app(
 
     # ── Load workbook ─────────────────────────────────────────────────────────
     wb = openpyxl.load_workbook(xlsx_path, data_only=True)
-    ws = wb.active
+
+    # Select initial sheet (--sheet flag or active)
+    if sheet is None:
+        ws = wb.active
+    elif isinstance(sheet, int) or (isinstance(sheet, str) and sheet.lstrip('-').isdigit()):
+        idx = int(sheet)
+        ws = wb.worksheets[max(0, min(idx, len(wb.worksheets) - 1))]
+    elif sheet in wb.sheetnames:
+        ws = wb[sheet]
+    else:
+        ws = wb.active  # unknown name → fall back to active
+
+    # ── Currency scan (pass over all number_format strings) ──────────────────
+    _detected_currencies = _detect_file_currencies(wb)
+
+    # ── Image presence scan (ZIP, no Pillow needed) ───────────────────────────
+    try:
+        from .engine import scan_image_cells as _scan_img
+        _image_cells = _scan_img(xlsx_path)
+    except Exception:
+        _image_cells = {}
+
+    # ── Image extraction for in-wizard preview ────────────────────────────────
+    _extracted_images: dict[str, str] = {}  # {cell_ref: abs_file_path}
+    _img_tmp_dir: str | None = None
+    try:
+        from .engine import extract_images as _ext_img
+        import tempfile
+        _img_tmp_dir = _register_temp_path(
+            tempfile.mkdtemp(prefix='grepxcel_wizard_img_'))
+        _extracted_images, _ = _ext_img(xlsx_path, _img_tmp_dir,
+                                         stem=Path(xlsx_path).stem)
+    except Exception:
+        pass
 
     # ── Pre-populate from existing pattern ────────────────────────────────────
     state = WizardState(sheet_name=ws.title)
@@ -579,24 +879,38 @@ def create_app(
         except Exception as exc:  # noqa: BLE001
             preload_warnings.append(f'Could not load pattern: {exc}')
 
+    # Auto-select currency when the file uses exactly one known symbol
+    # and no pattern preload has already set a preference.
+    if len(_detected_currencies) == 1 and state.currency_sign == WizardState().currency_sign:
+        state.currency_sign = _detected_currencies[0]
+
     # ── Session log ───────────────────────────────────────────────────────────
     session_log = _SessionLog(xlsx_path, ws.title)
 
     # ── Module-level session ──────────────────────────────────────────────────
     _STATE.clear()
     _STATE.update({
-        'xlsx_path':       xlsx_path,
-        'pattern_path':    pattern_path,
-        'wb':              wb,
-        'ws':              ws,
-        'state':           state,
-        'choices':         choices,
-        'notes':           notes,
-        'undo_stack':      [],
-        'max_rows':        max_rows,
-        'max_cols':        max_cols,
-        'log':             session_log,
+        'xlsx_path':        xlsx_path,
+        'pattern_path':     pattern_path,
+        'wb':               wb,
+        'ws':               ws,
+        'state':            state,
+        'choices':          choices,
+        'choices_by_sheet': {ws.title: choices},  # in-memory per-sheet choices
+        'notes':            notes,
+        'undo_stack':       [],
+        'max_rows':         max_rows,
+        'max_cols':         max_cols,
+        'log':              session_log,
         'preload_warnings': preload_warnings,
+        # An existing pattern was opened AND it yielded classifications. Empty
+        # choices means nothing was recognised, so there is nothing to warn
+        # about losing.
+        'pattern_was_loaded': bool(pattern_path and choices),
+        'image_cells':          _image_cells,
+        'extracted_images':     _extracted_images,
+        'img_tmp_dir':          _img_tmp_dir,
+        'detected_currencies':  _detected_currencies,
     })
 
     # Log initial config
@@ -639,6 +953,8 @@ def create_app(
 
     # ── FastAPI app ───────────────────────────────────────────────────────────
     app = FastAPI(title='grepxcel Web Wizard', docs_url=None, redoc_url=None)
+    static_dir = Path(__file__).parent / 'static'
+    app.mount('/static', StaticFiles(directory=str(static_dir)), name='static')
 
     # ─────────────────────────────── HTML PAGE ────────────────────────────────
 
@@ -658,6 +974,69 @@ def create_app(
     async def api_sheet():
         return JSONResponse(_build_sheet_data())
 
+    @app.get('/api/sheets')
+    async def api_sheets():
+        """Return the list of all sheet names and which is currently active."""
+        wb_ = _STATE['wb']
+        return JSONResponse({
+            'sheets':  wb_.sheetnames,
+            'active':  _STATE['ws'].title,
+        })
+
+    @app.post('/api/switch-sheet')
+    async def api_switch_sheet(request: Request):
+        """Switch to a different sheet, preserving current choices in memory."""
+        body = await request.json()
+        target = body.get('sheet', '')
+        wb_ = _STATE['wb']
+
+        if target not in wb_.sheetnames:
+            # Try numeric index
+            if str(target).lstrip('-').isdigit():
+                idx = int(target)
+                if 0 <= idx < len(wb_.worksheets):
+                    target = wb_.worksheets[idx].title
+            if target not in wb_.sheetnames:
+                raise HTTPException(404, f'Sheet {target!r} not found')
+
+        current_sheet = _STATE['ws'].title
+        if target == current_sheet:
+            return JSONResponse({'ok': True, 'sheet': current_sheet, 'changed': False})
+
+        # Save current choices to the per-sheet store
+        _STATE['choices_by_sheet'][current_sheet] = _STATE['choices']
+
+        # Switch worksheet
+        new_ws = wb_[target]
+        _STATE['ws'] = new_ws
+        _STATE['state'].sheet_name = target
+
+        # Restore or create choices for the new sheet
+        new_choices = _STATE['choices_by_sheet'].get(target, {})
+        _STATE['choices'] = new_choices
+        _STATE['choices_by_sheet'][target] = new_choices
+        _STATE['notes'] = {}
+        _STATE['undo_stack'] = []
+
+        _STATE['log'].write('SWITCH_SHEET', f'from={current_sheet!r} to={target!r}')
+        return JSONResponse({'ok': True, 'sheet': target, 'changed': True})
+
+    @app.get('/api/list-patterns')
+    async def api_list_patterns():
+        """List pattern files in the same directory as the data xlsx."""
+        data_dir = Path(_STATE['xlsx_path']).parent
+        patterns = []
+        for ext in ('*.xlsx', '*.csv'):
+            for p in sorted(data_dir.glob(ext), key=lambda f: f.stat().st_mtime, reverse=True):
+                name_lower = p.name.lower()
+                if 'pattern' in name_lower:
+                    patterns.append({
+                        'name':  p.name,
+                        'path':  str(p),
+                        'size':  p.stat().st_size,
+                    })
+        return JSONResponse({'patterns': patterns})
+
     @app.get('/api/state')
     async def api_state():
         st: WizardState = _STATE['state']
@@ -669,7 +1048,8 @@ def create_app(
                 'ignore_case_values':     st.ignore_case_values,
                 'trim_whitespace_labels': st.trim_whitespace_labels,
                 'trim_whitespace_values': st.trim_whitespace_values,
-                'currency_sign':   st.currency_sign,
+                'currency_sign':         st.currency_sign,
+                'detected_currencies':   _STATE.get('detected_currencies', []),
                 'lbl_match':       st.lbl_match,
                 'var_match':       st.var_match,
                 'empty_aliases':   st.empty_aliases,
@@ -693,6 +1073,13 @@ def create_app(
                 pass
         return JSONResponse({
             'preload_warnings': _STATE.get('preload_warnings', []),
+            # True when an existing pattern was opened with -p and it actually
+            # contained definitions. Drives the one-off notice explaining that
+            # the wizard models one cell / one classification, which is narrower
+            # than a pattern file can express (a lbl:glob matching many labels,
+            # seek: steps, some table bounds) — so saving writes the wizard's
+            # reconstruction, not the file that was opened.
+            'pattern_was_loaded': bool(_STATE.get('pattern_was_loaded')),
             'log_path':         log_path,
             'log_lines':        [l.rstrip('\n') for l in recent_lines],
         })
@@ -799,7 +1186,8 @@ def create_app(
             lbl_mode = '' if lbl_mode_raw == '(default)' else lbl_mode_raw
             choices[ref] = {
                 'choice':   'L',
-                'name':     fields.get('name', _slugify(str(cell_value or '')) + '_label'),
+                'name':     fields.get('name') or _unique_name(
+                    _slugify(str(cell_value or '')), choices, ref, '_label'),
                 'ltype':    fields.get('type', 'string'),
                 'lmatch':   fields.get('match', str(cell_value or '')),
                 'lbl_mode': lbl_mode,
@@ -819,7 +1207,8 @@ def create_app(
                 raise HTTPException(400, str(exc))
             choices[ref] = {
                 'choice':      'V',
-                'name':        fields.get('name', _slugify(str(cell_value or ''))),
+                'name':        fields.get('name') or _unique_name(
+                    _slugify(str(cell_value or '')), choices, ref),
                 'ftype':       fields.get('type', _infer_cell_type(ws.cell(row=row, column=col))),
                 'match':       match_pattern,
                 'col_a_extra': col_a_extra,
@@ -914,12 +1303,30 @@ def create_app(
             log_detail += f' note={note!r}'
         _STATE['log'].write('CLASSIFY', log_detail)
 
-        return JSONResponse({
-            'ok':     True,
-            'ref':    ref,
-            'action': action,
-            'stats':  _build_stats(),
-        })
+        # Detect same-name collisions across roles (lbl vs var).
+        # lbl: and var: are separate namespaces in the engine — same name is
+        # technically allowed — but warn so the author is aware of the overlap.
+        name_warning: str | None = None
+        new_name = info.get('name', '')
+        new_role = action  # 'L' or 'V'
+        if new_name and new_role in ('L', 'V'):
+            opposite = 'V' if new_role == 'L' else 'L'
+            for other_ref, other_meta in choices.items():
+                if other_ref == ref:
+                    continue
+                if other_meta.get('choice') == opposite and other_meta.get('name') == new_name:
+                    role_word = 'value' if opposite == 'V' else 'label'
+                    name_warning = (
+                        f"Name '{new_name}' is also used by {role_word} cell {other_ref}. "
+                        f"lbl: and var: are separate namespaces so both will exist in the pattern, "
+                        f"but consider using distinct names to avoid ambiguity."
+                    )
+                    break
+
+        response: dict = {'ok': True, 'ref': ref, 'action': action, 'stats': _build_stats()}
+        if name_warning:
+            response['name_warning'] = name_warning
+        return JSONResponse(response)
 
     @app.post('/api/classify-batch')
     async def api_classify_batch(request: Request):
@@ -937,6 +1344,8 @@ def create_app(
 
         if not refs:
             raise HTTPException(400, 'refs list is empty')
+        if len(refs) > 5000:
+            raise HTTPException(400, 'refs list exceeds maximum of 5000 cells per batch')
         if action not in ('L', 'V', 'I', 'CLEAR'):
             raise HTTPException(400, f'action must be L, V, I, or CLEAR (got {action!r}); '
                                     'T is not supported for batch classification')
@@ -973,7 +1382,8 @@ def create_app(
             elif action == 'L':
                 choices[ref] = {
                     'choice':   'L',
-                    'name':     _slugify(str(cell_value or '')) + '_label',
+                    'name':     _unique_name(
+                        _slugify(str(cell_value or '')), choices, ref, '_label'),
                     'ltype':    'string',
                     'lmatch':   str(cell_value or ''),
                     'lbl_mode': '',
@@ -981,7 +1391,8 @@ def create_app(
             elif action == 'V':
                 choices[ref] = {
                     'choice':      'V',
-                    'name':        _slugify(str(cell_value or '')),
+                    'name':        _unique_name(
+                        _slugify(str(cell_value or '')), choices, ref),
                     'ftype':       _infer_cell_type(ws_.cell(row=row_, column=col_)) if row_ else 'string',
                     'match':       '.*',
                     'col_a_extra': '',
@@ -1066,7 +1477,7 @@ def create_app(
                 ch   = choices.get(cref, {}).get('choice', '')
                 cells_out.append({
                     'ref':          cref,
-                    'value':        _cell_display(cell.value, 60),
+                    'value':        _cell_display(cell.value, 60, number_format=cell.number_format or ''),
                     'raw':          str(cell.value).strip() if cell.value is not None else '',
                     'inferred_type': _infer_cell_type(cell),
                     'choice':       ch,
@@ -1236,18 +1647,32 @@ def create_app(
         except Exception as exc:
             raise HTTPException(500, str(exc))
 
+    def _default_save_stem() -> str:
+        """Return '{data_stem}_{safe_sheet_name}' for use in pattern filenames."""
+        xlsx_path_ = Path(_STATE['xlsx_path'])
+        sheet_name = _STATE['ws'].title
+        safe_sheet = _slugify(sheet_name) or 'sheet'
+        return f'{xlsx_path_.stem}_{safe_sheet}'
+
     @app.post('/api/save')
     async def api_save(request: Request):
         """Generate and save the pattern file next to the input xlsx."""
         body       = await request.json()
         xlsx_path_ = Path(_STATE['xlsx_path'])
 
-        # Determine output path
+        # Determine output path — sheet name is embedded in the default filename
         out_name = Path(body.get('filename', '')).name  # strip any directory components
         if not out_name:
-            stem     = xlsx_path_.stem
-            out_name = stem + '_pattern-from-web.csv'
+            out_name = _default_save_stem() + '_pattern-from-web.csv'
         out_path = xlsx_path_.parent / out_name
+
+        # Overwrite guard: return exists=True so the browser can confirm
+        if out_path.exists() and not body.get('confirm_overwrite'):
+            return JSONResponse({
+                'ok':     False,
+                'exists': True,
+                'path':   str(out_path),
+            })
 
         try:
             csv_text = _make_csv()
@@ -1273,9 +1698,16 @@ def create_app(
 
         out_name = Path(body.get('filename', '')).name  # strip any directory components
         if not out_name:
-            stem     = xlsx_path_.stem
-            out_name = stem + '_pattern-from-web.xlsx'
+            out_name = _default_save_stem() + '_pattern-from-web.xlsx'
         out_path = xlsx_path_.parent / out_name
+
+        # Overwrite guard
+        if out_path.exists() and not body.get('confirm_overwrite'):
+            return JSONResponse({
+                'ok':     False,
+                'exists': True,
+                'path':   str(out_path),
+            })
 
         try:
             csv_text = _make_csv()
@@ -1317,14 +1749,35 @@ def create_app(
         choice_info = _STATE['choices'].get(ref, {})
         ex_col_a_extra = choice_info.get('col_a_extra', '')
         ex_var_mode, ex_modifiers = _col_a_extra_to_parts(ex_col_a_extra)
+        _all_img = _STATE.get('image_cells', {})
+        img_info = _all_img.get(ws.title, {}).get(ref)
+        fallback_cur = _STATE['state'].currency_sign or ''
+        nfmt = cell.number_format or ''
+
+        # Compute currency_source for the right panel metadata.
+        is_currency_classified = choice_info.get('ftype') == 'currency'
+        currency_source = ''
+        currency_applied = ''
+        if img_info is None and isinstance(cell.value, (int, float)) and not isinstance(cell.value, bool):
+            num_result = _format_number(float(cell.value), nfmt, fallback_cur, is_currency_classified)
+            if num_result is not None:
+                _, currency_source, currency_applied = num_result
+
         return JSONResponse({
             'ref':          ref,
             'row':          row,
             'col':          col,
             'col_letter':   get_column_letter(col),
-            'value':        _cell_display(cell.value, 200),
+            'value':        '' if img_info is not None else _cell_display(cell.value, 200, number_format=nfmt, fallback_currency=fallback_cur, force_currency=is_currency_classified),
             'raw':          str(cell.value) if cell.value is not None else '',
-            'inferred_type': _infer_cell_type(cell),
+            'number_format': nfmt,
+            'currency_source':  currency_source,   # 'cell' | 'default' | ''
+            'currency_applied': currency_applied,  # the symbol that was prepended/suffixed
+            'has_image':    img_info is not None,
+            'image_count':  img_info['count'] if img_info else 0,
+            'image_suspicious': img_info.get('suspicious', False) if img_info else False,
+            'image_mimes':  img_info.get('mimes', []) if img_info else [],
+            'inferred_type': 'image' if img_info is not None else _infer_cell_type(cell),
             'choice':       choice_info.get('choice', ''),
             'anchor':       choice_info.get('anchor', ''),   # set for T-HEAD / T-DATA
             'name':         choice_info.get('name', ''),
@@ -1336,7 +1789,30 @@ def create_app(
             'var_mode':     ex_var_mode,
             'modifiers':    ex_modifiers,
             'note':         _STATE['notes'].get(ref, ''),
+            'has_preview':  ref in _STATE.get('extracted_images', {}),
         })
+
+    @app.get('/api/image/{ref}')
+    async def api_image(ref: str):
+        """Serve an extracted embedded image for the given cell reference."""
+        from fastapi.responses import FileResponse
+        ref = ref.upper()
+        extracted = _STATE.get('extracted_images', {})
+        img_path = extracted.get(ref)
+        if not img_path or not Path(img_path).is_file():
+            raise HTTPException(404, 'No extracted image for this cell')
+        # Infer content type from extension
+        ext = Path(img_path).suffix.lower()
+        ct_map = {'.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+                  '.gif': 'image/gif', '.bmp': 'image/bmp', '.webp': 'image/webp',
+                  '.tiff': 'image/tiff', '.svg': 'image/svg+xml'}
+        media_type = ct_map.get(ext, 'application/octet-stream')
+        headers: dict[str, str] = {'X-Content-Type-Options': 'nosniff'}
+        if ext == '.svg':
+            # SVG can carry inline scripts; sandbox it so navigating directly
+            # to the endpoint cannot execute scripts in the wizard's origin.
+            headers['Content-Security-Policy'] = "default-src 'none'; sandbox"
+        return FileResponse(img_path, media_type=media_type, headers=headers)
 
     @app.post('/api/extract')
     async def api_extract():
@@ -1430,7 +1906,7 @@ def create_app(
                 suffix=suffix, delete=False
             ) as tf:
                 tf.write(data)
-                tmp_path = tf.name
+                tmp_path = _register_temp_path(tf.name)
 
             from .security import validate_pattern_file
             validate_pattern_file(tmp_path)
@@ -1474,6 +1950,61 @@ def create_app(
                     pass
             raise HTTPException(500, str(exc))
 
+    @app.post('/api/load-pattern-by-path')
+    async def api_load_pattern_by_path(request: Request):
+        """Load a pattern from a server-side path (from /api/list-patterns listing)."""
+        body = await request.json()
+        path_str = body.get('path', '')
+        if not path_str:
+            raise HTTPException(400, 'Missing path')
+
+        pat_path = Path(path_str)
+        # Security: path must be in the same directory as the data file
+        data_dir = Path(_STATE['xlsx_path']).parent.resolve()
+        try:
+            pat_resolved = pat_path.resolve()
+        except Exception:
+            raise HTTPException(400, 'Invalid path')
+        if pat_resolved.parent != data_dir:
+            raise HTTPException(403, 'Pattern path must be in the same folder as the data file')
+        if not pat_resolved.exists():
+            raise HTTPException(404, f'Pattern file not found: {pat_resolved.name}')
+
+        try:
+            from .security import validate_pattern_file
+            validate_pattern_file(str(pat_resolved))
+            ws_ = _STATE['ws']
+            choices, cfg, warnings = _preload_from_pattern(ws_, str(pat_resolved))
+
+            _STATE['choices'] = choices
+            _STATE['preload_warnings'] = warnings
+
+            st: WizardState = _STATE['state']
+            st.direction              = cfg.get('direction', st.direction)
+            st.ignore_case_labels     = cfg.get('ignore_case_labels', st.ignore_case_labels)
+            st.ignore_case_values     = cfg.get('ignore_case_values', st.ignore_case_values)
+            st.trim_whitespace_labels = cfg.get('trim_whitespace_labels', st.trim_whitespace_labels)
+            st.trim_whitespace_values = cfg.get('trim_whitespace_values', st.trim_whitespace_values)
+            st.currency_sign          = cfg.get('currency_sign', st.currency_sign)
+            st.lbl_match              = cfg.get('lbl_match', st.lbl_match)
+            st.var_match              = cfg.get('var_match', st.var_match)
+            st.empty_aliases          = cfg.get('empty_aliases', st.empty_aliases)
+            _STATE['pattern_path'] = str(pat_resolved)
+
+            _STATE['log'].write(
+                'LOAD_PATTERN',
+                f'file={pat_resolved.name} choices={len(choices)} warnings={len(warnings)}',
+            )
+            return JSONResponse({
+                'ok': True,
+                'n_choices': len(choices),
+                'warnings': warnings,
+            })
+        except HTTPException:
+            raise
+        except Exception as exc:
+            raise HTTPException(500, str(exc))
+
     @app.post('/api/shutdown')
     async def api_shutdown(request: Request):
         """Graceful shutdown — called by the browser when user clicks 'Done'."""
@@ -1487,20 +2018,42 @@ def create_app(
             raise HTTPException(403, 'Cross-origin shutdown rejected')
         # Clean up any uploaded temp pattern file before exiting.
         import tempfile as _tmpmod
+        import shutil as _shutil
         _tmp_pat = _STATE.get('pattern_path')
         if _tmp_pat and _tmp_pat.startswith(_tmpmod.gettempdir()):
             try:
                 os.unlink(_tmp_pat)
             except OSError:
                 pass
+            _discard_temp_path(_tmp_pat)
+        # Clean up extracted image temp directory (IMAGE() formula cells).
+        _img_dir = _STATE.get('img_tmp_dir')
+        if _img_dir:
+            _shutil.rmtree(_img_dir, ignore_errors=True)
+            _discard_temp_path(_img_dir)
         _STATE['log'].close(_STATE.get('choices', {}), _STATE.get('notes', {}))
         def _stop():
             time.sleep(0.3)
-            os._exit(0)
+            _terminate_process()
         threading.Thread(target=_stop, daemon=True).start()
         return JSONResponse({'ok': True})
 
     return app
+
+
+def _terminate_process() -> None:  # pragma: no cover - replaced under test
+    """Halt the interpreter once the wizard has finished shutting down.
+
+    `os._exit` is deliberate: uvicorn's shutdown does not reliably return control
+    when the request that triggered it is still in flight, so the server is ended
+    from under itself. It exists as a named function purely so tests can replace
+    it. Calling `os._exit` inline here made the three /api/shutdown tests kill the
+    pytest process 0.3s later — after the final test, before pytest printed its
+    summary, and with status 0, so the whole suite reported success while a test
+    was failing. A seam is the difference between a suite that can report and one
+    that cannot.
+    """
+    os._exit(0)
 
 
 def _get_version() -> str:
@@ -1648,6 +2201,9 @@ def run(
     open_browser: bool = True,
     max_rows: int = 150,
     max_cols: int = 40,
+    sheet: str | None = None,
+    max_file_mb: float = 5,
+    max_uncompressed_mb: float = 50,
 ) -> None:
     """Start the web wizard server and (optionally) open the browser."""
     if not _WEB_OK:
@@ -1660,7 +2216,15 @@ def run(
 
     _handle_port_conflict(port)
 
-    app = create_app(xlsx_path, pattern_path, max_rows=max_rows, max_cols=max_cols)
+    app = create_app(
+        xlsx_path,
+        pattern_path,
+        max_rows=max_rows,
+        max_cols=max_cols,
+        sheet=sheet,
+        max_file_mb=max_file_mb,
+        max_uncompressed_mb=max_uncompressed_mb,
+    )
     url = f'http://localhost:{port}'
 
     if open_browser:

@@ -3,8 +3,12 @@ name: CI
 on:
   push:
     branches: [main, dev]
+  # Every pull request, whatever its base. Restricting this to [main, dev] meant
+  # a PR into a longer-lived feature branch — the normal shape for stacked work —
+  # merged with no CI at all, and the gap was invisible: the checks simply did
+  # not appear. Pushes stay limited to the integration branches so a feature
+  # branch does not burn a matrix run on every commit.
   pull_request:
-    branches: [main, dev]
 
 permissions:
   contents: read           # least privilege: jobs only read the repo, nothing else
@@ -88,6 +92,16 @@ jobs:
           grepxcel --help
           if [ "${{ matrix.extra }}" = "mcp" ]; then
             grepxcel mcp-config
+            # mcp-config only prints a JSON blob — it never imports the SDK, so
+            # it passes happily against an mcp release the server cannot run on.
+            # Importing the module is not enough either: mcp_server.py wraps the
+            # SDK import in `except ImportError: FastMCP = None` so the CLI can
+            # print an install hint, which means an incompatible mcp release is
+            # swallowed and the module imports fine. Assert the symbol actually
+            # bound. mcp 2.x removed `mcp.server.fastmcp`, so without this a bump
+            # widening the ceiling goes green while `grepxcel mcp` is broken for
+            # every fresh install.
+            python -c "import grepxcel.mcp_server as m; assert m.FastMCP is not None, 'mcp installed but mcp.server.fastmcp did not import - incompatible mcp release'; m.create_server(); print('mcp import ok')"
           fi
           if [ "${{ matrix.extra }}" = "web" ]; then
             python -c "from grepxcel.wizard_api import create_app; print('web import ok')"
@@ -160,6 +174,17 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt -r requirements-dev.txt
 
+      - name: Static security analysis (bandit)
+        # Gates at MEDIUM and above; config and the rationale for that threshold
+        # are in pyproject.toml's [tool.bandit].
+        #
+        # This was already being done by hand — the source carries seven
+        # `# nosec <ID> — <reason>` suppressions written when someone triaged a
+        # bandit run and never wired it in. Unenforced, they rot: a second
+        # urlopen appeared in doctor.py after the first was annotated and went
+        # untriaged until this step was added.
+        run: bandit -c pyproject.toml -r grepxcel/ -ll
+
       - name: Generate lint security fixtures
         run: python scripts/generate_lint_fixtures.py
 
@@ -197,6 +222,7 @@ jobs:
               echo "docs/$f is current."
             fi
           done
+          if [ "$outdated" -eq 1 ]; then exit 1; fi
 
       - name: Upload regenerated docs as artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

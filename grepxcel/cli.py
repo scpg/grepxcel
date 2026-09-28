@@ -18,7 +18,7 @@ import os
 import sys
 
 from .color import MARK_FAIL, MARK_OK, MARK_WARN, colorize_marks, paint, should_color
-from .engine import Engine
+from .engine import Engine, DEFAULT_MAX_DATA_ROWS, DEFAULT_MAX_DATA_COLS
 from .logger import Logger, VerbosityLevel
 from .utils import flatten_table_instances as _flatten_table_instances
 
@@ -33,7 +33,7 @@ def _json_default(obj):
     as ``timedelta``, which has no isoformat, so render it as ``str`` (e.g.
     ``"8:30:00"``).
     """
-    if isinstance(obj, (datetime.date, datetime.datetime, datetime.time)):
+    if isinstance(obj, (datetime.datetime, datetime.date, datetime.time)):
         return obj.isoformat()
     if isinstance(obj, datetime.timedelta):
         return str(obj)
@@ -124,6 +124,7 @@ def _commands_help() -> str:
         "\n"
         f"{_sec('inspection:')}\n"
         "  lint               Inspect an Excel file for potential extraction issues\n"
+        "  profile            Census every cell's actual type — storage, format, errors\n"
         "  schema             Generate a JSON Schema from a pattern file\n"
         "\n"
         f"{_sec('compliance & ops:')}\n"
@@ -164,6 +165,7 @@ def _build_parser() -> argparse.ArgumentParser:
     _add_web_wizard_subparser(sub)
     _add_docs_subparser(sub)
     _add_lint_subparser(sub)
+    _add_profile_subparser(sub)
     _add_schema_subparser(sub)
     _add_skill_subparser(sub)
     _add_examples_subparser(sub)
@@ -235,6 +237,67 @@ examples:
                    help='Show full checklist detail (default: one summary line per file)')
 
 
+def _add_profile_subparser(sub) -> None:
+    p = sub.add_parser(
+        'profile',
+        help="Census every cell's actual type — storage, format, errors",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Scans a data file with no pattern required and reports exactly what's in
+it: OOXML storage type, semantic subtype (driven by number format —
+Excel has no separate date/time/currency storage type, it's all numbers
+plus a display format), and edge cases (error cells, formulas,
+text-forced-numeric strings, blanks, merged-cell members). Answers "why
+didn't my pattern match this cell" before a pattern is even written.
+
+Scans every sheet by default (like lint) — use --sheet to narrow to one.
+
+verbosity:
+  (none)  one summary line per (storage, semantic) type group
+  -v      full detail: every affected cell listed under its type group
+  -q      one line per file, cell count only (useful in batch mode)
+
+examples:
+  grepxcel profile data.xlsx
+  grepxcel profile data.xlsx -v
+  grepxcel profile data.xlsx --sheet Sheet2
+  grepxcel profile data/ -r                       # every .xlsx under data/
+  grepxcel profile data.xlsx --errors-only         # Excel-native errors only
+  grepxcel profile data.xlsx --issues-only         # errors + text-forced-numeric
+  grepxcel profile data.xlsx --format json -o profile.json
+  grepxcel profile data.xlsx --format xlsx -o profile_colored.xlsx
+        """,
+    )
+    p.add_argument('files', nargs='+', metavar='FILE_OR_DIR',
+                   help='Excel file(s) or director(ies) to profile')
+    p.add_argument('-r', '--recursive', action='store_true',
+                   help='Recurse into subdirectories when a directory is given')
+    p.add_argument('-v', '--verbose', action='store_true',
+                   help='Full detail: every cell listed under its type group')
+    p.add_argument('-q', '--quiet', action='store_true',
+                   help='One line per file, cell count only')
+    p.add_argument('--sheet', metavar='NAME_OR_INDEX',
+                   help='Narrow to one sheet (default: every sheet)')
+    p.add_argument('--errors-only', action='store_true',
+                   help='Only report strict Excel-native error cells (#DIV/0! etc.)')
+    p.add_argument('--issues-only', action='store_true',
+                   help='Report errors plus text-forced-numeric and other suspicious cells')
+    p.add_argument('--format', choices=['json', 'xlsx'], default='json',
+                   dest='output_format',
+                   help='Output format for -o: json (default, per-cell records) or '
+                        'xlsx (colored copy of the data file, for a human reader)')
+    p.add_argument('-o', '--output', metavar='FILE_OR_DIR',
+                   help='Write to file (or a directory, when profiling multiple '
+                        'files) instead of stdout')
+    p.add_argument('--force', action='store_true',
+                   help='Overwrite an existing output file without prompting')
+    _add_security_args(p)
+    p.add_argument('--max-rows', type=int, default=DEFAULT_MAX_DATA_ROWS,
+                   metavar='N', help=f'Max data-sheet rows to scan (default: {DEFAULT_MAX_DATA_ROWS})')
+    p.add_argument('--max-columns', type=int, default=DEFAULT_MAX_DATA_COLS,
+                   metavar='N', help=f'Max data-sheet columns to scan (default: {DEFAULT_MAX_DATA_COLS})')
+
+
 def _add_schema_subparser(sub) -> None:
     p = sub.add_parser(
         'schema',
@@ -259,6 +322,14 @@ examples:
         '--force',
         action='store_true',
         help='Overwrite an existing output file without prompting',
+    )
+    p.add_argument(
+        '--detail',
+        choices=['minimal', 'normal', 'extended'],
+        default='normal',
+        dest='detail_level',
+        help='Schema detail level: minimal (no _source/_meta), normal (default), '
+             'extended (adds $defs/FieldDetail and _ext block)',
     )
 
 
@@ -484,10 +555,16 @@ examples:
                    help='Local port to listen on (default: 8765)')
     p.add_argument('--no-browser', action='store_true',
                    help='Do not automatically open a browser window')
+    p.add_argument('--sheet', metavar='NAME_OR_INDEX', default=None,
+                   help='Sheet to open on startup — name or 0-based index (default: active sheet)')
     p.add_argument('--max-rows', metavar='N', type=int, default=150,
                    help='Maximum rows to display in the grid (default: 150)')
     p.add_argument('--max-cols', metavar='N', type=int, default=40,
                    help='Maximum columns to display in the grid (default: 40)')
+    p.add_argument('--max-size', type=float, default=5, metavar='MB',
+                   help='Compressed file size limit in MB (default: 5)')
+    p.add_argument('--max-uncompressed', type=float, default=50, metavar='MB',
+                   help='Uncompressed content size limit in MB (default: 50)')
 
 
 def _add_quickstart_subparser(sub) -> None:
@@ -719,6 +796,31 @@ examples:
         '--sheet',
         metavar='NAME_OR_INDEX',
         help='Sheet to use: name (e.g. Sheet2) or 0-based index (default: active sheet)',
+    )
+    p.add_argument(
+        '--include-images',
+        action='store_true',
+        dest='include_images',
+        help='Extract embedded images from the data file and save them to --images-dir. '
+             'Adds an _images key to the JSON output mapping cell references to image paths.',
+    )
+    p.add_argument(
+        '--images-dir',
+        metavar='DIR',
+        dest='images_dir',
+        default=None,
+        help='Directory to save extracted images into (default: next to --output, or cwd). '
+             'Only used with --include-images.',
+    )
+    p.add_argument(
+        '--detail',
+        choices=['minimal', 'normal', 'extended'],
+        default='normal',
+        dest='detail_level',
+        help='Output detail level: '
+             'minimal (data values only, no _source/_meta blocks), '
+             'normal (default — current behaviour, backwards compatible), '
+             'extended (normal output + _ext block with per-field type/cell-ref/format metadata)',
     )
     _add_strict_arg(p)
     _add_security_args(p)
@@ -1041,6 +1143,13 @@ def _process_file(pattern: str, data_file: str, args,
     all_sheets = getattr(args, 'all_sheets', False)
 
     engine_format = 'nested' if (is_csv or is_xlsx) else output_format
+    detail_level = getattr(args, 'detail_level', 'normal')
+    # --detail only makes sense with structured JSON output
+    if (is_csv or is_xlsx) and detail_level != 'normal':
+        print(colorize_marks(
+            f'  {MARK_WARN}  --detail {detail_level} is ignored with --format csv/xlsx',
+            should_color(sys.stderr)), file=sys.stderr)
+        detail_level = 'normal'
 
     try:
         engine = Engine()
@@ -1053,6 +1162,7 @@ def _process_file(pattern: str, data_file: str, args,
                 max_rows=args.max_rows,
                 max_cols=args.max_columns,
                 output_format=engine_format,
+                detail_level=detail_level,
             )
         else:
             result = engine.process(
@@ -1064,6 +1174,7 @@ def _process_file(pattern: str, data_file: str, args,
                 max_cols=args.max_columns,
                 sheet=_resolve_sheet(args),
                 output_format=engine_format,
+                detail_level=detail_level,
             )
     except Exception as exc:
         print(colorize_marks(
@@ -1073,8 +1184,24 @@ def _process_file(pattern: str, data_file: str, args,
     finally:
         logger.close()
 
-    if getattr(args, 'meta', False):
+    if getattr(args, 'meta', False) and detail_level != 'minimal':
         result['_meta'] = logger.build_meta()
+    elif getattr(args, 'meta', False) and detail_level == 'minimal':
+        print(colorize_marks(
+            f'  {MARK_WARN}  --meta is ignored with --detail minimal',
+            should_color(sys.stderr)), file=sys.stderr)
+
+    if getattr(args, 'include_images', False):
+        from .engine import extract_images
+        _images_dir = getattr(args, 'images_dir', None) or args.output or '.'
+        _images, _img_warns = extract_images(
+            data_file, _images_dir,
+            stem or os.path.splitext(os.path.basename(data_file))[0],
+        )
+        for w in _img_warns:
+            print(f'⚠️  [image] {w}', file=sys.stderr)
+        if _images:
+            result['_images'] = _images
 
     if getattr(args, 'no_source', False) and engine_format == 'nested':
         if all_sheets:
@@ -1122,10 +1249,10 @@ def _process_file(pattern: str, data_file: str, args,
         os.makedirs(args.output, exist_ok=True)
         out_path = os.path.join(args.output, f'{stem}.json')
         with open(out_path, 'w', encoding='utf-8') as f:
-            json.dump(result, f, indent=2, default=_json_default)
+            json.dump(result, f, indent=2, default=_json_default, ensure_ascii=False)
         print(f'\n  JSON written to: {out_path}', file=sys.stderr)
     else:
-        json.dump(result, sys.stdout, indent=2, default=_json_default)
+        json.dump(result, sys.stdout, indent=2, default=_json_default, ensure_ascii=False)
         sys.stdout.write('\n')
 
     ok = not (logger.has_errors() or logger.has_warnings())
@@ -1257,6 +1384,28 @@ def _run_lint(args) -> int:
                     verbose=getattr(args, 'verbose', False))
 
 
+# ── profile handler ──────────────────────────────────────────────────────────
+
+def _run_profile(args) -> int:
+    from .profile import run_profile
+    return run_profile(
+        args.files,
+        recursive=getattr(args, 'recursive', False),
+        sheet=getattr(args, 'sheet', None),
+        verbose=getattr(args, 'verbose', False),
+        quiet=getattr(args, 'quiet', False),
+        errors_only=getattr(args, 'errors_only', False),
+        issues_only=getattr(args, 'issues_only', False),
+        fmt=getattr(args, 'output_format', 'json'),
+        output=getattr(args, 'output', None),
+        force=getattr(args, 'force', False),
+        max_file_mb=getattr(args, 'max_size', 5),
+        max_uncompressed_mb=getattr(args, 'max_uncompressed', 50),
+        max_rows=getattr(args, 'max_rows', DEFAULT_MAX_DATA_ROWS),
+        max_cols=getattr(args, 'max_columns', DEFAULT_MAX_DATA_COLS),
+    )
+
+
 # ── validate-pattern handler ─────────────────────────────────────────────────
 
 def _run_validate(args) -> int:
@@ -1317,12 +1466,13 @@ def _run_sbom(args) -> int:
 
 def _run_schema(args) -> int:
     from .schema import run_schema
+    detail_level = getattr(args, 'detail_level', 'normal')
     if not args.output:
-        return run_schema(args.files)
+        return run_schema(args.files, detail_level=detail_level)
     _refuse_overwrite([args.output], getattr(args, 'force', False))
     out = open(args.output, 'w', encoding='utf-8')
     try:
-        rc = run_schema(args.files, out=out)
+        rc = run_schema(args.files, out=out, detail_level=detail_level)
     finally:
         out.close()
     if rc == 0:
@@ -1656,6 +1806,9 @@ def main(argv=None):
             open_browser=not getattr(args, 'no_browser', False),
             max_rows=getattr(args, 'max_rows', 150),
             max_cols=getattr(args, 'max_cols', 40),
+            sheet=getattr(args, 'sheet', None),
+            max_file_mb=getattr(args, 'max_size', 5),
+            max_uncompressed_mb=getattr(args, 'max_uncompressed', 50),
         )
         sys.exit(0)
 
@@ -1673,6 +1826,9 @@ def main(argv=None):
 
     if args.command == 'lint':
         sys.exit(_run_lint(args))
+
+    if args.command == 'profile':
+        sys.exit(_run_profile(args))
 
     if args.command == 'validate-pattern':
         sys.exit(_run_validate(args))

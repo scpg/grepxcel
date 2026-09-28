@@ -58,6 +58,12 @@ suggest = [
     # certificate store (where IT installs the company CA). Optional + guarded.
     "truststore>=0.9",
 ]
+draft = [  # alias for [suggest] — matches the `grepxcel draft` command name
+    "llama-cpp-python>=0.2.90",
+    "huggingface_hub>=0.23",
+    "platformdirs>=4.0",
+    "truststore>=0.9",
+]
 draft-cloud = [
     "anthropic>=0.40",
     # openai SDK powers the GitHub Models backend (--backend github), which talks
@@ -75,7 +81,18 @@ polars = [
     "polars>=1.0",
 ]
 mcp = [
-    "mcp>=1.23,<2",
+    # Floor is 1.28.1, not 1.23: earlier releases carry CVE-2026-52869 (SSE and
+    # Streamable HTTP route by session id without checking the authenticated
+    # principal; fixed 1.27.2) and CVE-2026-59950 (the deprecated websocket
+    # transport skips Host/Origin validation; fixed 1.28.1). This server runs on
+    # stdio, so neither transport is reachable here — the floor exists so that
+    # installing the extra cannot pull a version with known holes into an
+    # environment that may expose them another way.
+    #
+    # Ceiling stays below 2: mcp 2.x removed `mcp.server.fastmcp`, which
+    # mcp_server.py imports. Widening it makes `grepxcel mcp` fail at import
+    # with ModuleNotFoundError. Lifting it means migrating to MCPServer first.
+    "mcp>=1.28.1,<2",
 ]
 wizard = [
     "textual>=8.0",
@@ -89,10 +106,12 @@ web = [
     "fastapi>=0.141",
     "uvicorn>=0.52",
     "jinja2>=3.1",
+    "aiofiles>=23.1",
 ]
 dev = [
     "pytest>=8.0",
     "jsonschema>=4.20",
+    "hypothesis>=6.168.0",
 ]
 build = [
     # CVE-2025-59042 fixed in 6.10 (reworked bootstrap, eliminates sys.path injection)
@@ -117,5 +136,28 @@ where = ["."]
 include = ["grepxcel*"]
 
 [tool.setuptools.package-data]
+"grepxcel"            = ["py.typed"]
 "grepxcel.examples"   = ["*/*.xlsx"]
 "grepxcel.templates"  = ["*.html"]
+"grepxcel.static"     = ["*.css", "*.js"]
+
+[tool.bandit]
+# Static security analysis of grepxcel's own source. Runs in CI's lint-security
+# job; see CONTRIBUTING/CLAUDE.md for the local command.
+#
+# Only grepxcel/ is scanned. tests/ deliberately constructs hostile input — ZIP
+# bombs, XXE payloads, oversized cells — and scanning it would report the test
+# fixtures as vulnerabilities.
+exclude_dirs = ["tests", "tmp.local", "samples.local", ".venv", "build", "dist"]
+
+# CI gates at MEDIUM and above (-ll). The LOW findings in this codebase are all
+# false positives of two shapes, and suppressing ~15 of them individually would
+# train contributors to add `# nosec` reflexively — which is worse than not
+# running the tool:
+#   B105/B107  parser token NAMES ('not-null', 'nullable', 'trim-whitespace')
+#              flagged as hardcoded passwords because the variable is *_token.
+#   B603/B607  subprocess with a FIXED argv, no shell, guarded by shutil.which.
+# A genuine LOW is still worth fixing when spotted; it just does not block a PR.
+#
+# Real suppressions live inline as `# nosec <ID> — <reason>` at the call site,
+# where the justification sits next to the code it excuses.

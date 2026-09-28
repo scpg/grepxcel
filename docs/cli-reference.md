@@ -185,10 +185,36 @@ grepxcel lint data/ -r -v
 | `-r, --recursive` | off | Recurse into subdirectories when a directory is given |
 | `-v, --verbose` | off | Show full checklist detail (default: one summary line per file) |
 
-Checks: file format, ZIP integrity, ZIP bomb (expansion ratio), encryption/IRM,
-Microsoft Information Protection labels, sheet dimensions (declared vs real),
-merged cells, formula cells, empty sheets. Directory mode surfaces `.xlsx`,
-`.xlsm`, `.xlsb`, and `.xls` files — rejected formats are reported as failures.
+Checks: file format, ZIP integrity, ZIP bomb (expansion ratio), macro content,
+encryption/IRM, Microsoft Information Protection labels, sheet dimensions
+(declared vs real), merged cells, formula cells, empty sheets. Directory mode
+surfaces `.xlsx`, `.xlsm`, `.xlsb`, and `.xls` files — rejected formats are
+reported as failures.
+
+Unlike `extract`, `lint` reports macro content rather than refusing the file —
+telling you what a file contains is its job, and it is where you look to find out
+why an extraction was refused.
+
+### Macro content is detected by content, not by extension
+
+`.xlsm` and `.xlsb` are refused by extension, but both they and `.xlsx` are ZIP
+archives beginning with `PK`, so renaming one used to be enough to get it
+accepted. Any file carrying `xl/vbaProject.bin` (VBA) or `xl/macrosheets/`
+(Excel 4.0 / XLM) is now refused whatever it is called. Excel stores macros only
+in `.xlsm`/`.xlsb` — saving as `.xlsx` strips them — so a `.xlsx` holding these
+parts was renamed rather than saved that way.
+
+To extract from such a file, open it in Excel and use **File > Save As > Excel
+Workbook (.xlsx)**, which drops the macros.
+
+> **This is not malware detection.** grepxcel does not scan for malware, and a
+> refusal here is not a finding that a file is harmful. grepxcel also never runs
+> macro content: openpyxl has no VBA engine and formulas are read from their
+> cached values rather than evaluated. What this check does is stop grepxcel
+> accepting and passing on a macro-bearing file that something downstream may
+> open in Excel, and make the decision depend on the bytes rather than the
+> filename. Use a dedicated scanning or CDR product where you need a verdict on
+> whether a file is safe.
 
 ---
 

@@ -30,7 +30,7 @@ from grepxcel.utils import infer_cell_type, is_empty
 # ---------------------------------------------------------------------------
 
 _VALID_TYPES = frozenset({'string', 'integer', 'currency', 'percentage',
-                          'date', 'datetime', 'time', 'duration'})
+                          'date', 'datetime', 'time', 'duration', 'boolean'})
 
 # Values that openpyxl returns when reading an xlsx cell.
 _cell_value = st.one_of(

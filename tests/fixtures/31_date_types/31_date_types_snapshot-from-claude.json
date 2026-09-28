@@ -1,0 +1,20 @@
+{
+  "item": [
+    {
+      "_source": {
+        "sheet": "Sheet1",
+        "ref": "A1:B4"
+      },
+      "data": [
+        {
+          "label": "Datetime:",
+          "value": "2026-03-15 14:30:00"
+        },
+        {
+          "label": "Future date:",
+          "value": "2030-12-31 00:00:00"
+        }
+      ]
+    }
+  ]
+}

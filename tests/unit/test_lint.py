@@ -62,6 +62,19 @@ class TestFileAccess:
         results = lint_file(path)
         assert any(r[0] == FAIL and 'macro' in r[2].lower() for r in results)
 
+    def test_xls_rejected_with_conversion_message_not_macro_wording(self, tmp_path):
+        """.xls fails for a different reason than .xlsm (format
+        incompatibility, not macro risk) -- must not share the macro-risk
+        wording, which would wrongly imply macro-free .xls would work."""
+        path = str(tmp_path / 'data.xls')
+        with open(path, 'w') as f:
+            f.write('fake')
+        results = lint_file(path)
+        fail_messages = [r[2] for r in results if r[0] == FAIL]
+        assert any('legacy Excel 97-2003' in m for m in fail_messages)
+        assert not any('macro' in m.lower() for m in fail_messages)
+        assert any('.xlsx' in m for m in fail_messages)
+
     def test_valid_xlsx_passes_file_check(self, tmp_path):
         path = _make_xlsx(tmp_path)
         results = lint_file(path)
@@ -218,6 +231,43 @@ class TestAdvisoryNotes:
         results = lint_file(path)
         info_results = [r for r in results if r[0] == INFO]
         assert len(info_results) >= 1
+
+    def _inject_zip_part(self, tmp_path, part_name: str) -> str:
+        """A plain workbook with one extra zip member injected directly —
+        simulates the presence of a Data Model / connection / external
+        link / embedded object without needing Excel to actually build one."""
+        path = _make_xlsx(tmp_path)
+        with zipfile.ZipFile(path, 'a') as zf:
+            zf.writestr(part_name, b'fake')
+        return path
+
+    def test_no_invisible_data_signal_by_default(self, tmp_path):
+        from grepxcel.lint import _INVISIBLE_DATA_SIGNALS
+        path = _make_xlsx(tmp_path)
+        results = lint_file(path)
+        info_messages = {r[2] for r in results if r[0] == INFO}
+        for _, (_, _, msg) in _INVISIBLE_DATA_SIGNALS:
+            assert msg not in info_messages
+
+    def test_flags_data_model(self, tmp_path):
+        path = self._inject_zip_part(tmp_path, 'xl/model/item1.data')
+        results = lint_file(path)
+        assert any('Data Model' in r[2] for r in results if r[0] == INFO)
+
+    def test_flags_external_connection(self, tmp_path):
+        path = self._inject_zip_part(tmp_path, 'xl/connections.xml')
+        results = lint_file(path)
+        assert any('external data connection' in r[2] for r in results if r[0] == INFO)
+
+    def test_flags_external_link(self, tmp_path):
+        path = self._inject_zip_part(tmp_path, 'xl/externalLinks/externalLink1.xml')
+        results = lint_file(path)
+        assert any('references another workbook' in r[2] for r in results if r[0] == INFO)
+
+    def test_flags_embedded_object(self, tmp_path):
+        path = self._inject_zip_part(tmp_path, 'xl/embeddings/oleObject1.bin')
+        results = lint_file(path)
+        assert any('embedded object' in r[2] for r in results if r[0] == INFO)
 
 
 # ── run_lint output ───────────────────────────────────────────────────────────
