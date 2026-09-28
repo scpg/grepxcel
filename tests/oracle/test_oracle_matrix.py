@@ -36,7 +36,10 @@ replayable by regenerating that one case — no committed fixture needed.
 """
 from __future__ import annotations
 
+import atexit
+import datetime as _dt
 import os
+import shutil as _shutil
 import tempfile
 
 import pytest
@@ -101,8 +104,51 @@ PARAMS = _build_params()
 IDS = [p.case_id for p in PARAMS]
 
 # ── one generated case per case_id, shared by all six oracles (§11) ───────
-_ROOT = os.path.join(tempfile.gettempdir(), f'grepxcel-oracle-{os.getpid()}')
+#
+# `mkdtemp` + `atexit`, which is the Python spelling of the shell idiom:
+#
+#     MYTMPDIR="$(mktemp -d)"; trap 'rm -rf -- "$MYTMPDIR"' EXIT
+#
+# The previous name was `grepxcel-oracle-<pid>` with no cleanup at all. Three
+# separate problems, each of which this fixes:
+#
+#   1. Nothing ever deleted it. One process leaves ~75 MB, and under `-n auto`
+#      that is one tree per xdist worker — ~2.4 GB per run on 32 cores. 265
+#      trees accumulated and exhausted every inode on a tmpfs /tmp
+#      (1048574/1048576 used) while `df -h` still reported 26 GB free. The run
+#      that hit it failed with ENOSPC and surfaced as 13,496 unrelated oracle
+#      assertion failures, which is a long way from the actual cause.
+#   2. PIDs are recycled, so the name is not unique over time — a later run
+#      could inherit a previous one's directory and its stale contents.
+#   3. A predictable path in a world-writable directory can be pre-created or
+#      symlinked by another user before the run. `mkdtemp` creates a fresh,
+#      unguessable directory with 0700 permissions.
+#
+# The date in the prefix is for the case that survives anyway: `atexit` does not
+# run on SIGKILL or a hard crash, so anything left behind carries the day it was
+# made and can be swept by age.
+#
+# Set GREPXCEL_ORACLE_KEEP=1 to retain the tree. That is not a nicety — when a
+# case fails, the generated .xlsx and pattern are the only evidence, and a suite
+# that deletes them on the way out makes its own failures harder to diagnose.
+_ROOT = tempfile.mkdtemp(prefix=f'grepxcel-oracle.{_dt.date.today():%Y%m%d}.')
 _CASES: dict[str, object] = {}
+
+
+def _keep_generated_cases() -> bool:
+    return os.environ.get('GREPXCEL_ORACLE_KEEP', '').strip().lower() not in (
+        '', '0', 'false', 'no',
+    )
+
+
+@atexit.register
+def _remove_generated_cases() -> None:
+    """Remove the case tree however the process ends: pass, fail, or Ctrl+C."""
+    if _keep_generated_cases():
+        print(f'\nGREPXCEL_ORACLE_KEEP set — generated cases kept at: {_ROOT}')
+        return
+    # ignore_errors: cleanup must never mask the run's real outcome.
+    _shutil.rmtree(_ROOT, ignore_errors=True)
 
 
 def case_for(params: CaseParams):
@@ -158,7 +204,37 @@ def test_strict(params):
 
 # ── the matrix itself ────────────────────────────────────────────────────
 def test_matrix_is_not_vacuous():
-    """Guards against an env filter or a catalog edit silently emptying the
-    run — a suite that collects nothing passes without testing anything."""
-    assert len(PARAMS) >= 100, f'only {len(PARAMS)} cases in the matrix'
+    """Guards against a catalog edit or a typo'd env filter silently emptying
+    the run — a suite that collects nothing passes without testing anything.
+
+    The size floor applies only to an unnarrowed run. Narrowing with
+    GREPXCEL_ORACLE_TYPES/_SHAPES/_SEEDS is a documented debugging workflow and
+    legitimately collects far fewer than 100 cases (one type, one shape, one seed
+    is 44), so asserting the floor there made this test fail *every time* those
+    variables were used. A check that is always red during debugging is worse
+    than no check: it teaches you to skim past red while you are reading red.
+
+    Narrowed or not, the matrix must still be non-empty — which is what catches
+    the mistake actually worth catching here, a misspelled type or shape name
+    filtering everything out and leaving a suite that passes vacuously.
+    """
+    narrowing = sorted(
+        name for name in (
+            'GREPXCEL_ORACLE_TYPES', 'GREPXCEL_ORACLE_SHAPES', 'GREPXCEL_ORACLE_SEEDS',
+        ) if os.environ.get(name, '').strip()
+    )
+
+    assert PARAMS, (
+        'the matrix is empty. '
+        + (f'Narrowed by {", ".join(narrowing)} — check those values name real '
+           f'types/shapes; an unrecognised name filters everything out.'
+           if narrowing else
+           'Nothing is narrowing it, so this is a catalog or _build_params defect.')
+    )
     assert len(set(IDS)) == len(IDS), 'duplicate case_id in the matrix'
+
+    if not narrowing:
+        assert len(PARAMS) >= 100, (
+            f'only {len(PARAMS)} cases in an unnarrowed matrix — expected the '
+            f'full grid. A catalog entry or shape was probably dropped.'
+        )
