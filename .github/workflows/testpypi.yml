@@ -10,10 +10,17 @@ name: TestPyPI dry-run
 # the real release — no tokens — but scoped to the separate 'testpypi'
 # environment and the TestPyPI Trusted Publisher you register on test.pypi.org.
 #
-# Each run auto-derives a unique pre-release version X.Y.Zrc<run_number> from the
-# current __version__ and rewrites it in the CI checkout only (never committed).
-# So every dispatch uploads a FRESH version — no manual bumps, and the real
-# __version__ (e.g. 0.3.0) stays untouched for the actual release.yml publish.
+# Each run auto-derives a unique pre-release version X.Y.Zrc<n> from the current
+# __version__ and rewrites it in the CI checkout only (never committed). So every
+# dispatch uploads a FRESH version — no manual bumps, and the real __version__
+# (e.g. 0.5.0) stays untouched for the actual release.yml publish.
+#
+# The rc counter is scoped to the base version, not to the CI run: see
+# scripts/derive_testpypi_version.py, which asks TestPyPI what it already holds
+# for this X.Y.Z and takes the next free number. A bump to 0.6.0 restarts at rc1.
+# (It previously used github.run_number, which never reset on a version bump —
+# hence the 0.1.0rc16 sitting next to 0.3.0rc17 in the release history.)
+#
 # (skip-existing stays on as a belt-and-suspenders for re-runs of the same run.)
 #
 # Pipeline:
@@ -43,14 +50,10 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Derive a unique pre-release version (X.Y.Zrc<run_number>)
+      - name: Derive a unique pre-release version (X.Y.Zrc<n>)
         id: derive-version
-        env:
-          RUN_NUMBER: ${{ github.run_number }}
         run: |
-          base=$(grep -E '^__version__' grepxcel/__init__.py \
-                   | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
-          ver="${base}rc${RUN_NUMBER}"
+          ver=$(python3 scripts/derive_testpypi_version.py)
           sed -i "s/^__version__ = .*/__version__ = \"${ver}\"/" grepxcel/__init__.py
           echo "Building TestPyPI version: ${ver}"
           echo "version=${ver}" >> "$GITHUB_OUTPUT"
