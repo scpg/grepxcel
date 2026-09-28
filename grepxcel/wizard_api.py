@@ -10,6 +10,7 @@ Optional dependency group: ``pip install "grepxcel[web]"``
 """
 from __future__ import annotations
 
+import atexit
 import hashlib
 import json
 import os
@@ -24,6 +25,52 @@ from typing import Any
 
 import openpyxl
 from openpyxl.utils import get_column_letter
+
+
+# ── temp files clean themselves up, however the process ends ─────────────────
+#
+# The wizard extracts IMAGE() cells into a temp directory and writes uploaded
+# pattern files to a temp file. Both were removed only by the /api/shutdown
+# handler — i.e. only when the user clicked "Done". Closing the browser,
+# Ctrl+C, a crash, or any test that builds an app without shutting it down
+# leaked them. The test suite alone had left 363 `grepxcel_wizard_img_*`
+# directories on this machine.
+#
+# atexit is the Python spelling of `trap 'rm -rf -- "$TMPDIR"' EXIT`: it runs on
+# normal exit, on an unhandled exception, and on Ctrl+C. It does not run on
+# SIGKILL or os._exit, which is why the shutdown handler still cleans up eagerly
+# rather than relying on this — this is the backstop for every other path.
+_TEMP_PATHS: set[str] = set()
+
+
+def _register_temp_path(path: str | None) -> str | None:
+    """Mark *path* for removal when the process exits. Returns it unchanged so
+    it can wrap a mkdtemp/mkstemp call inline."""
+    if path:
+        _TEMP_PATHS.add(path)
+    return path
+
+
+def _discard_temp_path(path: str | None) -> None:
+    """Forget *path* — it has already been removed by an eager cleanup."""
+    _TEMP_PATHS.discard(path or '')
+
+
+@atexit.register
+def _remove_registered_temp_paths() -> None:
+    import shutil as _sh
+
+    for path in list(_TEMP_PATHS):
+        # Never raise from an exit handler: a failed cleanup must not change
+        # the process's exit status or mask whatever it was doing.
+        try:
+            if os.path.isdir(path):
+                _sh.rmtree(path, ignore_errors=True)
+            elif os.path.exists(path):
+                os.unlink(path)
+        except OSError:
+            pass
+    _TEMP_PATHS.clear()
 
 # ── Reuse existing pure functions ─────────────────────────────────────────────
 from grepxcel.wizard_core import (
@@ -779,7 +826,8 @@ def create_app(
     try:
         from .engine import extract_images as _ext_img
         import tempfile
-        _img_tmp_dir = tempfile.mkdtemp(prefix='grepxcel_wizard_img_')
+        _img_tmp_dir = _register_temp_path(
+            tempfile.mkdtemp(prefix='grepxcel_wizard_img_'))
         _extracted_images, _ = _ext_img(xlsx_path, _img_tmp_dir,
                                          stem=Path(xlsx_path).stem)
     except Exception:
@@ -1858,7 +1906,7 @@ def create_app(
                 suffix=suffix, delete=False
             ) as tf:
                 tf.write(data)
-                tmp_path = tf.name
+                tmp_path = _register_temp_path(tf.name)
 
             from .security import validate_pattern_file
             validate_pattern_file(tmp_path)
@@ -1977,10 +2025,12 @@ def create_app(
                 os.unlink(_tmp_pat)
             except OSError:
                 pass
+            _discard_temp_path(_tmp_pat)
         # Clean up extracted image temp directory (IMAGE() formula cells).
         _img_dir = _STATE.get('img_tmp_dir')
         if _img_dir:
             _shutil.rmtree(_img_dir, ignore_errors=True)
+            _discard_temp_path(_img_dir)
         _STATE['log'].close(_STATE.get('choices', {}), _STATE.get('notes', {}))
         def _stop():
             time.sleep(0.3)

@@ -70,6 +70,14 @@ pipeline feeding renamed `.xlsm` files will stop. Both are detailed below.
   named `_terminate_process()` seam that the session fixture replaces, and a test pins
   `os._exit` to that one function so an inline call cannot come back. Shutdown behaviour in
   production is unchanged.
+- **The web wizard no longer leaks temp files.** The extracted-image directory
+  (`grepxcel_wizard_img_*`) and uploaded pattern files were removed only by the
+  `/api/shutdown` handler — that is, only when the user clicked "Done". Closing the browser,
+  Ctrl+C, a crash, or any test that built an app without shutting it down leaked them, and
+  the test suite alone had left 363 directories on one machine. Both are now registered and
+  removed by an `atexit` handler, so they outlive the session but never the process. The
+  shutdown handler still cleans up eagerly, because `atexit` does not run on `SIGKILL` or
+  `os._exit` — and `/api/shutdown` ends with exactly that.
 - **`grepxcel docs` output is reproducible.** The generated `pattern-reference.xlsx` embedded
   a wall-clock timestamp, the absolute path of the invoking interpreter, and a ZIP host byte
   that differed between Linux and Windows — so two runs of the same version produced
