@@ -7,34 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Security
+## [0.5.0] — 2026-09-28
 
-- **Macro content is refused by content, not by filename.** ⚠️ **Behaviour change:** a
-  workbook carrying `xl/vbaProject.bin` (VBA) or `xl/macrosheets/` (Excel 4.0 / XLM) is now
-  refused whatever its extension says. `.xlsm`/`.xlsb` were refused by *extension only*, and
-  since they and `.xlsx` are both ZIP archives starting with `PK`, renaming one to `.xlsx`
-  passed both the extension allow-list and the magic-byte check — the byte-identical file was
-  accepted under one name and refused under the other. Matching is case-insensitive, since the
-  OOXML part names are fixed and an unusual case indicates a hand-assembled archive.
-  **If you have been extracting from renamed macro-enabled workbooks, those files will now be
-  refused**; re-save them as `.xlsx` in Excel (which drops the macros) to continue.
-  `grepxcel lint` reports the same finding as a `macro content` failure without refusing, so
-  the reason for a blocked extraction is visible. The part list lives in `security.py` and
-  `lint` imports it, so the two cannot drift.
-
-  Scope, stated precisely because it is easy to overread: grepxcel **does not scan for
-  malware**, and this refusal is not a finding that a file is harmful. grepxcel also never
-  executes macro content — openpyxl has no VBA engine, and formulas are read from cached
-  values rather than evaluated — so this is not what prevents code running here. It stops
-  grepxcel silently accepting and passing on a macro-bearing file that something downstream
-  may open in Excel, and it makes the decision depend on the bytes rather than the name.
-
-## [0.5.0] — 2026-09-27
-
-A minor rather than a patch bump: temporal coercion **changes extraction output** for files
-whose date and time values are stored as text. A field that previously held the raw string
-plus a type-mismatch warning now holds a real temporal value. Patterns do not change, but
-anything consuming the JSON downstream may.
+A minor rather than a patch bump, for two independent reasons. Temporal coercion **changes
+extraction output** for files whose date and time values are stored as text: a field that
+previously held the raw string plus a type-mismatch warning now holds a real temporal value.
+And macro-bearing workbooks that were accepted under a renamed extension are now **refused**.
+Patterns themselves do not change, but anything consuming the JSON downstream may, and a
+pipeline feeding renamed `.xlsm` files will stop. Both are detailed below.
 
 ### Features
 
@@ -99,6 +79,25 @@ anything consuming the JSON downstream may.
 
 ### Security
 
+- **Macro content is refused by content, not by filename.** ⚠️ **Behaviour change:** a
+  workbook carrying `xl/vbaProject.bin` (VBA) or `xl/macrosheets/` (Excel 4.0 / XLM) is now
+  refused whatever its extension says. `.xlsm`/`.xlsb` were refused by *extension only*, and
+  since they and `.xlsx` are both ZIP archives starting with `PK`, renaming one to `.xlsx`
+  passed both the extension allow-list and the magic-byte check — the byte-identical file was
+  accepted under one name and refused under the other. Matching is case-insensitive, since the
+  OOXML part names are fixed and an unusual case indicates a hand-assembled archive.
+  **If you have been extracting from renamed macro-enabled workbooks, those files will now be
+  refused**; re-save them as `.xlsx` in Excel (which drops the macros) to continue.
+  `grepxcel lint` reports the same finding as a `macro content` failure without refusing, so
+  the reason for a blocked extraction is visible. The part list lives in `security.py` and
+  `lint` imports it, so the two cannot drift.
+
+  Scope, stated precisely because it is easy to overread: grepxcel **does not scan for
+  malware**, and this refusal is not a finding that a file is harmful. grepxcel also never
+  executes macro content — openpyxl has no VBA engine, and formulas are read from cached
+  values rather than evaluated — so this is not what prevents code running here. It stops
+  grepxcel silently accepting and passing on a macro-bearing file that something downstream
+  may open in Excel, and it makes the decision depend on the bytes rather than the name.
 - **The `[mcp]` extra now requires `mcp>=1.28.1`** (was `>=1.23`). The older range permitted
   two HIGH-severity advisories: CVE-2026-52869 (CVSS 7.1 — the SSE and Streamable HTTP
   transports routed requests to a session by id without checking that the caller was the
@@ -141,6 +140,25 @@ anything consuming the JSON downstream may.
 
 ### Tests
 
+- **The oracle suite cleans up after itself.** It generated every case under a pid-keyed
+  temp directory and never removed it — ~75 MB per process, and one directory per xdist
+  worker, so roughly 2.4 GB per `-n auto` run on 32 cores. 265 accumulated trees exhausted
+  every inode on a tmpfs `/tmp` (1048574 of 1048576 used) while `df -h` still reported 26 GB
+  free, and the run that hit it failed with `ENOSPC` — surfacing as 13,496 unrelated oracle
+  assertion failures rather than as a disk problem. It now uses `mkdtemp` plus an `atexit`
+  handler, the Python spelling of `mktemp -d` with `trap … EXIT`, so the tree is removed on
+  success, failure or Ctrl+C. `mkdtemp` also fixes two things the pid-keyed name had beyond
+  the leak: PIDs are recycled, so the path was not unique over time; and a predictable path
+  in a world-writable directory can be pre-created or symlinked by another user.
+  `GREPXCEL_ORACLE_KEEP=1` retains the tree, because a failing case's generated files are
+  the only evidence of what went wrong.
+- **`test_matrix_is_not_vacuous` no longer fails whenever the suite is narrowed.** It
+  asserted `len(PARAMS) >= 100` unconditionally, so every use of the documented
+  `GREPXCEL_ORACLE_TYPES`/`_SHAPES`/`_SEEDS` debugging variables turned it red — a check
+  that is permanently red while you are debugging teaches you to skim past red. The size
+  floor now applies only to unnarrowed runs; non-emptiness is asserted always, which is the
+  case worth catching, since a misspelled *shape* silently filters everything out where a
+  misspelled *type* already raises `KeyError` at collection.
 - **Oracle type-matrix suite** (`tests/oracle/`, ~26,900 generated cases) — for every
   combination of value type × file shape × OOXML storage type × number format × read
   direction, the suite generates a manifest of known ground truth and forces
