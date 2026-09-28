@@ -128,6 +128,7 @@ def lint_file(path: str) -> list[Result]:
         _add_advisory(results)
         return results
 
+    _check_macro_content(names, results)
     _check_invisible_data(names, results)
 
     file_mb = os.path.getsize(path) / (1024 * 1024)
@@ -275,6 +276,36 @@ _INVISIBLE_DATA_SIGNALS = (
         'document). grepxcel only reads cell values — embedded objects are '
         'not extracted or inspected.')),
 )
+
+
+def _check_macro_content(names: list[str], results: list[Result]) -> None:
+    """Report macro parts by content, so the reason is visible before extraction.
+
+    `lint` deliberately still opens and reports on such a file rather than
+    stopping: its whole job is telling you what a file contains, and a user whose
+    extraction was refused needs to see *why* here. `extract` refuses it — see
+    `security._check_no_executable_content`.
+
+    The part list lives in `security` so the two cannot drift apart.
+    """
+    from .security import _EXECUTABLE_PARTS
+
+    lowered = [(n, n.lower()) for n in names]
+    for needle, description in _EXECUTABLE_PARTS:
+        for original, low in lowered:
+            hit = low.startswith(needle) if needle.endswith('/') else low == needle
+            if not hit:
+                continue
+            results.append((FAIL, 'macro content',
+                             f'{original} — {description}. Extraction will refuse '
+                             f'this file whatever its extension says, because Excel '
+                             f'stores macros only in .xlsm/.xlsb: a .xlsx holding '
+                             f'this was renamed, not saved that way. grepxcel does '
+                             f'not scan for malware and never runs macro content — '
+                             f'this reports what is present, not that it is harmful. '
+                             f'To extract, re-save as .xlsx in Excel (which drops '
+                             f'macros) once you trust the file.'))
+            break
 
 
 def _check_invisible_data(names: list[str], results: list[Result]) -> None:
