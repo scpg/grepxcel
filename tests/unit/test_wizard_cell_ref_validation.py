@@ -31,18 +31,35 @@ from pathlib import Path
 
 import pytest
 
-from grepxcel.wizard_api import _CELL_REF_RE, _require_cell_ref
+# wizard_api imports FastAPI, which the main CI test job does not install — see
+# the "CI blind spot" section of docs/STATUS.md. The checks that only read
+# wizard.js as text need no dependency at all, and those are the ones guarding
+# the injection sink, so they are deliberately left to run everywhere.
+try:
+    from fastapi import HTTPException
+
+    from grepxcel.wizard_api import _CELL_REF_RE, _require_cell_ref
+    _API_OK = True
+except ImportError:                                  # pragma: no cover
+    _API_OK = False
+
+_skip_no_api = pytest.mark.skipif(
+    not _API_OK,
+    reason='fastapi / uvicorn not installed (pip install "grepxcel[web]")',
+)
 
 _JS = Path(__file__).resolve().parents[2] / 'grepxcel' / 'static' / 'wizard.js'
 
 
 # ── layer 1: the endpoint rejects it ─────────────────────────────────────────
 
+@_skip_no_api
 @pytest.mark.parametrize('ref', ['A1', 'B12', 'Z99', 'AB12', 'XFD1048576', 'A1048576'])
 def test_well_formed_refs_are_accepted(ref):
     assert _require_cell_ref(ref) == ref
 
 
+@_skip_no_api
 @pytest.mark.parametrize('ref', [
     "A1'); alert(1); //",       # the payload this exists to stop
     "A1'",                      # the single character that broke the sink
@@ -65,30 +82,27 @@ def test_well_formed_refs_are_accepted(ref):
     'A1' + chr(0),              # a literal NUL here would corrupt this file
 ])
 def test_malformed_refs_are_refused(ref):
-    from fastapi import HTTPException
-
     with pytest.raises(HTTPException) as excinfo:
         _require_cell_ref(ref)
     assert excinfo.value.status_code == 400
 
 
+@_skip_no_api
 def test_the_refusal_names_the_offending_value():
     """So a user with a bad pattern file can see which ref is wrong."""
-    from fastapi import HTTPException
-
     with pytest.raises(HTTPException) as excinfo:
         _require_cell_ref('NOPE!', 'ref in refs')
     detail = str(excinfo.value.detail)
     assert 'NOPE!' in detail and 'ref in refs' in detail
 
 
+@_skip_no_api
 def test_none_is_refused_rather_than_crashing():
-    from fastapi import HTTPException
-
     with pytest.raises(HTTPException):
         _require_cell_ref(None)
 
 
+@_skip_no_api
 def test_the_pattern_is_anchored_at_both_ends():
     r"""An unanchored pattern would match a ref with a payload appended.
 
