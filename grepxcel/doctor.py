@@ -131,10 +131,11 @@ def check_autocomplete() -> list[Result]:
 
 
 def check_web_wizard(probe: bool = True) -> list[Result]:
-    """FastAPI / uvicorn / jinja2 for grepxcel web-wizard."""
+    """FastAPI / uvicorn / jinja2 / python-multipart for grepxcel web-wizard."""
     res: list[Result] = []
     all_present = True
-    for mod, pkg in (('fastapi', 'fastapi'), ('uvicorn', 'uvicorn'), ('jinja2', 'jinja2')):
+    for mod, pkg in (('fastapi', 'fastapi'), ('uvicorn', 'uvicorn'), ('jinja2', 'jinja2'),
+                     ('python_multipart', 'python-multipart')):
         if _have(mod):
             res.append((OK, pkg, 'installed'))
         else:

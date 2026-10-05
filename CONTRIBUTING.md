@@ -30,6 +30,9 @@ python -m venv .venv
 # Core dependencies + test runner
 .venv/bin/pip install -r requirements.txt -r requirements-dev.txt
 
+# Optional: web wizard (FastAPI, uvicorn, python-multipart) + httpx for its tests
+# .venv/bin/pip install -e ".[web]" httpx
+
 # Optional: install the draft feature (heavy — compiles C++ code for local LLM)
 # .venv/bin/pip install -r requirements-draft.txt
 # Or use the hardware-aware installer (detects CUDA/Metal automatically):

@@ -107,6 +107,12 @@ web = [
     "uvicorn>=0.52",
     "jinja2>=3.1",
     "aiofiles>=23.1",
+    # Starlette needs python-multipart to parse the "Load pattern" upload
+    # (POST /api/load-pattern); FastAPI does not install it. Without it the
+    # upload fails with a 500 on every fresh install. Floor 0.0.31 clears every
+    # published advisory (CVE-2024-24762, CVE-2024-53981, CVE-2026-24486,
+    # CVE-2026-40347, CVE-2026-42561, CVE-2026-53537..53540).
+    "python-multipart>=0.0.31",
 ]
 dev = [
     "pytest>=8.0",

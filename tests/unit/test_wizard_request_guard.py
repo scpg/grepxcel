@@ -33,16 +33,6 @@ EVIL = 'http://evil.example'
 FIXTURE_DIR = Path(__file__).parent.parent / 'fixtures/01_simple_invoice'
 PATTERN_01 = FIXTURE_DIR / '01_simple_invoice_pattern-manual.xlsx'
 
-try:
-    import python_multipart  # noqa: F401
-    _HAS_MULTIPART = True
-except ImportError:
-    try:
-        import multipart  # noqa: F401
-        _HAS_MULTIPART = True
-    except ImportError:
-        _HAS_MULTIPART = False
-
 
 def _client(tmp_path: Path, base_url: str = LOCAL) -> 'TestClient':
     xlsx_path = tmp_path / 'data.xlsx'
@@ -137,12 +127,23 @@ class TestWizardOwnRequestsStillWork:
         assert r.status_code not in (403, 415)
 
     def test_multipart_pattern_upload(self, tmp_path):
-        if not _HAS_MULTIPART:
-            pytest.skip("python-multipart not installed (Starlette needs it to parse uploads)")
+        # No skip when python-multipart is missing: the [web] extra declares it,
+        # so a missing package is exactly the regression this should catch.
         client = _client(tmp_path)
         r = client.post('/api/load-pattern', headers={'Origin': LOCAL},
                         files={'file': ('p.xlsx', PATTERN_01.read_bytes())})
-        assert r.status_code not in (403, 415), r.text
+        assert r.status_code == 200, r.text
+
+    def test_upload_without_multipart_explains_fix(self, tmp_path, monkeypatch):
+        """An env set up before [web] declared python-multipart gets an actionable
+        message (shown by wizard.js as a toast) instead of Starlette's bare 500."""
+        import grepxcel.wizard_api as wizard_api
+        monkeypatch.setattr(wizard_api, '_MULTIPART_OK', False)
+        client = _client(tmp_path)
+        r = client.post('/api/load-pattern', headers={'Origin': LOCAL},
+                        files={'file': ('p.xlsx', PATTERN_01.read_bytes())})
+        assert r.status_code == 500
+        assert 'pip install -U "grepxcel[web]"' in r.json()['detail']
 
     def test_static_assets_served(self, tmp_path):
         client = _client(tmp_path)

@@ -143,3 +143,17 @@ def test_check_server_refuses_non_http_scheme(monkeypatch):
     # FAIL status and a message that explains the refusal
     assert any(sev == doctor.FAIL for sev, _, _ in res)
     assert any('http' in msg.lower() or 'refus' in msg.lower() for _, _, msg in res)
+
+
+# ── web wizard checks ────────────────────────────────────────────────────────
+
+def test_web_wizard_flags_missing_python_multipart(monkeypatch):
+    """The "Load pattern" upload needs python-multipart; doctor must name it."""
+    real_have = doctor._have
+    monkeypatch.setattr(doctor, '_have',
+                        lambda mod: False if mod == 'python_multipart' else real_have(mod))
+    results = doctor.check_web_wizard(probe=False)
+    st = _statuses(results)
+    assert st['python-multipart'] == doctor.WARN
+    detail = next(d for _s, name, d in results if name == 'python-multipart')
+    assert "grepxcel[web]" in detail

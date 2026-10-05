@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import atexit
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -95,6 +96,14 @@ try:
     _WEB_OK = True
 except ImportError:
     _WEB_OK = False
+
+# Only the "Load pattern" upload needs python-multipart, so its absence must not
+# disable the whole wizard — it is reported at startup and by that endpoint.
+_MULTIPART_OK = importlib.util.find_spec('python_multipart') is not None
+_MULTIPART_HINT = (
+    'Pattern upload needs the python-multipart package. '
+    'Update the web extra with:  pip install -U "grepxcel[web]"'
+)
 
 # ── Module-level session (single-user local tool) ─────────────────────────────
 
@@ -1956,6 +1965,8 @@ def create_app(
         import os as _os
         from starlette.datastructures import UploadFile as _UploadFile
 
+        if not _MULTIPART_OK:
+            raise HTTPException(500, _MULTIPART_HINT)
         form = await request.form()
         upload = form.get('file')
         if upload is None or not hasattr(upload, 'read'):
@@ -2309,6 +2320,8 @@ def run(
     print(f'  URL   : {url}')
     if log_path:
         print(f'  Log   : {log_path}')
+    if not _MULTIPART_OK:
+        print(f'\n  Warning: {_MULTIPART_HINT}', file=sys.stderr)
     print(f'\n  Press Ctrl+C to stop.\n')
 
     uvicorn.run(app, host='127.0.0.1', port=port, log_level='warning')
