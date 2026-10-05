@@ -7,6 +7,250 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **The web wizard refused cross-site requests only on `/api/shutdown`.** Every other
+  endpoint parsed its body with `request.json()`, which ignores `Content-Type`, so a page
+  open in the user's browser could submit a `<form enctype="text/plain">` whose body was
+  valid JSON — a "simple" request that needs no CORS preflight. Calling `/api/save` that way
+  wrote (or, with `confirm_overwrite`, overwrote) a file of any name in the data file's
+  folder; `/api/classify`, `/api/load-pattern-by-path` and the rest were equally reachable.
+  Any `Host` header was also accepted, leaving the session readable through DNS rebinding.
+  A request guard now runs on every request: the `Host` must be `localhost`, `127.0.0.1` or
+  `[::1]`; state-changing requests carrying a non-loopback `Origin` (including `null`) get
+  403; and request bodies must be `application/json` (multipart only for the
+  `/api/load-pattern` upload), otherwise 415. The wizard's own page is unaffected. Opening
+  the wizard through a non-loopback hostname (e.g. a remote port-forward URL) is now refused.
+
+- **A cell reference is validated, and never built into JavaScript.** The entry
+  above closed the delivery vector of a two-part finding; this closes the sink.
+  `/api/classify`, `/api/classify-batch` and `/api/note` checked `action` against
+  an allow-list but accepted *any* non-empty string as a cell ref, and the Extract
+  panel interpolated that value into `onclick="jumpToCell('<ref>')"` — an
+  apostrophe closed the JS string literal and whatever followed ran. `escHtml()`
+  would not have saved it: it escaped `&`, `<`, `>` and `"` but not `'`, and the
+  value sat inside single quotes. Three layers now: refs are validated at every
+  entry point against `^[A-Z]{1,3}[1-9][0-9]{0,6}\Z`, so a malformed one never
+  reaches session state or the session log; the chip carries its ref in a
+  `data-ref` attribute read by a delegated listener, so no JavaScript is built
+  from data; and `escHtml()` escapes the apostrophe for every other caller. A
+  test bans inline `onclick` handlers built by interpolation anywhere in
+  `wizard.js`, because escaping the value is the weaker of the two fixes.
+  Reachability was a crafted pattern file loaded through the wizard rather than a
+  drive-by from another site, since the guard above had already landed.
+
+### Fixed
+
+- **"Load pattern" in the web wizard failed on every fresh `pip install "grepxcel[web]"`.**
+  Starlette needs `python-multipart` to parse the upload, and neither the `[web]` extra nor
+  FastAPI installed it, so `POST /api/load-pattern` returned a 500. The extra now declares
+  `python-multipart>=0.0.31` (the floor clears every published advisory). An environment
+  that predates this gets an actionable message instead: the upload replies
+  `pip install -U "grepxcel[web]"`, `grepxcel web-wizard` prints the same warning at
+  startup, and `grepxcel doctor` lists `python-multipart` under the web wizard.
+  **Existing installs:** run `pip install -U "grepxcel[web]"` (from a checkout:
+  `.venv/bin/pip install -e ".[web]"`).
+
+### CI / Infrastructure
+
+- **Web wizard tests now run in CI.** The `test` job installs only `requirements*.txt`, so
+  every wizard test was skipped there — including the request-guard tests above. A new
+  `test-web` job installs `.[web]` the way users do (plus `httpx` for `TestClient`) and runs
+  them, so a dependency the wizard needs but `[web]` omits now fails CI.
+
+- **Dependabot no longer proposes `mcp` 2.x.** mcp 2.x removed `mcp.server.fastmcp`, which
+  `grepxcel/mcp_server.py` imports, so widening the `[mcp]` ceiling past `<2` breaks
+  `grepxcel mcp` on fresh installs. An `ignore` rule for `mcp >= 2` stops that bump from
+  being re-opened until the server is migrated.
+
+## [0.5.0] — 2026-09-28
+
+A minor rather than a patch bump, for two independent reasons. Temporal coercion **changes
+extraction output** for files whose date and time values are stored as text: a field that
+previously held the raw string plus a type-mismatch warning now holds a real temporal value.
+And macro-bearing workbooks that were accepted under a renamed extension are now **refused**.
+Patterns themselves do not change, but anything consuming the JSON downstream may, and a
+pipeline feeding renamed `.xlsm` files will stop. Both are detailed below.
+
+### Features
+
+- **Date and time text is converted, not refused** — a cell declared `date`, `datetime`,
+  `timestamp`, `time` or `duration` in the pattern is now converted to a real temporal value
+  when it holds unambiguous text. Dates often arrive as text (exported from another system,
+  typed with a leading apostrophe, or written without a date number format) and were
+  previously reported as type mismatches even though the pattern had already declared what
+  they were. `'2024-01-15'` → a datetime; `'09:30'` → a time; `'2:00'` and `'30:00'` → 2 and
+  30 hours elapsed. **This changes extraction output** for such files: the field now holds a
+  timestamp where it previously held the raw string plus a warning.
+- **`config: | date.format |` and `config: | time.format |`** — declare a strptime format
+  (e.g. `%d/%m/%Y`) for text that ISO 8601 cannot resolve. Without one, ambiguous text is
+  refused rather than guessed: `01/02/2024` is 1 February in most of the world and 2 January
+  in the United States, and picking one silently is how a tool returns confidently wrong data.
+  A declared format is tried first and ISO still converts afterwards, so a sheet mixing
+  `31/12/2024` and `2024-12-31` reads correctly either way. An unusable format string is
+  rejected when the pattern is parsed, so the error names the pattern rather than arriving as
+  a wall of per-cell mismatches pointing at the data.
+  No new dependency: a lenient parser was evaluated and declined, because it reads `'09:30'`
+  as *today's* date at 09:30 (making the same file extract differently tomorrow), returns a
+  datetime rather than a duration for `'2:00'`, and cannot parse `'30:00'` at all.
+
+### Fixed
+
+- **A rejected value now says why it was rejected.** `validate_type` has always computed a
+  precise reason — `is not a whole number`, `boolean is not integer`,
+  `javascript: URLs are not permitted`, and the two that matter most: a cell over
+  `--max-cell-len` and a regex timeout, where the pattern was never evaluated at all. The
+  engine discarded it, so every one of those causes reached the user as the same sentence:
+  *"Value does not match the expected pattern … Expected: matches /…/"*. A cell that could
+  not possibly have matched was reported identically to one that simply did not. The reason
+  now appears in the warning message and as a `Reason:` line in the rendered output.
+- **`schema` and `extract` disagreed about `boolean`.** `validate_type` accepts `1`/`0`,
+  `"1"`/`"0"` and `"yes"`/`"no"`, but the generated JSON Schema declared only
+  `{"type": ["boolean", "null"]}`, so a schema generated from a pattern rejected 3 of the 4
+  boolean forms that same pattern's extraction accepts. The declared types are widened to
+  match. *Known gap:* this makes the boolean schema accept values extraction rejects (`-1`,
+  `'maybe'`); tightening it is tracked in
+  `docs/superpowers/specs/2026-09-27-schema-strictness-decisions.md`.
+- **A bare number is never read as a time.** Python 3.11+ widened `time.fromisoformat` to
+  accept bare-hour and compact forms, which would have read `'12'` as 12:00, `'1230'` as
+  12:30 and `'2024'` as **20:24** — so a year, an ID or a quantity in a time-typed column
+  would have become a plausible-looking time. A separator is now required; compact times
+  remain readable via `time.format`.
+- **The test suite could not report a failure.** `POST /api/shutdown` called `os._exit(0)`
+  inline from a daemon thread, 0.3s after responding. Three tests exercise that endpoint on
+  the accept path, so the pytest process was killed 0.3s later — which landed after the final
+  test and before pytest wrote its epilogue. The suite printed progress to 100%, skipped the
+  FAILURES section entirely, and **exited 0 while a test was failing**. Whether it masked
+  anything depended on what happened to run inside that 0.3s window, so it was intermittent
+  rather than absent, and CI reported the same failure correctly. The exit now goes through a
+  named `_terminate_process()` seam that the session fixture replaces, and a test pins
+  `os._exit` to that one function so an inline call cannot come back. Shutdown behaviour in
+  production is unchanged.
+- **The web wizard no longer leaks temp files.** The extracted-image directory
+  (`grepxcel_wizard_img_*`) and uploaded pattern files were removed only by the
+  `/api/shutdown` handler — that is, only when the user clicked "Done". Closing the browser,
+  Ctrl+C, a crash, or any test that built an app without shutting it down leaked them, and
+  the test suite alone had left 363 directories on one machine. Both are now registered and
+  removed by an `atexit` handler, so they outlive the session but never the process. The
+  shutdown handler still cleans up eagerly, because `atexit` does not run on `SIGKILL` or
+  `os._exit` — and `/api/shutdown` ends with exactly that.
+- **`grepxcel docs` output is reproducible.** The generated `pattern-reference.xlsx` embedded
+  a wall-clock timestamp, the absolute path of the invoking interpreter, and a ZIP host byte
+  that differed between Linux and Windows — so two runs of the same version produced
+  byte-different files and the document shipped a fragment of the machine that built it. The
+  timestamp now derives from a single fixed source, the path is gone, and the archive
+  metadata is pinned.
+
+### Security
+
+- **Macro content is refused by content, not by filename.** ⚠️ **Behaviour change:** a
+  workbook carrying `xl/vbaProject.bin` (VBA) or `xl/macrosheets/` (Excel 4.0 / XLM) is now
+  refused whatever its extension says. `.xlsm`/`.xlsb` were refused by *extension only*, and
+  since they and `.xlsx` are both ZIP archives starting with `PK`, renaming one to `.xlsx`
+  passed both the extension allow-list and the magic-byte check — the byte-identical file was
+  accepted under one name and refused under the other. Matching is case-insensitive, since the
+  OOXML part names are fixed and an unusual case indicates a hand-assembled archive.
+  **If you have been extracting from renamed macro-enabled workbooks, those files will now be
+  refused**; re-save them as `.xlsx` in Excel (which drops the macros) to continue.
+  `grepxcel lint` reports the same finding as a `macro content` failure without refusing, so
+  the reason for a blocked extraction is visible. The part list lives in `security.py` and
+  `lint` imports it, so the two cannot drift.
+
+  Scope, stated precisely because it is easy to overread: grepxcel **does not scan for
+  malware**, and this refusal is not a finding that a file is harmful. grepxcel also never
+  executes macro content — openpyxl has no VBA engine, and formulas are read from cached
+  values rather than evaluated — so this is not what prevents code running here. It stops
+  grepxcel silently accepting and passing on a macro-bearing file that something downstream
+  may open in Excel, and it makes the decision depend on the bytes rather than the name.
+- **The `[mcp]` extra now requires `mcp>=1.28.1`** (was `>=1.23`). The older range permitted
+  two HIGH-severity advisories: CVE-2026-52869 (CVSS 7.1 — the SSE and Streamable HTTP
+  transports routed requests to a session by id without checking that the caller was the
+  principal who created it; fixed in 1.27.2) and CVE-2026-59950 (CVSS 8.1 — the deprecated
+  websocket transport accepted handshakes without Host or Origin validation; fixed in 1.28.1).
+  grepxcel's server runs on stdio, so neither transport was reachable through it; the floor is
+  raised so installing the extra cannot place a version with known holes into an environment
+  that exposes them another way. The ceiling stays below 2: mcp 2.x removed
+  `mcp.server.fastmcp`, which this server imports.
+- **The `[mcp]` install check actually exercises the SDK.** `grepxcel mcp-config` only prints
+  a JSON blob, and `mcp_server.py` deliberately swallows a failed SDK import
+  (`except ImportError: FastMCP = None`) so the CLI can show an install hint — between them, an
+  incompatible `mcp` release produced a green check and a broken `grepxcel mcp`. CI now asserts
+  the import bound and builds a server instance.
+- **The wizard's CDN scripts are pinned with Subresource Integrity.** The web wizard loads
+  three libraries from cdnjs; there is no `package.json`, so neither Dependabot nor Snyk sees
+  those versions. Each `<script>` now carries a `sha512` `integrity` hash and
+  `crossorigin="anonymous"`, so a modified file is refused rather than executed against
+  whatever spreadsheet the user pointed the wizard at. A test asserts every external script
+  is hashed, strongly hashed and version-pinned — SRI's own failure mode is bumping a version
+  without recomputing the hash, which leaves the page loading and the library silently absent.
+- **Static analysis is enforced rather than advisory.** `bandit` runs in CI and fails the
+  build at MEDIUM severity and above (configured in `pyproject.toml`; tests are excluded,
+  since a security-conscious suite builds hostile input on purpose). The source already
+  carried seven justified `# nosec` annotations from a hand-run that was never wired up — by
+  the time it was enforced, a second un-triaged `urlopen` had appeared. CodeQL
+  (`security-extended`) runs alongside it on pull requests and weekly, and adds the view
+  bandit cannot give: whether a dangerous call is *reachable from untrusted input*. Secret
+  scanning and push protection are enabled on the repository.
+
+### CI / Infrastructure
+
+- Checks now run on **every** pull request. Both workflows filtered `pull_request` to
+  `[main, dev]`, so a pull request targeting a feature branch ran nothing at all — and the
+  gap was invisible, because no checks appeared to fail rather than appearing red. All
+  third-party actions are pinned to a commit SHA.
+- The oracle job runs under `pytest-xdist` (`-n auto`). The fast suite stays serial by
+  design: `proxy_support` installs a process-global SSL truststore, which a shared worker
+  would carry into tests that mock it.
+
+### Tests
+
+- **The oracle suite cleans up after itself.** It generated every case under a pid-keyed
+  temp directory and never removed it — ~75 MB per process, and one directory per xdist
+  worker, so roughly 2.4 GB per `-n auto` run on 32 cores. 265 accumulated trees exhausted
+  every inode on a tmpfs `/tmp` (1048574 of 1048576 used) while `df -h` still reported 26 GB
+  free, and the run that hit it failed with `ENOSPC` — surfacing as 13,496 unrelated oracle
+  assertion failures rather than as a disk problem. It now uses `mkdtemp` plus an `atexit`
+  handler, the Python spelling of `mktemp -d` with `trap … EXIT`, so the tree is removed on
+  success, failure or Ctrl+C. `mkdtemp` also fixes two things the pid-keyed name had beyond
+  the leak: PIDs are recycled, so the path was not unique over time; and a predictable path
+  in a world-writable directory can be pre-created or symlinked by another user.
+  `GREPXCEL_ORACLE_KEEP=1` retains the tree, because a failing case's generated files are
+  the only evidence of what went wrong.
+- **`test_matrix_is_not_vacuous` no longer fails whenever the suite is narrowed.** It
+  asserted `len(PARAMS) >= 100` unconditionally, so every use of the documented
+  `GREPXCEL_ORACLE_TYPES`/`_SHAPES`/`_SEEDS` debugging variables turned it red — a check
+  that is permanently red while you are debugging teaches you to skim past red. The size
+  floor now applies only to unnarrowed runs; non-emptiness is asserted always, which is the
+  case worth catching, since a misspelled *shape* silently filters everything out where a
+  misspelled *type* already raises `KeyError` at collection.
+- **Oracle type-matrix suite** (`tests/oracle/`, ~26,900 generated cases) — for every
+  combination of value type × file shape × OOXML storage type × number format × read
+  direction, the suite generates a manifest of known ground truth and forces
+  `validate-pattern`, `lint`, `profile`, `extract` and `schema` to agree with it. Excluded
+  from `pytest tests/` by the `oracle` marker; run as a pre-PR gate via
+  `scripts/oracle_check.py`, and on pull requests by `.github/workflows/oracle.yml`. It found
+  both `Fixed` entries above on its first full run.
+- **Excel storage-model boundaries pinned** — the 1900 leap-year bug (serials 59 and 60 both
+  read as 1900-02-28, and serials 1–59 sit one day ahead of naive epoch arithmetic); the
+  two-day hole where 1899-12-30 and 1899-12-31 come back as `00:00:00` instead of a date; the
+  2⁵³ integer precision cliff, above which odd integers snap to an even neighbour and a
+  19-digit identifier comes back as a different number while still validating as an integer.
+
+### Documentation
+
+- `docs/pattern-file.md`: `date.format` / `time.format`, why ambiguous text is refused, a
+  note on numbers in duration cells (Excel's unit is one day, so a bare `12` is twelve days),
+  and **"Long numeric identifiers: declare them `string`"** — above 2⁵³ a numeric cell cannot
+  hold a long ID exactly, and the rounding is undetectable after the fact.
+- **"Why is the pattern file a spreadsheet?"** — a new section in `docs/MINDSET.md`, with
+  short callouts in the README and `docs/pattern-file.md`. The question comes up from IT
+  people, developers and data scientists who expect configuration to be YAML or JSON, and it
+  deserves a straight answer: the pattern is a spreadsheet so that someone who knows a bit of
+  Excel can write one, and a pattern describing a grid is itself a grid, so it can be read
+  side by side with the data. The cost — a zip archive does not diff in a pull request — is
+  stated rather than glossed, along with what carries it: `.csv` is a first-class pattern
+  format that parses identically, for teams that want text and code review.
+
 ## [0.4.1] — 2026-09-21
 
 ### Fixed
@@ -324,7 +568,8 @@ Initial public release.
 - Structured JSON logs never contain extracted cell values (allow-list
   construction, not redaction).
 
-[Unreleased]: https://github.com/scpg/grepxcel/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/scpg/grepxcel/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/scpg/grepxcel/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/scpg/grepxcel/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/scpg/grepxcel/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/scpg/grepxcel/compare/v0.3.0...v0.3.1

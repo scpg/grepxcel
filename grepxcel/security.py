@@ -7,7 +7,9 @@ File checks (run before openpyxl touches any file):
   3. File size limit         — configurable, default 5 MB on disk
   4. ZIP bomb detection      — uncompressed content capped at 50 MB absolute
                                and a hard 50× expansion-ratio ceiling
-  5. Macro-enabled rejected  — .xlsm / .xlsb are explicitly refused
+  5. Macro-enabled rejected  — .xlsm / .xlsb refused by extension, AND any file
+                               carrying xl/vbaProject.bin or xl/macrosheets/ is
+                               refused by content, so a rename does not bypass it
 
 Regex check (run at pattern-file parse time for every def: entry):
   6. ReDoS detection         — reject nested unbounded quantifiers such as
@@ -38,6 +40,24 @@ import re._constants as _sre_constants
 
 _XLSX_EXTENSIONS = {'.xlsx'}                 # only pure xlsx; .xlsm/.xlsb refused
 _ZIP_MAGIC       = b'PK\x03\x04'            # first 4 bytes of every ZIP file
+
+# ZIP parts whose presence means the workbook carries executable content,
+# regardless of what the file is called. Checked by CONTENT because the
+# extension check is trivially defeated: .xlsm and .xlsx are both ZIPs starting
+# with 'PK', so renaming one to the other passes both the extension allow-list
+# and the magic-byte check.
+#
+# Excel itself stores macros only in .xlsm/.xlsb — saving as .xlsx strips them.
+# So a .xlsx containing these parts was renamed or deliberately assembled; it is
+# not something Excel produces in normal use.
+#
+# A name ending in '/' is matched as a prefix, otherwise as a full path.
+# Matching is case-insensitive: the OOXML part names are fixed, so a difference
+# in case indicates a hand-built archive rather than a real Excel save.
+_EXECUTABLE_PARTS = (
+    ('xl/vbaproject.bin', 'a VBA macro project'),
+    ('xl/macrosheets/',   'an Excel 4.0 (XLM) macro sheet'),
+)
 _READ_HEADER     = 4                         # bytes to read for magic check
 
 DEFAULT_MAX_FILE_MB         = 5              # compressed size on disk
@@ -187,6 +207,9 @@ def validate_file(
     _check_magic(path)
     _check_file_size(path, max_file_mb)
     _check_zip_safety(path, max_uncompressed_mb)
+    # After the bomb check, so a crafted archive is refused before this reads
+    # its central directory, and so the ZIP is already known to be readable.
+    _check_no_executable_content(path)
 
 
 # Pattern source formats and the checks each needs.
@@ -222,6 +245,13 @@ def validate_pattern_file(
         validate_file(path, max_file_mb, max_uncompressed_mb)
         return
 
+    if ext == '.xls':
+        raise SecurityError(
+            "'.xls' pattern files are not accepted — the legacy Excel 97-2003 "
+            "binary format is not supported. In Excel: File > Save As > Excel "
+            "Workbook (.xlsx), then use the converted file as the pattern."
+        )
+
     raise SecurityError(
         f'Unsupported pattern file type {ext!r}. '
         f'Pattern files must be one of: {", ".join(sorted(_PATTERN_EXTENSIONS))}.'
@@ -241,7 +271,20 @@ def _check_extension(path: str) -> None:
     _, ext = os.path.splitext(path)
     ext = ext.lower()
 
-    if ext in ('.xlsm', '.xlsb', '.xls'):
+    if ext == '.xls':
+        # Not a security choice like .xlsm/.xlsb below — .xls is a legacy
+        # OLE2/BIFF8 binary container, not the ZIP+XML structure the rest
+        # of this pipeline (openpyxl) reads, so grepxcel cannot open it at
+        # all, macros or not. Kept as its own message so it doesn't wrongly
+        # imply a clean, macro-free .xls file would work.
+        raise SecurityError(
+            "'.xls' files are not accepted. The legacy Excel 97-2003 binary "
+            "format is not supported — grepxcel reads modern .xlsx files only "
+            "(a format-support limitation, not a security block). In Excel: "
+            "File > Save As > Excel Workbook (.xlsx), then run grepxcel on "
+            "the converted file."
+        )
+    if ext in ('.xlsm', '.xlsb'):
         raise SecurityError(
             f'{ext!r} files are not accepted. '
             f'Macro-enabled and binary Excel formats are blocked for security reasons. '
@@ -316,3 +359,55 @@ def _check_zip_safety(path: str, max_uncompressed_mb: float) -> None:
                 f'ZIP expansion ratio is {ratio:.0f}:1, which is abnormally high. '
                 f'This file is likely a ZIP bomb.'
             )
+
+
+def find_executable_parts(path: str) -> list[tuple[str, str]]:
+    """Return the (part name, description) of every macro part inside *path*.
+
+    Public so `lint` can report the same finding without duplicating the part
+    list or raising. Returns an empty list for a readable archive with none, and
+    also for an unreadable one — refusing a corrupt archive is
+    `_check_zip_safety`'s job, and this must not turn a read error into a
+    silently-clean answer for a *caller that reports* rather than blocks.
+    """
+    try:
+        with zipfile.ZipFile(path) as zf:
+            names = zf.namelist()
+    except (zipfile.BadZipFile, RuntimeError, zlib.error, struct.error, OSError):
+        return []
+
+    found = []
+    lowered = [(n, n.lower()) for n in names]
+    for needle, description in _EXECUTABLE_PARTS:
+        for original, low in lowered:
+            hit = low.startswith(needle) if needle.endswith('/') else low == needle
+            if hit:
+                found.append((original, description))
+                break
+    return found
+
+
+def _check_no_executable_content(path: str) -> None:
+    """Refuse a workbook that carries macros whatever its extension says.
+
+    grepxcel never executes macro content — openpyxl has no VBA engine, and
+    formulas are read from their cached values rather than evaluated. So this is
+    not what stops code running here; it stops grepxcel from silently accepting
+    and passing on a macro-bearing file that something downstream may open in
+    Excel, and it stops `.xlsm` being refused by name while the identical bytes
+    sail through under a different one.
+    """
+    found = find_executable_parts(path)
+    if not found:
+        return
+    detail = '; '.join(f'{name} ({description})' for name, description in found)
+    raise SecurityError(
+        f'This file contains macro content and is not accepted: {detail}. '
+        f'Excel stores macros only in .xlsm/.xlsb, so a .xlsx holding them was '
+        f'renamed rather than saved that way — the name is not evidence the file '
+        f'is macro-free. This is a refusal to process, not a finding that the '
+        f'file is malicious: grepxcel does not scan for malware and never runs '
+        f'macro content. To extract from it, open the file in Excel and use '
+        f'File > Save As > Excel Workbook (.xlsx), which drops the macros, '
+        f'after satisfying yourself the file is one you trust.'
+    )

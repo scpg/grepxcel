@@ -2,6 +2,14 @@
 
 A pattern file is an **`.xlsx` workbook** or a **`.csv` text file** that tells grepxcel what to look for and extract from a data file. Think of it as a schema: it describes the layout, field names, types, and validation rules. Both formats are read into the same internal grid and behave identically.
 
+**Before writing a pattern**, `grepxcel profile data.xlsx` censuses every cell's actual type in the data file — no pattern needed — so you know what column C (type) should say for each field before guessing.
+
+**Why a spreadsheet rather than YAML or JSON?** Because the pattern is meant to be writable by
+someone who knows a bit of Excel, and because a pattern that describes a grid is itself a grid —
+you can open it next to your data and compare row by row. Use `.csv` when you want a pattern you
+can diff and review in a pull request; it parses identically. The reasoning is in
+[MINDSET.md](MINDSET.md#why-is-the-pattern-file-a-spreadsheet).
+
 ---
 
 ## Rules for pattern files
@@ -46,6 +54,8 @@ Optional. Placed before `START:`. Each `config:` row sets one global option.
 | `config:` | `trim.whitespace`  | `true` or `false`                  | Default: `false`             |
 | `config:` | `lbl.match`        | `literal`, `glob`, or `regexp`     | Default: `literal`           |
 | `config:` | `var.match`        | `glob`, or `regexp`               | Default: `glob`              |
+| `config:` | `date.format`      | strftime, e.g. `%d/%m/%Y`         | Default: ISO 8601 only       |
+| `config:` | `time.format`      | strftime, e.g. `%H.%M`            | Default: ISO 8601 only       |
 | `config:` | `empty.aliases`    | e.g. `N/A`                        | Repeat the row for each alias|
 
 **`read.direction`** controls how the data sheet is scanned for `cell:` instructions:
@@ -53,7 +63,7 @@ Optional. Placed before `START:`. Each `config:` row sets one global option.
 - `LR` — left-to-right, top-to-bottom (row by row). Most common.
 - `TD` — top-to-bottom, left-to-right (column by column).
 
-**`currency.sign`** is prepended to the string representation of currency values when matching their regex.
+**`currency.sign`** sets the expected currency symbol for `currency` fields (e.g. `€`, `$`). The sign is stored in the pattern and available to custom regex — Excel stores currency cell values as plain numbers, so a regex like `\d+\.\d{2}` matches the raw value directly without the sign prefix.
 
 **`empty.aliases`** lists strings that should be treated as empty cells (e.g. `N/A`, `-`, `—`). Add one alias per row.
 
@@ -68,6 +78,67 @@ Optional. Placed before `START:`. Each `config:` row sets one global option.
 - `regexp` — full Python `re.search` behaviour (the pre-v0.1.0 default).
 
 Per-field overrides are also supported: write `lbl:literal`, `lbl:glob`, or `lbl:regexp` in column A instead of plain `lbl:`.
+
+**`date.format` / `time.format`** tell grepxcel how to read dates and times that
+are stored as **text** rather than as real Excel date cells.
+
+A date often arrives as text — exported from another system, typed with a leading
+apostrophe, or written without a date number format. When a field is declared
+`date`, `datetime`, `timestamp`, `time` or `duration`, grepxcel converts such text
+into a real date/time value, so the extracted output is a proper timestamp rather
+than a string.
+
+Without these settings it converts **unambiguous ISO 8601 text only**:
+
+| Text in the cell | Field type | Extracted as |
+|---|---|---|
+| `2024-01-15` | `date` | `2024-01-15T00:00:00` |
+| `2024-01-15 09:30` | `datetime` | `2024-01-15T09:30:00` |
+| `09:30` | `time` | `09:30:00` |
+| `2:00` | `duration` | `2:00:00` (2 hours) |
+| `30:00` | `duration` | `1 day, 6:00:00` (30 hours elapsed) |
+| `01/02/2024` | `date` | **not converted** — reported, see below |
+| `12` | `time` / `duration` | **not converted** — 12 minutes or 12 hours? |
+| `2024` | `time` | **not converted** — a year is not 20:24 |
+
+`01/02/2024` is refused on purpose: it means 1 February in most of the world and
+2 January in the United States. Rather than pick one, grepxcel reports the cell
+and leaves the value as text. To read it, declare the order:
+
+```
+config:    date.format    %d/%m/%Y      # 01/02/2024 is 1 February
+config:    time.format    %H.%M         # 09.30 is half past nine
+```
+
+Times must contain a separator — `12:00` converts, a bare `12` does not. Both
+because `12` is itself ambiguous (twelve minutes or twelve hours?) and because
+without the requirement a year or an ID in a time column would silently become a
+time: `2024` would read as `20:24`. If a file really does use compact times,
+declare it: `config: | time.format | %H%M%S`.
+
+Use [Python strftime codes](https://docs.python.org/3/library/datetime.html#strftime-and-strptime-format-codes).
+`date.format` applies to `date`, `datetime` and `timestamp` fields; `time.format`
+to `time` fields. A declared format is tried first and ISO text still converts, so
+a sheet mixing `31/12/2024` and `2024-12-31` is read correctly either way. An
+unusable format string is rejected when the pattern is parsed, not silently
+ignored.
+
+### A note on numbers in duration cells
+
+Excel's unit for a numeric cell is **one day**: serial `1.0` is 24 hours. So a
+duration is a fraction — 12 minutes is `12/1440 = 0.00833…`, two hours is `2/24`.
+That is what the cell holds when someone types `0:12` or `2:00`, and grepxcel
+reads it back as exactly that duration.
+
+The trap is a **bare number**. A script or CSV import that writes the number it
+means rather than the serial puts `12` in the cell — and `12` is twelve *days*,
+off by a factor of 1440 from "12 minutes". Nothing in the file records the
+intent, so grepxcel reports what the cell says. If a duration column comes out in
+days, that is what to look for.
+
+Two things this deliberately does **not** do: it never guesses a date order, and
+it never substitutes today's date for a missing one. Both would make the same file
+extract differently on another machine or on another day.
 
 **`pattern.version`** declares a forward-compatibility version. Currently only version `1` is defined; absent defaults to `1`. Future versions may add new syntax.
 
@@ -221,6 +292,39 @@ elapsed-time columns.
 
 > An unknown type name (e.g. a typo like `currncy`) is rejected when the pattern
 > file is parsed, so a mistyped type fails fast instead of silently mis-validating.
+
+### Long numeric identifiers: declare them `string`
+
+Order numbers, bank references, barcodes, VAT numbers and similar long ids belong
+in a `string` field, not an `integer` one.
+
+A numeric Excel cell is an IEEE-754 double, so only whole numbers up to
+**2⁵³ = 9,007,199,254,740,992** are stored exactly. Above that the gap between
+representable integers is 2, then 4, then 8:
+
+| entered | what the file holds |
+|---|---|
+| `9007199254740992` | `9007199254740992` |
+| `9007199254740993` | `9007199254740992` — moved by 1 |
+| `1234567890123456789` | `1234567890123457024` — moved by 235 |
+
+The adjustment happens when the value is stored, before grepxcel ever sees the
+file, and the result is an ordinary whole number afterwards. There is no flag to
+check and nothing for `var: integer` to reject, so it cannot be detected during
+extraction — which is why this is a pattern-authoring choice.
+
+The reliable way to keep every digit is to store the id **as text** in the
+spreadsheet (in Excel: format the column as Text before entry, or prefix with an
+apostrophe) and declare the field `string`:
+
+```
+var:  order.id   string   \d{15,20}
+```
+
+`grepxcel profile` marks such cells `text_forced_numeric`. That flag usually
+means "a number got stored as text by accident" — for a long id it means the
+opposite, that the id was stored correctly. Note this also preserves leading
+zeros, which a numeric cell discards.
 
 ---
 
@@ -380,13 +484,16 @@ controls direction within the table.
 
 ## table: instructions
 
-Extract one or more instances of a repeating mini-table. The engine searches the data sheet greedily and collects every matching block.
+Extract one or more instances of a repeating mini-table. The engine searches the data sheet and collects matching blocks, up to whatever bound the declared multiplicity sets.
 
-| Column A   | Column B *(leave blank)* |
-|------------|--------------------------|
-| `table:*`  |                          |
+| Multiplicity   | Meaning |
+|----------------|---------|
+| `table:*`      | Unbounded — collect every matching instance found (greedy) |
+| `table:1`      | Collect exactly one instance, then stop |
+| `table:N`      | Collect exactly *N* instances, then stop; warn if fewer than *N* are found |
+| `table:{n,m}`  | Scan at most *m* instances; warn if fewer than *n* are found |
 
-The `*` means "zero or more instances". Immediately below the `table:*` row, add the template rows that describe the mini-table's layout. **Column A must be blank** for all template rows — that is how the parser knows they belong to the table.
+`table:{n,m}` is the only bracketed form accepted — `{n}`, `{n,}`, `{,m}`, and `{}` are all invalid, same as for `DATA:{n,m}`. Immediately below the `table:` row, add the template rows that describe the mini-table's layout. **Column A must be blank** for all template rows — that is how the parser knows they belong to the table.
 
 ### Template row types
 

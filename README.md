@@ -140,6 +140,13 @@ Windows (PowerShell): use `.venv\Scripts\` instead of `.venv/bin/`.
 
 A pattern file is a simple spreadsheet (`.xlsx` or `.csv`) with four types of rows:
 
+> **Why a spreadsheet and not YAML or JSON?** So that someone who knows a bit of Excel can
+> write one — the people who own these files are usually more at home in a workbook than in a
+> config format. A pattern for a grid also *is* a grid, so you can put it side by side with
+> your data and compare directly. If you'd rather have text you can diff and review, `.csv`
+> is a first-class pattern format and parses identically. Longer answer:
+> [docs/MINDSET.md](https://github.com/scpg/grepxcel/blob/main/docs/MINDSET.md#why-is-the-pattern-file-a-spreadsheet).
+
 | Row type | What it does |
 |---|---|
 | **Settings** (`config:`) | How to read the file — scan direction, currency symbol, case sensitivity |

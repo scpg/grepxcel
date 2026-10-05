@@ -80,6 +80,11 @@ class WizardState:
 # ── Cell-reference helpers ─────────────────────────────────────────────────────
 
 def _slugify(text: str) -> str:
+    import unicodedata
+    # Decompose accented chars (é→e, ü→u, ñ→n) so they survive the ASCII strip.
+    # For scripts where NFKD produces no ASCII (CJK, Arabic, Hebrew, etc.) the
+    # result will be empty and we fall back to the positional name 'field'.
+    text = unicodedata.normalize('NFKD', text).encode('ascii', 'ignore').decode('ascii')
     text = text.lower().strip()
     text = re.sub(r'[^a-z0-9]+', '_', text)
     return text.strip('_') or 'field'
@@ -178,23 +183,30 @@ def _write_pattern(state: WizardState, output_path: str) -> None:
 
 # ── Type inference ─────────────────────────────────────────────────────────────
 
+_WIZARD_INFER_LEGACY_MAP = {
+    # Translates cell_taxonomy's richer semantic vocabulary back to this
+    # function's original 8-value one — notably collapsing datetime->date
+    # and duration->time, exactly as the pre-consolidation implementation
+    # did, and treating any numeric value with no special format as
+    # 'number' (no separate 'integer' bucket existed here).
+    'boolean': 'boolean', 'time': 'time', 'duration': 'time',
+    'datetime': 'date', 'date': 'date', 'percentage': 'percentage',
+    'currency': 'currency', 'integer': 'number', 'number': 'number',
+    'string': 'string', 'url': 'url', 'error': 'string', 'empty': 'string',
+}
+
+
 def _infer_cell_type(cell) -> str:
-    """Return the most likely grepxcel type for an openpyxl cell."""
-    import datetime as _dt
-    val = cell.value
-    if val is None:
-        return 'string'
-    if isinstance(val, bool):
-        return 'boolean'
-    if isinstance(val, (_dt.datetime, _dt.date)):
-        return 'date'
-    if isinstance(val, (int, float)):
-        fmt = (cell.number_format or '').lower()
-        if any(p in fmt for p in ('yyyy', 'yy/', '/yy', 'dd', 'd-mmm',
-                                   'd/m', 'm/d', 'mmm', 'mmmm')):
-            return 'date'
-        return 'number'
-    return 'string'
+    """Return the most likely grepxcel type for an openpyxl cell.
+
+    Thin wrapper over cell_taxonomy.classify_cell() — the canonical
+    classifier — translated back to this function's original vocabulary
+    so existing callers see no behaviour change. Verified against
+    tests/unit/test_suggester.py's TestInferCellType* classes.
+    """
+    from .cell_taxonomy import classify_cell
+    profile = classify_cell(cell)
+    return _WIZARD_INFER_LEGACY_MAP.get(profile.semantic_type, 'string')
 
 
 def _propose_type(value: Any, ws=None, row: int = None, col: int = None) -> str:
@@ -207,7 +219,9 @@ def _propose_type(value: Any, ws=None, row: int = None, col: int = None) -> str:
         s = value.strip()
         if s.endswith(':') or s.endswith('：'):
             return 'label'
-        if '@' in s or '://' in s or s.lower().startswith('www.'):
+        if '://' in s or s.lower().startswith('www.'):
+            return 'var:url'
+        if '@' in s:
             return 'var:string'
         words = s.split()
         if len(words) == 1:
@@ -1271,7 +1285,40 @@ def _preload_from_pattern(ws, pattern_path: str) -> tuple[dict, dict, list[str]]
             continue
 
         name = instr.field
-        if name in ('IGNORE', 'EMPTY', ''):
+        if name == 'IGNORE':
+            # An ignored cell is a real decision the author made, so it has to
+            # come back as one. Skipping it entirely meant the cell reappeared
+            # unclassified on load — the pattern said "skip this", the wizard
+            # showed nothing — and, because it was never claimed, a later field
+            # could match it and quietly take it over.
+            if instr.multiplicity == 'abs' and instr.target:
+                try:
+                    from openpyxl.utils.cell import coordinate_to_tuple
+                    r, c = coordinate_to_tuple(instr.target)
+                except Exception:
+                    warnings.append(
+                        f'Could not parse absolute ref {instr.target!r} for an '
+                        f'IGNORE step; that cell will load unclassified'
+                    )
+                else:
+                    ref = _cell_ref(r, c)
+                    choices[ref] = {'choice': 'I'}
+                    claimed.add(ref)
+                    last_lbl_pos = (r, c)
+                    continue
+            else:
+                # cell:next IGNORE consumes "the next non-empty cell", which
+                # depends on the live scan cursor the wizard does not simulate.
+                # Say so rather than dropping it without trace.
+                warnings.append(
+                    'A sequential "cell:next IGNORE" step cannot be located '
+                    'during preload (it depends on the scan cursor); that cell '
+                    'will load unclassified — mark it Ignore again if needed.'
+                )
+            last_lbl_pos = None
+            continue
+
+        if name in ('EMPTY', ''):
             last_lbl_pos = None
             continue
 

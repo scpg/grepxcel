@@ -29,7 +29,14 @@ _MARK = {OK: MARK_OK, WARN: MARK_WARN, FAIL: MARK_FAIL, INFO: MARK_INFO}
 # OLE Compound Document magic (D0 CF 11 E0 A1 B1 1A E1)
 _OLE_MAGIC = b'\xd0\xcf\x11\xe0'
 _ZIP_MAGIC = b'PK\x03\x04'
-_MACRO_EXTENSIONS = {'.xlsm', '.xlsb', '.xls'}
+# .xls is rejected for a different reason than .xlsm/.xlsb: it's not a
+# security choice, it's a format-support gap — .xls is a legacy OLE2/BIFF8
+# binary container, not the ZIP+XML structure everything else here reads,
+# so grepxcel's openpyxl-based pipeline cannot open it at all, macros or
+# not. It gets its own message (see lint_file()) rather than being folded
+# into the macro-risk wording below, which would wrongly imply a clean
+# .xls file could work if it just had no macros.
+_MACRO_EXTENSIONS = {'.xlsm', '.xlsb'}
 
 Result = tuple
 
@@ -51,6 +58,17 @@ def lint_file(path: str) -> list[Result]:
 
     _, ext = os.path.splitext(path)
     ext = ext.lower()
+
+    if ext == '.xls':
+        results.append((FAIL, 'file format',
+                         "'.xls' files are not accepted. The legacy Excel 97-2003 "
+                         "binary format is not supported — grepxcel reads modern "
+                         ".xlsx files only (a format-support limitation, not a "
+                         "security block). In Excel: File > Save As > Excel "
+                         "Workbook (.xlsx), then run grepxcel again on the "
+                         "converted file."))
+        _add_advisory(results)
+        return results
 
     if ext in _MACRO_EXTENSIONS:
         results.append((FAIL, 'file format',
@@ -109,6 +127,9 @@ def lint_file(path: str) -> list[Result]:
                          'It may be corrupted.'))
         _add_advisory(results)
         return results
+
+    _check_macro_content(names, results)
+    _check_invisible_data(names, results)
 
     file_mb = os.path.getsize(path) / (1024 * 1024)
     results.append((OK, 'file access', f'{path} — {file_mb:.1f} MB'))
@@ -231,6 +252,70 @@ def _check_sheet(ws, ws_raw, results: list[Result]) -> None:
         results.append((OK, f'sheet {title!r} formulas', 'none'))
 
 
+# Zip parts whose presence means part of the workbook's data is invisible to
+# grepxcel — checked directly against the raw ZIP namelist (already opened
+# for the integrity check below) rather than left as an unconditional,
+# always-shown note. Each fires only when the file actually has that part.
+_INVISIBLE_DATA_SIGNALS = (
+    ('xl/model/', (INFO, 'advisory',
+        'This workbook has a Data Model (Power Pivot). grepxcel reads worksheet '
+        'cells only — data, measures, and calculated columns that live only in '
+        'the Data Model are not read, even if a PivotTable on a worksheet '
+        'displays their results.')),
+    ('xl/connections.xml', (INFO, 'advisory',
+        'This workbook has an external data connection (ODBC/OLEDB/Power Query). '
+        'grepxcel reads the cached worksheet values only — it does not refresh '
+        'or read the connection itself, so results reflect whatever was cached '
+        'the last time the workbook was saved.')),
+    ('xl/externalLinks/', (INFO, 'advisory',
+        "This workbook references another workbook (e.g. a formula like "
+        "'=[Book2.xlsx]Sheet1!A1'). grepxcel reads the cached result of that "
+        'link only — it does not open or follow the referenced file.')),
+    ('xl/embeddings/', (INFO, 'advisory',
+        'This workbook has an embedded object (e.g. an inserted file or '
+        'document). grepxcel only reads cell values — embedded objects are '
+        'not extracted or inspected.')),
+)
+
+
+def _check_macro_content(names: list[str], results: list[Result]) -> None:
+    """Report macro parts by content, so the reason is visible before extraction.
+
+    `lint` deliberately still opens and reports on such a file rather than
+    stopping: its whole job is telling you what a file contains, and a user whose
+    extraction was refused needs to see *why* here. `extract` refuses it — see
+    `security._check_no_executable_content`.
+
+    The part list lives in `security` so the two cannot drift apart.
+    """
+    from .security import _EXECUTABLE_PARTS
+
+    lowered = [(n, n.lower()) for n in names]
+    for needle, description in _EXECUTABLE_PARTS:
+        for original, low in lowered:
+            hit = low.startswith(needle) if needle.endswith('/') else low == needle
+            if not hit:
+                continue
+            results.append((FAIL, 'macro content',
+                             f'{original} — {description}. Extraction will refuse '
+                             f'this file whatever its extension says, because Excel '
+                             f'stores macros only in .xlsm/.xlsb: a .xlsx holding '
+                             f'this was renamed, not saved that way. grepxcel does '
+                             f'not scan for malware and never runs macro content — '
+                             f'this reports what is present, not that it is harmful. '
+                             f'To extract, re-save as .xlsx in Excel (which drops '
+                             f'macros) once you trust the file.'))
+            break
+
+
+def _check_invisible_data(names: list[str], results: list[Result]) -> None:
+    """Flag zip parts that hold data grepxcel never reads, so a user isn't
+    silently missing part of the picture with no indication of it."""
+    for prefix, result in _INVISIBLE_DATA_SIGNALS:
+        if any(n.startswith(prefix) for n in names):
+            results.append(result)
+
+
 def _add_advisory(results: list[Result]) -> None:
     """Append advisory notes about conditions not yet auto-detected."""
     results.append((INFO, 'advisory',
@@ -247,10 +332,13 @@ def _add_advisory(results: list[Result]) -> None:
                      'reading cell values — extraction works, but the file author may '
                      'not intend the data to be extracted.'))
     results.append((INFO, 'advisory',
-                     'Conditional formatting, data validation, pivot tables, charts, '
-                     'and VBA modules are ignored by grepxcel. They do not affect '
-                     'extraction but may indicate the file is more complex than a '
-                     'flat data sheet.'))
+                     'Conditional formatting, data validation, charts, and VBA modules '
+                     'are ignored by grepxcel. They do not affect extraction but may '
+                     'indicate the file is more complex than a flat data sheet. '
+                     '(A plain PivotTable built from a worksheet range is fully '
+                     'readable — its source cells are ordinary data. A Data Model '
+                     '/ connection / embedded object is flagged separately above, '
+                     'only when the file actually has one.)'))
 
 
 # ── directory expansion ───────────────────────────────────────────────────────

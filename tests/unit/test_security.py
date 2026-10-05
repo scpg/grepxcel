@@ -147,6 +147,34 @@ def test_blocked_extension_rejected_by_validate_file(tmp_path, ext):
         validate_file(str(path))
 
 
+def test_xls_gets_its_own_conversion_message_not_macro_wording(tmp_path):
+    """.xls is rejected for a different reason than .xlsm/.xlsb (format
+    incompatibility, not a security choice) -- it must not be folded into
+    the macro-risk wording, which would wrongly imply a clean, macro-free
+    .xls file would work if it just had no macros."""
+    path = tmp_path / 'file.xls'
+    path.write_bytes(b'')
+    with pytest.raises(SecurityError, match='legacy Excel 97-2003') as exc_info:
+        validate_file(str(path))
+    assert 'macro' not in str(exc_info.value).lower()
+    assert '.xlsx' in str(exc_info.value)
+
+
+def test_xlsm_keeps_macro_wording(tmp_path):
+    path = tmp_path / 'file.xlsm'
+    path.write_bytes(b'')
+    with pytest.raises(SecurityError, match='[Mm]acro'):
+        validate_file(str(path))
+
+
+def test_xls_pattern_file_gets_conversion_message(tmp_path):
+    from grepxcel.security import validate_pattern_file
+    path = tmp_path / 'pattern.xls'
+    path.write_bytes(b'')
+    with pytest.raises(SecurityError, match='legacy Excel 97-2003'):
+        validate_pattern_file(str(path))
+
+
 # ─── Engine: data_only=True ───────────────────────────────────────────────────
 
 def _make_xlsx(rows_or_cells, path, is_data=False):

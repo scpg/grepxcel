@@ -131,10 +131,11 @@ def check_autocomplete() -> list[Result]:
 
 
 def check_web_wizard(probe: bool = True) -> list[Result]:
-    """FastAPI / uvicorn / jinja2 for grepxcel web-wizard."""
+    """FastAPI / uvicorn / jinja2 / python-multipart for grepxcel web-wizard."""
     res: list[Result] = []
     all_present = True
-    for mod, pkg in (('fastapi', 'fastapi'), ('uvicorn', 'uvicorn'), ('jinja2', 'jinja2')):
+    for mod, pkg in (('fastapi', 'fastapi'), ('uvicorn', 'uvicorn'), ('jinja2', 'jinja2'),
+                     ('python_multipart', 'python-multipart')):
         if _have(mod):
             res.append((OK, pkg, 'installed'))
         else:
@@ -282,7 +283,13 @@ def check_server(url: str = 'http://localhost:1234/v1') -> list[Result]:
         return [(FAIL, 'server', f'{url} — refusing to probe a non-http(s) URL')]
     models_url = url.rstrip('/') + '/models'
     try:
-        resp = urllib.request.urlopen(
+        # nosec B310 — scheme is validated to http/https by is_http_url above,
+        # same guard as check_model_endpoint(). Bandit flagged this one and not
+        # its sibling because only the sibling carried the annotation: the
+        # suppression was written when the first call site was triaged and this
+        # second one was added later, untriaged. That gap is why bandit now runs
+        # in CI rather than by hand.
+        resp = urllib.request.urlopen(  # nosec B310
             urllib.request.Request(models_url, method='GET'),
             timeout=3,
         )

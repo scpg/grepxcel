@@ -1,0 +1,24 @@
+{
+  "line": [
+    {
+      "_source": {
+        "sheet": "Sheet1",
+        "ref": "A1:B5"
+      },
+      "data": [
+        {
+          "label": "EUR amount:",
+          "amount": 980.5
+        },
+        {
+          "label": "GBP amount:",
+          "amount": 750
+        },
+        {
+          "label": "Negative:",
+          "amount": -200
+        }
+      ]
+    }
+  ]
+}

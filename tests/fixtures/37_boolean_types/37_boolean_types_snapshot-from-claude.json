@@ -1,0 +1,20 @@
+{
+  "flag": [
+    {
+      "_source": {
+        "sheet": "Sheet1",
+        "ref": "A1:B4"
+      },
+      "data": [
+        {
+          "label": "False flag:",
+          "value": false
+        },
+        {
+          "label": "Active:",
+          "value": true
+        }
+      ]
+    }
+  ]
+}

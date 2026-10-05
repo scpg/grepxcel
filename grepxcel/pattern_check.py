@@ -15,7 +15,7 @@ from dataclasses import dataclass, field
 
 from .color import MARK_FAIL, MARK_OK, MARK_WARN, colorize_marks, paint, should_color
 from .models import CellInstruction, TableInstruction, SeekInstruction, DirectionInstruction
-from .pattern_parser import PatternError, PatternParser
+from .pattern_parser import VALID_CONFIG_KEYS, PatternError, PatternParser
 from .security import SecurityError, validate_pattern_file
 
 # Patterns that strongly suggest regex intent (backslash-escapes, lookahead)
@@ -64,6 +64,35 @@ def _referenced_fields(sequence) -> set[str]:
     return refs
 
 
+def _overwritten_var_fields(sequence, defs) -> dict:
+    """``var:`` fields that more than one ``cell:`` instruction writes to.
+
+    ``engine._process_cell`` assigns ``result['cells'][field] = value``
+    unconditionally, so a second write silently replaces the first and the
+    earlier value never reaches the output. A pattern that repeats a block of
+    fields — which is exactly what the web wizard emits for a sheet containing
+    the same table three times side by side — therefore extracts one third of
+    the data it appears to, with no warning anywhere.
+
+    ``lbl:`` fields are excluded: an anchor may legitimately be matched in
+    several places and carries no output value to lose. Table columns are
+    excluded too — a ``DATA:`` field is written once per row by design.
+    """
+    seen: dict[str, list] = {}
+    for instr in sequence:
+        if not isinstance(instr, CellInstruction):
+            continue
+        name = instr.field
+        if name in ('IGNORE', 'EMPTY'):
+            continue
+        fd = defs.get(name)
+        if fd is None or fd.role != 'var':
+            continue
+        where = f'cell:{instr.target}' if instr.target else f'cell:{instr.multiplicity}'
+        seen.setdefault(name, []).append(where)
+    return {name: refs for name, refs in seen.items() if len(refs) > 1}
+
+
 def check_pattern(path: str) -> CheckResult:
     """Parse and statically validate a pattern file. Never raises — every problem
     is captured in result.errors (fatal) or result.warnings (non-fatal)."""
@@ -98,11 +127,21 @@ def check_pattern(path: str) -> CheckResult:
     for name in sorted(set(defs) - referenced):
         result.warnings.append(f"Field {name!r} is defined but never used.")
 
+    for name, refs in sorted(_overwritten_var_fields(sequence, defs).items()):
+        locations = ', '.join(refs)
+        result.warnings.append(
+            f"var: field {name!r} is written {len(refs)} times ({locations}). "
+            f"Each write replaces the previous one, so only the last value "
+            f"reaches the output and the earlier {len(refs) - 1} are discarded "
+            f"without warning. If these are genuinely different values, give "
+            f"them separate field names (e.g. {name}_1, {name}_2); if the block "
+            f"repeats, a table: is usually what you want."
+        )
+
     for key in config.unknown_config_keys:
         result.warnings.append(
             f"Unknown config key {key!r} — ignored. "
-            f"Valid keys: pattern.version (or version), read.direction, "
-            f"currency.sign, ignore.case, trim.whitespace, lbl.match, var.match, empty.aliases."
+            f"Valid keys: {', '.join(sorted(VALID_CONFIG_KEYS))}."
         )
 
     for name, fd in defs.items():

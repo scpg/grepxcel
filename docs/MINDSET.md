@@ -3,7 +3,7 @@
 > This document is the *why*, not the *how*. For usage see the
 > [README](../README.md) and [pattern-file.md](pattern-file.md).
 
-grepxcel exists to fill one specific gap:
+`grepxcel` exists to fill one specific gap:
 
 **the gap between "Excel as a human document" and "Excel as a reliable data source."**
 
@@ -13,10 +13,7 @@ great for people makes it hostile as a data source: labels sit next to values,
 tables start at arbitrary positions, cells get merged for looks, and the same report
 arrives in a slightly different shape every month. Over time it only gets messier.
 
-We are **not** trying to remove Excel. We are trying to build a **trustworthy airlock
-around it**: the messy human surface on one side, clean structured JSON on the other,
-and a deliberate, auditable gate in between. The honest promise is not "replace Excel"
-— it is *"make Excel safe to depend on programmatically."*
+`grepxcel` is **not** trying to remove Excel. `grepxcel` tries to build a **trustworthy airlock around it**: the human surface on one side, clean structured JSON on the other, and a deliberate, auditable gate in between. The honest promise is not "replace Excel" — it is *"make data extracted from Excel safe to depend on programmatically."*
 
 ---
 
@@ -26,15 +23,56 @@ The core audience is **developers and IT-savvy people** who are willing to inves
 effort up front in a pattern, in exchange for processing **hundreds or thousands of
 files** reliably and feeding the result into a system that can actually use the data.
 
-Authoring a good pattern is an engineering task — regex, structure, types — and we
-would rather be excellent for the people who can do that than mediocre for everyone.
-That focus is a feature, not an apology.
+Writing a good pattern is an engineering task — regex, structure, types — and `grepxcel` is designed to reward that investment with extraction that is robust, auditable, and maintainable. That focused scope is intentional.
 
-That said, **the person who authors the pattern and the person who uses it daily don't
-have to be the same person.** We are building accessibility layers — visual wizards,
-AI-assisted drafting, worked examples — specifically so that a developer can build and
-own the pattern while the people who run it every day don't need to touch the internals.
+That said, **the person who authors the pattern and the person who uses it daily don't have to be the same person.** Non-technical users are explicitly accounted for: the web wizard lets anyone build or inspect a pattern by clicking cells in a browser, without writing a line of config. AI-assisted drafting and worked examples lower the bar further. A developer can own the pattern; the people who run it every day never need to touch the internals.
 The engineering rigour stays; the barrier to *using* it comes down.
+
+---
+
+## Why is the pattern file a spreadsheet?
+
+IT experts, developers and data scientists reasonably raise an eyebrow at this one. The
+instinct is that configuration belongs in YAML, JSON or TOML — text, diffable, editable in
+any editor, no binary blob in the repository. It's a fair objection, and the honest answer
+is that the choice optimises for a different person.
+
+**The pattern is a spreadsheet so that someone who knows a bit of Excel can write one.**
+
+That is the whole reason. The people who own these files — the finance analyst who receives
+the same report every month, the operations lead who knows exactly which cell holds the
+total — usually are not the people who are comfortable hand-writing a nested YAML document.
+They *are* comfortable opening a workbook, typing a label into a cell, and seeing it sit
+next to the thing it describes. Asking them to learn a config format to describe a
+spreadsheet adds a step that has nothing to do with the problem they actually understand.
+
+There is a second benefit that falls out of the first: **the pattern has the same shape as
+the thing it describes.** A pattern for a grid is itself a grid. Cell references and reading
+order are spatial concepts, and expressing them spatially means you can put the pattern and
+the data side by side and compare them directly. In a YAML file, `cell:1` three times in a
+row is an abstraction you hold in your head; in a grid, it is three rows you can see.
+
+### What this costs, and what carries it
+
+The objection is not dismissed — a spreadsheet is a zip archive, so it does not diff in a
+pull request, and that is a real loss on an engineering team.
+
+Two things carry it:
+
+- **`.csv` is a first-class pattern format, not a fallback.** Both formats are read into the
+  same internal grid and parse identically, so a team that wants text, diffs and code review
+  can use `.csv` throughout and give up nothing. The spreadsheet is the *default* because of
+  who it is for, not because it is the only supported option.
+- **The pattern is not the only way in.** `grepxcel web-wizard` builds one by clicking cells
+  in a browser, and `grepxcel draft` produces a starting point from the data file itself.
+
+### Where the line is
+
+`grepxcel` is aimed at developers and IT-savvy people, as the section above says — that has
+not changed. The pattern format is where the tool deliberately reaches one step past its core
+audience, because the pattern is the single artefact a non-programmer has a real chance of
+reading and correcting. Everything downstream of it — the CLI, the JSON output, the schema,
+the exit codes — is unapologetically engineering-facing.
 
 ---
 
@@ -47,8 +85,7 @@ it "needs to be rechecked," and rechecking does not scale to thousands of files.
 At that volume nobody wants 80% *silent* accuracy. They want:
 
 - **reproducible** results on the files that conform to the pattern, and
-- a **loud, specific flag** on the files that don't — *which file, which cell, which
-  anchor, and why* — so a human reviews only the small fraction that actually deviated.
+- a **loud, specific flag** on the files that don't — *which file, which cell, which anchor, and why* — so a human reviews only the small fraction that actually deviated.
 
 A validated pattern gives exactly that. Same file + same pattern → same JSON, every
 time. And when reality stops matching the pattern, grepxcel **fails loudly** instead of

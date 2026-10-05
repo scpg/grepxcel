@@ -2,6 +2,13 @@
 
 Thanks for your interest in contributing!
 
+> **Start with [`docs/STATUS.md`](docs/STATUS.md).** It is the shared snapshot of
+> where things stand — release state, open PRs, security findings and which part
+> of each is already fixed, CI gaps, and known environment traps. Several
+> assistants and humans work on this repository without seeing each other's
+> notes, so that file is the handover. Please update it when you change
+> something it describes.
+
 ## Branch model
 
 | Branch | Purpose |
@@ -29,6 +36,9 @@ python -m venv .venv
 
 # Core dependencies + test runner
 .venv/bin/pip install -r requirements.txt -r requirements-dev.txt
+
+# Optional: web wizard (FastAPI, uvicorn, python-multipart) + httpx for its tests
+# .venv/bin/pip install -e ".[web]" httpx
 
 # Optional: install the draft feature (heavy — compiles C++ code for local LLM)
 # .venv/bin/pip install -r requirements-draft.txt

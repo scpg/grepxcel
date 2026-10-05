@@ -29,6 +29,10 @@ _skip_no_api = pytest.mark.skipif(
 
 # ── Fixture helpers ────────────────────────────────────────────────────────
 
+# The wizard rejects requests whose Host header is not loopback (DNS-rebinding
+# guard), and TestClient's default Host is "testserver".
+_LOCAL_BASE_URL = 'http://localhost:8765'
+
 FIXTURE_01 = Path(__file__).parent.parent / 'fixtures/01_simple_invoice/01_simple_invoice_data.xlsx'
 # manual pattern is used read-only; it has labels that actually match the data (preload works)
 PATTERN_01 = Path(__file__).parent.parent / 'fixtures/01_simple_invoice/01_simple_invoice_pattern-manual.xlsx'
@@ -54,14 +58,14 @@ def _make_client(tmp_path: Path, cells: dict | None = None) -> 'TestClient':
     wb.save(xlsx_path)
 
     app = create_app(xlsx_path)
-    return TestClient(app)
+    return TestClient(app, base_url=_LOCAL_BASE_URL)
 
 
 def _make_real_client() -> 'TestClient':
     """Create a TestClient backed by fixture 01 (real file)."""
     assert FIXTURE_01.exists(), f'Fixture not found: {FIXTURE_01}'
     app = create_app(str(FIXTURE_01))
-    return TestClient(app)
+    return TestClient(app, base_url=_LOCAL_BASE_URL)
 
 
 def _make_real_client_with_pattern() -> 'TestClient':
@@ -69,7 +73,7 @@ def _make_real_client_with_pattern() -> 'TestClient':
     assert FIXTURE_01.exists(), f'Data fixture not found: {FIXTURE_01}'
     assert PATTERN_01.exists(), f'Pattern fixture not found: {PATTERN_01}'
     app = create_app(str(FIXTURE_01), pattern_path=str(PATTERN_01))
-    return TestClient(app)
+    return TestClient(app, base_url=_LOCAL_BASE_URL)
 
 
 # ── Tests: page + basic state ──────────────────────────────────────────────
@@ -85,7 +89,7 @@ class TestIndexPage:
     def test_html_contains_grid_element(self, tmp_path):
         client = _make_client(tmp_path)
         r = client.get('/')
-        assert 'grid-table' in r.text
+        assert 'ag-grid-container' in r.text
 
     def test_html_contains_sheet_name(self, tmp_path):
         client = _make_client(tmp_path)
@@ -137,7 +141,7 @@ class TestSheetEndpoint:
         ws.merge_cells('A1:B1')
         wb.save(xlsx_path)
         app = create_app(xlsx_path)
-        client = TestClient(app)
+        client = TestClient(app, base_url=_LOCAL_BASE_URL)
         d = client.get('/api/sheet').json()
         a1 = d['rows'][0][0]
         assert a1['ref'] == 'A1'
@@ -154,7 +158,7 @@ class TestSheetEndpoint:
         ws.merge_cells('A1:B1')
         wb.save(xlsx_path)
         app = create_app(xlsx_path)
-        client = TestClient(app)
+        client = TestClient(app, base_url=_LOCAL_BASE_URL)
         d = client.get('/api/sheet').json()
         b1 = d['rows'][0][1]
         assert b1['ref'] == 'B1'
@@ -237,7 +241,7 @@ class TestClassifyEndpoint:
         ws.merge_cells('A1:B1')
         wb.save(xlsx_path)
         app = create_app(xlsx_path)
-        client = TestClient(app)
+        client = TestClient(app, base_url=_LOCAL_BASE_URL)
         r = client.post('/api/classify', json={
             'ref': 'B1', 'action': 'L',
             'fields': {'name': 'title', 'type': 'string',
@@ -594,7 +598,7 @@ def _make_table_client(tmp_path: Path) -> 'TestClient':
     ws['A7'] = 'Grand Total';ws['E7'] = 3030
     wb.save(xlsx_path)
     app = create_app(xlsx_path)
-    return TestClient(app)
+    return TestClient(app, base_url=_LOCAL_BASE_URL)
 
 
 _TABLE_ROW_CONFIGS = [
@@ -863,7 +867,7 @@ class TestTableWithFooterRow:
 
         from grepxcel.wizard_api import create_app
         app = create_app(xlsx_path)
-        client = TestClient(app)
+        client = TestClient(app, base_url=_LOCAL_BASE_URL)
 
         client.post('/api/classify', json={
             'ref': 'A3', 'action': 'T',
@@ -934,7 +938,7 @@ class TestTableIntegrationFixture3:
 
         from grepxcel.wizard_api import create_app
         app = create_app(xlsx_path)
-        client = TestClient(app)
+        client = TestClient(app, base_url=_LOCAL_BASE_URL)
 
         client.post('/api/classify', json={
             'ref': 'A3', 'action': 'T',
@@ -995,7 +999,7 @@ class TestTableColModifiers:
 
         from grepxcel.wizard_api import create_app
         app = create_app(xlsx_path)
-        client = TestClient(app)
+        client = TestClient(app, base_url=_LOCAL_BASE_URL)
         client.post('/api/classify', json={
             'ref': 'A3', 'action': 'T',
             'fields': {'name': 'rows', 'mult': '*', 'end_ref': end_ref,
@@ -1089,7 +1093,7 @@ class TestTableHeaderColSeparateNameLmatch:
 
         from grepxcel.wizard_api import create_app
         app = create_app(xlsx_path)
-        client = TestClient(app)
+        client = TestClient(app, base_url=_LOCAL_BASE_URL)
         client.post('/api/classify', json={
             'ref': 'A3', 'action': 'T',
             'fields': {'name': 'items', 'mult': '*', 'end_ref': 'B4',
@@ -1122,7 +1126,7 @@ class TestTableHeaderColSeparateNameLmatch:
 
         from grepxcel.wizard_api import create_app
         app = create_app(xlsx_path)
-        client = TestClient(app)
+        client = TestClient(app, base_url=_LOCAL_BASE_URL)
         client.post('/api/classify', json={
             'ref': 'A3', 'action': 'T',
             'fields': {'name': 'products', 'mult': '*', 'end_ref': 'A4',
@@ -1196,7 +1200,7 @@ class TestTableEditRoundTrip:
     def test_initial_classify_creates_t_head_and_data(self, tmp_path):
         path = self._make_table_xlsx(tmp_path)
         app  = create_app(path)
-        client = TestClient(app)
+        client = TestClient(app, base_url=_LOCAL_BASE_URL)
         client.post('/api/classify', json={
             'ref': 'A1', 'action': 'T',
             'fields': {'name': 'items', 'mult': '*', 'end_ref': 'C4',
@@ -1209,7 +1213,7 @@ class TestTableEditRoundTrip:
     def test_edit_changes_table_name_in_context(self, tmp_path):
         """Re-classifying with a different name updates the context."""
         path   = self._make_table_xlsx(tmp_path)
-        client = TestClient(create_app(path))
+        client = TestClient(create_app(path), base_url=_LOCAL_BASE_URL)
         client.post('/api/classify', json={
             'ref': 'A1', 'action': 'T',
             'fields': {'name': 'items', 'mult': '*', 'end_ref': 'C4',
@@ -1230,7 +1234,7 @@ class TestTableEditRoundTrip:
     def test_edit_changes_multiplicity(self, tmp_path):
         """Re-classifying with mult='1' changes CSV to table:1."""
         path   = self._make_table_xlsx(tmp_path)
-        client = TestClient(create_app(path))
+        client = TestClient(create_app(path), base_url=_LOCAL_BASE_URL)
         client.post('/api/classify', json={
             'ref': 'A1', 'action': 'T',
             'fields': {'name': 'items', 'mult': '*', 'end_ref': 'C4',
@@ -1248,7 +1252,7 @@ class TestTableEditRoundTrip:
     def test_edit_smaller_range_clears_stale_thead(self, tmp_path):
         """Shrinking the range (removing col C) clears old T-HEAD cells at C1."""
         path   = self._make_table_xlsx(tmp_path)
-        client = TestClient(create_app(path))
+        client = TestClient(create_app(path), base_url=_LOCAL_BASE_URL)
         client.post('/api/classify', json={
             'ref': 'A1', 'action': 'T',
             'fields': {'name': 'items', 'mult': '*', 'end_ref': 'C4',
@@ -1280,7 +1284,7 @@ class TestTableEditRoundTrip:
     def test_edit_updates_web_row_configs(self, tmp_path):
         """After edit, table-context must return the NEW _web_row_configs."""
         path   = self._make_table_xlsx(tmp_path)
-        client = TestClient(create_app(path))
+        client = TestClient(create_app(path), base_url=_LOCAL_BASE_URL)
         client.post('/api/classify', json={
             'ref': 'A1', 'action': 'T',
             'fields': {'name': 'items', 'mult': '*', 'end_ref': 'C4',
@@ -1302,7 +1306,7 @@ class TestTableEditRoundTrip:
     def test_edit_then_undo_restores_previous_state(self, tmp_path):
         """Undo after an edit must revert to the pre-edit classification."""
         path   = self._make_table_xlsx(tmp_path)
-        client = TestClient(create_app(path))
+        client = TestClient(create_app(path), base_url=_LOCAL_BASE_URL)
         # Initial classify
         client.post('/api/classify', json={
             'ref': 'A1', 'action': 'T',
@@ -1326,7 +1330,7 @@ class TestTableEditRoundTrip:
         re-classification without data loss.  Simulate: classify → fetch context
         → re-classify with same configs → verify CSV unchanged."""
         path   = self._make_table_xlsx(tmp_path)
-        client = TestClient(create_app(path))
+        client = TestClient(create_app(path), base_url=_LOCAL_BASE_URL)
         client.post('/api/classify', json={
             'ref': 'A1', 'action': 'T',
             'fields': {'name': 'items', 'mult': '*', 'end_ref': 'C4',
@@ -1376,7 +1380,7 @@ class TestFooterVColumnExtraction:
 
     def test_footer_v_col_appears_in_csv_as_var(self, tmp_path):
         path   = self._make_footer_xlsx(tmp_path)
-        client = TestClient(create_app(path))
+        client = TestClient(create_app(path), base_url=_LOCAL_BASE_URL)
         client.post('/api/classify', json={
             'ref': 'A1', 'action': 'T',
             'fields': {'name': 'sales', 'mult': '*', 'end_ref': 'B4',
@@ -1405,7 +1409,7 @@ class TestFooterVColumnExtraction:
     def test_footer_v_col_cell_marked_t_head_with_var_role(self, tmp_path):
         """Footer V cells should be marked T-HEAD; the V role should appear in context cols."""
         path   = self._make_footer_xlsx(tmp_path)
-        client = TestClient(create_app(path))
+        client = TestClient(create_app(path), base_url=_LOCAL_BASE_URL)
         client.post('/api/classify', json={
             'ref': 'A1', 'action': 'T',
             'fields': {'name': 'sales', 'mult': '*', 'end_ref': 'B4',
@@ -1446,7 +1450,7 @@ class TestFooterVColumnExtraction:
         import grepxcel as gx
 
         path   = self._make_footer_xlsx(tmp_path)
-        client = TestClient(create_app(path))
+        client = TestClient(create_app(path), base_url=_LOCAL_BASE_URL)
         client.post('/api/classify', json={
             'ref': 'A1', 'action': 'T',
             'fields': {'name': 'sales', 'mult': '*', 'end_ref': 'B4',
@@ -1485,7 +1489,7 @@ class TestFooterVColumnExtraction:
     def test_footer_v_col_lmatch_preserved_in_context(self, tmp_path):
         """The L column's lmatch text must be preserved in _web_row_configs."""
         path   = self._make_footer_xlsx(tmp_path)
-        client = TestClient(create_app(path))
+        client = TestClient(create_app(path), base_url=_LOCAL_BASE_URL)
         configs = [
             {'sheet_row': 1, 'row_type': 'header', 'row_n': 1, 'cols': [
                 {'role': 'L', 'name': 'item',   'lmatch': 'Item'},
@@ -1588,7 +1592,7 @@ class TestAllVarHeader:
 
     def test_classify_all_var_header_creates_t_head(self, tmp_path):
         path   = self._make_all_var_header_xlsx(tmp_path)
-        client = TestClient(create_app(path))
+        client = TestClient(create_app(path), base_url=_LOCAL_BASE_URL)
         configs = [
             {'sheet_row': 1, 'row_type': 'header', 'row_n': 1, 'cols': [
                 {'role': 'V', 'name': 'alpha', 'ftype': 'string',  'match': '.*'},
@@ -1613,7 +1617,7 @@ class TestAllVarHeader:
 
     def test_all_var_header_csv_has_header_row(self, tmp_path):
         path   = self._make_all_var_header_xlsx(tmp_path)
-        client = TestClient(create_app(path))
+        client = TestClient(create_app(path), base_url=_LOCAL_BASE_URL)
         configs = [
             {'sheet_row': 1, 'row_type': 'header', 'row_n': 1, 'cols': [
                 {'role': 'V', 'name': 'alpha', 'ftype': 'string',  'match': '.*'},
@@ -1641,7 +1645,7 @@ class TestAllVarHeader:
     def test_all_var_header_table_context_round_trips(self, tmp_path):
         """_web_row_configs round-trips: V roles survive context fetch."""
         path   = self._make_all_var_header_xlsx(tmp_path)
-        client = TestClient(create_app(path))
+        client = TestClient(create_app(path), base_url=_LOCAL_BASE_URL)
         configs = [
             {'sheet_row': 1, 'row_type': 'header', 'row_n': 1, 'cols': [
                 {'role': 'V', 'name': 'alpha', 'ftype': 'string', 'match': '.*'},
@@ -1900,3 +1904,286 @@ class TestClassifyBatch:
         assert r.status_code == 200
         assert r.json()['n_classified'] == 1
         assert client.get('/api/cell/B2').json()['choice'] == 'V'
+
+    def test_classify_batch_size_cap_rejected(self, tmp_path):
+        """More than 5000 refs in a single batch request returns 400."""
+        client = _make_client(tmp_path)
+        big_refs = [f'A{i+1}' for i in range(5001)]
+        r = client.post('/api/classify-batch', json={'refs': big_refs, 'action': 'V'})
+        assert r.status_code == 400
+
+
+# ── Security: /api/load-pattern-by-path path traversal ────────────────────
+
+@_skip_no_api
+class TestLoadPatternByPathSecurity:
+    def test_path_in_same_dir_accepted(self, tmp_path):
+        """A pattern file in the data file's directory is accepted."""
+        wb2 = openpyxl.Workbook()
+        ws2 = wb2.active
+        ws2.title = 'Sheet1'
+        ws2['A1'] = 'pattern_type'
+        ws2['B1'] = 'pattern_name'
+        ws2['C1'] = 'L'
+        ws2['D1'] = 'label'
+        ws2['E1'] = 'Invoice No:'
+        pat_path = str(tmp_path / 'pattern.xlsx')
+        wb2.save(pat_path)
+
+        client = _make_client(tmp_path)
+        r = client.post('/api/load-pattern-by-path', json={'path': pat_path})
+        # Should succeed (200) or raise 400/500 from pattern parsing — but NOT 403.
+        assert r.status_code != 403
+
+    def test_path_traversal_outside_dir_rejected(self, tmp_path):
+        """A path pointing outside the data directory must return 403."""
+        client = _make_client(tmp_path)
+        # Point at a file one level up (or /etc/passwd on Linux).
+        outside = str(tmp_path.parent / 'evil_pattern.xlsx')
+        r = client.post('/api/load-pattern-by-path', json={'path': outside})
+        assert r.status_code == 403
+
+    def test_dotdot_traversal_rejected(self, tmp_path):
+        """A ../../ path traversal must return 403."""
+        client = _make_client(tmp_path)
+        traversal = str(tmp_path / '..' / '..' / 'etc' / 'passwd')
+        r = client.post('/api/load-pattern-by-path', json={'path': traversal})
+        assert r.status_code == 403
+
+    def test_missing_path_field_returns_400(self, tmp_path):
+        """Missing 'path' field in the request body returns 400."""
+        client = _make_client(tmp_path)
+        r = client.post('/api/load-pattern-by-path', json={})
+        assert r.status_code == 400
+
+    def test_absent_file_returns_404(self, tmp_path):
+        """A path inside the data directory that does not exist returns 404."""
+        client = _make_client(tmp_path)
+        missing = str(tmp_path / 'nonexistent_pattern.xlsx')
+        r = client.post('/api/load-pattern-by-path', json={'path': missing})
+        assert r.status_code == 404
+
+
+# ── Security: /api/shutdown CSRF guard ────────────────────────────────────
+
+@_skip_no_api
+class TestShutdownCsrfGuard:
+    def test_no_origin_header_accepted(self, tmp_path):
+        """Request with no Origin header (same-origin form POST) is accepted."""
+        client = _make_client(tmp_path)
+        # TestClient does not add an Origin header by default.
+        r = client.post('/api/shutdown')
+        # 200 or redirect — not 403. Server may os._exit so we just check status.
+        assert r.status_code != 403
+
+    def test_localhost_origin_accepted(self, tmp_path):
+        """Request with Origin: http://localhost:<port> is accepted."""
+        client = _make_client(tmp_path)
+        r = client.post('/api/shutdown', headers={'Origin': 'http://localhost:8765'})
+        assert r.status_code != 403
+
+    def test_loopback_origin_accepted(self, tmp_path):
+        """Request with Origin: http://127.0.0.1:<port> is accepted."""
+        client = _make_client(tmp_path)
+        r = client.post('/api/shutdown', headers={'Origin': 'http://127.0.0.1:8765'})
+        assert r.status_code != 403
+
+    def test_cross_origin_rejected(self, tmp_path):
+        """Request from a foreign Origin must return 403."""
+        client = _make_client(tmp_path)
+        r = client.post('/api/shutdown', headers={'Origin': 'https://evil.example.com'})
+        assert r.status_code == 403
+
+    def test_http_origin_rejected(self, tmp_path):
+        """Origin without a localhost host must return 403."""
+        client = _make_client(tmp_path)
+        r = client.post('/api/shutdown', headers={'Origin': 'http://attacker.com'})
+        assert r.status_code == 403
+
+
+# ── /api/switch-sheet ─────────────────────────────────────────────────────
+
+@_skip_no_api
+class TestSwitchSheet:
+    def _make_two_sheet_client(self, tmp_path: Path) -> 'TestClient':
+        xlsx_path = str(tmp_path / 'multi.xlsx')
+        wb = openpyxl.Workbook()
+        ws1 = wb.active
+        ws1.title = 'Alpha'
+        ws1['A1'] = 'Invoice No:'
+        ws1['B1'] = 'INV-001'
+        ws2 = wb.create_sheet('Beta')
+        ws2['A1'] = 'Amount:'
+        ws2['B1'] = 999.0
+        wb.save(xlsx_path)
+        app = create_app(xlsx_path)
+        return TestClient(app, base_url=_LOCAL_BASE_URL)
+
+    def test_switch_to_valid_sheet(self, tmp_path):
+        """Switching to a sheet that exists returns 200 with changed=True."""
+        client = self._make_two_sheet_client(tmp_path)
+        r = client.post('/api/switch-sheet', json={'sheet': 'Beta'})
+        assert r.status_code == 200
+        data = r.json()
+        assert data['ok'] is True
+        assert data['sheet'] == 'Beta'
+        assert data['changed'] is True
+
+    def test_switch_to_same_sheet(self, tmp_path):
+        """Switching to the already-active sheet returns changed=False."""
+        client = self._make_two_sheet_client(tmp_path)
+        r = client.post('/api/switch-sheet', json={'sheet': 'Alpha'})
+        assert r.status_code == 200
+        assert r.json()['changed'] is False
+
+    def test_switch_to_unknown_sheet_returns_404(self, tmp_path):
+        """Switching to a nonexistent sheet returns 404."""
+        client = self._make_two_sheet_client(tmp_path)
+        r = client.post('/api/switch-sheet', json={'sheet': 'DoesNotExist'})
+        assert r.status_code == 404
+
+    def test_choices_preserved_across_switch(self, tmp_path):
+        """Choices made on Alpha survive a round-trip switch to Beta and back."""
+        client = self._make_two_sheet_client(tmp_path)
+        # Classify a cell on the first sheet
+        client.post('/api/classify', json={'ref': 'A1', 'action': 'L'})
+        assert client.get('/api/cell/A1').json()['choice'] == 'L'
+
+        # Switch away
+        client.post('/api/switch-sheet', json={'sheet': 'Beta'})
+        # Switch back
+        client.post('/api/switch-sheet', json={'sheet': 'Alpha'})
+
+        # Choice must still be present
+        assert client.get('/api/cell/A1').json()['choice'] == 'L'
+
+    def test_api_sheet_reflects_new_sheet_after_switch(self, tmp_path):
+        """After switching, /api/sheet returns data from the new sheet."""
+        client = self._make_two_sheet_client(tmp_path)
+        client.post('/api/switch-sheet', json={'sheet': 'Beta'})
+        sheet_data = client.get('/api/sheet').json()
+        # Beta has 'Amount:' in A1, not 'Invoice No:'
+        all_values = [c['value'] for row in sheet_data['rows'] for c in row]
+        assert 'Amount:' in all_values
+        assert 'Invoice No:' not in all_values
+
+    def test_switch_by_numeric_index(self, tmp_path):
+        """Numeric index '1' resolves to the second sheet."""
+        client = self._make_two_sheet_client(tmp_path)
+        r = client.post('/api/switch-sheet', json={'sheet': '1'})
+        assert r.status_code == 200
+        assert r.json()['sheet'] == 'Beta'
+
+
+# ── /api/logs ─────────────────────────────────────────────────────────────
+
+@_skip_no_api
+class TestApiLogs:
+    def test_returns_expected_keys(self, tmp_path):
+        """/api/logs response contains the three required keys."""
+        client = _make_client(tmp_path)
+        r = client.get('/api/logs')
+        assert r.status_code == 200
+        data = r.json()
+        assert 'preload_warnings' in data
+        assert 'log_path' in data
+        assert 'log_lines' in data
+
+    def test_log_lines_are_strings(self, tmp_path):
+        """log_lines must be a list of strings (no raw dicts or cell objects)."""
+        client = _make_client(tmp_path)
+        r = client.get('/api/logs')
+        assert r.status_code == 200
+        log_lines = r.json()['log_lines']
+        assert isinstance(log_lines, list)
+        for line in log_lines:
+            assert isinstance(line, str), f'Expected str, got {type(line)}: {line!r}'
+
+    def test_no_cell_values_in_logs(self, tmp_path):
+        """Classify a cell and confirm its *value* does not appear in log lines."""
+        secret_value = 'SENSITIVE-DATA-XYZ'
+        client = _make_client(tmp_path, cells={
+            (1, 1): secret_value,
+            (1, 2): 'Other data',
+        })
+        # Classify the cell containing the secret value
+        client.post('/api/classify', json={'ref': 'A1', 'action': 'V'})
+        r = client.get('/api/logs')
+        assert r.status_code == 200
+        full_log = '\n'.join(r.json()['log_lines'])
+        assert secret_value not in full_log, (
+            f'Cell value {secret_value!r} leaked into session log'
+        )
+
+
+# ── Type-list drift guard ────────────────────────────────────────────────────
+# The wizard offers types in two places — the main value panel (wizard.html) and
+# the mini-table column panel (_TRM_TYPES in wizard.js) — while the engine's
+# authority is pattern_parser._VALID_FIELD_TYPES. Nothing tied them together, and
+# they drifted: `duration` and `percentage` were missing from both, so a [h]:mm
+# elapsed-time column could only be declared `time` and an Excel percentage only
+# `number`. These tests fail if the lists diverge again.
+
+import re as _re_drift
+from pathlib import Path as _Path_drift
+
+from grepxcel.pattern_parser import _VALID_FIELD_TYPES
+
+#: Aliases the engine accepts but the wizard deliberately does not offer, to keep
+#: the dropdown short. Each must be a true synonym of an offered type.
+_WIZARD_ALIAS_EXCLUSIONS = frozenset({
+    'text',       # = string
+    'float',      # = number
+    'decimal',    # = number
+    'bool',       # = boolean
+    'timestamp',  # = datetime
+})
+
+_PKG_DRIFT = _Path_drift(__file__).resolve().parents[2] / 'grepxcel'
+
+
+def _expected_wizard_types() -> set:
+    return set(_VALID_FIELD_TYPES) - _WIZARD_ALIAS_EXCLUSIONS
+
+
+def test_main_panel_type_select_offers_every_canonical_type():
+    html = (_PKG_DRIFT / 'templates' / 'wizard.html').read_text(encoding='utf-8')
+    block = html.split('id="f-V-type"', 1)[1].split('</select>', 1)[0]
+    offered = set(_re_drift.findall(r'<option value="([^"]+)"', block))
+    missing = _expected_wizard_types() - offered
+    unknown = offered - set(_VALID_FIELD_TYPES)
+    assert not missing, f'wizard.html type select is missing: {sorted(missing)}'
+    assert not unknown, f'wizard.html offers types the engine rejects: {sorted(unknown)}'
+
+
+def test_mini_table_type_list_offers_every_canonical_type():
+    js = (_PKG_DRIFT / 'static' / 'wizard.js').read_text(encoding='utf-8')
+    block = js.split('const _TRM_TYPES', 1)[1].split('};', 1)[0]
+    offered = set(_re_drift.findall(r"'([a-z]+)'", block))
+    offered -= {'basic', 'advanced'}
+    missing = _expected_wizard_types() - offered
+    unknown = offered - set(_VALID_FIELD_TYPES)
+    assert not missing, f'_TRM_TYPES is missing: {sorted(missing)}'
+    assert not unknown, f'_TRM_TYPES offers types the engine rejects: {sorted(unknown)}'
+
+
+def test_the_two_wizard_type_lists_agree_with_each_other():
+    html = (_PKG_DRIFT / 'templates' / 'wizard.html').read_text(encoding='utf-8')
+    js = (_PKG_DRIFT / 'static' / 'wizard.js').read_text(encoding='utf-8')
+    main = set(_re_drift.findall(
+        r'<option value="([^"]+)"',
+        html.split('id="f-V-type"', 1)[1].split('</select>', 1)[0]))
+    mini = set(_re_drift.findall(
+        r"'([a-z]+)'", js.split('const _TRM_TYPES', 1)[1].split('};', 1)[0]))
+    mini -= {'basic', 'advanced'}
+    assert main == mini, (
+        f'only in main panel: {sorted(main - mini)}; '
+        f'only in mini-table: {sorted(mini - main)}'
+    )
+
+
+def test_every_excluded_alias_really_is_an_alias():
+    """The exclusion list must only hold synonyms — if a real type were added
+    to it, the drift guard above would stop protecting that type."""
+    for alias in _WIZARD_ALIAS_EXCLUSIONS:
+        assert alias in _VALID_FIELD_TYPES, f'{alias} is not an engine type at all'
