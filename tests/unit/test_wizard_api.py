@@ -29,6 +29,10 @@ _skip_no_api = pytest.mark.skipif(
 
 # ── Fixture helpers ────────────────────────────────────────────────────────
 
+# The wizard rejects requests whose Host header is not loopback (DNS-rebinding
+# guard), and TestClient's default Host is "testserver".
+_LOCAL_BASE_URL = 'http://localhost:8765'
+
 FIXTURE_01 = Path(__file__).parent.parent / 'fixtures/01_simple_invoice/01_simple_invoice_data.xlsx'
 # manual pattern is used read-only; it has labels that actually match the data (preload works)
 PATTERN_01 = Path(__file__).parent.parent / 'fixtures/01_simple_invoice/01_simple_invoice_pattern-manual.xlsx'
@@ -54,14 +58,14 @@ def _make_client(tmp_path: Path, cells: dict | None = None) -> 'TestClient':
     wb.save(xlsx_path)
 
     app = create_app(xlsx_path)
-    return TestClient(app)
+    return TestClient(app, base_url=_LOCAL_BASE_URL)
 
 
 def _make_real_client() -> 'TestClient':
     """Create a TestClient backed by fixture 01 (real file)."""
     assert FIXTURE_01.exists(), f'Fixture not found: {FIXTURE_01}'
     app = create_app(str(FIXTURE_01))
-    return TestClient(app)
+    return TestClient(app, base_url=_LOCAL_BASE_URL)
 
 
 def _make_real_client_with_pattern() -> 'TestClient':
@@ -69,7 +73,7 @@ def _make_real_client_with_pattern() -> 'TestClient':
     assert FIXTURE_01.exists(), f'Data fixture not found: {FIXTURE_01}'
     assert PATTERN_01.exists(), f'Pattern fixture not found: {PATTERN_01}'
     app = create_app(str(FIXTURE_01), pattern_path=str(PATTERN_01))
-    return TestClient(app)
+    return TestClient(app, base_url=_LOCAL_BASE_URL)
 
 
 # ── Tests: page + basic state ──────────────────────────────────────────────
@@ -137,7 +141,7 @@ class TestSheetEndpoint:
         ws.merge_cells('A1:B1')
         wb.save(xlsx_path)
         app = create_app(xlsx_path)
-        client = TestClient(app)
+        client = TestClient(app, base_url=_LOCAL_BASE_URL)
         d = client.get('/api/sheet').json()
         a1 = d['rows'][0][0]
         assert a1['ref'] == 'A1'
@@ -154,7 +158,7 @@ class TestSheetEndpoint:
         ws.merge_cells('A1:B1')
         wb.save(xlsx_path)
         app = create_app(xlsx_path)
-        client = TestClient(app)
+        client = TestClient(app, base_url=_LOCAL_BASE_URL)
         d = client.get('/api/sheet').json()
         b1 = d['rows'][0][1]
         assert b1['ref'] == 'B1'
@@ -237,7 +241,7 @@ class TestClassifyEndpoint:
         ws.merge_cells('A1:B1')
         wb.save(xlsx_path)
         app = create_app(xlsx_path)
-        client = TestClient(app)
+        client = TestClient(app, base_url=_LOCAL_BASE_URL)
         r = client.post('/api/classify', json={
             'ref': 'B1', 'action': 'L',
             'fields': {'name': 'title', 'type': 'string',
@@ -594,7 +598,7 @@ def _make_table_client(tmp_path: Path) -> 'TestClient':
     ws['A7'] = 'Grand Total';ws['E7'] = 3030
     wb.save(xlsx_path)
     app = create_app(xlsx_path)
-    return TestClient(app)
+    return TestClient(app, base_url=_LOCAL_BASE_URL)
 
 
 _TABLE_ROW_CONFIGS = [
@@ -863,7 +867,7 @@ class TestTableWithFooterRow:
 
         from grepxcel.wizard_api import create_app
         app = create_app(xlsx_path)
-        client = TestClient(app)
+        client = TestClient(app, base_url=_LOCAL_BASE_URL)
 
         client.post('/api/classify', json={
             'ref': 'A3', 'action': 'T',
@@ -934,7 +938,7 @@ class TestTableIntegrationFixture3:
 
         from grepxcel.wizard_api import create_app
         app = create_app(xlsx_path)
-        client = TestClient(app)
+        client = TestClient(app, base_url=_LOCAL_BASE_URL)
 
         client.post('/api/classify', json={
             'ref': 'A3', 'action': 'T',
@@ -995,7 +999,7 @@ class TestTableColModifiers:
 
         from grepxcel.wizard_api import create_app
         app = create_app(xlsx_path)
-        client = TestClient(app)
+        client = TestClient(app, base_url=_LOCAL_BASE_URL)
         client.post('/api/classify', json={
             'ref': 'A3', 'action': 'T',
             'fields': {'name': 'rows', 'mult': '*', 'end_ref': end_ref,
@@ -1089,7 +1093,7 @@ class TestTableHeaderColSeparateNameLmatch:
 
         from grepxcel.wizard_api import create_app
         app = create_app(xlsx_path)
-        client = TestClient(app)
+        client = TestClient(app, base_url=_LOCAL_BASE_URL)
         client.post('/api/classify', json={
             'ref': 'A3', 'action': 'T',
             'fields': {'name': 'items', 'mult': '*', 'end_ref': 'B4',
@@ -1122,7 +1126,7 @@ class TestTableHeaderColSeparateNameLmatch:
 
         from grepxcel.wizard_api import create_app
         app = create_app(xlsx_path)
-        client = TestClient(app)
+        client = TestClient(app, base_url=_LOCAL_BASE_URL)
         client.post('/api/classify', json={
             'ref': 'A3', 'action': 'T',
             'fields': {'name': 'products', 'mult': '*', 'end_ref': 'A4',
@@ -1196,7 +1200,7 @@ class TestTableEditRoundTrip:
     def test_initial_classify_creates_t_head_and_data(self, tmp_path):
         path = self._make_table_xlsx(tmp_path)
         app  = create_app(path)
-        client = TestClient(app)
+        client = TestClient(app, base_url=_LOCAL_BASE_URL)
         client.post('/api/classify', json={
             'ref': 'A1', 'action': 'T',
             'fields': {'name': 'items', 'mult': '*', 'end_ref': 'C4',
@@ -1209,7 +1213,7 @@ class TestTableEditRoundTrip:
     def test_edit_changes_table_name_in_context(self, tmp_path):
         """Re-classifying with a different name updates the context."""
         path   = self._make_table_xlsx(tmp_path)
-        client = TestClient(create_app(path))
+        client = TestClient(create_app(path), base_url=_LOCAL_BASE_URL)
         client.post('/api/classify', json={
             'ref': 'A1', 'action': 'T',
             'fields': {'name': 'items', 'mult': '*', 'end_ref': 'C4',
@@ -1230,7 +1234,7 @@ class TestTableEditRoundTrip:
     def test_edit_changes_multiplicity(self, tmp_path):
         """Re-classifying with mult='1' changes CSV to table:1."""
         path   = self._make_table_xlsx(tmp_path)
-        client = TestClient(create_app(path))
+        client = TestClient(create_app(path), base_url=_LOCAL_BASE_URL)
         client.post('/api/classify', json={
             'ref': 'A1', 'action': 'T',
             'fields': {'name': 'items', 'mult': '*', 'end_ref': 'C4',
@@ -1248,7 +1252,7 @@ class TestTableEditRoundTrip:
     def test_edit_smaller_range_clears_stale_thead(self, tmp_path):
         """Shrinking the range (removing col C) clears old T-HEAD cells at C1."""
         path   = self._make_table_xlsx(tmp_path)
-        client = TestClient(create_app(path))
+        client = TestClient(create_app(path), base_url=_LOCAL_BASE_URL)
         client.post('/api/classify', json={
             'ref': 'A1', 'action': 'T',
             'fields': {'name': 'items', 'mult': '*', 'end_ref': 'C4',
@@ -1280,7 +1284,7 @@ class TestTableEditRoundTrip:
     def test_edit_updates_web_row_configs(self, tmp_path):
         """After edit, table-context must return the NEW _web_row_configs."""
         path   = self._make_table_xlsx(tmp_path)
-        client = TestClient(create_app(path))
+        client = TestClient(create_app(path), base_url=_LOCAL_BASE_URL)
         client.post('/api/classify', json={
             'ref': 'A1', 'action': 'T',
             'fields': {'name': 'items', 'mult': '*', 'end_ref': 'C4',
@@ -1302,7 +1306,7 @@ class TestTableEditRoundTrip:
     def test_edit_then_undo_restores_previous_state(self, tmp_path):
         """Undo after an edit must revert to the pre-edit classification."""
         path   = self._make_table_xlsx(tmp_path)
-        client = TestClient(create_app(path))
+        client = TestClient(create_app(path), base_url=_LOCAL_BASE_URL)
         # Initial classify
         client.post('/api/classify', json={
             'ref': 'A1', 'action': 'T',
@@ -1326,7 +1330,7 @@ class TestTableEditRoundTrip:
         re-classification without data loss.  Simulate: classify → fetch context
         → re-classify with same configs → verify CSV unchanged."""
         path   = self._make_table_xlsx(tmp_path)
-        client = TestClient(create_app(path))
+        client = TestClient(create_app(path), base_url=_LOCAL_BASE_URL)
         client.post('/api/classify', json={
             'ref': 'A1', 'action': 'T',
             'fields': {'name': 'items', 'mult': '*', 'end_ref': 'C4',
@@ -1376,7 +1380,7 @@ class TestFooterVColumnExtraction:
 
     def test_footer_v_col_appears_in_csv_as_var(self, tmp_path):
         path   = self._make_footer_xlsx(tmp_path)
-        client = TestClient(create_app(path))
+        client = TestClient(create_app(path), base_url=_LOCAL_BASE_URL)
         client.post('/api/classify', json={
             'ref': 'A1', 'action': 'T',
             'fields': {'name': 'sales', 'mult': '*', 'end_ref': 'B4',
@@ -1405,7 +1409,7 @@ class TestFooterVColumnExtraction:
     def test_footer_v_col_cell_marked_t_head_with_var_role(self, tmp_path):
         """Footer V cells should be marked T-HEAD; the V role should appear in context cols."""
         path   = self._make_footer_xlsx(tmp_path)
-        client = TestClient(create_app(path))
+        client = TestClient(create_app(path), base_url=_LOCAL_BASE_URL)
         client.post('/api/classify', json={
             'ref': 'A1', 'action': 'T',
             'fields': {'name': 'sales', 'mult': '*', 'end_ref': 'B4',
@@ -1446,7 +1450,7 @@ class TestFooterVColumnExtraction:
         import grepxcel as gx
 
         path   = self._make_footer_xlsx(tmp_path)
-        client = TestClient(create_app(path))
+        client = TestClient(create_app(path), base_url=_LOCAL_BASE_URL)
         client.post('/api/classify', json={
             'ref': 'A1', 'action': 'T',
             'fields': {'name': 'sales', 'mult': '*', 'end_ref': 'B4',
@@ -1485,7 +1489,7 @@ class TestFooterVColumnExtraction:
     def test_footer_v_col_lmatch_preserved_in_context(self, tmp_path):
         """The L column's lmatch text must be preserved in _web_row_configs."""
         path   = self._make_footer_xlsx(tmp_path)
-        client = TestClient(create_app(path))
+        client = TestClient(create_app(path), base_url=_LOCAL_BASE_URL)
         configs = [
             {'sheet_row': 1, 'row_type': 'header', 'row_n': 1, 'cols': [
                 {'role': 'L', 'name': 'item',   'lmatch': 'Item'},
@@ -1588,7 +1592,7 @@ class TestAllVarHeader:
 
     def test_classify_all_var_header_creates_t_head(self, tmp_path):
         path   = self._make_all_var_header_xlsx(tmp_path)
-        client = TestClient(create_app(path))
+        client = TestClient(create_app(path), base_url=_LOCAL_BASE_URL)
         configs = [
             {'sheet_row': 1, 'row_type': 'header', 'row_n': 1, 'cols': [
                 {'role': 'V', 'name': 'alpha', 'ftype': 'string',  'match': '.*'},
@@ -1613,7 +1617,7 @@ class TestAllVarHeader:
 
     def test_all_var_header_csv_has_header_row(self, tmp_path):
         path   = self._make_all_var_header_xlsx(tmp_path)
-        client = TestClient(create_app(path))
+        client = TestClient(create_app(path), base_url=_LOCAL_BASE_URL)
         configs = [
             {'sheet_row': 1, 'row_type': 'header', 'row_n': 1, 'cols': [
                 {'role': 'V', 'name': 'alpha', 'ftype': 'string',  'match': '.*'},
@@ -1641,7 +1645,7 @@ class TestAllVarHeader:
     def test_all_var_header_table_context_round_trips(self, tmp_path):
         """_web_row_configs round-trips: V roles survive context fetch."""
         path   = self._make_all_var_header_xlsx(tmp_path)
-        client = TestClient(create_app(path))
+        client = TestClient(create_app(path), base_url=_LOCAL_BASE_URL)
         configs = [
             {'sheet_row': 1, 'row_type': 'header', 'row_n': 1, 'cols': [
                 {'role': 'V', 'name': 'alpha', 'ftype': 'string', 'match': '.*'},
@@ -2013,7 +2017,7 @@ class TestSwitchSheet:
         ws2['B1'] = 999.0
         wb.save(xlsx_path)
         app = create_app(xlsx_path)
-        return TestClient(app)
+        return TestClient(app, base_url=_LOCAL_BASE_URL)
 
     def test_switch_to_valid_sheet(self, tmp_path):
         """Switching to a sheet that exists returns 200 with changed=True."""

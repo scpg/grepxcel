@@ -22,6 +22,7 @@ import webbrowser
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 import openpyxl
 from openpyxl.utils import get_column_letter
@@ -98,6 +99,65 @@ except ImportError:
 # ── Module-level session (single-user local tool) ─────────────────────────────
 
 _STATE: dict[str, Any] = {}   # single session dict
+
+# ── Request-origin guard (CSRF + DNS rebinding) ───────────────────────────────
+#
+# The wizard listens on 127.0.0.1, but any web page the user has open can still
+# send requests to it:
+#   * CSRF: a cross-site <form method=POST enctype=text/plain> is a "simple"
+#     request (no CORS preflight). Handlers parse bodies with request.json(),
+#     which ignores Content-Type, so a crafted form body is accepted as JSON.
+#   * DNS rebinding: an attacker domain re-resolved to 127.0.0.1 is treated as
+#     same-origin by the browser, so it can also *read* responses. The only
+#     tell is the Host header, which still names the attacker's domain.
+# The guard therefore (1) requires a loopback Host on every request, (2)
+# rejects state-changing requests whose Origin is not loopback, and (3) only
+# accepts bodies with a Content-Type a cross-site form cannot send without a
+# preflight (application/json) — multipart is allowed solely for the upload.
+
+_LOOPBACK_HOSTNAMES = frozenset({'localhost', '127.0.0.1', '::1'})
+_UNSAFE_METHODS = frozenset({'POST', 'PUT', 'PATCH', 'DELETE'})
+_MULTIPART_PATHS = frozenset({'/api/load-pattern'})
+
+
+def _is_loopback_host(host_header: str) -> bool:
+    """True if a Host header value (``name[:port]``) names a loopback host."""
+    try:
+        return urlsplit(f'//{host_header}').hostname in _LOOPBACK_HOSTNAMES
+    except ValueError:
+        return False
+
+
+def _is_loopback_origin(origin: str) -> bool:
+    """True if an Origin header value is ``http://<loopback>[:port]``.
+
+    ``Origin: null`` (sandboxed iframes, file:// pages) is not loopback.
+    """
+    try:
+        parts = urlsplit(origin)
+    except ValueError:
+        return False
+    return parts.scheme == 'http' and parts.hostname in _LOOPBACK_HOSTNAMES
+
+
+def _request_guard_error(method: str, path: str, headers) -> tuple[int, str] | None:
+    """Return ``(status, detail)`` if the request must be refused, else None."""
+    if not _is_loopback_host(headers.get('host', '')):
+        return 403, 'Host header must be localhost (DNS-rebinding guard)'
+    if method not in _UNSAFE_METHODS:
+        return None
+    origin = headers.get('origin')
+    if origin is not None and not _is_loopback_origin(origin):
+        return 403, 'Cross-origin request rejected'
+    has_body = headers.get('content-length', '0') != '0' or 'transfer-encoding' in headers
+    if has_body:
+        ctype = headers.get('content-type', '').split(';', 1)[0].strip().lower()
+        allowed = {'application/json'}
+        if path in _MULTIPART_PATHS:
+            allowed.add('multipart/form-data')
+        if ctype not in allowed:
+            return 415, f'Unsupported Content-Type for {path}: {ctype or "(none)"}'
+    return None
 
 
 def _unique_name(base: str, choices: dict, own_ref: str, suffix: str = '') -> str:
@@ -955,6 +1015,14 @@ def create_app(
     app = FastAPI(title='grepxcel Web Wizard', docs_url=None, redoc_url=None)
     static_dir = Path(__file__).parent / 'static'
     app.mount('/static', StaticFiles(directory=str(static_dir)), name='static')
+
+    @app.middleware('http')
+    async def _request_guard(request: Request, call_next):
+        refusal = _request_guard_error(request.method, request.url.path, request.headers)
+        if refusal is not None:
+            status, detail = refusal
+            return JSONResponse({'detail': detail}, status_code=status)
+        return await call_next(request)
 
     # ─────────────────────────────── HTML PAGE ────────────────────────────────
 
