@@ -102,11 +102,35 @@ class TestDnsRebinding:
         assert r.status_code == 403
 
     @pytest.mark.parametrize('base_url', ['http://localhost:8765', 'http://127.0.0.1:8765',
-                                          'http://[::1]:8765', 'http://localhost'])
+                                          'http://localhost'])
     def test_loopback_hosts_accepted(self, tmp_path, base_url):
         client = _client(tmp_path, base_url=base_url)
         assert client.get('/api/state').status_code == 200
         assert client.get('/').status_code == 200
+
+    @pytest.mark.parametrize('host', ['[::1]:8765', '[::1]'])
+    def test_ipv6_loopback_host_accepted(self, host):
+        """Asserted against the predicate rather than through TestClient.
+
+        Driving this with `base_url='http://[::1]:8765'` fails inside Starlette's
+        TestClient — it splits the netloc on ':' and calls int() on the result,
+        so a bracketed IPv6 literal raises
+        `ValueError: invalid literal for int() with base 10: ':1]:8765'`
+        before the request ever reaches the guard. That is the client's
+        limitation, not the wizard's, and it is version-dependent: the case
+        passed in CI and failed locally on starlette 1.6.0 / httpx2 2.12.0.
+
+        A test whose result depends on a test client's URL parser is testing the
+        wrong thing. The guard reads the Host header, so the header is what gets
+        asserted.
+
+        Note a bare `::1` is deliberately *not* accepted: RFC 7230 requires an
+        IPv6 literal in a Host header to be bracketed, so an unbracketed one is
+        malformed rather than loopback.
+        """
+        from grepxcel.wizard_api import _is_loopback_host
+
+        assert _is_loopback_host(host) is True
 
 
 class TestWizardOwnRequestsStillWork:

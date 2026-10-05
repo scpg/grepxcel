@@ -1,5 +1,15 @@
 # Claude Instructions — grepxcel
 
+## Read `docs/STATUS.md` first
+
+More than one assistant works on this repository and they do not share notes.
+`docs/STATUS.md` is the shared one: release state, open PRs and what to do with
+them, security findings and which half of each is fixed, CI blind spots, and
+environment traps that will otherwise cost you an hour.
+
+**Update it whenever you change any fact it states.** A status file nobody
+refreshes is worse than none, because it is believed.
+
 ## MANDATORY: No inline scripts
 
 **Never** run `python3 -c "..."` or any other inline script technique.

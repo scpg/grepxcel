@@ -985,6 +985,13 @@ document.addEventListener('click', e => {
     document.getElementById('sheet-switcher-menu').style.display = 'none';
   if (!document.getElementById('load-pattern-wrap')?.contains(e.target))
     document.getElementById('load-pattern-menu').style.display = 'none';
+
+  // Provenance chips in the Extract panel. Delegated because that panel is
+  // re-rendered wholesale on every extract, so per-element listeners would
+  // have to be re-attached each time — and the inline onclick they replace
+  // was an HTML-injection sink (see renderExtObject).
+  const chip = e.target.closest?.('.et-ref[data-ref]');
+  if (chip) jumpToCell(chip.dataset.ref);
 });
 
 // ── Tabs ──────────────────────────────────────────────────────────────────
@@ -1120,8 +1127,15 @@ function renderExtEntry(key, val, path) {
   // Scalar leaf — look up provenance refs
   const leafKey = path.split('.').pop();
   const refs = (_extractProvenance[leafKey] || []).slice(0, 4);
+  // The ref goes in a data attribute and the click is bound by delegation
+  // (see the .et-ref listener in wire()), rather than interpolated into an
+  // inline onclick. It used to be spliced raw into
+  // `onclick="jumpToCell('${r}')"`, where a ref containing an apostrophe would
+  // close the JS string and run whatever followed. escHtml() alone would not
+  // have saved it: the value sat inside single quotes and escHtml does not
+  // escape those. Not building JS out of data is the fix; escaping is backup.
   const refChips = refs.map(r =>
-    `<span class="et-ref" onclick="jumpToCell('${r}')">${r}</span>`
+    `<span class="et-ref" data-ref="${escHtml(r)}">${escHtml(r)}</span>`
   ).join(' ');
   return `<div class="et-row">
     <span class="et-key">${escHtml(key)}</span>
@@ -1435,8 +1449,13 @@ function toggleTheme() {
 }
 
 // ── Utilities ─────────────────────────────────────────────────────────────
+// Escapes the apostrophe too. It did not, which mattered because callers
+// interpolate into attributes — and an attribute delimited by single quotes,
+// or a JS string literal inside a double-quoted attribute, is left wide open
+// by escaping only the double quote. Cheap to cover; easy to assume covered.
 function escHtml(s) {
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+                  .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
 }
 /**
  * A suggested field name no other classified cell is already using.
