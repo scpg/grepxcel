@@ -22,6 +22,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `/api/load-pattern` upload), otherwise 415. The wizard's own page is unaffected. Opening
   the wizard through a non-loopback hostname (e.g. a remote port-forward URL) is now refused.
 
+- **A cell reference is validated, and never built into JavaScript.** The entry
+  above closed the delivery vector of a two-part finding; this closes the sink.
+  `/api/classify`, `/api/classify-batch` and `/api/note` checked `action` against
+  an allow-list but accepted *any* non-empty string as a cell ref, and the Extract
+  panel interpolated that value into `onclick="jumpToCell('<ref>')"` — an
+  apostrophe closed the JS string literal and whatever followed ran. `escHtml()`
+  would not have saved it: it escaped `&`, `<`, `>` and `"` but not `'`, and the
+  value sat inside single quotes. Three layers now: refs are validated at every
+  entry point against `^[A-Z]{1,3}[1-9][0-9]{0,6}\Z`, so a malformed one never
+  reaches session state or the session log; the chip carries its ref in a
+  `data-ref` attribute read by a delegated listener, so no JavaScript is built
+  from data; and `escHtml()` escapes the apostrophe for every other caller. A
+  test bans inline `onclick` handlers built by interpolation anywhere in
+  `wizard.js`, because escaping the value is the weaker of the two fixes.
+  Reachability was a crafted pattern file loaded through the wizard rather than a
+  drive-by from another site, since the guard above had already landed.
+
 ### Fixed
 
 - **"Load pattern" in the web wizard failed on every fresh `pip install "grepxcel[web]"`.**

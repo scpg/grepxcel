@@ -124,6 +124,45 @@ _STATE: dict[str, Any] = {}   # single session dict
 # accepts bodies with a Content-Type a cross-site form cannot send without a
 # preflight (application/json) — multipart is allowed solely for the upload.
 
+# ── Cell references are validated, not trusted ───────────────────────────────
+#
+# `ref` arrives in a request body and ends up in session state, in the session
+# log, and — via the extract provenance chips — interpolated into the page. The
+# endpoints validated `action` against an allow-list but accepted *any*
+# non-empty string as a ref, so a crafted pattern file loaded through the wizard
+# could carry a value that breaks out of
+# `onclick="jumpToCell('<ref>')"` in wizard.js.
+#
+# That sink is also fixed (escaped, and the handler no longer interpolates into
+# JS at all), but validating at entry is the layer that matters: it stops a
+# malformed ref reaching session state, the log, or any sink added later by
+# someone who does not know this history.
+#
+# A1-style only: 1-3 column letters (Excel's maximum is XFD) then a row number
+# with no leading zero. Everything the wizard legitimately sends matches this.
+#
+# `\Z`, not `$`: in Python `$` also matches immediately before a trailing
+# newline, so `^...$` accepts "A1\n". That is not academic for a value that is
+# written to the session log and keyed into session state. Caught by the test
+# for exactly this input.
+_CELL_REF_RE = re.compile(r'^[A-Z]{1,3}[1-9][0-9]{0,6}\Z')
+
+
+def _require_cell_ref(ref: str, field: str = 'ref') -> str:
+    """Return *ref* if it is a well-formed A1 cell reference, else 400.
+
+    Callers upper-case before calling; the pattern is upper-case only so a
+    lower-case ref that skipped that step is rejected rather than silently
+    stored under a different key than it is read back by.
+    """
+    if not _CELL_REF_RE.match(ref or ''):
+        raise HTTPException(
+            400,
+            f'Invalid {field} {ref!r}: expected a cell reference such as A1 or AB12.'
+        )
+    return ref
+
+
 _LOOPBACK_HOSTNAMES = frozenset({'localhost', '127.0.0.1', '::1'})
 _UNSAFE_METHODS = frozenset({'POST', 'PUT', 'PATCH', 'DELETE'})
 _MULTIPART_PATHS = frozenset({'/api/load-pattern'})
@@ -1209,8 +1248,9 @@ def create_app(
         fields = body.get('fields', {})
         note   = fields.get('notes', '').strip()
 
-        if not ref or action not in ('L', 'V', 'I', 'T', 'CLEAR'):
-            raise HTTPException(400, f'Invalid ref={ref!r} or action={action!r}')
+        if action not in ('L', 'V', 'I', 'T', 'CLEAR'):
+            raise HTTPException(400, f'Invalid action={action!r}')
+        _require_cell_ref(ref)
         # Block classifying a non-anchor merged cell (ghost cell)
         _, merge_skip = _build_merge_info(_STATE['ws'])
         if ref in merge_skip:
@@ -1426,6 +1466,8 @@ def create_app(
         if action not in ('L', 'V', 'I', 'CLEAR'):
             raise HTTPException(400, f'action must be L, V, I, or CLEAR (got {action!r}); '
                                     'T is not supported for batch classification')
+        for _r in refs:
+            _require_cell_ref(_r, 'ref in refs')
 
         _, merge_skip = _build_merge_info(_STATE['ws'])
         choices: dict = _STATE['choices']
@@ -1504,8 +1546,7 @@ def create_app(
         body = await request.json()
         ref  = body.get('ref', '').upper()
         note = body.get('note', '').strip()
-        if not ref:
-            raise HTTPException(400, 'ref required')
+        _require_cell_ref(ref)
         if note:
             _STATE['notes'][ref] = note
         else:
