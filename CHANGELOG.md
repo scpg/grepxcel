@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **The web wizard refused cross-site requests only on `/api/shutdown`.** Every other
+  endpoint parsed its body with `request.json()`, which ignores `Content-Type`, so a page
+  open in the user's browser could submit a `<form enctype="text/plain">` whose body was
+  valid JSON — a "simple" request that needs no CORS preflight. Calling `/api/save` that way
+  wrote (or, with `confirm_overwrite`, overwrote) a file of any name in the data file's
+  folder; `/api/classify`, `/api/load-pattern-by-path` and the rest were equally reachable.
+  Any `Host` header was also accepted, leaving the session readable through DNS rebinding.
+  A request guard now runs on every request: the `Host` must be `localhost`, `127.0.0.1` or
+  `[::1]`; state-changing requests carrying a non-loopback `Origin` (including `null`) get
+  403; and request bodies must be `application/json` (multipart only for the
+  `/api/load-pattern` upload), otherwise 415. The wizard's own page is unaffected. Opening
+  the wizard through a non-loopback hostname (e.g. a remote port-forward URL) is now refused.
+
+### CI / Infrastructure
+
+- **Dependabot no longer proposes `mcp` 2.x.** mcp 2.x removed `mcp.server.fastmcp`, which
+  `grepxcel/mcp_server.py` imports, so widening the `[mcp]` ceiling past `<2` breaks
+  `grepxcel mcp` on fresh installs. An `ignore` rule for `mcp >= 2` stops that bump from
+  being re-opened until the server is migrated.
+
 ## [0.5.0] — 2026-09-28
 
 A minor rather than a patch bump, for two independent reasons. Temporal coercion **changes

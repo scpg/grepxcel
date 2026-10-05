@@ -13,6 +13,14 @@ updates:
     labels:
       - "dependencies"
     open-pull-requests-limit: 10
+    ignore:
+      # mcp 2.x removed `mcp.server.fastmcp`, which grepxcel/mcp_server.py
+      # imports. A bump that widens the ceiling past <2 breaks `grepxcel mcp`
+      # for every fresh install (see the comment on the [mcp] extra in
+      # pyproject.toml). Remove this rule only together with the migration
+      # to the mcp 2.x server API.
+      - dependency-name: "mcp"
+        versions: [">=2"]
     commit-message:
       prefix: "chore(deps)"
       prefix-development: "chore(dev-deps)"
