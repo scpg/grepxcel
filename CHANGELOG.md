@@ -22,7 +22,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `/api/load-pattern` upload), otherwise 415. The wizard's own page is unaffected. Opening
   the wizard through a non-loopback hostname (e.g. a remote port-forward URL) is now refused.
 
+### Fixed
+
+- **"Load pattern" in the web wizard failed on every fresh `pip install "grepxcel[web]"`.**
+  Starlette needs `python-multipart` to parse the upload, and neither the `[web]` extra nor
+  FastAPI installed it, so `POST /api/load-pattern` returned a 500. The extra now declares
+  `python-multipart>=0.0.31` (the floor clears every published advisory). An environment
+  that predates this gets an actionable message instead: the upload replies
+  `pip install -U "grepxcel[web]"`, `grepxcel web-wizard` prints the same warning at
+  startup, and `grepxcel doctor` lists `python-multipart` under the web wizard.
+  **Existing installs:** run `pip install -U "grepxcel[web]"` (from a checkout:
+  `.venv/bin/pip install -e ".[web]"`).
+
 ### CI / Infrastructure
+
+- **Web wizard tests now run in CI.** The `test` job installs only `requirements*.txt`, so
+  every wizard test was skipped there — including the request-guard tests above. A new
+  `test-web` job installs `.[web]` the way users do (plus `httpx` for `TestClient`) and runs
+  them, so a dependency the wizard needs but `[web]` omits now fails CI.
 
 - **Dependabot no longer proposes `mcp` 2.x.** mcp 2.x removed `mcp.server.fastmcp`, which
   `grepxcel/mcp_server.py` imports, so widening the `[mcp]` ceiling past `<2` breaks

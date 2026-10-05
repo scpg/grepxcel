@@ -16,7 +16,12 @@ The web extras must be installed:
 pip install "grepxcel[web]"
 ```
 
-This adds FastAPI and uvicorn.  The core extraction engine is unaffected.
+This adds FastAPI, uvicorn and python-multipart (needed for the **Load pattern**
+upload).  The core extraction engine is unaffected.
+
+If you installed the web extra before python-multipart was part of it, "Load
+pattern" fails with a message asking you to update.  Fix it with
+`pip install -U "grepxcel[web]"`; `grepxcel doctor` lists anything still missing.
 
 ---
 

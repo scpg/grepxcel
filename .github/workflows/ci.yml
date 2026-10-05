@@ -107,6 +107,28 @@ jobs:
             python -c "from grepxcel.wizard_api import create_app; print('web import ok')"
           fi
 
+  test-web:
+    # The `test` job installs only requirements*.txt — no FastAPI — so every web
+    # wizard test there is skipped, including the CSRF/DNS-rebinding guard tests.
+    # Install the [web] extra exactly as users do (plus httpx for TestClient) and
+    # run them. Because nothing else is installed, a dependency the wizard needs
+    # but [web] forgets to declare fails here (python-multipart did, silently).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v6
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install package with [web] + test runner
+        run: pip install '.[web]' -r requirements-dev.txt httpx
+
+      - name: Run web wizard tests
+        run: pytest tests/unit/test_wizard_*.py tests/unit/test_doctor.py -q
+
   test-dataframe:
     # The main `test` job installs neither pandas nor polars, so the extract_df()
     # DataFrame tests skip there. This lane installs each optional backend on its

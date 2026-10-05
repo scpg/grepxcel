@@ -73,6 +73,17 @@ from _bootstrap import ensure_venv; ensure_venv()
 `ensure_venv()` re-execs the script with `.venv/bin/python3` transparently.
 If the venv does not exist it prints a clear error with setup instructions and exits.
 
+## After pulling changes
+
+If a pull changed `pyproject.toml` or `requirements*.txt`, re-sync the venv before
+running anything — the code may now import a package your venv lacks:
+
+```bash
+.venv/bin/pip install -r requirements.txt -r requirements-dev.txt
+.venv/bin/pip install -e ".[web]" httpx    # web wizard + its tests (httpx = TestClient)
+.venv/bin/grepxcel doctor                  # lists anything still missing
+```
+
 ## Running tests
 
 ```bash
@@ -155,7 +166,7 @@ The CLI is subcommand-based: `extract`, `validate-pattern`, `draft`, `docs`, `li
 .venv/bin/grepxcel web-wizard data.xlsx --port 9000 --no-browser  # custom port, no auto-open
 ```
 
-> **web-wizard** requires `pip install "grepxcel[web]"` (FastAPI + uvicorn). Opens
+> **web-wizard** requires `pip install "grepxcel[web]"` (FastAPI + uvicorn + python-multipart). Opens
 > `http://localhost:8765` in your default browser. Click cells to classify them visually.
 
 > The pattern file may be `.xlsx` **or** `.csv`. `suggest` is a hidden
